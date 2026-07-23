@@ -1,0 +1,25 @@
+# QLC+ source checkout (installed system-wide, ~146M) — not part of the show
+qlcplus/
+
+# Generated render output
+renders/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Large / bulky 3D + capture assets (regenerable, not show-critical source)
+*.blend
+*.blend1
+*.ply
+*.glb
+model.obj
+model2.obj
+checkerboard.obj
+
+# Vendor PDF manual
+bar_usermanual.pdf
+
+# Workspace auto-backups — git history is the real history now
+despacio/backups/
+*.bak

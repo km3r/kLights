@@ -1,0 +1,10 @@
+,Par Color,Par Scene,Par Scene 2,Pin Spot,Kinta,Kinta,Bar,Bar,Master
+Knob,Laser Color,Laser Pattern,Laser Roll X,Laser Roll Y,Laser Roll Z,,Background Color,,
+Button 1,Red,Pattern A,Spiral,Red,Red,Red/Green,Red,Red 50%,
+Button 2,Green,Pattern B,Single Loop,Green,Green,Green/blue,Green,Green 50%,
+Button 3,Blue,Pattern C,Single Sling,Blue,Blue,Blue/Red,Blue,Blue 50%,
+Button 4,White,Flash Sides,Flash Sides (fast),White,White,Red/White,Program A,Program D,
+Button 5,Chaser,Flash Middle,Flash Middle (fast),Chaser,Green/White,Blue/White,Program B,Program E,
+Small Button,,Flash All,Flash All (fast),,,,Program C,Program F,
+Wide Button,Mode A,Mode B,Idle,Dimmer A Flash,Dimmer A Hold,,Program G,Program H,
+Fader,Par Dim,Laser Pan,Laser Tilt,Laser Zoom,Kinta Speed,Kinta Index,Program Speed,Manual Program Select,Master Dimmer

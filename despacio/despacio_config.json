@@ -1,0 +1,75 @@
+{
+  "mount_mode": "table",
+  "room_width": 9144.0,
+  "room_depth": 9144.0,
+  "head_inset": 500.0,
+  "head_height": [
+    3048.0,
+    3048.0,
+    3048.0,
+    3048.0
+  ],
+  "ball_height": 3048.0,
+  "ball_x": 4572.0,
+  "ball_z": 4572.0,
+  "calibrated_ball_dmx": {
+    "table": [
+      [
+        22,
+        0
+      ],
+      [
+        127,
+        0
+      ],
+      [
+        22,
+        0
+      ],
+      [
+        127,
+        0
+      ]
+    ],
+    "venue": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "mount_facing_override": [
+    null,
+    null,
+    null,
+    null
+  ],
+  "pan_invert": {
+    "table": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "venue": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "tilt_invert": {
+    "table": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "venue": [
+      false,
+      false,
+      false,
+      false
+    ]
+  }
+}

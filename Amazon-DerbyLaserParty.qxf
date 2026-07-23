@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE FixtureDefinition>
+<FixtureDefinition xmlns="http://www.qlcplus.org/FixtureDefinition">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.2.1</Version>
+  <Author>km3r</Author>
+ </Creator>
+ <Manufacturer>Amazon</Manufacturer>
+ <Model>DerbyLaserParty</Model>
+ <Type>Color Changer</Type>
+ <Channel Name="Master dimmer" Preset="IntensityMasterDimmer"/>
+ <Channel Name="Strobe" Preset="ShutterStrobeSlowFast"/>
+ <Channel Name="Red" Preset="IntensityRed"/>
+ <Channel Name="Green" Preset="IntensityGreen"/>
+ <Channel Name="Blue" Preset="IntensityBlue"/>
+ <Channel Name="White" Preset="IntensityWhite"/>
+ <Channel Name="Red L" Preset="IntensityRed"/>
+ <Channel Name="Green L" Preset="IntensityGreen"/>
+ <Channel Name="Strobe L" Preset="ShutterStrobeSlowFast"/>
+ <Channel Name="Marquee Color">
+  <Group Byte="0">Intensity</Group>
+  <Capability Min="13" Max="75">7 color options</Capability>
+  <Capability Min="76" Max="255">20 flow options</Capability>
+ </Channel>
+ <Channel Name="Marquee Speed">
+  <Group Byte="0">Speed</Group>
+  <Capability Min="0" Max="255">speed slow to fast</Capability>
+ </Channel>
+ <Channel Name="Derby Motor">
+  <Group Byte="0">Speed</Group>
+  <Capability Min="0" Max="2">Stationary</Capability>
+  <Capability Min="3" Max="210">Laser Motor Set</Capability>
+  <Capability Min="211" Max="255">Laser Speed Slow to Fast</Capability>
+ </Channel>
+ <Channel Name="Laser Motor">
+  <Group Byte="0">Speed</Group>
+  <Capability Min="0" Max="2">stationary</Capability>
+  <Capability Min="3" Max="210">Position Set</Capability>
+  <Capability Min="211" Max="255">Speed slow to fast</Capability>
+ </Channel>
+ <Mode Name="default">
+  <Channel Number="0">Master dimmer</Channel>
+  <Channel Number="1">Strobe</Channel>
+  <Channel Number="2">Red</Channel>
+  <Channel Number="3">Green</Channel>
+  <Channel Number="4">Blue</Channel>
+  <Channel Number="5">White</Channel>
+  <Channel Number="6">Red L</Channel>
+  <Channel Number="7">Green L</Channel>
+  <Channel Number="8">Strobe L</Channel>
+  <Channel Number="9">Marquee Color</Channel>
+  <Channel Number="10">Marquee Speed</Channel>
+  <Channel Number="11">Derby Motor</Channel>
+  <Channel Number="12">Laser Motor</Channel>
+  <Head>
+   <Channel>0</Channel>
+   <Channel>1</Channel>
+   <Channel>2</Channel>
+   <Channel>3</Channel>
+   <Channel>4</Channel>
+   <Channel>5</Channel>
+   <Channel>6</Channel>
+   <Channel>7</Channel>
+   <Channel>8</Channel>
+   <Channel>9</Channel>
+   <Channel>10</Channel>
+   <Channel>11</Channel>
+   <Channel>12</Channel>
+  </Head>
+ </Mode>
+ <Physical>
+  <Bulb Type="" Lumens="0" ColourTemperature="0"/>
+  <Dimensions Weight="0.04" Width="0" Height="0" Depth="0"/>
+  <Lens Name="Other" DegreesMin="0" DegreesMax="0"/>
+  <Focus Type="Fixed" PanMax="0" TiltMax="0"/>
+  <Technical PowerConsumption="0" DmxConnector="3-pin"/>
+ </Physical>
+</FixtureDefinition>

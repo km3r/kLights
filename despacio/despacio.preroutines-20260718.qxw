@@ -1,0 +1,857 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Workspace>
+<Workspace xmlns="http://www.qlcplus.org/Workspace" CurrentWindow="VC">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.2.1</Version>
+  <Author>maxti</Author>
+ </Creator>
+ <Engine>
+  <InputOutputMap>
+   <BeatGenerator BeatType="Internal" BPM="120"/>
+   <Universe Name="Universe 1" ID="0">
+    <Input Plugin="Loopback" UID="Loopback 1" Line="0"/>
+    <Output Plugin="DMX USB" UID="None" Line="0"/>
+   </Universe>
+   <Universe Name="Universe 2" ID="1"/>
+   <Universe Name="Universe 3" ID="2">
+    <Input Plugin="MIDI" UID="APC40 mkII" Line="0" Profile="Akai APC40 mkII">
+     <PluginParameters initmessage="None" midichannel="16"/>
+    </Input>
+    <Feedback Plugin="MIDI" UID="APC40 mkII" Line="1">
+     <PluginParameters midichannel="16"/>
+    </Feedback>
+   </Universe>
+   <Universe Name="Universe 4" ID="3"/>
+  </InputOutputMap>
+  <Fixture>
+   <Manufacturer>MingJie</Manufacturer>
+   <Model>MJ-OS-018 60W Beam</Model>
+   <Mode>11 Channel</Mode>
+   <ID>0</ID>
+   <Name>Moving Head #1</Name>
+   <Universe>0</Universe>
+   <Address>0</Address>
+   <Channels>11</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>MingJie</Manufacturer>
+   <Model>MJ-OS-018 60W Beam</Model>
+   <Mode>11 Channel</Mode>
+   <ID>1</ID>
+   <Name>Moving Head #2</Name>
+   <Universe>0</Universe>
+   <Address>11</Address>
+   <Channels>11</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>MingJie</Manufacturer>
+   <Model>MJ-OS-018 60W Beam</Model>
+   <Mode>11 Channel</Mode>
+   <ID>2</ID>
+   <Name>Moving Head #3</Name>
+   <Universe>0</Universe>
+   <Address>22</Address>
+   <Channels>11</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>MingJie</Manufacturer>
+   <Model>MJ-OS-018 60W Beam</Model>
+   <Mode>11 Channel</Mode>
+   <ID>3</ID>
+   <Name>Moving Head #4</Name>
+   <Universe>0</Universe>
+   <Address>33</Address>
+   <Channels>11</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>UKing</Manufacturer>
+   <Model>ZQ-B93 Pinspot RGBW</Model>
+   <Mode>6-channel</Mode>
+   <ID>4</ID>
+   <Name>Pinspot #1</Name>
+   <Universe>0</Universe>
+   <Address>44</Address>
+   <Channels>6</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>UKing</Manufacturer>
+   <Model>ZQ-B93 Pinspot RGBW</Model>
+   <Mode>6-channel</Mode>
+   <ID>5</ID>
+   <Name>Pinspot #2</Name>
+   <Universe>0</Universe>
+   <Address>50</Address>
+   <Channels>6</Channels>
+  </Fixture>
+  <Function ID="0" Type="Scene" Name="MH White">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,5</FixtureVal>
+   <FixtureVal ID="1">4,5</FixtureVal>
+   <FixtureVal ID="2">4,5</FixtureVal>
+   <FixtureVal ID="3">4,5</FixtureVal>
+  </Function>
+  <Function ID="1" Type="Scene" Name="MH Red">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,15</FixtureVal>
+   <FixtureVal ID="1">4,15</FixtureVal>
+   <FixtureVal ID="2">4,15</FixtureVal>
+   <FixtureVal ID="3">4,15</FixtureVal>
+  </Function>
+  <Function ID="2" Type="Scene" Name="MH Blue">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,35</FixtureVal>
+   <FixtureVal ID="1">4,35</FixtureVal>
+   <FixtureVal ID="2">4,35</FixtureVal>
+   <FixtureVal ID="3">4,35</FixtureVal>
+  </Function>
+  <Function ID="3" Type="Scene" Name="MH Pink">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,65</FixtureVal>
+   <FixtureVal ID="1">4,65</FixtureVal>
+   <FixtureVal ID="2">4,65</FixtureVal>
+   <FixtureVal ID="3">4,65</FixtureVal>
+  </Function>
+  <Function ID="4" Type="Scene" Name="MH Orange">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,55</FixtureVal>
+   <FixtureVal ID="1">4,55</FixtureVal>
+   <FixtureVal ID="2">4,55</FixtureVal>
+   <FixtureVal ID="3">4,55</FixtureVal>
+  </Function>
+  <Function ID="5" Type="Scene" Name="MH Color Auto">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">4,150</FixtureVal>
+   <FixtureVal ID="1">4,150</FixtureVal>
+   <FixtureVal ID="2">4,150</FixtureVal>
+   <FixtureVal ID="3">4,150</FixtureVal>
+  </Function>
+  <Function ID="6" Type="Scene" Name="Heads - Ball">
+   <Speed FadeIn="3000" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">0,150,1,0,2,180,3,0</FixtureVal>
+   <FixtureVal ID="1">0,140,1,0,2,180,3,0</FixtureVal>
+   <FixtureVal ID="2">0,115,1,0,2,180,3,0</FixtureVal>
+   <FixtureVal ID="3">0,105,1,0,2,180,3,0</FixtureVal>
+  </Function>
+  <Function ID="7" Type="Scene" Name="Heads - Floor">
+   <Speed FadeIn="3000" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">0,80,1,0,2,120,3,0</FixtureVal>
+   <FixtureVal ID="1">0,110,1,0,2,120,3,0</FixtureVal>
+   <FixtureVal ID="2">0,145,1,0,2,120,3,0</FixtureVal>
+   <FixtureVal ID="3">0,175,1,0,2,120,3,0</FixtureVal>
+  </Function>
+  <Function ID="8" Type="Scene" Name="Heads - Crowd">
+   <Speed FadeIn="3000" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">0,80,1,0,2,210,3,0</FixtureVal>
+   <FixtureVal ID="1">0,110,1,0,2,210,3,0</FixtureVal>
+   <FixtureVal ID="2">0,145,1,0,2,210,3,0</FixtureVal>
+   <FixtureVal ID="3">0,175,1,0,2,210,3,0</FixtureVal>
+  </Function>
+  <Function ID="9" Type="Scene" Name="MH Beam Open">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">5,0,6,0</FixtureVal>
+   <FixtureVal ID="1">5,0,6,0</FixtureVal>
+   <FixtureVal ID="2">5,0,6,0</FixtureVal>
+   <FixtureVal ID="3">5,0,6,0</FixtureVal>
+  </Function>
+  <Function ID="10" Type="Scene" Name="MH Strobe">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">6,220</FixtureVal>
+   <FixtureVal ID="1">6,220</FixtureVal>
+   <FixtureVal ID="2">6,220</FixtureVal>
+   <FixtureVal ID="3">6,220</FixtureVal>
+  </Function>
+  <Function ID="11" Type="Scene" Name="Pins Warm">
+   <Speed FadeIn="1500" FadeOut="1500" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,140,2,40,3,0,4,255</FixtureVal>
+   <FixtureVal ID="5">0,255,1,140,2,40,3,0,4,255</FixtureVal>
+  </Function>
+  <Function ID="12" Type="Scene" Name="Pins White">
+   <Speed FadeIn="1500" FadeOut="1500" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,0,2,0,3,0,4,255</FixtureVal>
+   <FixtureVal ID="5">0,255,1,0,2,0,3,0,4,255</FixtureVal>
+  </Function>
+  <Function ID="13" Type="Scene" Name="Pins Red">
+   <Speed FadeIn="1500" FadeOut="1500" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,255,2,0,3,0,4,0</FixtureVal>
+   <FixtureVal ID="5">0,255,1,255,2,0,3,0,4,0</FixtureVal>
+  </Function>
+  <Function ID="14" Type="Scene" Name="Pins Green">
+   <Speed FadeIn="1500" FadeOut="1500" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,0,2,255,3,0,4,0</FixtureVal>
+   <FixtureVal ID="5">0,255,1,0,2,255,3,0,4,0</FixtureVal>
+  </Function>
+  <Function ID="15" Type="Scene" Name="Pins Blue">
+   <Speed FadeIn="1500" FadeOut="1500" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,0,2,0,3,255,4,0</FixtureVal>
+   <FixtureVal ID="5">0,255,1,0,2,0,3,255,4,0</FixtureVal>
+  </Function>
+  <Function ID="16" Type="Scene" Name="Shimmer A">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,140,2,40,3,0,4,255</FixtureVal>
+   <FixtureVal ID="5">0,255,1,20,2,5,3,0,4,40</FixtureVal>
+  </Function>
+  <Function ID="17" Type="Scene" Name="Shimmer B">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="4">0,255,1,20,2,5,3,0,4,40</FixtureVal>
+   <FixtureVal ID="5">0,255,1,140,2,40,3,0,4,255</FixtureVal>
+  </Function>
+  <Function ID="18" Type="EFX" Name="Lazy Circle">
+   <Fixture>
+    <ID>0</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>0</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>1</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>90</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>2</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>180</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>3</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>270</StartOffset>
+   </Fixture>
+   <PropagationMode>Parallel</PropagationMode>
+   <Speed FadeIn="0" FadeOut="0" Duration="30000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <Algorithm>Circle</Algorithm>
+   <Width>24</Width>
+   <Height>16</Height>
+   <Rotation>0</Rotation>
+   <StartOffset>0</StartOffset>
+   <IsRelative>0</IsRelative>
+   <Axis Name="X">
+    <Offset>127</Offset>
+    <Frequency>2</Frequency>
+    <Phase>90</Phase>
+   </Axis>
+   <Axis Name="Y">
+    <Offset>127</Offset>
+    <Frequency>3</Frequency>
+    <Phase>0</Phase>
+   </Axis>
+  </Function>
+  <Function ID="19" Type="EFX" Name="Slow Sweep">
+   <Fixture>
+    <ID>0</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>0</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>1</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Backward</Direction>
+    <StartOffset>0</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>2</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Forward</Direction>
+    <StartOffset>0</StartOffset>
+   </Fixture>
+   <Fixture>
+    <ID>3</ID>
+    <Head>0</Head>
+    <Mode>0</Mode>
+    <Direction>Backward</Direction>
+    <StartOffset>0</StartOffset>
+   </Fixture>
+   <PropagationMode>Parallel</PropagationMode>
+   <Speed FadeIn="0" FadeOut="0" Duration="20000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <Algorithm>Line</Algorithm>
+   <Width>56</Width>
+   <Height>6</Height>
+   <Rotation>0</Rotation>
+   <StartOffset>0</StartOffset>
+   <IsRelative>0</IsRelative>
+   <Axis Name="X">
+    <Offset>127</Offset>
+    <Frequency>2</Frequency>
+    <Phase>90</Phase>
+   </Axis>
+   <Axis Name="Y">
+    <Offset>127</Offset>
+    <Frequency>3</Frequency>
+    <Phase>0</Phase>
+   </Axis>
+  </Function>
+  <Function ID="20" Type="Chaser" Name="Ball Shimmer">
+   <Speed FadeIn="4000" FadeOut="4000" Duration="8000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <SpeedModes FadeIn="Common" FadeOut="Common" Duration="Common"/>
+   <Step Number="0" FadeIn="0" Hold="0" FadeOut="0">16</Step>
+   <Step Number="1" FadeIn="0" Hold="0" FadeOut="0">17</Step>
+  </Function>
+  <Function ID="21" Type="Chaser" Name="Color Drift">
+   <Speed FadeIn="0" FadeOut="0" Duration="20000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <SpeedModes FadeIn="Common" FadeOut="Common" Duration="Common"/>
+   <Step Number="0" FadeIn="0" Hold="0" FadeOut="0">4</Step>
+   <Step Number="1" FadeIn="0" Hold="0" FadeOut="0">3</Step>
+   <Step Number="2" FadeIn="0" Hold="0" FadeOut="0">2</Step>
+   <Step Number="3" FadeIn="0" Hold="0" FadeOut="0">1</Step>
+  </Function>
+  <Function ID="22" Type="Collection" Name="Despacio Idle">
+   <Step Number="0">11</Step>
+   <Step Number="1">0</Step>
+   <Step Number="2">18</Step>
+  </Function>
+  <Function ID="23" Type="Collection" Name="Peak">
+   <Step Number="0">8</Step>
+   <Step Number="1">21</Step>
+   <Step Number="2">20</Step>
+  </Function>
+  <Monitor DisplayMode="0" ShowLabels="0">
+   <Font>Arial,12,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   <ChannelStyle>0</ChannelStyle>
+   <ValueStyle>0</ValueStyle>
+   <Grid Width="10" Height="6" Depth="15" Units="0" POV="2"/>
+   <StageItem>0</StageItem>
+   <FxItem ID="0" XPos="1500" YPos="3000" ZPos="1500"/>
+   <FxItem ID="1" XPos="3800" YPos="3000" ZPos="1500"/>
+   <FxItem ID="2" XPos="6200" YPos="3000" ZPos="1500"/>
+   <FxItem ID="3" XPos="8500" YPos="3000" ZPos="1500"/>
+   <FxItem ID="4" XPos="500" YPos="3200" ZPos="1500"/>
+   <FxItem ID="5" XPos="9500" YPos="3200" ZPos="1500"/>
+   <MeshItem ID="0" XPos="5000" YPos="3500" ZPos="7500" XScale="1" YScale="1" ZScale="1" Res="mirrorball.obj"/>
+  </Monitor>
+ </Engine>
+ <VirtualConsole>
+  <Frame Caption="Control" ID="0">
+   <Appearance>
+    <BackgroundColor>4292532954</BackgroundColor>
+    <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   </Appearance>
+   <WindowState Visible="True" X="0" Y="0" Width="1920" Height="1080"/>
+   <AllowResize>False</AllowResize>
+   <ShowHeader>False</ShowHeader>
+   <ShowEnableButton>True</ShowEnableButton>
+   <Collapsed>False</Collapsed>
+   <Disabled>False</Disabled>
+   <Frame Caption="1 MH Color" ID="1">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="5" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Pan MH1" ID="150" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="48"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="0">0</Channel>
+     </Level>
+    </Slider>
+    <SoloFrame Caption="mh-color-solo" ID="301">
+     <Appearance>
+      <BackgroundColor>4289572269</BackgroundColor>
+     </Appearance>
+     <WindowState Visible="True" X="0" Y="90" Width="112" Height="196"/>
+     <AllowResize>True</AllowResize>
+     <ShowHeader>False</ShowHeader>
+     <ShowEnableButton>False</ShowEnableButton>
+     <Collapsed>False</Collapsed>
+     <Disabled>False</Disabled>
+     <Button Caption="White" ID="100">
+      <WindowState Visible="True" X="8" Y="0" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294967295</BackgroundColor>
+      </Appearance>
+      <Function ID="0"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="160" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Red" ID="101">
+      <WindowState Visible="True" X="8" Y="31" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294901760</BackgroundColor>
+      </Appearance>
+      <Function ID="1"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="152" LowerValue="12" UpperValue="10"/>
+     </Button>
+     <Button Caption="Blue" ID="102">
+      <WindowState Visible="True" X="8" Y="62" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4278190335</BackgroundColor>
+      </Appearance>
+      <Function ID="2"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="144" LowerValue="92" UpperValue="90"/>
+     </Button>
+     <Button Caption="Pink" ID="103">
+      <WindowState Visible="True" X="8" Y="93" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294902015</BackgroundColor>
+      </Appearance>
+      <Function ID="3"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="136" LowerValue="142" UpperValue="106"/>
+     </Button>
+     <Button Caption="Orange" ID="104">
+      <WindowState Visible="True" X="8" Y="124" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294944000</BackgroundColor>
+      </Appearance>
+      <Function ID="4"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="128" LowerValue="142" UpperValue="24"/>
+     </Button>
+     <Button Caption="Color Auto" ID="105">
+      <WindowState Visible="True" X="8" Y="155" Width="95" Height="28"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="5"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="180" LowerValue="142" UpperValue="6"/>
+     </Button>
+    </SoloFrame>
+    <Slider Caption="MH Dim" ID="151" WidgetStyle="Slider" InvertedAppearance="false">
+     <WindowState Visible="True" X="33" Y="287" Width="44" Height="224"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="7"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="255">
+      <Channel Fixture="0">7</Channel>
+      <Channel Fixture="1">7</Channel>
+      <Channel Fixture="2">7</Channel>
+      <Channel Fixture="3">7</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="2 MH Move" ID="2">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="123" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Pan MH2" ID="152" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="49"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="1">0</Channel>
+     </Level>
+    </Slider>
+    <SoloFrame Caption="mh-move-solo" ID="302">
+     <Appearance>
+      <BackgroundColor>4289572269</BackgroundColor>
+     </Appearance>
+     <WindowState Visible="True" X="0" Y="90" Width="112" Height="196"/>
+     <AllowResize>True</AllowResize>
+     <ShowHeader>False</ShowHeader>
+     <ShowEnableButton>False</ShowEnableButton>
+     <Collapsed>False</Collapsed>
+     <Disabled>False</Disabled>
+     <Button Caption="To Ball" ID="106">
+      <WindowState Visible="True" X="8" Y="0" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="6"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="161" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="To Floor" ID="107">
+      <WindowState Visible="True" X="8" Y="31" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="7"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="153" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="To Crowd" ID="108">
+      <WindowState Visible="True" X="8" Y="62" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="8"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="145" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Lazy Circle" ID="109">
+      <WindowState Visible="True" X="8" Y="93" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="18"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="137" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Slow Sweep" ID="110">
+      <WindowState Visible="True" X="8" Y="124" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="19"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="129" LowerValue="142" UpperValue="6"/>
+     </Button>
+    </SoloFrame>
+    <Button Caption="Beam Open" ID="111">
+     <WindowState Visible="True" X="8" Y="252" Width="95" Height="28"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Function ID="9"/>
+     <Action>Toggle</Action>
+     <Input ID="0" Universe="2" Channel="4290" LowerValue="142" UpperValue="6"/>
+    </Button>
+    <Slider Caption="PT Speed" ID="153" WidgetStyle="Slider" InvertedAppearance="false">
+     <WindowState Visible="True" X="33" Y="287" Width="44" Height="224"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="4103"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="0">
+      <Channel Fixture="0">8</Channel>
+      <Channel Fixture="1">8</Channel>
+      <Channel Fixture="2">8</Channel>
+      <Channel Fixture="3">8</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="3 MH Program" ID="3">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="241" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Pan MH3" ID="154" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="50"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="2">0</Channel>
+     </Level>
+    </Slider>
+    <SoloFrame Caption="mh-program-solo" ID="303">
+     <Appearance>
+      <BackgroundColor>4289572269</BackgroundColor>
+     </Appearance>
+     <WindowState Visible="True" X="0" Y="90" Width="112" Height="130"/>
+     <AllowResize>True</AllowResize>
+     <ShowHeader>False</ShowHeader>
+     <ShowEnableButton>False</ShowEnableButton>
+     <Collapsed>False</Collapsed>
+     <Disabled>False</Disabled>
+     <Button Caption="Despacio Idle" ID="112">
+      <WindowState Visible="True" X="8" Y="0" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="22"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="162" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Peak" ID="113">
+      <WindowState Visible="True" X="8" Y="31" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="23"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="154" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Color Drift" ID="114">
+      <WindowState Visible="True" X="8" Y="62" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="21"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="146" LowerValue="142" UpperValue="6"/>
+     </Button>
+    </SoloFrame>
+    <Button Caption="Strobe" ID="115">
+     <WindowState Visible="True" X="8" Y="252" Width="95" Height="28"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Function ID="10"/>
+     <Action>Flash</Action>
+     <Input ID="0" Universe="2" Channel="130" LowerValue="142" UpperValue="6"/>
+    </Button>
+    <Slider Caption="MH Gobo" ID="155" WidgetStyle="Slider" InvertedAppearance="false">
+     <WindowState Visible="True" X="33" Y="287" Width="44" Height="224"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="8199"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="0">
+      <Channel Fixture="0">5</Channel>
+      <Channel Fixture="1">5</Channel>
+      <Channel Fixture="2">5</Channel>
+      <Channel Fixture="3">5</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="4 Pin Spot" ID="4">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="359" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Pan MH4" ID="156" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="51"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="3">0</Channel>
+     </Level>
+    </Slider>
+    <SoloFrame Caption="pin-solo" ID="304">
+     <Appearance>
+      <BackgroundColor>4289572269</BackgroundColor>
+     </Appearance>
+     <WindowState Visible="True" X="0" Y="90" Width="112" Height="196"/>
+     <AllowResize>True</AllowResize>
+     <ShowHeader>False</ShowHeader>
+     <ShowEnableButton>False</ShowEnableButton>
+     <Collapsed>False</Collapsed>
+     <Disabled>False</Disabled>
+     <Button Caption="Red" ID="116">
+      <WindowState Visible="True" X="8" Y="0" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294901760</BackgroundColor>
+      </Appearance>
+      <Function ID="13"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="163" LowerValue="12" UpperValue="10"/>
+     </Button>
+     <Button Caption="Green" ID="117">
+      <WindowState Visible="True" X="8" Y="31" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4278255360</BackgroundColor>
+      </Appearance>
+      <Function ID="14"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="155" LowerValue="44" UpperValue="42"/>
+     </Button>
+     <Button Caption="Blue" ID="118">
+      <WindowState Visible="True" X="8" Y="62" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4278190335</BackgroundColor>
+      </Appearance>
+      <Function ID="15"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="147" LowerValue="92" UpperValue="90"/>
+     </Button>
+     <Button Caption="White" ID="119">
+      <WindowState Visible="True" X="8" Y="93" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294967295</BackgroundColor>
+      </Appearance>
+      <Function ID="12"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="139" LowerValue="142" UpperValue="6"/>
+     </Button>
+     <Button Caption="Warm" ID="120">
+      <WindowState Visible="True" X="8" Y="124" Width="95" Height="30"/>
+      <Appearance>
+       <BackgroundColor>4294944000</BackgroundColor>
+      </Appearance>
+      <Function ID="11"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="131" LowerValue="142" UpperValue="24"/>
+     </Button>
+     <Button Caption="Ball Shimmer" ID="121">
+      <WindowState Visible="True" X="8" Y="155" Width="95" Height="28"/>
+      <Appearance>
+       <BackgroundColor>4282664004</BackgroundColor>
+      </Appearance>
+      <Function ID="20"/>
+      <Action>Toggle</Action>
+      <Input ID="0" Universe="2" Channel="12468" LowerValue="142" UpperValue="6"/>
+     </Button>
+    </SoloFrame>
+    <Slider Caption="Pin White" ID="157" WidgetStyle="Slider" InvertedAppearance="false">
+     <WindowState Visible="True" X="33" Y="287" Width="44" Height="224"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="12295"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="0">
+      <Channel Fixture="4">4</Channel>
+      <Channel Fixture="5">4</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="5 Tilt 1" ID="5">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="476" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Tilt MH1" ID="158" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="52"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="0">2</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="6 Tilt 2" ID="6">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="594" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Tilt MH2" ID="159" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="53"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="1">2</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="7 Tilt 3" ID="7">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="712" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Tilt MH3" ID="160" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="54"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="2">2</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="8 Tilt 4" ID="8">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="828" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Tilt MH4" ID="161" WidgetStyle="Knob" InvertedAppearance="false">
+     <WindowState Visible="True" X="16" Y="22" Width="78" Height="64"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="55"/>
+     <SliderMode ValueDisplayStyle="Exact">Level</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="128">
+      <Channel Fixture="3">2</Channel>
+     </Level>
+    </Slider>
+   </Frame>
+   <Frame Caption="Master" ID="9">
+    <Appearance>
+     <BackgroundColor>4289572269</BackgroundColor>
+    </Appearance>
+    <WindowState Visible="True" X="946" Y="23" Width="112" Height="526"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>False</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Slider Caption="Master Dimmer" ID="162" WidgetStyle="Slider" InvertedAppearance="false">
+     <WindowState Visible="True" X="36" Y="283" Width="45" Height="228"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Input ID="0" Universe="2" Channel="14"/>
+     <SliderMode ValueDisplayStyle="Percentage">Submaster</SliderMode>
+     <Level LowLimit="0" HighLimit="255" Value="255"/>
+    </Slider>
+    <Button Caption="Blackout" ID="122">
+     <WindowState Visible="True" X="36" Y="238" Width="56" Height="30"/>
+     <Appearance>
+      <BackgroundColor>4294901760</BackgroundColor>
+     </Appearance>
+     <Function ID="4294967295"/>
+     <Action>Blackout</Action>
+     <Input ID="0" Universe="2" Channel="209"/>
+    </Button>
+   </Frame>
+  </Frame>
+ </VirtualConsole>
+</Workspace>

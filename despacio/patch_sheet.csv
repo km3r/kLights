@@ -1,0 +1,7 @@
+qlcplus_id,name,manufacturer,model,mode,qlcplus_universe,artnet_universe,dmx_start,channel_count,notes,gdtf_profile
+0,Moving Head #1,MingJie,MJ-OS-018 60W Beam,11 Channel,1,0,1,11,Moving head — corner: back-right,
+1,Moving Head #2,MingJie,MJ-OS-018 60W Beam,11 Channel,1,0,12,11,Moving head — corner: front-right,
+2,Moving Head #3,MingJie,MJ-OS-018 60W Beam,11 Channel,1,0,23,11,Moving head — corner: front-left,
+3,Moving Head #4,MingJie,MJ-OS-018 60W Beam,11 Channel,1,0,34,11,Moving head — corner: back-left,
+4,Pinspot #1,UKing,ZQ-B93 Pinspot RGBW,6-channel,1,0,45,6,Patched but unused for now (routines removed),
+5,Pinspot #2,UKing,ZQ-B93 Pinspot RGBW,6-channel,1,0,51,6,Patched but unused for now (routines removed),

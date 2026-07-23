@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE FixtureDefinition>
+<FixtureDefinition xmlns="http://www.qlcplus.org/FixtureDefinition">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.2.1</Version>
+  <Author>maxti</Author>
+ </Creator>
+ <Manufacturer>MingJie</Manufacturer>
+ <Model>MJ-OS-018 60W Beam</Model>
+ <Type>Moving Head</Type>
+ <Channel Name="Pan" Preset="PositionPan"/>
+ <Channel Name="Pan fine" Preset="PositionPanFine"/>
+ <Channel Name="Tilt" Preset="PositionTilt"/>
+ <Channel Name="Tilt fine" Preset="PositionTiltFine"/>
+ <Channel Name="Color Wheel">
+  <Group Byte="0">Colour</Group>
+  <Capability Min="0" Max="9" Preset="ColorMacro" Res1="#ffffff">White</Capability>
+  <Capability Min="10" Max="19" Preset="ColorMacro" Res1="#ff0000">Red</Capability>
+  <Capability Min="20" Max="29" Preset="ColorMacro" Res1="#ffff00">Yellow</Capability>
+  <Capability Min="30" Max="39" Preset="ColorMacro" Res1="#0000ff">Blue</Capability>
+  <Capability Min="40" Max="49" Preset="ColorMacro" Res1="#00ff00">Green</Capability>
+  <Capability Min="50" Max="59" Preset="ColorMacro" Res1="#ff7f00">Orange</Capability>
+  <Capability Min="60" Max="69" Preset="ColorMacro" Res1="#ff00ff">Pink</Capability>
+  <Capability Min="70" Max="79" Preset="ColorMacro" Res1="#00ffff">Cyan</Capability>
+  <Capability Min="80" Max="89" Preset="ColorMacro" Res1="#80ffff">Cyan + Pink</Capability>
+  <Capability Min="90" Max="99" Preset="ColorMacro" Res1="#ff80c0">Pink + Orange</Capability>
+  <Capability Min="100" Max="109" Preset="ColorMacro" Res1="#ffbf00">Orange + Green</Capability>
+  <Capability Min="110" Max="119" Preset="ColorMacro" Res1="#80ff80">Green + Blue</Capability>
+  <Capability Min="120" Max="129" Preset="ColorMacro" Res1="#80c0ff">Blue + Yellow</Capability>
+  <Capability Min="130" Max="139" Preset="ColorMacro" Res1="#ff8000">Yellow + Red</Capability>
+  <Capability Min="140" Max="255">Auto color change (slow to fast)</Capability>
+ </Channel>
+ <Channel Name="Gobo Wheel">
+  <Group Byte="0">Gobo</Group>
+  <Capability Min="0" Max="7">Open</Capability>
+  <Capability Min="8" Max="15">Gobo 1</Capability>
+  <Capability Min="16" Max="23">Gobo 2</Capability>
+  <Capability Min="24" Max="31">Gobo 3</Capability>
+  <Capability Min="32" Max="39">Gobo 4</Capability>
+  <Capability Min="40" Max="47">Gobo 5</Capability>
+  <Capability Min="48" Max="55">Gobo 6</Capability>
+  <Capability Min="56" Max="63">Gobo 7</Capability>
+  <Capability Min="64" Max="127">Gobo shake</Capability>
+  <Capability Min="128" Max="255">Auto gobo change</Capability>
+ </Channel>
+ <Channel Name="Strobe">
+  <Group Byte="0">Shutter</Group>
+  <Capability Min="0" Max="7" Preset="ShutterOpen">Open</Capability>
+  <Capability Min="8" Max="249" Preset="StrobeSlowToFast">Strobe slow to fast</Capability>
+  <Capability Min="250" Max="255" Preset="ShutterOpen">Open (full)</Capability>
+ </Channel>
+ <Channel Name="Dimmer" Preset="IntensityDimmer"/>
+ <Channel Name="Pan/Tilt Speed">
+  <Group Byte="0">Speed</Group>
+  <Capability Min="0" Max="255">Movement speed (verify direction)</Capability>
+ </Channel>
+ <Channel Name="Auto Mode">
+  <Group Byte="0">Effect</Group>
+  <Capability Min="0" Max="255">Auto movement (value sets rotation direction)</Capability>
+ </Channel>
+ <Channel Name="Auto/Sound Mode">
+  <Group Byte="0">Effect</Group>
+  <Capability Min="0" Max="7">No function (verify)</Capability>
+  <Capability Min="8" Max="127">Auto programs (verify)</Capability>
+  <Capability Min="128" Max="255">Sound-active programs (verify)</Capability>
+ </Channel>
+ <Channel Name="Reset">
+  <Group Byte="0">Maintenance</Group>
+  <Capability Min="0" Max="249">No function</Capability>
+  <Capability Min="250" Max="255">Reset (hold 5 s)</Capability>
+ </Channel>
+ <Mode Name="9 Channel">
+  <Channel Number="0">Pan</Channel>
+  <Channel Number="1">Tilt</Channel>
+  <Channel Number="2">Color Wheel</Channel>
+  <Channel Number="3">Gobo Wheel</Channel>
+  <Channel Number="4">Strobe</Channel>
+  <Channel Number="5">Dimmer</Channel>
+  <Channel Number="6">Pan/Tilt Speed</Channel>
+  <Channel Number="7">Auto Mode</Channel>
+  <Channel Number="8">Reset</Channel>
+ </Mode>
+ <Mode Name="11 Channel">
+  <Channel Number="0">Pan</Channel>
+  <Channel Number="1">Pan fine</Channel>
+  <Channel Number="2">Tilt</Channel>
+  <Channel Number="3">Tilt fine</Channel>
+  <Channel Number="4">Color Wheel</Channel>
+  <Channel Number="5">Gobo Wheel</Channel>
+  <Channel Number="6">Strobe</Channel>
+  <Channel Number="7">Dimmer</Channel>
+  <Channel Number="8">Pan/Tilt Speed</Channel>
+  <Channel Number="9">Auto/Sound Mode</Channel>
+  <Channel Number="10">Reset</Channel>
+ </Mode>
+ <Physical>
+  <Bulb Type="LED" Lumens="1300" ColourTemperature="7500"/>
+  <Dimensions Weight="5" Width="180" Height="280" Depth="200"/>
+  <Lens Name="Other" DegreesMin="3" DegreesMax="3"/>
+  <Focus Type="Head" PanMax="540" TiltMax="270"/>
+  <Technical PowerConsumption="100" DmxConnector="3-pin"/>
+ </Physical>
+</FixtureDefinition>

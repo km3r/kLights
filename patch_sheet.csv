@@ -1,0 +1,14 @@
+qlcplus_id,name,manufacturer,model,mode,qlcplus_universe,artnet_universe,dmx_start,channel_count,notes,gdtf_profile
+0,Par 36 Custom #1,UKing,Par 36 Custom,5 Channel,1,0,1,5,Stage wash — front-left truss,UKing@Par 36 Custom@5 Channel.gdtf
+1,Par 36 Custom #2,UKing,Par 36 Custom,5 Channel,1,0,7,5,Stage wash — front-right truss,UKing@Par 36 Custom@5 Channel.gdtf
+2,Par 36 Custom #3,UKing,Par 36 Custom,5 Channel,1,0,13,5,Stage wash — back-left truss,UKing@Par 36 Custom@5 Channel.gdtf
+3,Par 36 Custom #4,UKing,Par 36 Custom,5 Channel,1,0,19,5,Stage wash — back-right truss,UKing@Par 36 Custom@5 Channel.gdtf
+4,ZQ-B93 Pinspot RGBW #1,UKing,ZQ-B93 Pinspot RGBW,6-channel,1,0,25,6,Pinspot — front truss center-left,UKing@ZQ-B93 Pinspot RGBW@6-channel.gdtf
+5,ZQ-B93 Pinspot RGBW #2,UKing,ZQ-B93 Pinspot RGBW,6-channel,1,0,31,6,Pinspot — front truss center-right,UKing@ZQ-B93 Pinspot RGBW@6-channel.gdtf
+6,DerbyLaserParty,Amazon,DerbyLaserParty,default,1,0,37,13,Derby/laser effect — center overhead,Amazon@DerbyLaserParty@default.gdtf
+7,Scorpion Dual RGB,Chauvet,Scorpion Dual RGB,10-Channel,1,0,50,10,Laser — upstage center on stand,Chauvet@Scorpion Dual RGB@10-Channel.gdtf
+8,Mini Kinta IRC,Chauvet,Mini Kinta IRC,4-Channel,1,0,61,4,Effect light — center dancefloor,Chauvet@Mini Kinta IRC@4-Channel.gdtf
+9,Dimmers #1,Generic,Dimmer,1 Channel,1,0,70,1,Dimmer — stage left,Generic@Dimmer@1 Channel.gdtf
+10,Dimmers #2,Generic,Dimmer,1 Channel,1,0,71,1,Dimmer — stage right,Generic@Dimmer@1 Channel.gdtf
+11,Dimmers #3,Generic,Dimmer,1 Channel,1,0,72,1,Dimmer — audience left,Generic@Dimmer@1 Channel.gdtf
+12,Dimmers #4,Generic,Dimmer,1 Channel,1,0,73,1,Dimmer — audience right,Generic@Dimmer@1 Channel.gdtf
