@@ -24,6 +24,9 @@ rig = load_rig(REPO / "events" / "despacio")
 g, venue = rig.geometry, rig.venue
 assert g is not None and venue is not None
 crowd = venue.crowd_zone
+
+CFG = safety.TaperConfig()
+CROWD = CFG.crowd_level          # what a beam over the crowd is dimmed TO
 band_mid = (crowd.head_band_min + crowd.head_band_max) / 2.0
 center_x, center_z = venue.width / 2, venue.depth / 2
 
@@ -36,16 +39,18 @@ def check(label, ok, detail=""):
         failures.append(label)
 
 
-# -- 1. a beam aimed into the crowd at head height is off ---------------------
+# -- 1. a beam aimed into the crowd is held down to crowd_level ---------------
 #
 # Aimed at the middle of the room at eye level. Nothing subtle: this is the
-# static-pose-too-low case from the night.
-print("\n1. beam aimed into the crowd at head height")
+# static-pose-too-low case from the night. The goal is "not blinding" rather
+# than "off", so the assertion is that it lands exactly on crowd_level -- not
+# above it (no guard) and not below it (the pose family dies).
+print(f"\n1. beam aimed into the crowd at head height (expect {CROWD:.2f})")
 for i, head in enumerate(g.heads):
     aim = g.aim_at_point(i, center_x, band_mid, center_z)
     c = safety.clearance(g, i, aim, venue)
-    check(f"{head.name} -> room centre at {band_mid:.0f} mm", c.taper == 0.0,
-          f"taper={c.taper:.3f} ({c.reason})")
+    check(f"{head.name} -> room centre at {band_mid:.0f} mm",
+          abs(c.taper - CROWD) < 1e-9, f"taper={c.taper:.3f} ({c.reason})")
 
 
 # -- 2. a beam aimed at the mirror ball is untouched ---------------------------
@@ -97,27 +102,59 @@ for k in range(STEPS + 1):
     aim = g.aim_at_point(HEAD, x, band_mid, center_z)
     sweep.append(safety.taper(g, HEAD, aim, venue))
 
-check("sweep reaches zero in the crowd", min(sweep) == 0.0,
+check("sweep bottoms out at crowd_level", abs(min(sweep) - CROWD) < 1e-9,
       f"min={min(sweep):.3f}")
 check("sweep reaches full outside it", max(sweep) == 1.0,
       f"max={max(sweep):.3f}")
+check("sweep never goes below crowd_level", min(sweep) >= CROWD - 1e-9,
+      f"min={min(sweep):.3f}")
 
-partials = [t for t in sweep if 0.0 < t < 1.0]
+partials = [t for t in sweep if CROWD < t < 1.0]
 check("sweep passes through intermediate values", len(partials) >= 4,
       f"{len(partials)} frame(s) partially tapered")
 
 biggest_step = max(abs(sweep[k + 1] - sweep[k]) for k in range(len(sweep) - 1))
-check("no frame-to-frame flash", biggest_step < 0.5,
+check("no frame-to-frame flash", biggest_step < 0.25,
       f"largest single-frame change {biggest_step:.3f}")
 
 # The taper must be a genuine ramp on both sides, not a cliff with one sample
 # on it. Count how many frames each edge takes.
-ramp_in = sum(1 for k in range(len(sweep) - 1)
-              if sweep[k] > sweep[k + 1] and sweep[k + 1] > 0)
-ramp_out = sum(1 for k in range(len(sweep) - 1)
-               if sweep[k] < sweep[k + 1] and sweep[k] > 0)
+ramp_in = sum(1 for k in range(len(sweep) - 1) if sweep[k] > sweep[k + 1])
+ramp_out = sum(1 for k in range(len(sweep) - 1) if sweep[k] < sweep[k + 1])
 check("both edges ramp over multiple frames", ramp_in >= 2 and ramp_out >= 2,
       f"in={ramp_in} frames, out={ramp_out} frames")
+
+
+# -- 5b. the slew limit catches sweeps too fast for the spatial ramp ----------
+#
+# The spatial margin smooths an ordinary sweep. A fast one can cross the whole
+# margin inside two frames, at which point the ramp reads as a step -- so the
+# temporal limit is what actually delivers "smoothed" at every speed. Driven
+# through the real evaluation path, since the limiter is stateful and lives
+# there rather than in the pure clearance function.
+print("\n5b. slew limit on a fast sweep")
+from engine import state as statemod
+
+FAST_STEPS = 20          # the same sweep in half a second instead of six
+ctx = statemod.EvalContext(rig=rig, venue=venue)
+positions = [-2000.0 + (venue.width + 4000.0) * k / FAST_STEPS
+             for k in range(FAST_STEPS + 1)]
+
+limited = []
+for k, x in enumerate(positions):
+    ctx.time = k / 40.0
+    show = statemod.Show()
+    show.base.append(statemod.pose_layer(
+        lambda c, head, _x=x: c.geometry.aim_at_point(head, _x, band_mid, center_z)))
+    states = statemod.evaluate(ctx, show)
+    limited.append(states[rig.movers[HEAD].fid].safety.taper)
+
+worst_jump = max(abs(limited[k + 1] - limited[k]) for k in range(len(limited) - 1))
+allowed = ctx.taper.slew_per_second / 40.0
+check("fast sweep respects the slew limit", worst_jump <= allowed + 1e-9,
+      f"largest change {worst_jump:.4f} per frame, limit {allowed:.4f}")
+check("fast sweep still moves", max(limited) - min(limited) > 0.01,
+      f"range {min(limited):.3f}..{max(limited):.3f}")
 
 
 # -- 6. floor sweeps: where the show actually put light -----------------------
@@ -128,7 +165,7 @@ check("both edges ramp over multiple frames", ramp_in >= 2 and ramp_out >= 2,
 # rather than discovered live.
 print("\n6. floor sweep poses (reported, not asserted)")
 radius = 2500.0
-killed = 0
+dimmed = 0
 total = 0
 for k, (dx, dz) in enumerate(((0, radius), (radius, 0), (0, -radius), (-radius, 0))):
     tapers = []
@@ -137,21 +174,20 @@ for k, (dx, dz) in enumerate(((0, radius), (radius, 0), (0, -radius), (-radius, 
         t = safety.taper(g, i, aim, venue)
         tapers.append(t)
         total += 1
-        killed += (t == 0.0)
+        dimmed += (t < 1.0)
     print(f"  floor_ring_{k}: " + " ".join(f"{t:.2f}" for t in tapers))
 
 # A head 2971 mm up aiming at the floor 5.8 m away descends at about 27 degrees,
 # so it spends over a metre of horizontal travel inside the 1.4-2.0 m band --
-# directly over the middle of the dancefloor. The model is not being timid here;
-# this is the reported symptom, reproduced.
-print(f"\n  {killed}/{total} floor-sweep beams taper to zero.")
-if killed:
-    print("  This is a POLICY decision, not a bug. The levers, in the order they")
-    print("  cost the least:")
-    print("    - narrow crowd_zone's footprint (people do not stand everywhere)")
-    print("    - raise head_band_min above 1400 mm (stops protecting shorter people)")
-    print("    - accept it: floor sweeps become perimeter and canopy sweeps")
-    print("  Whichever is chosen belongs in venue.json, where it is reviewable.")
+# directly over the middle of the dancefloor. Every floor sweep is affected, and
+# that is correct: this is the reported symptom, reproduced.
+#
+# The chosen policy keeps them all usable at crowd_level rather than removing
+# them. Under the earlier zero-floor policy this whole family went dark.
+print(f"\n  {dimmed}/{total} floor-sweep beams are dimmed, none removed "
+      f"(crowd_level = {CROWD:.0%}).")
+check("floor sweeps survive at crowd_level", dimmed == total,
+      "every floor beam crosses the head band, as expected")
 
 
 # -- 7. landing surfaces answer the parachute question ------------------------

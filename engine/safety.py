@@ -12,9 +12,12 @@ cannot cover the transit between them, and transit is where most of the damage
 happened. Here a move that passes through the danger band dims on the way in and
 comes back up on the way out, without anyone having authored that.
 
-**Taper, not hard mask** -- but tapering to *zero* inside the core. A soft edge
-over the margin keeps the look smooth; a hard floor at the centre keeps the
-guarantee. A taper that bottoms out at 20% is not a safety system.
+**The goal is "not blinding", not "never lands on anyone"** (decided 2026-08-06).
+Beams are expected to cross the crowd; they are expected to be gentle about it.
+So intensity is tapered *to* `TaperConfig.crowd_level` rather than to zero. Set
+that to 0.0 and this becomes a hard guard again -- at the cost of every
+floor-sweep pose, since a head aiming at the dancefloor necessarily crosses eye
+height on the way down.
 
 The geometry, in order:
 
@@ -48,18 +51,33 @@ INF = float("inf")
 
 @dataclass(frozen=True)
 class TaperConfig:
-    """How sharply intensity falls off approaching the crowd.
+    """How far intensity falls approaching the crowd, and how fast.
 
-    `margin_deg` is the angular width of the soft edge. 6 degrees is about two
-    beam widths on the MJ-OS-018, so a head sweeping at a typical rate crosses
-    it over a noticeable fraction of a second rather than snapping.
+    `crowd_level` is what a beam whose core is over people is dimmed **to**, not
+    a floor to be nudged off zero. The goal chosen for this rig (2026-08-06) is
+    "not blinding", not "never lands on anyone": beams are expected to cross the
+    crowd, they are just expected to be gentle about it. So the taper
+    interpolates between `crowd_level` and full rather than between zero and
+    full.
 
-    `floor` exists only so the taper can be *demonstrated* disabled during a
-    design review. Leave it at 0. Anything above 0 means a beam aimed straight
-    into someone's eye still emits, which is the entire thing this prevents.
+    Be clear about what that buys and what it does not. At 0.5 a beam aimed
+    directly into someone's eye still emits at half power, so this is a glare
+    and comfort guard, not a hard optical-safety guarantee. Set it to 0.0 to get
+    the guarantee back, at the cost of the floor-sweep pose family.
+
+    `margin_deg` is the angular width of the soft edge -- about two beam widths
+    on the MJ-OS-018, so a head crossing it at a typical sweep rate takes a
+    noticeable fraction of a second rather than snapping.
+
+    `slew_per_second` caps how fast the multiplier may move, in units per
+    second. The spatial margin already smooths an ordinary sweep; this catches
+    the fast ones, where a head can cross the whole margin inside two frames and
+    the ramp would read as a step. 2.0 means a full 0-to-1 swing takes half a
+    second at minimum. Set to 0 to disable.
     """
     margin_deg: float = 6.0
-    floor: float = 0.0
+    crowd_level: float = 0.5
+    slew_per_second: float = 2.0
     enabled: bool = True
 
 
@@ -195,15 +213,16 @@ def clearance(rig_geo: geo.RigGeometry, head: int, aim: geo.Aim, venue: Venue,
     beam_radius = math.tan(math.radians(rig_geo.heads[head].beam_angle_deg / 2.0)) * rng
     margin = math.tan(math.radians(config.margin_deg)) * rng
 
-    # Zero inside the core -- the beam's own width counts as "on people", not as
-    # clearance -- rising linearly across the margin to full outside it.
-    t_val = (best_dist - beam_radius) / margin if margin > 0 else 1.0
-    taper = max(config.floor, min(1.0, t_val))
-    if best_dist <= beam_radius:
-        taper = config.floor
+    # `crowd_level` inside the core -- the beam's own width counts as "on
+    # people", not as clearance -- rising linearly across the margin to full
+    # outside it.
+    fraction = (best_dist - beam_radius) / margin if margin > 0 else 1.0
+    fraction = 0.0 if best_dist <= beam_radius else max(0.0, min(1.0, fraction))
+    taper = config.crowd_level + (1.0 - config.crowd_level) * fraction
 
-    if taper <= config.floor:
-        reason = "beam core is in the crowd head band"
+    if fraction <= 0.0:
+        reason = (f"beam core is in the crowd head band "
+                  f"(held at {config.crowd_level:.0%})")
     elif taper < 1.0:
         reason = (f"beam edge is {best_dist - beam_radius:.0f} mm from the crowd "
                   f"at {rng:.0f} mm range")

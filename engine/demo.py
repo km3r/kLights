@@ -36,7 +36,11 @@ def orbit_look(radius_deg: float = 20.0, bars: float = 8.0) -> statemod.Show:
     relative to each head's own ball point, so recalibrating a head re-centres
     its orbit automatically.
     """
-    show = statemod.Show()
+    # 90% normal, so a beam over the crowd lands near half of that. Overall
+    # level belongs on the master, not in the taper: the taper's job is the
+    # RATIO between "over people" and "clear", and folding a global trim into it
+    # would mean turning the show down also weakened the guard.
+    show = statemod.Show(master=0.9)
     show.base.append(statemod.pose_layer(
         lambda ctx, head: ctx.geometry.aim_at_ball(head), tags=("movers",)))
     show.base.append(statemod.on_layer(0.6, tags=("pinspots",)))

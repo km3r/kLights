@@ -73,6 +73,13 @@ class EvalContext:
     bar: float = 0.0
     taper: safetymod.TaperConfig = field(default_factory=safetymod.TaperConfig)
 
+    # Last frame's safety multiplier per fixture, and when it was computed.
+    # State the safety layer needs and nothing else may touch -- slew limiting
+    # is inherently temporal, and the alternative (making clearance() stateful)
+    # would make it untestable as a pure function of geometry.
+    _taper_prev: dict[int, float] = field(default_factory=dict, repr=False)
+    _taper_time: float = field(default=0.0, repr=False)
+
     @property
     def geometry(self) -> Optional[geo.RigGeometry]:
         return self.rig.geometry
@@ -182,14 +189,33 @@ def apply_safety(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
     -- `evaluate()` calls it after the stack, always."""
     if ctx.geometry is None or ctx.venue is None:
         return
+
+    # Clamped: a paused or rewound clock must not licence an unlimited jump.
+    dt = max(0.0, min(1.0, ctx.time - ctx._taper_time))
+    ctx._taper_time = ctx.time
+    max_step = (ctx.taper.slew_per_second * dt
+                if ctx.taper.slew_per_second > 0 else None)
+
     for f in ctx.rig.fixtures:
         state = out[f.fid]
         if f.head is None or state.aim is None:
             continue
         clear = safetymod.clearance(ctx.geometry, f.head, state.aim, ctx.venue,
                                     ctx.taper)
-        state.safety = clear
-        state.intensity *= clear.taper
+
+        value = clear.taper
+        previous = ctx._taper_prev.get(f.fid)
+        if max_step is not None and previous is not None:
+            # Rate-limit in BOTH directions. Limiting only the rise would be
+            # the safer-sounding choice and is wrong for this goal: the whole
+            # point is that the level changes smoothly, and a beam snapping
+            # down as it reaches the crowd reads as a flicker just as much as
+            # one snapping up.
+            value = max(previous - max_step, min(previous + max_step, value))
+        ctx._taper_prev[f.fid] = value
+
+        state.safety = replace(clear, taper=value)
+        state.intensity *= value
 
 
 # ------------------------------------------------------------------- render --
