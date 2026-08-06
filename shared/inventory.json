@@ -1,0 +1,100 @@
+{
+  "_comment": [
+    "Hardware we actually own. This is the durable asset — events come and go,",
+    "the inventory carries forward. An event's rig selects units from here and",
+    "assigns DMX addresses, positions and roles; it never redefines the hardware.",
+    "",
+    "'qxf' names a file in shared/fixtures/ (the definition that survives a fresh",
+    "clone). 'modes' lists the modes actually used, not everything the fixture",
+    "supports. 'count' is units owned, which may exceed units used in any show.",
+    "",
+    "Derived from the cosmos26 and despacio workspaces on 2026-08-06. Counts are",
+    "what those two shows patched — verify against the physical road cases before",
+    "relying on them for a new event."
+  ],
+
+  "fixtures": [
+    {
+      "id": "mingjie-mj-os-018",
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "qxf": "MingJie-MJ-OS-018-60W-Beam.qxf",
+      "count": 4,
+      "modes": ["11 Channel", "9 Channel"],
+      "type": "moving-head-beam",
+      "notes": "14-slot mechanical colour wheel, no colour mixing. Strobe re-opens at 250-255. Channel 10 is Reset — always pin to 0. Used by: despacio."
+    },
+    {
+      "id": "uking-zqb93-pinspot",
+      "manufacturer": "UKing",
+      "model": "ZQ-B93 Pinspot RGBW",
+      "qxf": "UKing-ZQB93-Pinspot-RGBW.qxf",
+      "count": 2,
+      "modes": ["6-channel"],
+      "type": "pinspot-rgbw",
+      "notes": "The only fixture used by BOTH events. Channel 0 is a mode selector, not a dimmer — the usable band is 240-255. Group=Effect, so it is LTP not HTP. Its .qxf lived only in the gitignored qlcplus/ vendor tree until 2026-08-06."
+    },
+    {
+      "id": "uking-par-36",
+      "manufacturer": "UKing",
+      "model": "Par 36 Custom",
+      "qxf": "UKing-Par-36-Custom.qxf",
+      "count": 4,
+      "modes": ["5 Channel"],
+      "type": "par-wash",
+      "notes": "Dimmer, R, G, B, strobe. Used by: cosmos26."
+    },
+    {
+      "id": "yeesite-pixel-bar",
+      "manufacturer": "YeeSite",
+      "model": "60W RGB Pixel Light Bar",
+      "qxf": "YeeSite-60W-RGB-Pixel-Light-Bar.qxf",
+      "count": 2,
+      "modes": ["8 Channel"],
+      "type": "pixel-bar",
+      "notes": "Also supports 3/5/90/94-channel pixel modes. Used by: cosmos26 (though absent from its patch sheet)."
+    },
+    {
+      "id": "chauvet-scorpion-dual-rgb",
+      "manufacturer": "Chauvet",
+      "model": "Scorpion Dual RGB 3D",
+      "qxf": "Chauvet-Scorpion-Dual-RGB-3D.qxf",
+      "count": 1,
+      "modes": ["10-Channel"],
+      "type": "laser",
+      "notes": "Laser — check local rules before pointing it anywhere near people. Used by: cosmos26."
+    },
+    {
+      "id": "chauvet-mini-kinta-irc",
+      "manufacturer": "Chauvet",
+      "model": "Mini Kinta IRC 3D",
+      "qxf": "Chauvet-Mini-Kinta-IRC-3D.qxf",
+      "count": 1,
+      "modes": ["4-Channel"],
+      "type": "effect",
+      "notes": "Used by: cosmos26."
+    },
+    {
+      "id": "amazon-derby-laser-party",
+      "manufacturer": "Amazon",
+      "model": "DerbyLaserParty",
+      "qxf": "Amazon-DerbyLaserParty.qxf",
+      "count": 1,
+      "modes": ["default"],
+      "type": "derby-laser",
+      "status": "unverified",
+      "notes": "Appears in the cosmos26 patch sheet but was NOT patched in the workspace that actually ran. Confirm we still own it before planning around it."
+    },
+    {
+      "id": "generic-dimmer",
+      "manufacturer": "Generic",
+      "model": "Dimmer",
+      "qxf": null,
+      "count": 1,
+      "modes": ["1 Channel"],
+      "type": "dimmer",
+      "status": "unverified",
+      "notes": "QLC+ built-in generic profile, no .qxf needed. The cosmos26 sheet claims 4; the workspace patched 1. Verify the real count."
+    }
+  ]
+}
