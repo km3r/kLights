@@ -161,7 +161,15 @@ if not QXF_INSTALLED.exists():
     check("fixture def installed in QLC+ user dir", False,
           f"missing {QXF_INSTALLED} -- copy it there and restart QLC+")
 else:
-    same = QXF_INSTALLED.read_bytes() == QXF_PROJECT.read_bytes()
+    # Compare content, not raw bytes. .gitattributes marks .qxf as text, so the
+    # repo copy is checked out with native line endings (CRLF on Windows) while
+    # the copy hand-installed into the QLC+ user dir keeps whatever it had. A
+    # byte comparison then reports a false mismatch on every fresh checkout.
+    # QLC+ parses this as XML and does not care about line endings.
+    def _qxf_content(p):
+        return p.read_bytes().replace(b"\r\n", b"\n")
+
+    same = _qxf_content(QXF_INSTALLED) == _qxf_content(QXF_PROJECT)
     check("installed fixture def matches project copy", same,
           "" if same else "the two .qxf copies differ -- QLC+ will load the stale one; "
           "recopy the project version and restart QLC+")
