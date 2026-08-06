@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from . import geometry as geo
+from .venue import Venue, load_venue
 
 QXF_NS = "{http://www.qlcplus.org/FixtureDefinition}"
 
@@ -110,16 +111,47 @@ def merge_for_group(group: Optional[str]) -> str:
 # ---------------------------------------------------------------- profiles --
 
 @dataclass(frozen=True)
+class Capability:
+    """One band of a channel's range, with the colour it produces if it is a
+    colour-wheel slot. `.qxf` records these as Res1="#rrggbb"."""
+    lo: int
+    hi: int
+    label: str
+    rgb: Optional[tuple[int, int, int]] = None
+
+    @property
+    def mid(self) -> int:
+        """A value safely inside the band. Slots are narrow (10 wide on the
+        MingJie wheel) and the edges are where a fixture's own rounding puts you
+        in the neighbouring colour, so aim for the middle."""
+        return (self.lo + self.hi) // 2
+
+
+@dataclass(frozen=True)
 class ChannelDef:
     name: str
     role: Optional[str]
     group: Optional[str]
     preset: Optional[str]
     default: int = 0
+    capabilities: tuple[Capability, ...] = ()
 
     @property
     def merge(self) -> str:
         return merge_for_group(self.group)
+
+    @property
+    def color_slots(self) -> tuple[Capability, ...]:
+        """Capabilities that name an actual colour.
+
+        This is what lets one colour picker drive both kinds of fixture: an
+        RGBW pinspot takes the value directly, and a fixture with a mechanical
+        wheel snaps to its nearest slot. The despacio movers have 14 slots and
+        no colour mixing at all, so without this they can only be driven by slot
+        number -- which is why the old UI had colour buttons rather than a
+        picker.
+        """
+        return tuple(c for c in self.capabilities if c.rgb is not None)
 
 
 @dataclass(frozen=True)
@@ -207,8 +239,18 @@ def parse_qxf(path: Path) -> FixtureProfile:
             elif group == "Speed" and "pan" in lowered and "tilt" in lowered:
                 role = PT_SPEED
 
+        caps = []
+        for cap in c.findall(QXF_NS + "Capability"):
+            res1 = cap.get("Res1") or ""
+            rgb = None
+            if res1.startswith("#") and len(res1) == 7:
+                rgb = (int(res1[1:3], 16), int(res1[3:5], 16), int(res1[5:7], 16))
+            caps.append(Capability(lo=int(cap.get("Min")), hi=int(cap.get("Max")),
+                                   label=(cap.text or "").strip(), rgb=rgb))
+
         channels[name] = ChannelDef(name=name, role=role, group=group,
-                                    preset=preset, default=int(c.get("Default") or 0))
+                                    preset=preset, default=int(c.get("Default") or 0),
+                                    capabilities=tuple(caps))
 
     modes: dict[str, tuple[str, ...]] = {}
     for m in root.findall(QXF_NS + "Mode"):
@@ -366,6 +408,7 @@ class Rig:
     name: str
     fixtures: tuple[PatchedFixture, ...]
     geometry: Optional[geo.RigGeometry] = None
+    venue: Optional[Venue] = None
 
     def by_tag(self, tag: str) -> tuple[PatchedFixture, ...]:
         return tuple(f for f in self.fixtures if tag in f.tags)
@@ -493,7 +536,7 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
     """
     library = ProfileLibrary() if library is None else library
     rig_cfg = json.loads((event_dir / "rig.json").read_text(encoding="utf-8"))
-    venue_cfg = json.loads((event_dir / "venue.json").read_text(encoding="utf-8"))
+    venue = load_venue(event_dir / "venue.json")
 
     cal_path = event_dir / "calibration.json"
     cal_cfg = (json.loads(cal_path.read_text(encoding="utf-8"))
@@ -537,16 +580,12 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
             head=head_index, hold=dict(entry.get("hold", {})),
             notes=entry.get("notes", "")))
 
-    ball = venue_cfg["ball"]
     geometry = geo.RigGeometry(
-        heads=tuple(heads),
-        ball=(float(ball["x"]), float(ball["y"]), float(ball["z"])),
-        mount_mode=mount_mode,
-        elev_extreme_deg=float(venue_cfg.get("elev_extreme_deg", 90.0)),
-    ) if heads else None
+        heads=tuple(heads), ball=venue.ball, mount_mode=mount_mode,
+        elev_extreme_deg=venue.elev_extreme_deg) if heads else None
 
     return Rig(name=rig_cfg.get("name", event_dir.name),
-               fixtures=tuple(fixtures), geometry=geometry)
+               fixtures=tuple(fixtures), geometry=geometry, venue=venue)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,222 @@
+"""
+The frame clock: the thing that must not miss.
+
+Everything here is a direct consequence of the F2 timing spike
+(`spike/timing/FINDINGS.md`). Python holds a DMX clock comfortably -- p99
+interval error 0.046 ms, zero drops over 7200 frames under contention, about 65x
+margin on the 3 ms threshold -- but only with two settings applied, and without
+either one it fails badly rather than gracefully.
+
+Those two settings are `install_timing_contract()`, and it is called from
+`Runner.__init__` rather than left to the caller. They are part of the output
+stage's contract, not tuning.
+
+Three things the spike established that shape this file:
+
+  * **External load is a non-issue.** Two busy background processes measured the
+    same as an idle machine. The show laptop running a browser is fine.
+  * **In-process CPU-bound Python is the killer.** A CPU-bound thread holds the
+    GIL for up to `sys.getswitchinterval()`, 5 ms by default, which on a 25 ms
+    period is most of the budget: p99 26.9 ms and 16 drops/minute. Hence the
+    0.5 ms switch interval, and hence heavy per-frame work belongs out of this
+    process. The WebSocket server is I/O-bound and safe in-process.
+  * **Raising process priority does not help** and measured slightly worse.
+    `SetPriorityClass` lifts every thread equally, including the competitors.
+
+Frame rate is 40 Hz because DMX512 cannot carry more: 513 slots at 250 kbaud is
+22.6 ms, so a full universe tops out near 44 Hz. It was never a QLC+ limit
+(QLC+ ticks at 50) and it is nowhere near a Python limit (2000 fps measured with
+zero drops). The headroom belongs to more universes and heavier per-frame work,
+not to a higher rate.
+"""
+
+from __future__ import annotations
+
+import sys
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+
+from . import state as statemod
+from .output.base import NullOutput, Output
+
+# 44 Hz is the DMX512 ceiling for a full universe; 40 sits just under it.
+DEFAULT_FPS = 40.0
+
+# Coarse-sleep to this far short of the deadline, then busy-wait the rest. Buys
+# microsecond precision at about 8% of one core continuously -- a real battery
+# and thermal cost on a laptop, and worth paying.
+SPIN_MARGIN = 0.002
+
+GIL_SWITCH_INTERVAL = 0.0005
+
+
+def install_timing_contract() -> list[str]:
+    """Apply the two mandatory settings. Returns what it actually did.
+
+    Call before starting any thread. Idempotent.
+    """
+    applied = []
+
+    sys.setswitchinterval(GIL_SWITCH_INTERVAL)
+    applied.append(f"sys.setswitchinterval({GIL_SWITCH_INTERVAL})")
+
+    if sys.platform == "win32":
+        # Windows' default scheduling quantum is 15.6 ms, so time.sleep() rounds
+        # up to a multiple of it -- a 25 ms loop lands on 31.2 ms. Skipping this
+        # produced 421 dropped frames in one minute.
+        try:
+            import ctypes
+            ctypes.windll.winmm.timeBeginPeriod(1)
+            applied.append("timeBeginPeriod(1)")
+        except (OSError, AttributeError) as exc:
+            applied.append(f"timeBeginPeriod FAILED ({exc}) -- expect dropped frames")
+
+    return applied
+
+
+@dataclass
+class FrameStats:
+    frames: int = 0
+    drops: int = 0
+    started: float = 0.0
+    worst_error: float = 0.0     # seconds
+    last_error: float = 0.0
+
+    @property
+    def elapsed(self) -> float:
+        return time.perf_counter() - self.started if self.started else 0.0
+
+    @property
+    def effective_fps(self) -> float:
+        return self.frames / self.elapsed if self.elapsed > 0 else 0.0
+
+
+@dataclass
+class Runner:
+    """Evaluates the show and puts frames on the wire at a fixed rate."""
+    ctx: statemod.EvalContext
+    show: statemod.Show
+    output: Output = field(default_factory=NullOutput)
+    fps: float = DEFAULT_FPS
+    on_frame: Optional[Callable[[dict[int, statemod.FixtureState]], None]] = None
+
+    def __post_init__(self) -> None:
+        self.applied_timing = install_timing_contract()
+        self.stats = FrameStats()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._panic = False
+        # Last good frame per universe. Held on fault rather than blanking: a
+        # rig that freezes on the last look is recoverable mid-set; a rig that
+        # goes black is a stopped show.
+        self._last: dict[int, bytes] = {}
+        self._blackout = bytes(512)
+
+    # -- panic ------------------------------------------------------------
+
+    def panic(self) -> None:
+        """Kill all output immediately and keep sending zeros.
+
+        Hardware-independent by design: it does not need the interface to
+        cooperate, it does not need the UI to be responsive, and it does not
+        stop the loop -- a blackout that stops sending is not a blackout,
+        because most fixtures hold their last value when DMX goes away.
+        """
+        self._panic = True
+
+    def clear_panic(self) -> None:
+        self._panic = False
+
+    @property
+    def panicked(self) -> bool:
+        return self._panic
+
+    # -- one frame --------------------------------------------------------
+
+    def render_once(self) -> dict[int, bytes]:
+        """Evaluate and emit a single frame. Never raises.
+
+        A show-evaluation bug must not take the rig down mid-set, so a failure
+        re-sends the last good frame and is counted. The alternative -- letting
+        it propagate and stop the loop -- turns a wrong colour into a dead room.
+        """
+        if self._panic:
+            return {u: self._blackout for u in self.ctx.rig.universes}
+        try:
+            states = statemod.evaluate(self.ctx, self.show)
+            frames = {u: bytes(f) for u, f in statemod.render(self.ctx, states).items()}
+            self._last = frames
+            if self.on_frame is not None:
+                self.on_frame(states)
+            return frames
+        except Exception:                                  # noqa: BLE001
+            self.stats.drops += 1
+            return self._last or {u: self._blackout for u in self.ctx.rig.universes}
+
+    # -- the loop ---------------------------------------------------------
+
+    def run(self, seconds: Optional[float] = None, start_time: float = 0.0) -> FrameStats:
+        """Hold the clock until stopped, or for `seconds`."""
+        period = 1.0 / self.fps
+        clock = time.perf_counter
+        begin = clock()
+        self.stats = FrameStats(started=begin)
+        deadline = begin + period
+
+        while not self._stop.is_set():
+            if seconds is not None and clock() - begin >= seconds:
+                break
+
+            self.ctx.time = start_time + (clock() - begin)
+            for universe, frame in self.render_once().items():
+                self.output.send(universe, frame)
+            self.stats.frames += 1
+
+            # Coarse sleep, then spin. Sleeping the whole way inherits the OS
+            # timer's granularity; spinning the whole way burns a core.
+            slack = deadline - clock() - SPIN_MARGIN
+            if slack > 0:
+                time.sleep(slack)
+            while clock() < deadline:
+                pass
+
+            error = clock() - deadline
+            self.stats.last_error = error
+            self.stats.worst_error = max(self.stats.worst_error, abs(error))
+
+            # Advance by a FIXED period, never from now, so scheduling error
+            # cannot accumulate into drift. If a frame ran so long that the next
+            # deadline is already past, resynchronise and count the drop rather
+            # than sprinting to catch up -- catching up would send a burst of
+            # frames a fixture cannot act on anyway.
+            deadline += period
+            if clock() > deadline + period:
+                self.stats.drops += 1
+                deadline = clock() + period
+
+        return self.stats
+
+    def start(self, start_time: float = 0.0) -> None:
+        """Run the clock on its own thread."""
+        if self._thread is not None:
+            raise RuntimeError("runner already started")
+        self._stop.clear()
+        self._thread = threading.Thread(target=self.run, kwargs={"start_time": start_time},
+                                        name="dmx-output", daemon=True)
+        self._thread.start()
+
+    def stop(self, blackout: bool = True) -> FrameStats:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        if blackout:
+            # Leave the rig dark rather than frozen on whatever was last lit.
+            for universe in self.ctx.rig.universes:
+                try:
+                    self.output.send(universe, self._blackout)
+                except OSError:
+                    pass
+        return self.stats

@@ -20,6 +20,18 @@
 
   "ball": { "x": 4572, "y": 2743, "z": 4572 },
 
+  "_ball_radius_comment": [
+    "A mirror ball is a SOLID sphere, so it genuinely blocks a beam rather than",
+    "scattering all of it onward. The safety taper models that occlusion, and",
+    "that is most of why the ball poses were safe on a rig with no safety system",
+    "at all -- without it the taper would dim the show's signature look for no",
+    "reason.",
+    "",
+    "200 mm radius (a 16-inch ball) is an ESTIMATE. Measure the real one: too",
+    "large and the taper trusts an occlusion that is not there."
+  ],
+  "ball_radius": 200,
+
   "_apex_comment": [
     "The point directly above the ball that the aerial poses converge on. With a",
     "parachute rigged this is the canopy height and the beams land ON it and it",
