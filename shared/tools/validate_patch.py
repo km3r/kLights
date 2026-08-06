@@ -45,13 +45,19 @@ def validate(rows: list[dict]) -> tuple[list[str], list[str], list[str]]:
     warnings: list[str] = []
     info: list[str] = []
 
-    # Build channel occupancy map: dmx_channel -> fixture_name
-    occupied: dict[int, str] = {}
+    # Occupancy and gaps are tracked PER UNIVERSE. The same DMX channel in two
+    # different Art-Net universes is not a conflict — a single flat channel map
+    # would report a mixed-universe rig (e.g. a club house rig alongside ours)
+    # as one giant overlap.
+    occupied: dict[tuple[int, int], str] = {}          # (universe, channel) -> name
+    ranges_by_uni: dict[int, list[tuple[int, int, str]]] = {}   # uni -> [(start, end, name)]
 
-    fixture_ranges: list[tuple[int, int, str]] = []  # (start, end, name)
+    for line_no, row in enumerate(rows, start=2):   # +2: header occupies line 1
+        name = (row.get("name") or "").strip()
+        if not name:
+            errors.append(f"row {line_no}: missing 'name' column or empty name")
+            name = f"<unnamed row {line_no}>"
 
-    for row in rows:
-        name = row["name"]
         try:
             start = int(row["dmx_start"])
             count = int(row["channel_count"])
@@ -72,29 +78,41 @@ def validate(rows: list[dict]) -> tuple[list[str], list[str], list[str]]:
                 f"(universe {artnet_uni})"
             )
 
+        # One error per conflicting fixture, not one per overlapping channel —
+        # a 30-channel clash used to emit 30 near-identical lines.
+        clashes = sorted({
+            occupied[(artnet_uni, ch)]
+            for ch in range(start, end + 1)
+            if (artnet_uni, ch) in occupied
+        })
+        for other in clashes:
+            errors.append(
+                f"OVERLAP: {name} (universe {artnet_uni}, ch {start}–{end}) "
+                f"conflicts with {other}"
+            )
         for ch in range(start, end + 1):
-            if ch in occupied:
-                errors.append(
-                    f"OVERLAP: {name} (ch {ch}) conflicts with {occupied[ch]}"
-                )
-            else:
-                occupied[ch] = name
+            occupied.setdefault((artnet_uni, ch), name)
 
         if not row.get("gdtf_profile", "").strip():
             warnings.append(f"{name}: no GDTF profile set in patch sheet")
 
-        fixture_ranges.append((start, end, name))
+        ranges_by_uni.setdefault(artnet_uni, []).append((start, end, name))
 
-    # Gap detection — sort by start address
-    fixture_ranges.sort()
-    for i in range(len(fixture_ranges) - 1):
-        _, end_a, name_a = fixture_ranges[i]
-        start_b, _, name_b = fixture_ranges[i + 1]
+    # Gap detection — within each universe, by start address
+    gap_pairs: list[tuple[int, int, int, str, str]] = []
+    for uni in sorted(ranges_by_uni):
+        fixture_ranges = sorted(ranges_by_uni[uni])
+        for i in range(len(fixture_ranges) - 1):
+            _, end_a, name_a = fixture_ranges[i]
+            start_b, _, name_b = fixture_ranges[i + 1]
+            gap_pairs.append((uni, end_a, start_b, name_a, name_b))
+
+    for uni, end_a, start_b, name_a, name_b in gap_pairs:
         gap = start_b - end_a - 1
         if gap > 0:
             info.append(
-                f"Gap: {gap} unused channel(s) between {name_a} "
-                f"(ends {end_a}) and {name_b} (starts {start_b})"
+                f"Universe {uni}: gap of {gap} unused channel(s) between "
+                f"{name_a} (ends {end_a}) and {name_b} (starts {start_b})"
             )
 
     return errors, warnings, info
@@ -125,9 +143,10 @@ def print_summary(rows: list[dict], errors, warnings, info):
                 continue
             end = start + count - 1
             gdtf = row.get("gdtf_profile", "").strip() or "(no GDTF)"
+            name = (row.get("name") or "").strip() or "(unnamed)"
             print(
                 f"  ch {start:>3}–{end:<3}  {count:>2}ch  "
-                f"{row['name']:<35} {gdtf}"
+                f"{name:<35} {gdtf}"
             )
             total_channels += count
         print(f"  Total assigned channels: {total_channels}")

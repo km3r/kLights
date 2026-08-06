@@ -22,7 +22,6 @@ from xml.sax.saxutils import escape
 HERE = os.path.dirname(os.path.abspath(__file__))   # shared/tools/
 SHARED = os.path.dirname(HERE)                      # shared/
 OUT_DIR = os.path.join(SHARED, "gdtf")
-FIXTURE_LIB = os.path.join(SHARED, "fixtures")      # source of truth for .qxf
 
 # ── Attribute catalogue ───────────────────────────────────────────────────────
 # name -> (Pretty, "FeatureGroup.Feature")
