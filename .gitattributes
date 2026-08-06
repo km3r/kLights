@@ -1,0 +1,30 @@
+# Normalize line endings in the repository to LF.
+#
+# Why this exists: this project is edited from both Windows and macOS, and
+# QLC+ rewrites the whole .qxw on every save using platform line endings.
+# Normalization currently happens to work because this machine's
+# core.autocrlf handles it, but that is per-machine config, not a property
+# of the repo - a clone on a differently-configured machine would start
+# committing CRLF and turn every one-scene change into a whole-file diff.
+#
+# With `text` set here, Git normalizes CRLF -> LF on `git add` regardless of
+# local config, so it no longer matters what QLC+ or a Mac editor wrote.
+
+* text=auto
+
+# QLC+ workspaces and fixture definitions are XML - always text.
+*.qxw text
+*.qxf text
+
+# Wavefront OBJ/MTL are ASCII.
+*.obj text
+*.mtl text
+
+# GDTF is a ZIP container; Blender scenes and renders are binary.
+*.gdtf binary
+*.blend binary
+*.blend1 binary
+*.ply  binary
+*.glb  binary
+*.pdf  binary
+*.png  binary
