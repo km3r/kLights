@@ -1,0 +1,70 @@
+{
+  "mode": "venue",
+  "qxw": "despacio.qxw",
+  "unreachable": [
+    {
+      "head": 3,
+      "pose": "orbit_m90",
+      "known": true,
+      "severity": "significant",
+      "errorBearingDeg": 18.3,
+      "errorElevDeg": 0.0,
+      "requestedBearingDeg": -153.3,
+      "achievedBearingDeg": -135.0,
+      "requestedElevDeg": -10.5,
+      "achievedElevDeg": -10.5,
+      "functionIds": [
+        54,
+        84
+      ]
+    },
+    {
+      "head": 0,
+      "pose": "orbit_m90",
+      "known": true,
+      "severity": "significant",
+      "errorBearingDeg": 17.2,
+      "errorElevDeg": 0.0,
+      "requestedBearingDeg": -152.2,
+      "achievedBearingDeg": -135.0,
+      "requestedElevDeg": -170.9,
+      "achievedElevDeg": -170.9,
+      "functionIds": [
+        55,
+        85
+      ]
+    },
+    {
+      "head": 1,
+      "pose": "orbit_m90",
+      "known": true,
+      "severity": "significant",
+      "errorBearingDeg": 17.2,
+      "errorElevDeg": 0.0,
+      "requestedBearingDeg": -152.2,
+      "achievedBearingDeg": -135.0,
+      "requestedElevDeg": 4.2,
+      "achievedElevDeg": 4.2,
+      "functionIds": [
+        52,
+        82
+      ]
+    },
+    {
+      "head": 2,
+      "pose": "orbit_m90",
+      "known": true,
+      "severity": "significant",
+      "errorBearingDeg": 13.0,
+      "errorElevDeg": 0.0,
+      "requestedBearingDeg": -148.0,
+      "achievedBearingDeg": -135.0,
+      "requestedElevDeg": -181.4,
+      "achievedElevDeg": -181.4,
+      "functionIds": [
+        53,
+        83
+      ]
+    }
+  ]
+}

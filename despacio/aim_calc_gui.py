@@ -21,7 +21,7 @@ CONFIG_PATH = HERE / "despacio_config.json"
 AIM_CALC = HERE / "aim_calc.py"
 PREFLIGHT = HERE / "preflight.py"
 
-MODES = ["table", "venue"]
+MODES = ["table", "venue", "hung"]
 HEAD_LABELS = [
     "Head 1 (ID0, back-right, addr1)",
     "Head 2 (ID1, front-right, addr12)",

@@ -1,0 +1,614 @@
+/* despacio mobile virtual console -- dark, touch-first, safe-area aware.
+   No build step, no framework -- plain CSS loaded by index.html. */
+
+:root {
+  --bg: #101114;
+  --bg-raised: #1b1d22;
+  --bg-card: #202329;
+  --border: #2e323b;
+  --text: #eef0f3;
+  --text-dim: #9aa0ac;
+  --accent: #5b8cff;
+  --accent-dim: #35507f;
+  --danger: #e5484d;
+  --danger-dim: #6b2224;
+  --warn: #e0a72f;
+  --ok: #3fbf6f;
+  --tile-h: 56px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* `[hidden]` and a later class selector like `.banner { display: flex }`
+   are equal specificity, so without `!important` the class rule wins and
+   `.hidden = true` silently fails to hide the element. Global so this
+   can't bite any future widget the same way it bit the banner. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior-y: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button { font-family: inherit; color: inherit; }
+
+/* The blanket user-select:none above is right for a touch console (no text
+   to select), but it also blocks selecting/editing the one real text input
+   on the page -- the tempo panel's manual ms entry -- which can stop iOS
+   Safari from placing a caret in it at all. */
+input { user-select: text; -webkit-user-select: text; }
+
+/* ---------------------------------------------------------------- banner */
+
+.banner {
+  /* Normal document flow, inside the sticky header (see index.html) --
+     NOT position:fixed. Fixed positioning doesn't push .main's content
+     down, so the banner just overlapped whatever was underneath it. */
+  margin: 0 10px 8px;
+  background: var(--danger-dim);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+.banner button {
+  flex: none;
+  background: var(--danger);
+  border: none;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.banner.warn { background: #3a2f12; border-color: var(--warn); }
+.banner.warn button { background: var(--warn); color: #201800; }
+.banner.blackout { background: #000; border-color: var(--danger); font-weight: 700; }
+.banner.blackout button { background: var(--danger); }
+/* No button -- there's nothing to press here, it clears itself once the
+   socket reconnects (see setConnState()/updateBanners() in app.js). */
+.banner.disconnected { background: var(--bg-raised); border-color: var(--text-dim); }
+
+/* ----------------------------------------------------------------- header */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding-top: var(--safe-top);
+  background: rgba(16,17,20,.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+.conn-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex: none;
+  transition: background .2s;
+}
+.conn-dot.connecting { background: var(--warn); }
+.conn-dot.connected { background: var(--ok); }
+
+.header-widgets {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* app.js adds this class to Master Dimmer's wrapper, but with no rule here
+   it was just a flex item at its default `flex: 0 1 auto` -- the range
+   input's intrinsic width, not the full-width master fader the header
+   implies. */
+.header-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.blackout-btn {
+  flex: none;
+  background: var(--danger);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .04em;
+}
+.blackout-btn:active { filter: brightness(1.3); }
+/* .w-tile.active (:root .w-tile.active, two classes) is defined later in
+   this file and would otherwise win the cascade tie against a plain
+   `.blackout-btn.active` (also two classes, but earlier in source order) --
+   painting an ENGAGED blackout the same accent blue as any other lit tile,
+   the one state where that's actively misleading. The `button` qualifier
+   here bumps specificity just enough to win regardless of order. */
+button.blackout-btn.active {
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px #fff inset;
+}
+
+.park-badge {
+  margin: 0 10px 8px;
+  padding: 6px 10px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.park-badge button {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Pose reachability detail (tap a tile with the [data-aim-warn] marker below
+   to populate this) -- shares the park-badge shape/rhythm but its own
+   colour and element, since it's an unrelated concern from MH Dim parking
+   and both can be relevant at once. */
+.aim-badge {
+  background: rgba(224, 167, 47, .16);
+  border-color: var(--warn);
+}
+.aim-badge.severity-significant {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+
+/* Widget-count mismatch (finishSeeding()'s missing-reply check) -- the
+   despacio.qxw loaded in QLC+ doesn't match this generated ui_config.js.
+   Same shape as park-badge/aim-badge; danger-toned since it means some
+   controls on screen may not correspond to anything real. */
+.config-badge {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+.config-badge button { background: var(--danger); }
+
+/* ------------------------------------------------------------------- main */
+
+.main {
+  /* NOT min-height: 100vh -- under the sticky header (which takes real
+     space above .main in document flow), that guaranteed the page always
+     scrolled by the header's height even on a tab short enough to need no
+     scrolling at all. */
+  min-height: calc(100vh - 52px - var(--safe-top));
+  padding: 10px 10px calc(80px + var(--safe-bottom));
+}
+
+.section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+  margin: 2px 4px 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.grid.grid-lg { grid-template-columns: repeat(2, 1fr); }
+
+/* --------------------------------------------------------------- widgets */
+
+.w-tile, .w-swatch, .w-flash {
+  min-height: var(--tile-h);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px 8px;
+  line-height: 1.25;
+}
+.grid-lg .w-tile { min-height: 68px; font-size: 15px; }
+
+.w-tile.active, .w-swatch.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.w-tile:active, .w-swatch:active, .w-flash:active {
+  filter: brightness(1.25);
+}
+/* Explicit top/left -- without them this is `position: absolute` with no
+   offsets, which places generated content at its normal-flow static
+   position: right after the caption inside a centred flex tile, i.e.
+   overlapping it, not in a free corner. */
+.w-tile[data-dims]::after {
+  content: '☀';
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 10px;
+  opacity: .6;
+}
+.w-tile, .w-swatch, .w-flash { position: relative; }
+
+/* Pose reachability marker (aim_calc.py's aim_report.json, via
+   gen_webui_config.py's aimWarnings -- see app.js's aimWarningsByCaption).
+   Corner-positioned (unlike the inline [data-dims] sun above) so a tile can
+   carry both markers without them colliding. Severity accent matches
+   .aim-badge above -- amber for "minor" (routine clamp, tap for detail),
+   red for "significant" (a real reachability problem, not just an
+   expected-and-graceful clamp). Applies to .w-swatch/.w-flash too, not just
+   .w-tile -- a Statics colour or a Flash action can carry the [data-aim-warn]
+   attribute exactly like any other button (renderTile() sets it regardless
+   of tile style), so the marker needs to actually render there as well. */
+.w-tile[data-aim-warn]::before,
+.w-swatch[data-aim-warn]::before,
+.w-flash[data-aim-warn]::before {
+  content: '⚠';
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 10px;
+  opacity: .85;
+  color: var(--warn);
+}
+.w-tile[data-aim-warn="significant"]::before,
+.w-swatch[data-aim-warn="significant"]::before,
+.w-flash[data-aim-warn="significant"]::before {
+  color: var(--danger);
+}
+
+.w-swatch {
+  color: #111;
+  text-shadow: 0 1px 1px rgba(255,255,255,.25);
+  font-weight: 700;
+}
+.w-swatch.active { box-shadow: 0 0 0 3px var(--accent) inset; }
+
+.w-flash {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+.w-flash.pressed { background: var(--danger); filter: brightness(1.2); }
+
+.unsorted .w-tile { border-style: dashed; }
+
+/* sliders */
+
+.w-slider-wrap {
+  padding: 4px 6px 2px;
+}
+.w-slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.w-slider-label .val { color: var(--text); font-variant-numeric: tabular-nums; }
+input[type=range].w-slider {
+  width: 100%;
+  height: 34px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+}
+input[type=range].w-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent) var(--fill,50%), var(--bg-raised) var(--fill,50%));
+  border: 1px solid var(--border);
+}
+input[type=range].w-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px; height: 28px;
+  margin-top: -11px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 3px solid var(--accent);
+}
+input[type=range].w-slider::-moz-range-track {
+  height: 8px; border-radius: 4px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+}
+input[type=range].w-slider::-moz-range-progress {
+  height: 8px; border-radius: 4px; background: var(--accent);
+}
+input[type=range].w-slider::-moz-range-thumb {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--text); border: 3px solid var(--accent);
+}
+
+.slider-lg .w-slider-label { font-size: 14px; }
+.slider-lg input[type=range].w-slider { height: 44px; }
+.slider-lg input[type=range].w-slider::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; }
+.slider-lg input[type=range].w-slider::-webkit-slider-thumb { width: 36px; height: 36px; margin-top: -13px; }
+
+/* knobs (setup tab -- rendered as compact vertical sliders, labeled) */
+.knob-grid { grid-template-columns: repeat(4, 1fr); }
+.w-knob-wrap { text-align: center; }
+.w-knob-wrap .w-slider-label { justify-content: center; gap: 6px; }
+
+/* +/-1 / +/-5 nudge row under each Pan/Tilt knob (renderSlider()'s
+   opts.nudge) -- the knob's own range input spans the full 0-255 DMX range
+   in ~80px, far too coarse for fine aim trim on its own. */
+.w-knob-nudge {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.w-knob-nudge button {
+  flex: 1;
+  min-height: 32px;
+  min-width: 0;
+  padding: 0 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.w-knob-nudge button:active { filter: brightness(1.3); }
+
+/* --------------------------------------------------------------- cuelist */
+
+.cuelist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* aim-warning marker (renderCueListWidget()) -- a small button rather than
+   the corner-overlay [data-aim-warn] renderTile() uses, since a cue list has
+   no tile surface to overlay it on. Same severity accent as .w-tile's. */
+.cuelist-aim-warn {
+  align-self: flex-start;
+  border: 1px solid var(--warn);
+  background: rgba(224, 167, 47, .16);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.cuelist-aim-warn[data-aim-warn="significant"] {
+  border-color: var(--danger);
+  background: var(--danger-dim);
+}
+.cuelist-transport {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr 1fr;
+  gap: 8px;
+}
+.cuelist-transport button {
+  min-height: 48px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-weight: 700;
+  font-size: 13px;
+}
+.cuelist-transport .go {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-size: 16px;
+}
+.cuelist-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.cuelist-step {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+.cuelist-step.current {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 700;
+}
+.cuelist-step .hold { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* ----------------------------------------------------------------- tempo */
+
+.tempo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.tempo-pad {
+  width: 100%;
+  min-height: 88px;
+  border-radius: 14px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.tempo-pad:active { filter: brightness(1.3); }
+.tempo-readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.tempo-readout b { color: var(--text); font-size: 16px; }
+.tempo-nudge {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.tempo-nudge button {
+  flex: 1;
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-weight: 700;
+  font-size: 12px;
+}
+.tempo-manual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+.tempo-manual-input {
+  width: 100px;
+  min-height: 40px;
+  text-align: center;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.tempo-manual span { color: var(--text-dim); font-size: 12px; }
+
+/* --------------------------------------------------------------- tabbar */
+
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  background: rgba(16,17,20,.96);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+}
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px 6px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.tab .icon { font-size: 18px; line-height: 1; }
+.tab.active { color: var(--accent); }
+
+/* --------------------------------------------------------- setup notes */
+
+.setup-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 0 4px 8px;
+  line-height: 1.4;
+}
+.generated-footer {
+  opacity: .6;
+  font-size: 11px;
+  text-align: center;
+  padding-top: 4px;
+}
+
+/* ------------------------------------------------------------------ toast */
+
+/* Brief, dismiss-itself confirmation that a press was dropped (see send()
+   in app.js) -- above the tabbar so it's never covered by it. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(72px + var(--safe-bottom));
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  text-align: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+
+/* --------------------------------------------------------------- toggle */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 8px;
+  font-size: 13px;
+}
+.toggle-row .switch {
+  width: 42px; height: 24px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.toggle-row .switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform .15s, background .15s;
+}
+.toggle-row .switch.on { border-color: var(--accent); }
+.toggle-row .switch.on::after { transform: translateX(18px); background: var(--accent); }
+
+@media (prefers-color-scheme: light) {
+  /* This UI is deliberately dark-only -- a booth/venue control surface,
+     not a general document. Keep it readable in a dark room regardless of
+     OS theme rather than switching to a light variant. */
+}

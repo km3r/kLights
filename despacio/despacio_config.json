@@ -1,21 +1,25 @@
 {
-  "mount_mode": "table",
+  "mount_mode": "venue",
   "room_width": 9144.0,
   "room_depth": 9144.0,
   "head_inset": 500.0,
   "head_height": [
-    3048.0,
-    3048.0,
-    3048.0,
-    3048.0
+    2971.0,
+    2971.0,
+    2971.0,
+    2971.0
   ],
-  "ball_height": 3048.0,
+  "ball_height": 2743.0,
   "ball_x": 4572.0,
   "ball_z": 4572.0,
+  "apex_height": 4600.0,
+  "floor_sweep_radius": 2500.0,
+  "canopy_sweep_radius": 2000.0,
+  "elev_extreme_deg": 90.0,
   "calibrated_ball_dmx": {
     "table": [
       [
-        22,
+        215,
         0
       ],
       [
@@ -32,6 +36,24 @@
       ]
     ],
     "venue": [
+      [
+        47,
+        69
+      ],
+      [
+        126,
+        69
+      ],
+      [
+        42,
+        73
+      ],
+      [
+        133,
+        68
+      ]
+    ],
+    "hung": [
       null,
       null,
       null,
@@ -53,9 +75,15 @@
     ],
     "venue": [
       false,
+      true,
       false,
-      false,
-      false
+      true
+    ],
+    "hung": [
+      true,
+      true,
+      true,
+      true
     ]
   },
   "tilt_invert": {
@@ -66,6 +94,12 @@
       false
     ],
     "venue": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "hung": [
       false,
       false,
       false,
