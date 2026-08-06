@@ -1,0 +1,102 @@
+{
+  "_comment": [
+    "WHAT IS PLUGGED IN. Selects units from shared/inventory.json and gives each",
+    "one an address, a position and a set of tags. It does not describe the",
+    "hardware (that is the .qxf), the room (venue.json), or what was measured on",
+    "the night (calibration.json).",
+    "",
+    "Looks reference TAGS, never fixture ids or names. That is what lets a look",
+    "built for these four heads run on a club rig with eight.",
+    "",
+    "Addresses match events/despacio/patch_sheet.csv as the show ran. 'position'",
+    "is in millimetres, y up, origin at the room's front-left floor corner --",
+    "the same frame venue.json uses. A fixture with a position becomes a",
+    "geometry head, in file order.",
+    "",
+    "'hold' pins a channel every single frame. Reset is held at 0 because this",
+    "fixture treats 250-255 as a hold-to-reset command, and a stuck LTP value",
+    "there once put every head into a permanent reset loop."
+  ],
+
+  "name": "despacio",
+  "mount_mode": "venue",
+
+  "fixtures": [
+    {
+      "id": 0,
+      "name": "Moving Head #1",
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "mode": "11 Channel",
+      "universe": 0,
+      "address": 1,
+      "tags": ["movers", "corner movers"],
+      "position": { "x": 8644, "y": 2971, "z": 8644 },
+      "hold": { "reset": 0, "Auto/Sound Mode": 0 },
+      "notes": "corner: back-right"
+    },
+    {
+      "id": 1,
+      "name": "Moving Head #2",
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "mode": "11 Channel",
+      "universe": 0,
+      "address": 12,
+      "tags": ["movers", "corner movers"],
+      "position": { "x": 8644, "y": 2971, "z": 500 },
+      "hold": { "reset": 0, "Auto/Sound Mode": 0 },
+      "notes": "corner: front-right"
+    },
+    {
+      "id": 2,
+      "name": "Moving Head #3",
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "mode": "11 Channel",
+      "universe": 0,
+      "address": 23,
+      "tags": ["movers", "corner movers"],
+      "position": { "x": 500, "y": 2971, "z": 500 },
+      "hold": { "reset": 0, "Auto/Sound Mode": 0 },
+      "notes": "corner: front-left"
+    },
+    {
+      "id": 3,
+      "name": "Moving Head #4",
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "mode": "11 Channel",
+      "universe": 0,
+      "address": 34,
+      "tags": ["movers", "corner movers"],
+      "position": { "x": 500, "y": 2971, "z": 8644 },
+      "hold": { "reset": 0, "Auto/Sound Mode": 0 },
+      "notes": "corner: back-left"
+    },
+    {
+      "id": 4,
+      "name": "Pinspot #1",
+      "manufacturer": "UKing",
+      "model": "ZQ-B93 Pinspot RGBW",
+      "mode": "6-channel",
+      "universe": 0,
+      "address": 45,
+      "tags": ["pinspots"],
+      "hold": { "Total function control": 255, "Auto FX": 0 },
+      "notes": "Channel 0 is a mode selector, not a dimmer. Confirmed on hardware 2026-08-01: the usable band is 240-255 (RGBW On); the .qxf's 9-134 White Dimmer band does not behave as a dimmer. Holding it at 255 every frame means the fixture is always in RGBW mode and brightness comes entirely from the R/G/B/W channels, which do behave linearly. Held by channel NAME because no generic role fits a mode selector."
+    },
+    {
+      "id": 5,
+      "name": "Pinspot #2",
+      "manufacturer": "UKing",
+      "model": "ZQ-B93 Pinspot RGBW",
+      "mode": "6-channel",
+      "universe": 0,
+      "address": 51,
+      "tags": ["pinspots"],
+      "hold": { "Total function control": 255, "Auto FX": 0 },
+      "notes": "See Pinspot #1."
+    }
+  ]
+}

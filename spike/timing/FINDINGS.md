@@ -74,6 +74,50 @@ marginally *worse* than D. That is the correct result, not noise:
 `SetPriorityClass` lifts every thread in the process equally, including the ones
 competing for the GIL. Don't reach for it.
 
+## Frame rate: 40 fps is a wire limit, not a software one
+
+Worth recording because the 40 in this document looks like a tuning choice and
+is not. It also was never a QLC+ limit — QLC+ ticks at **50 Hz**
+(`MasterTimer::s_frequency = 50` in `qlcplus/engine/src/mastertimer.cpp:44`,
+overridable via the `mastertimer/frequency` setting).
+
+Three separate ceilings, only one of which binds:
+
+| layer | ceiling |
+|---|---|
+| Python output loop | ~2000 Hz measured |
+| **DMX512 wire, full universe** | **~44 Hz** ← binding |
+| The fixtures themselves | lower still |
+
+Rate sweep, ~24 s each, `--switch-interval 0.5`, no contention. Frame counts
+were exact at every rate (30001 frames in 30 s at 1000 fps):
+
+| rate | p99 \|err\| | max \|err\| | drops |
+|---|---|---|---|
+| 100 fps | 0.006 ms | 0.541 ms | 0 |
+| 500 fps | 0.001 ms | 0.085 ms | 0 |
+| 1000 fps | 0.000 ms | 0.070 ms | 0 |
+| 2000 fps | 0.000 ms | 0.445 ms | 0 |
+
+The DMX512 ceiling is arithmetic: 250 kbaud, 11 bits per slot, 513 slots
+(start code + 512 channels) = 5643 bits = 22.57 ms, plus Break (≥92 µs) and
+Mark After Break (≥12 µs) ≈ 22.7 ms → **~44 Hz for a full universe**. Short
+frames are faster in principle (despacio's 56 channels ≈ 2.6 ms), but cheap
+fixtures often assume conventional timing, and the Art-Net spec recommends
+≤44 Hz per universe precisely because nodes convert to physical DMX.
+
+**Spend the headroom on width, not rate.** Ten universes at 44 Hz is 440
+packets/second against the ~2000/s already demonstrated. A club-scale check —
+44 fps, 46 fixtures evaluated per frame, full 512-channel frame, 2 GIL threads
+*and* 2 external processes — gave p99 0.020 ms, max 0.034 ms, 0 drops. Per-frame
+evaluation cost at 8× the despacio rig was invisible, which is the budget F4's
+safety taper draws on.
+
+**Frame rate is not what made motion look steppy.** That came from stepped
+*scenes* jumping between stored DMX positions; F6's continuous interpolation
+fixes it at 40 Hz. 25 ms between updates is already well inside the MJ-OS-018's
+own pan/tilt-speed smoothing and its tens-of-milliseconds mechanical response.
+
 ## Design consequences for the engine
 
 - Set both knobs at engine startup, before any thread starts. Treat them as part

@@ -1,0 +1,67 @@
+{
+  "_comment": [
+    "THE ROOM. Everything here is a property of the space, not of the rig -- so a",
+    "new room is a new venue file and nothing else changes. Millimetres, y up,",
+    "origin at the front-left floor corner.",
+    "",
+    "crowd_zone and canopy are consumed by the beam-aware intensity taper (F4).",
+    "They are the answer to the two things that actually went wrong on the night:",
+    "beams caught people in the eye, and the parachute clipped the aerials' throw.",
+    "",
+    "MEASURE THESE ON SITE. The numbers below are the despacio room as built, and",
+    "the head band is a stated assumption rather than a measurement -- see its",
+    "own comment."
+  ],
+
+  "name": "despacio room",
+  "width": 9144,
+  "depth": 9144,
+  "height": 4600,
+
+  "ball": { "x": 4572, "y": 2743, "z": 4572 },
+
+  "_apex_comment": [
+    "The point directly above the ball that the aerial poses converge on. With a",
+    "parachute rigged this is the canopy height and the beams land ON it and it",
+    "glows; without one it is the ceiling."
+  ],
+  "apex_height": 4600,
+
+  "_crowd_zone_comment": [
+    "Where people stand, and how high their eyes are. The taper drives intensity",
+    "to zero for any beam whose cone enters the head band inside this footprint,",
+    "with a soft edge outside it.",
+    "",
+    "head_band_min/max is 1.4-2.0 m: roughly seated-tall to standing-tall. It is",
+    "a judgement call, not a measurement, and it is deliberately generous at the",
+    "top -- someone on someone's shoulders is exactly who gets hit. Raising the",
+    "floor of the band buys back throw at the cost of catching shorter people.",
+    "",
+    "The footprint is inset from the walls because the corners hold the heads",
+    "themselves and nobody stands in them."
+  ],
+  "crowd_zone": {
+    "min_x": 1200, "max_x": 7944,
+    "min_z": 1200, "max_z": 7944,
+    "head_band_min": 1400,
+    "head_band_max": 2000
+  },
+
+  "_canopy_comment": [
+    "The parachute. It is a real optical surface -- beams terminate on it and it",
+    "re-radiates diffusely -- so it both LIMITS throw and IS a target. This is",
+    "what clipped the aerials on the night: the poses were computed as if the",
+    "beams kept going.",
+    "",
+    "Set enabled to false when no canopy is rigged; the aerial poses then reach",
+    "the ceiling instead."
+  ],
+  "canopy": {
+    "enabled": true,
+    "height": 4600,
+    "radius": 2000,
+    "center": { "x": 4572, "z": 4572 }
+  },
+
+  "elev_extreme_deg": 90
+}
