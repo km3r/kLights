@@ -40,3 +40,4 @@ previz/unreal/.vs/
 # it is committed on purpose so a show laptop needs only Python and a checkout,
 # with no Node toolchain at the venue. Rebuild with `cd ui && npm run build`.
 ui/node_modules/
+ui/tsconfig.tsbuildinfo
