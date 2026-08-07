@@ -98,10 +98,20 @@ export interface DriftRow {
   significant: boolean;
 }
 
+export interface TaperState {
+  /** What a beam whose core is over the crowd is dimmed TO. 0 is a hard guard
+   *  and costs every floor-sweep pose; the despacio policy is 0.5. */
+  crowd_level: number;
+  margin_deg: number;
+  slew_per_second: number;
+  enabled: boolean;
+}
+
 export interface EngineState {
   type: "state";
   rev: number;
   event: string;
+  taper: TaperState;
   clock: ClockState;
   auto: AutoState;
   looks: { name: string; manual_only: boolean }[];
@@ -149,6 +159,13 @@ export type Command =
   | { type: "capture"; fixture: string; target: number[]; label: string }
   | { type: "capture_clear"; fixture?: string }
   | { type: "solve"; write?: boolean }
-  | { type: "drift"; readings: number[][] };
+  | { type: "drift"; readings: number[][] }
+  | { type: "venue"; crowd?: Partial<{
+        min_x: number; max_x: number; min_z: number; max_z: number;
+        head_band_min: number; head_band_max: number;
+      }>; canopy?: Partial<{ enabled: boolean; height: number; radius: number }> }
+  | { type: "taper"; crowd_level?: number; margin_deg?: number;
+      slew_per_second?: number; enabled?: boolean }
+  | { type: "venue_save" };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";

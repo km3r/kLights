@@ -6,6 +6,7 @@ import { ColorTab } from "./tabs/Color";
 import { MoveTab } from "./tabs/Move";
 import { RigTab } from "./tabs/Rig";
 import { SetupTab } from "./tabs/Setup";
+import { VenueTab } from "./tabs/Venue";
 import type { EngineState } from "./types";
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
   { id: "color", label: "Color", glyph: "●" },
   { id: "move", label: "Move", glyph: "↔" },
   { id: "rig", label: "Rig", glyph: "▤" },
+  { id: "venue", label: "Venue", glyph: "⌂" },
   { id: "setup", label: "Setup", glyph: "⚙" },
 ] as const;
 
@@ -78,6 +80,8 @@ export default function App() {
           <MoveTab state={state} send={send} />
         ) : tab === "rig" ? (
           <RigTab state={state} />
+        ) : tab === "venue" ? (
+          <VenueTab state={state} send={send} />
         ) : (
           <SetupTab state={state} send={send} name={name} setName={setName} />
         )}

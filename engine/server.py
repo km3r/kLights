@@ -36,7 +36,7 @@ import socket
 import threading
 import time
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -49,6 +49,7 @@ from . import motion
 from . import rig as rigmod
 from . import safety as safetymod
 from . import state as statemod
+from . import venue as venuemod
 from .output import ArtNetOutput, NullOutput
 from .runner import Runner
 from .websocket import WebSocket, WebSocketClosed, WebSocketError
@@ -95,7 +96,20 @@ class ShowController:
         if errors:
             raise ValueError("rig does not validate:\n  " + "\n  ".join(errors))
 
-        self.ctx = statemod.EvalContext(rig=self.rig, venue=self.rig.venue)
+        # A taper policy saved from the UI has to survive a restart, or saving
+        # it is theatre. venue.json is the right home: the policy is a property
+        # of the room and the crowd in it, not of the rig.
+        taper_cfg = json.loads(
+            (self.event_dir / "venue.json").read_text(encoding="utf-8")
+        ).get("taper", {})
+        taper = safetymod.TaperConfig(
+            crowd_level=float(taper_cfg.get("crowd_level", 0.5)),
+            margin_deg=float(taper_cfg.get("margin_deg", 6.0)),
+            slew_per_second=float(taper_cfg.get("slew_per_second", 2.0)),
+            enabled=bool(taper_cfg.get("enabled", True)))
+
+        self.ctx = statemod.EvalContext(rig=self.rig, venue=self.rig.venue,
+                                        taper=taper)
         self.clock = clockmod.MasterClock(bpm=bpm, now=0.0)
         self.setlist = default_setlist()
         self.palette = default_palette()
@@ -371,6 +385,102 @@ class ShowController:
         moved = sum(1 for d in drifts if d.significant)
         self.note(f"drift check: {moved} head(s) moved 3 deg or more")
 
+    # venue and taper policy ------------------------------------------------
+
+    def _cmd_venue(self, m: dict, now: float) -> None:
+        """Edit the crowd zone and canopy live, from the phone at load-in.
+
+        Deliberately limited to what does NOT touch the geometry. The crowd
+        zone, the head band and the canopy feed only the safety taper, so they
+        can change between frames and take effect immediately -- which is what
+        makes tuning them at load-in possible at all, since you can stand in the
+        room and watch the beams respond.
+
+        The ball position and the mount mode are not editable here. Both are
+        baked into every head's calibration back-solve, so changing one means
+        re-deriving the rig, and doing that mid-show would move every aim at
+        once. Edit venue.json and restart for those.
+        """
+        venue = self.rig.venue
+        if venue is None:
+            raise ValueError("this event has no venue")
+        crowd = venue.crowd_zone
+        canopy = venue.canopy
+
+        if "crowd" in m and crowd is not None:
+            c = m["crowd"]
+            box = crowd.footprint
+            band_min = float(c.get("head_band_min", crowd.head_band_min))
+            band_max = float(c.get("head_band_max", crowd.head_band_max))
+            if band_min >= band_max:
+                raise ValueError("head band min must be below max")
+            crowd = venuemod.CrowdZone(
+                footprint=venuemod.Box(
+                    float(c.get("min_x", box.min_x)), float(c.get("max_x", box.max_x)),
+                    band_min, band_max,
+                    float(c.get("min_z", box.min_z)), float(c.get("max_z", box.max_z))),
+                head_band_min=band_min, head_band_max=band_max)
+
+        if "canopy" in m and canopy is not None:
+            k = m["canopy"]
+            canopy = replace(canopy,
+                             enabled=bool(k.get("enabled", canopy.enabled)),
+                             height=float(k.get("height", canopy.height)),
+                             radius=float(k.get("radius", canopy.radius)))
+
+        self.rig.venue = replace(venue, crowd_zone=crowd, canopy=canopy)
+        self.ctx.venue = self.rig.venue
+        self.note("venue updated (not yet saved)")
+
+    def _cmd_taper(self, m: dict, now: float) -> None:
+        """The taper policy: how far a beam over the crowd is dimmed, and how
+        smoothly. `crowd_level` 0 restores a hard guard at the cost of every
+        floor-sweep pose."""
+        cfg = self.ctx.taper
+        self.ctx.taper = replace(
+            cfg,
+            crowd_level=max(0.0, min(1.0, float(m.get("crowd_level", cfg.crowd_level)))),
+            margin_deg=max(0.0, float(m.get("margin_deg", cfg.margin_deg))),
+            slew_per_second=max(0.0, float(m.get("slew_per_second", cfg.slew_per_second))),
+            enabled=bool(m.get("enabled", cfg.enabled)))
+        if not self.ctx.taper.enabled:
+            self.note("SAFETY TAPER DISABLED -- beams are no longer dimmed over the crowd")
+
+    def _cmd_venue_save(self, m: dict, now: float) -> None:
+        """Write the live venue back to venue.json, preserving its comments.
+
+        The file is full of `_comment` blocks explaining why each number is what
+        it is -- the head band's reasoning, why the ball radius is an estimate.
+        Rewriting it from the dataclass would throw all of that away, so this
+        edits the parsed JSON in place and leaves every key it does not own.
+        """
+        path = self.event_dir / "venue.json"
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+        venue = self.rig.venue
+        if venue is None:
+            raise ValueError("this event has no venue")
+
+        if venue.crowd_zone is not None:
+            box = venue.crowd_zone.footprint
+            cfg.setdefault("crowd_zone", {}).update({
+                "min_x": box.min_x, "max_x": box.max_x,
+                "min_z": box.min_z, "max_z": box.max_z,
+                "head_band_min": venue.crowd_zone.head_band_min,
+                "head_band_max": venue.crowd_zone.head_band_max})
+        if venue.canopy is not None:
+            cfg.setdefault("canopy", {}).update({
+                "enabled": venue.canopy.enabled,
+                "height": venue.canopy.height,
+                "radius": venue.canopy.radius})
+        taper = self.ctx.taper
+        cfg["taper"] = {"crowd_level": taper.crowd_level,
+                        "margin_deg": taper.margin_deg,
+                        "slew_per_second": taper.slew_per_second,
+                        "enabled": taper.enabled}
+
+        path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        self.note(f"saved {path.name}")
+
     def _cmd_hello(self, m: dict, now: float) -> None:
         pass                          # name is set by the connection handler
 
@@ -442,6 +552,10 @@ class ShowController:
             "color_overrides": {k: list(v) for k, v in self.color_overrides.items()},
             "fixtures": fixtures,
             "venue": venue_summary(self.rig.venue),
+            "taper": {"crowd_level": self.ctx.taper.crowd_level,
+                      "margin_deg": self.ctx.taper.margin_deg,
+                      "slew_per_second": self.ctx.taper.slew_per_second,
+                      "enabled": self.ctx.taper.enabled},
             "presence": [c.public(now) for c in self.clients.values()],
             "stats": {"fps": round(stats.effective_fps, 2),
                       "frames": stats.frames,

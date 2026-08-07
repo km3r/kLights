@@ -56,8 +56,12 @@ export function Fader({ value, onInput, onCommit, label, format }: {
 }) {
   return (
     <div className="master">
-      {label && <span className="small muted">{label}</span>}
+      {label && <span className="small muted" aria-hidden="true">{label}</span>}
+      {/* The visible text is a sibling span, not a <label>, so the control
+          needs its own accessible name — otherwise it is an anonymous slider
+          to a screen reader, and unfindable by anything but position. */}
       <input type="range" min={0} max={1} step={0.01} value={value}
+             aria-label={label}
              onChange={(e) => onInput(Number(e.target.value))}
              onPointerUp={(e) => onCommit?.(Number((e.target as HTMLInputElement).value))}
              onKeyUp={(e) => onCommit?.(Number((e.target as HTMLInputElement).value))} />

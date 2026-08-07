@@ -26,8 +26,6 @@ events/*/backups/
 
 # Unreal generated trees. The .uproject, Config/ and Content/Python/ are source;
 # everything else the editor writes is derived from them and is gigabytes of it.
-# Content/ itself is NOT ignored — the level is built by script, so if a .umap
-# ever lands there it is regenerable, but hand-made assets would belong in git.
 previz/unreal/Binaries/
 previz/unreal/Build/
 previz/unreal/DerivedDataCache/
@@ -35,6 +33,14 @@ previz/unreal/Intermediate/
 previz/unreal/Saved/
 previz/unreal/.vs/
 *.sln
+
+# The previz level and its materials are rebuilt in full by build_level.py from
+# venue.json/rig.json/calibration.json, so they are output, not source — and
+# they are binary, so tracking them would churn a .umap and six .uasset files on
+# every rebuild. A fresh clone opens to an empty level; run build_level.py.
+# Hand-made assets, if there are ever any, do NOT belong under these two paths.
+previz/unreal/Content/Maps/
+previz/unreal/Content/Previz/
 
 # UI build inputs. node_modules is reinstallable; ui/dist is NOT ignored --
 # it is committed on purpose so a show laptop needs only Python and a checkout,

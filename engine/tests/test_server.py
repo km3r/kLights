@@ -326,6 +326,79 @@ except Exception:
 check("path traversal cannot escape the bundle directory", traversal_blocked)
 
 
+# -- venue and taper editing --------------------------------------------------
+print("\n9. venue and taper, edited live")
+client.send({"type": "taper", "crowd_level": 0.25})
+after = client.wait_for(lambda s: abs(s["taper"]["crowd_level"] - 0.25) < 1e-9)
+check("taper policy applies", abs(after["taper"]["crowd_level"] - 0.25) < 1e-9)
+
+client.send({"type": "venue", "crowd": {"head_band_min": 1600}})
+after = client.wait_for(lambda s: s["venue"]["crowd"]["head_band_min"] == 1600)
+check("crowd zone edits apply", after["venue"]["crowd"]["head_band_min"] == 1600)
+check("and the rest of the zone is untouched",
+      after["venue"]["crowd"]["head_band_max"] == 2000,
+      f"{after['venue']['crowd']}")
+
+# The band must take effect on the NEXT FRAME, not on a restart -- being able to
+# stand in the room and watch the beams respond is the entire point of putting
+# this on a phone.
+client.send({"type": "taper", "crowd_level": 0.0})
+client.send({"type": "venue", "crowd": {"min_x": 0, "max_x": 9144,
+                                        "min_z": 0, "max_z": 9144,
+                                        "head_band_min": 100,
+                                        "head_band_max": 4500}})
+after = client.wait_for(
+    lambda s: any(f.get("safety", {}).get("taper") == 0.0
+                  for f in s["fixtures"] if f.get("is_mover")), timeout=8)
+check("a wider crowd zone dims beams on the next frame",
+      any(f.get("safety", {}).get("taper") == 0.0
+          for f in after["fixtures"] if f.get("is_mover")),
+      "beams now cross the enlarged band")
+
+client.send({"type": "venue", "crowd": {"head_band_min": 3000, "head_band_max": 1000}})
+after = client.wait_for(lambda s: any("failed" in n and "head band" in n
+                                      for n in s["notices"]))
+check("an inverted head band is rejected, not stored",
+      after["venue"]["crowd"]["head_band_min"] == 100,
+      f"{after['venue']['crowd']}")
+
+client.send({"type": "taper", "enabled": False})
+after = client.wait_for(lambda s: not s["taper"]["enabled"])
+check("disabling the taper is announced in capitals",
+      any("SAFETY TAPER DISABLED" in n for n in after["notices"]),
+      f"{[n for n in after['notices'] if 'TAPER' in n]}")
+
+# Saving must keep the file's explanatory comments -- they carry the reasoning
+# for every number in it, and rewriting from the dataclass would discard them.
+venue_path = REPO / "events" / "despacio" / "venue.json"
+original = venue_path.read_text(encoding="utf-8")
+try:
+    client.send({"type": "taper", "enabled": True, "crowd_level": 0.4})
+    client.send({"type": "venue", "crowd": {"head_band_min": 1450,
+                                            "head_band_max": 2050}})
+    client.send({"type": "venue_save"})
+    client.wait_for(lambda s: any("saved venue.json" in n for n in s["notices"]))
+
+    saved = json.loads(venue_path.read_text(encoding="utf-8"))
+    check("saved values round-trip",
+          saved["crowd_zone"]["head_band_min"] == 1450
+          and abs(saved["taper"]["crowd_level"] - 0.4) < 1e-9,
+          f"{saved['crowd_zone']['head_band_min']}, {saved['taper']}")
+    check("the file's explanatory comments survive",
+          "_crowd_zone_comment" in saved and "_ball_radius_comment" in saved,
+          f"{[k for k in saved if k.startswith('_')]}")
+    check("untouched keys survive too",
+          saved["ball"]["y"] == 2743 and saved["apex_height"] == 4600)
+
+    # ...and a fresh engine picks the saved policy back up, or saving is theatre.
+    reloaded = ShowController(REPO / "events" / "despacio")
+    check("a restart honours the saved taper policy",
+          abs(reloaded.ctx.taper.crowd_level - 0.4) < 1e-9,
+          f"{reloaded.ctx.taper.crowd_level}")
+finally:
+    venue_path.write_text(original, encoding="utf-8")
+
+
 client.close()
 server.stop()
 controller.stop()

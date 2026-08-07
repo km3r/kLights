@@ -1,0 +1,357 @@
+{
+  "type": "state",
+  "rev": 7,
+  "event": "despacio",
+  "clock": {
+    "bpm": 124.0,
+    "effective_bpm": 124.0,
+    "speed": 1.0,
+    "beat": 2.067,
+    "bar": 0.517,
+    "phrase": 0.065,
+    "beat_in_bar": 2.067,
+    "source": "manual",
+    "phrase_measured": false,
+    "taps": 0
+  },
+  "auto": {
+    "look": "sweep",
+    "held": true,
+    "color": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "energy": 0.0,
+    "rate": 1.0,
+    "strobe": false,
+    "changes": 0,
+    "palette_changes": 0,
+    "last_change": "manual",
+    "axes": {
+      "timing": true,
+      "look_changes": false,
+      "palette": true,
+      "energy": false
+    }
+  },
+  "looks": [
+    {
+      "name": "ball",
+      "manual_only": false
+    },
+    {
+      "name": "drift",
+      "manual_only": false
+    },
+    {
+      "name": "sweep",
+      "manual_only": false
+    },
+    {
+      "name": "wide orbit",
+      "manual_only": false
+    },
+    {
+      "name": "bob",
+      "manual_only": false
+    }
+  ],
+  "palette": [
+    [
+      1.0,
+      1.0,
+      1.0
+    ],
+    [
+      1.0,
+      0.1,
+      0.05
+    ],
+    [
+      1.0,
+      0.55,
+      0.05
+    ],
+    [
+      1.0,
+      0.95,
+      0.15
+    ],
+    [
+      0.15,
+      1.0,
+      0.25
+    ],
+    [
+      0.1,
+      0.85,
+      1.0
+    ],
+    [
+      0.2,
+      0.35,
+      1.0
+    ],
+    [
+      1.0,
+      0.2,
+      0.75
+    ]
+  ],
+  "palette_index": 0,
+  "master": 0.9,
+  "blackout": false,
+  "panicked": false,
+  "color_overrides": {
+    "pinspots": [
+      1.0,
+      0.2,
+      0.1
+    ]
+  },
+  "fixtures": [
+    {
+      "id": 0,
+      "name": "Moving Head #1",
+      "tags": [
+        "movers",
+        "corner movers"
+      ],
+      "head": 0,
+      "universe": 0,
+      "address": 1,
+      "is_mover": true,
+      "position": [
+        8644.0,
+        2971.0,
+        8644.0
+      ],
+      "beam_deg": 3.0,
+      "intensity": 0.9,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "safety": {
+        "taper": 1.0,
+        "reason": "beam is blocked or leaves the room before eye height"
+      },
+      "aim": {
+        "bearing": -44.46,
+        "elevation": -2.27
+      },
+      "lands_on": "wall",
+      "throw_mm": 9730,
+      "jogging": true,
+      "captures": 1
+    },
+    {
+      "id": 1,
+      "name": "Moving Head #2",
+      "tags": [
+        "movers",
+        "corner movers"
+      ],
+      "head": 1,
+      "universe": 0,
+      "address": 12,
+      "is_mover": true,
+      "position": [
+        8644.0,
+        2971.0,
+        500.0
+      ],
+      "beam_deg": 3.0,
+      "intensity": 0.9,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "safety": {
+        "taper": 1.0,
+        "reason": "beam is blocked or leaves the room before eye height"
+      },
+      "aim": {
+        "bearing": -20.88,
+        "elevation": -2.27
+      },
+      "lands_on": "wall",
+      "throw_mm": 8668,
+      "jogging": false,
+      "captures": 0
+    },
+    {
+      "id": 2,
+      "name": "Moving Head #3",
+      "tags": [
+        "movers",
+        "corner movers"
+      ],
+      "head": 2,
+      "universe": 0,
+      "address": 23,
+      "is_mover": true,
+      "position": [
+        500.0,
+        2971.0,
+        500.0
+      ],
+      "beam_deg": 3.0,
+      "intensity": 0.9,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "safety": {
+        "taper": 1.0,
+        "reason": "beam is blocked or leaves the room before eye height"
+      },
+      "aim": {
+        "bearing": -75.77,
+        "elevation": -2.27
+      },
+      "lands_on": "wall",
+      "throw_mm": 9730,
+      "jogging": false,
+      "captures": 0
+    },
+    {
+      "id": 3,
+      "name": "Moving Head #4",
+      "tags": [
+        "movers",
+        "corner movers"
+      ],
+      "head": 3,
+      "universe": 0,
+      "address": 34,
+      "is_mover": true,
+      "position": [
+        500.0,
+        2971.0,
+        8644.0
+      ],
+      "beam_deg": 3.0,
+      "intensity": 0.9,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "safety": {
+        "taper": 1.0,
+        "reason": "beam is blocked or leaves the room before eye height"
+      },
+      "aim": {
+        "bearing": -104.63,
+        "elevation": -2.27
+      },
+      "lands_on": "wall",
+      "throw_mm": 8668,
+      "jogging": false,
+      "captures": 0
+    },
+    {
+      "id": 4,
+      "name": "Pinspot #1",
+      "tags": [
+        "pinspots"
+      ],
+      "head": null,
+      "universe": 0,
+      "address": 45,
+      "is_mover": false,
+      "intensity": 0.63,
+      "color": [
+        1.0,
+        0.2,
+        0.1
+      ],
+      "jogging": false,
+      "captures": 0
+    },
+    {
+      "id": 5,
+      "name": "Pinspot #2",
+      "tags": [
+        "pinspots"
+      ],
+      "head": null,
+      "universe": 0,
+      "address": 51,
+      "is_mover": false,
+      "intensity": 0.63,
+      "color": [
+        1.0,
+        0.2,
+        0.1
+      ],
+      "jogging": false,
+      "captures": 0
+    }
+  ],
+  "venue": {
+    "name": "despacio room",
+    "width": 9144.0,
+    "depth": 9144.0,
+    "height": 4600.0,
+    "ball": [
+      4572.0,
+      2743.0,
+      4572.0
+    ],
+    "crowd": {
+      "min_x": 1200.0,
+      "max_x": 7944.0,
+      "min_z": 1200.0,
+      "max_z": 7944.0,
+      "head_band_min": 1400.0,
+      "head_band_max": 2000.0
+    },
+    "canopy": {
+      "enabled": true,
+      "height": 4600.0,
+      "radius": 2000.0
+    }
+  },
+  "taper": {
+    "crowd_level": 0.5,
+    "margin_deg": 6.0,
+    "slew_per_second": 2.0,
+    "enabled": true
+  },
+  "presence": [
+    {
+      "id": "c1",
+      "name": "phone",
+      "connected_for": 41.2,
+      "last_action": "selected 'sweep'",
+      "last_action_ago": 3.1
+    },
+    {
+      "id": "c2",
+      "name": "tablet",
+      "connected_for": 12.8,
+      "last_action": "coloured pinspots",
+      "last_action_ago": 0.9
+    }
+  ],
+  "stats": {
+    "fps": 40.0,
+    "frames": 1000,
+    "drops": 0,
+    "eval_errors": 0,
+    "worst_error_ms": 0.31
+  },
+  "notices": [
+    "JOG Moving Head #1: safety taper bypassed -- empty room only",
+    "captured Moving Head #1 at mirror ball (1 so far)"
+  ],
+  "warnings": [],
+  "last_error": null,
+  "drift": null
+}
