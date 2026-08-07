@@ -80,6 +80,20 @@ class EvalContext:
     bar: float = 0.0
     phrase: float = 0.0
     bpm: float = 0.0
+
+    # Movement phase, integrated separately from `bar` so auto mode can vary
+    # movement rate without moving musical position. Movement reads this;
+    # anything that must land ON the music -- look changes, boundary hits --
+    # reads `bar`. Same split as tempo versus speed on the clock.
+    motion_bar: float = 0.0
+
+    # Auto mode's continuous outputs. Defaults are the identity, so a show that
+    # ignores auto mode behaves identically whether or not a director is
+    # attached.
+    energy: float = 0.0
+    energy_rate: float = 1.0
+    auto_intensity: float = 1.0
+    strobe: bool = False
     taper: safetymod.TaperConfig = field(default_factory=safetymod.TaperConfig)
 
     # Last frame's safety multiplier per fixture, and when it was computed.

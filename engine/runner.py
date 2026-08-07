@@ -37,9 +37,12 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from . import state as statemod
+
+if TYPE_CHECKING:                       # auto imports state; avoid the cycle
+    from . import auto as autoged
 from .clock import MasterClock
 from .output.base import NullOutput, Output
 
@@ -111,6 +114,9 @@ class Runner:
     # up to date each frame; without a clock they stay at zero and every look
     # holds still, which is the honest behaviour for "no tempo yet".
     clock: Optional[MasterClock] = None
+    # Auto mode. When present it owns which Show is running, so `show` becomes
+    # an output of the frame rather than an input to it.
+    director: Optional["autoged.AutoDirector"] = None
     on_frame: Optional[Callable[[dict[int, statemod.FixtureState]], None]] = None
 
     def __post_init__(self) -> None:
@@ -166,6 +172,14 @@ class Runner:
         self.ctx.bar = position.bar
         self.ctx.phrase = position.phrase
         self.ctx.bpm = position.bpm
+
+        if self.director is None:
+            # No auto mode: movement phase IS musical position, so a look reads
+            # the same whether or not a director is attached.
+            self.ctx.motion_bar = position.bar
+            return
+        self.show = self.director.update(position, self.clock.phrase_measured)
+        self.director.apply(self.ctx)
 
     def render_once(self) -> dict[int, bytes]:
         """Evaluate and emit a single frame. Never raises.

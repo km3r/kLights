@@ -142,6 +142,18 @@ class MasterClock:
         self._tap = TapTempo()
         self.source = source
         self.running = True
+        # Whether phrase position is MEASURED or merely COUNTED.
+        #
+        # Counted phrase is bars-since-the-last-downbeat divided by the meter --
+        # correct only if the operator's downbeat really was a phrase start and
+        # the track has not changed since. That is a guess about the music, and
+        # it decays: eight bars of counting from a slightly wrong downbeat puts
+        # a "phrase boundary" in the middle of a phrase.
+        #
+        # A source with real phrase data (Pro DJ Link on newer players) sets
+        # this. Nothing else should, and F7 uses it to decide whether landing a
+        # look change on a phrase is trustworthy or whether to fall back to bars.
+        self.phrase_measured = False
 
     # -- reading -----------------------------------------------------------
 
@@ -246,7 +258,8 @@ class MasterClock:
         return self._tap.taps
 
     def sync(self, now: float, bpm: Optional[float] = None,
-             beat: Optional[float] = None, source: Optional[str] = None) -> None:
+             beat: Optional[float] = None, source: Optional[str] = None,
+             phrase_measured: Optional[bool] = None) -> None:
         """Accept a position from an external source -- Pro DJ Link, MIDI clock,
         an audio beat tracker.
 
@@ -264,6 +277,8 @@ class MasterClock:
             self._anchor_beat = float(beat)
         if source is not None:
             self.source = source
+        if phrase_measured is not None:
+            self.phrase_measured = phrase_measured
 
     def start(self, now: float) -> None:
         if not self.running:

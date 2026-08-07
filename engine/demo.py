@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from . import auto as autom
 from . import clock as clockmod
 from . import geometry as geo
 from . import motion
@@ -55,6 +56,36 @@ def orbit_look(radius_deg: float = 20.0, bars: float = 8.0) -> statemod.Show:
     return show
 
 
+def set_list() -> autom.SetList:
+    """A few looks, in the shape the Night cue list should take.
+
+    Each is a factory taking the current palette colour, so colour rotates
+    independently of which look is running -- rather than every combination of
+    look and colour being its own stored scene, which is how 179 of them
+    accumulated and why only a handful got used.
+    """
+    def look(name, offset_fn, bars, tags=("movers",)):
+        def make(color):
+            show = statemod.Show(master=0.9)
+            show.base.append(statemod.pose_layer(
+                lambda ctx, head: ctx.geometry.aim_at_ball(head), tags=tags))
+            show.base.append(statemod.on_layer(0.6, tags=("pinspots",)))
+            show.color.append(statemod.color_layer(color, tags=tags))
+            show.color.append(statemod.color_layer(color, tags=("pinspots",)))
+            show.movement.append(statemod.move_layer(
+                motion.as_move(offset_fn, bars=bars), tags=tags))
+            show.fx.append(autom.energy_intensity_layer())
+            return show
+        return autom.Look(name=name, make=make)
+
+    return autom.SetList([
+        look("drift", motion.orbit(15.0, elongation=1.5), bars=16.0),
+        look("sweep", motion.pendulum(45.0), bars=8.0),
+        look("wide orbit", motion.orbit(40.0), bars=8.0),
+        look("bob", motion.pendulum(18.0, vertical=True), bars=4.0),
+    ])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Engine end-to-end smoke run")
     parser.add_argument("--event", type=Path, default=REPO / "events" / "despacio")
@@ -68,6 +99,9 @@ def main() -> None:
     parser.add_argument("--nudge", type=float, default=1.0, metavar="MULT",
                         help="halfway through, nudge the speed by this much "
                              "(e.g. 0.5) and check the beat does not jump")
+    parser.add_argument("--auto", action="append", default=[],
+                        choices=["looks", "palette", "energy", "all"],
+                        help="enable an auto-mode axis; repeatable")
     args = parser.parse_args()
 
     rig = load_rig(args.event)
@@ -82,7 +116,27 @@ def main() -> None:
 
     output = ArtNetOutput(args.artnet) if args.artnet else NullOutput()
     master = clockmod.MasterClock(bpm=args.bpm, now=0.0)
-    runner = Runner(ctx=ctx, show=show, output=output, fps=args.fps, clock=master)
+
+    director = None
+    if args.auto:
+        axes = set(args.auto)
+        every = set(("looks", "palette", "energy")) if "all" in axes else axes
+        looks = set_list()
+        # Short intervals so a few-second demo shows the behaviour. A real set
+        # wants 2 or 4 phrases, which is 16 or 32 bars.
+        director = autom.AutoDirector(
+            looks,
+            autom.AutoConfig(look_changes="looks" in every,
+                             palette="palette" in every,
+                             energy="energy" in every,
+                             change_every_phrases=0.25,
+                             palette_every_phrases=0.125),
+            autom.Palette([(0.2, 0.4, 1.0), (1.0, 0.1, 0.0), (0.1, 1.0, 0.3)]),
+            autom.PhraseEnergy())
+        show = looks.current().make(director.palette.current())
+
+    runner = Runner(ctx=ctx, show=show, output=output, fps=args.fps,
+                    clock=master, director=director)
 
     tapered: list[float] = []
     nudged_at: list[tuple[float, float]] = []
@@ -106,8 +160,14 @@ def main() -> None:
     print(f"timing contract: {', '.join(runner.applied_timing)}")
     print(f"output: {'Art-Net -> ' + args.artnet if args.artnet else 'null (no wire)'}")
     print(f"taper: {'OFF' if args.no_taper else 'on'}  "
-          f"tempo: {args.bpm:.0f} bpm ({master.source})  "
-          f"look: 8-bar orbit\n")
+          f"tempo: {args.bpm:.0f} bpm ({master.source})")
+    if director is None:
+        print("auto: off -- one 8-bar orbit, held\n")
+    else:
+        axes = ", ".join(k for k, v in director.status()["axes"].items() if v)
+        phrase = "measured" if master.phrase_measured else "counted (lands on bars)"
+        print(f"auto: {axes}   phrase: {phrase}   "
+              f"set list: {', '.join(l.name for l in director.setlist.looks)}\n")
 
     stats = runner.run(seconds=args.seconds)
 
@@ -123,6 +183,13 @@ def main() -> None:
               f"{sum(1 for n in tapered if n)}/{len(tapered)}")
     print(f"musical position reached: beat {ctx.beat:.2f}, bar {ctx.bar:.2f}, "
           f"phrase {ctx.phrase:.2f} at {ctx.bpm:.1f} bpm")
+    if director is not None:
+        s = director.status()
+        print(f"auto: look {s['look']!r} after {s['changes']} change(s) "
+              f"({s['last_change']}), {s['palette_changes']} palette rotation(s)")
+        print(f"      energy {s['energy']:.2f} -> rate {s['rate']:.2f}x, "
+              f"strobe {'on' if s['strobe'] else 'off'}; "
+              f"motion phase {ctx.motion_bar:.2f} bars vs musical {ctx.bar:.2f}")
     if nudged_at:
         before, after = nudged_at[0]
         print(f"speed nudged to {args.nudge}x mid-run: beat {before:.6f} -> "

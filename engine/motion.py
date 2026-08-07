@@ -204,5 +204,9 @@ def as_move(offset_fn: Offset, bars: float = 8.0,
     def offset_for(ctx, head: int) -> tuple[float, float]:
         n = len(ctx.geometry.heads) if ctx.geometry is not None else 1
         spread = (head / n) if (per_head_offset and n) else 0.0
-        return offset_fn(phase(ctx.bar, bars, spread))
+        # motion_bar, not bar: auto mode varies movement rate by integrating a
+        # separate phase, so that speeding movement up does not shift musical
+        # position (and so that a rate change cannot jump the move). With no
+        # director attached the runner keeps the two identical.
+        return offset_fn(phase(ctx.motion_bar, bars, spread))
     return offset_for
