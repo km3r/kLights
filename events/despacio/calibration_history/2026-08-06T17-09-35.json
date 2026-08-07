@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "WHAT THIS RIG MEASURED IN THIS ROOM, ON THIS DAY. The only file of the three",
+    "that is expected to change between the load-in and the doors, and again the",
+    "next morning after somebody knocks a head.",
+    "",
+    "Because it is separate and timestamped, an overnight nudge is a DIFF against",
+    "last night rather than a from-scratch re-aim -- which is the whole point of",
+    "splitting it out (F5).",
+    "",
+    "ball_dmx: aim the head at the mirror ball by hand and record the two 0-255",
+    "readings, (pan, tilt). Everything else the engine does is a geometric offset",
+    "from that one verified point, so this is THE calibration step. A head left",
+    "null falls back to the assumed mounting model, which is markedly worse.",
+    "",
+    "The readings are mount-mode specific -- a bench 'table' reading and a real",
+    "'venue' reading calibrate two physically different transforms and are not",
+    "interchangeable. These are venue readings, matching rig.json's mount_mode.",
+    "",
+    "pan_invert/tilt_invert describe the FIXTURE's own DMX-to-rotation wiring.",
+    "In 'venue' the base is tipped on its side so Pan carries ELEVATION, which is",
+    "why heads 2 and 4 differ: they are mounted mirrored from their neighbours,",
+    "so their up/down handedness is flipped. A per-head difference is legitimate",
+    "on the elevation channel and NOT on the bearing channel -- a mixed bearing",
+    "invert breaks every pose that aims one head relative to another."
+  ],
+  "measured": "2026-08-01",
+  "mount_mode": "venue",
+  "source": "ported from events/despacio/despacio_config.json, the calibration the show ran on",
+  "heads": [
+    {
+      "fixture": "Moving Head #1",
+      "ball_dmx": [
+        47,
+        69
+      ],
+      "pan_invert": false,
+      "tilt_invert": false
+    },
+    {
+      "fixture": "Moving Head #2",
+      "ball_dmx": [
+        126,
+        69
+      ],
+      "pan_invert": true,
+      "tilt_invert": false
+    },
+    {
+      "fixture": "Moving Head #3",
+      "ball_dmx": [
+        42,
+        73
+      ],
+      "pan_invert": false,
+      "tilt_invert": false
+    },
+    {
+      "fixture": "Moving Head #4",
+      "ball_dmx": [
+        133,
+        68
+      ],
+      "pan_invert": true,
+      "tilt_invert": false
+    }
+  ],
+  "snapshot_taken": "2026-08-06T17:09:35",
+  "note": "baseline, as the show ran"
+}

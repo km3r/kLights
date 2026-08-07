@@ -58,6 +58,10 @@ class FixtureState:
     white: float = 0.0
     strobe_hz: float = 0.0
     gobo: Optional[int] = None
+    # Literal 16-bit pan/tilt, bypassing the aim maths. Only calibration sets
+    # this, and only because the aim maths is the thing being calibrated -- you
+    # cannot aim by geometry at a head whose geometry you do not yet trust.
+    raw_position: Optional[tuple[int, int]] = None
     # Set by the safety layer so the UI can explain a dimmed beam rather than
     # leaving the operator to wonder why a head went dark.
     safety: Optional[safetymod.Clearance] = None
@@ -131,6 +135,40 @@ def on_layer(level: float = 1.0, tags: Optional[Sequence[str]] = None) -> Layer:
     def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
         for f in _targets(ctx, tags):
             out[f.fid].intensity = level
+    return layer
+
+
+def raw_pose_layer(values: dict, intensity: float = 1.0,
+                   bits: int = 8) -> Layer:
+    """Drive named fixtures at literal pan/tilt DMX. Calibration only.
+
+    `values` maps a fixture name or id to (pan, tilt). `bits` says what those
+    numbers are: 8 for the coarse readings an operator dials and records, 16 for
+    a fine jog.
+
+    **This bypasses the safety taper**, and not by oversight. The taper works
+    from the aim, the aim comes from the geometry, and the geometry is exactly
+    what has not been established yet -- so there is nothing trustworthy to
+    guard with. It is also what you want during a re-aim: a beam that dims as
+    you swing it toward the middle of the room is a beam you cannot see well
+    enough to point.
+
+    The consequence is that calibration belongs in an empty room, and anything
+    driving this layer should say so on screen. `FixtureState.raw_position`
+    being set is the flag to check.
+    """
+    shift = 8 if bits == 8 else 0
+
+    def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
+        for f in ctx.rig.fixtures:
+            if f.name in values:
+                pan, tilt = values[f.name]
+            elif f.fid in values:
+                pan, tilt = values[f.fid]
+            else:
+                continue
+            out[f.fid].raw_position = (int(pan) << shift, int(tilt) << shift)
+            out[f.fid].intensity = intensity
     return layer
 
 
@@ -249,8 +287,14 @@ def render(ctx: EvalContext, states: dict[int, FixtureState]) -> dict[int, bytea
 
         # Position. 16 bits wherever the fixture offers it -- one 8-bit Pan step
         # is 2.1 degrees on these heads, which is visible on a slow move.
-        if state.aim is not None and f.head is not None and ctx.geometry is not None:
-            pan16, tilt16 = ctx.geometry.encode(f.head, state.aim)
+        position = None
+        if state.raw_position is not None:
+            position = state.raw_position          # calibration; see raw_pose_layer
+        elif state.aim is not None and f.head is not None and ctx.geometry is not None:
+            position = ctx.geometry.encode(f.head, state.aim)
+
+        if position is not None:
+            pan16, tilt16 = position
             pan_hi, pan_lo = geo.split16(pan16)
             tilt_hi, tilt_lo = geo.split16(tilt16)
             for role, value in ((rigmod.PAN, pan_hi), (rigmod.TILT, tilt_hi),
