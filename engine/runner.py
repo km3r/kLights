@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from . import state as statemod
+from .clock import MasterClock
 from .output.base import NullOutput, Output
 
 # 44 Hz is the DMX512 ceiling for a full universe; 40 sits just under it.
@@ -106,6 +107,10 @@ class Runner:
     show: statemod.Show
     output: Output = field(default_factory=NullOutput)
     fps: float = DEFAULT_FPS
+    # The musical timeline. Looks read ctx.bar and ctx.beat, which this keeps
+    # up to date each frame; without a clock they stay at zero and every look
+    # holds still, which is the honest behaviour for "no tempo yet".
+    clock: Optional[MasterClock] = None
     on_frame: Optional[Callable[[dict[int, statemod.FixtureState]], None]] = None
 
     def __post_init__(self) -> None:
@@ -145,6 +150,23 @@ class Runner:
 
     # -- one frame --------------------------------------------------------
 
+    def sync_clock(self) -> None:
+        """Copy musical position onto the context, once per frame.
+
+        Sampled once and shared by every layer, rather than each layer asking
+        the clock itself. Two layers reading the clock a few microseconds apart
+        would get slightly different beats, and a movement layer disagreeing
+        with the intensity layer it is supposed to be in step with is exactly
+        the kind of drift that is impossible to see and impossible to debug.
+        """
+        if self.clock is None:
+            return
+        position = self.clock.position(self.ctx.time)
+        self.ctx.beat = position.beat
+        self.ctx.bar = position.bar
+        self.ctx.phrase = position.phrase
+        self.ctx.bpm = position.bpm
+
     def render_once(self) -> dict[int, bytes]:
         """Evaluate and emit a single frame. Never raises.
 
@@ -181,6 +203,7 @@ class Runner:
                 break
 
             self.ctx.time = start_time + (clock() - begin)
+            self.sync_clock()
             for universe, frame in self.render_once().items():
                 self.output.send(universe, frame)
             self.stats.frames += 1

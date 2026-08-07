@@ -72,9 +72,14 @@ class EvalContext:
     """Everything a layer is allowed to read."""
     rig: rigmod.Rig
     venue: Optional[Venue]
+    # Wall time, and musical position. Everything a look reads should be
+    # musical: `time` is here for the safety slew limiter and for anything that
+    # genuinely is a physical duration, not for authoring movement.
     time: float = 0.0            # seconds since start
-    beat: float = 0.0            # fractional beats; F6 supplies the clock
+    beat: float = 0.0            # cumulative fractional beats, never wraps
     bar: float = 0.0
+    phrase: float = 0.0
+    bpm: float = 0.0
     taper: safetymod.TaperConfig = field(default_factory=safetymod.TaperConfig)
 
     # Last frame's safety multiplier per fixture, and when it was computed.
