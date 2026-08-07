@@ -377,10 +377,17 @@ class Show:
     movement: list[Layer] = field(default_factory=list)
     fx: list[Layer] = field(default_factory=list)
     master: float = 1.0
+    # Live operator overrides -- a colour picked on a phone, a head soloed.
+    # A separate list because auto mode rebuilds the other four whenever the
+    # look changes, and an override typed in by a human must survive that;
+    # the controller keeps one list and re-attaches it to each new Show.
+    # After `fx` and before `master`, so an override outranks the look but is
+    # still subject to the master and to safety.
+    overrides: list[Layer] = field(default_factory=list)
 
     def stack(self) -> list[Layer]:
         return [*self.base, *self.color, *self.movement, *self.fx,
-                master_layer(self.master)]
+                *self.overrides, master_layer(self.master)]
 
 
 def evaluate(ctx: EvalContext, show: Show) -> dict[int, FixtureState]:

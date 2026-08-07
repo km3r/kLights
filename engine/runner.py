@@ -117,6 +117,13 @@ class Runner:
     # Auto mode. When present it owns which Show is running, so `show` becomes
     # an output of the frame rather than an input to it.
     director: Optional["autoged.AutoDirector"] = None
+    # Called at the top of each frame, before anything is evaluated. Where
+    # queued operator commands are applied, so they land on a frame boundary
+    # rather than half way through an evaluation.
+    before_frame: Optional[Callable[[], None]] = None
+    # Called with whichever Show is about to be evaluated, every frame. Lets the
+    # controller re-attach live overrides to a Show that auto mode just rebuilt.
+    on_show: Optional[Callable[[statemod.Show], None]] = None
     on_frame: Optional[Callable[[dict[int, statemod.FixtureState]], None]] = None
 
     def __post_init__(self) -> None:
@@ -177,9 +184,11 @@ class Runner:
             # No auto mode: movement phase IS musical position, so a look reads
             # the same whether or not a director is attached.
             self.ctx.motion_bar = position.bar
-            return
-        self.show = self.director.update(position, self.clock.phrase_measured)
-        self.director.apply(self.ctx)
+        else:
+            self.show = self.director.update(position, self.clock.phrase_measured)
+            self.director.apply(self.ctx)
+        if self.on_show is not None:
+            self.on_show(self.show)
 
     def render_once(self) -> dict[int, bytes]:
         """Evaluate and emit a single frame. Never raises.
@@ -217,6 +226,14 @@ class Runner:
                 break
 
             self.ctx.time = start_time + (clock() - begin)
+            if self.before_frame is not None:
+                try:
+                    self.before_frame()
+                except Exception:                          # noqa: BLE001
+                    # An operator command must never take the rig down. Count it
+                    # with the show errors and keep the clock running.
+                    self.stats.eval_errors += 1
+                    self.last_error = traceback.format_exc()
             self.sync_clock()
             for universe, frame in self.render_once().items():
                 self.output.send(universe, frame)
