@@ -391,6 +391,15 @@ class ShowController:
                 "head": f.head, "universe": f.universe, "address": f.address,
                 "is_mover": f.is_mover,
             }
+            # Head position, so the UI can work out capture targets itself --
+            # the adjacent corners are 90 degrees either side of the ball from a
+            # head in a corner, which is the spread the solver needs and which
+            # the obvious targets do not give.
+            if f.head is not None and g is not None:
+                h = g.heads[f.head]
+                entry["position"] = [h.x, h.height, h.z]
+                entry["beam_deg"] = h.beam_angle_deg
+
             if st is not None:
                 entry["intensity"] = round(st.intensity, 3)
                 entry["color"] = [round(c, 3) for c in st.color]

@@ -23,3 +23,20 @@ bar_usermanual.pdf
 # Workspace auto-backups — git history is the real history now
 events/*/backups/
 *.bak
+
+# Unreal generated trees. The .uproject, Config/ and Content/Python/ are source;
+# everything else the editor writes is derived from them and is gigabytes of it.
+# Content/ itself is NOT ignored — the level is built by script, so if a .umap
+# ever lands there it is regenerable, but hand-made assets would belong in git.
+previz/unreal/Binaries/
+previz/unreal/Build/
+previz/unreal/DerivedDataCache/
+previz/unreal/Intermediate/
+previz/unreal/Saved/
+previz/unreal/.vs/
+*.sln
+
+# UI build inputs. node_modules is reinstallable; ui/dist is NOT ignored --
+# it is committed on purpose so a show laptop needs only Python and a checkout,
+# with no Node toolchain at the venue. Rebuild with `cd ui && npm run build`.
+ui/node_modules/

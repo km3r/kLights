@@ -299,8 +299,24 @@ print("\n8. HTTP")
 import urllib.request
 with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
     body = resp.read().decode()
-check("GET / serves something useful", resp.status == 200 and "Engine is running" in body,
-      f"{resp.status}, {len(body)} bytes")
+# Either the built UI or the "here is how to build it" placeholder, depending on
+# whether ui/dist exists. Both are correct; asserting on only one made this test
+# fail the moment the bundle was first built, which is a test tracking an
+# implementation detail rather than the behaviour.
+served_ui = '<div id="root">' in body
+served_placeholder = "Engine is running" in body
+check("GET / serves the UI, or explains how to build it",
+      resp.status == 200 and (served_ui or served_placeholder),
+      f"{resp.status}, {len(body)} bytes, "
+      f"{'bundle' if served_ui else 'placeholder'}")
+
+# A single-page app owns its own routing, so an unknown path must return the
+# app rather than a 404 -- otherwise a phone reloading on /#setup gets nothing.
+with urllib.request.urlopen(f"http://127.0.0.1:{port}/some/client/route", timeout=5) as resp:
+    spa = resp.read().decode()
+check("an unknown path falls through to the app",
+      resp.status == 200 and ('<div id="root">' in spa or "Engine is running" in spa),
+      f"{resp.status}, {len(spa)} bytes")
 
 try:
     urllib.request.urlopen(f"http://127.0.0.1:{port}/../../../etc/passwd", timeout=5)
