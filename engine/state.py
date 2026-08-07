@@ -206,12 +206,24 @@ def move_layer(offset: Callable[[EvalContext, int], tuple[float, float]],
     return layer
 
 
-def intensity_layer(level: Callable[[EvalContext, int], float],
+def intensity_layer(level: Callable[[EvalContext, "rigmod.PatchedFixture"], float],
                     tags: Optional[Sequence[str]] = None) -> Layer:
-    """Multiply intensity -- dimmer chases, strobes, pulses."""
+    """Multiply intensity -- dimmer chases, strobes, pulses.
+
+    The callback receives the FIXTURE, not an index. The convention across this
+    module: a layer restricted to movers passes a head index (always defined,
+    and what the geometry wants), while a layer that runs on anything passes the
+    fixture, because there is no index that means the same thing for a mover and
+    a pinspot. It used to pass the position in the filtered list, which looked
+    like a head index and was not -- the pinspots came through as 0 and 1 while
+    their head indices do not exist at all.
+
+    For a phase-offset chase use `fixture.head` on movers, or the fixture's
+    position in `ctx.rig.by_tag(...)` for anything else.
+    """
     def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
-        for i, f in enumerate(_targets(ctx, tags)):
-            out[f.fid].intensity *= level(ctx, i)
+        for f in _targets(ctx, tags):
+            out[f.fid].intensity *= level(ctx, f)
     return layer
 
 

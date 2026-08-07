@@ -543,6 +543,20 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
                if cal_path.exists() else {"heads": []})
 
     mount_mode = rig_cfg.get("mount_mode", "venue")
+
+    # A calibration reading is mount-mode specific: a bench "table" reading and
+    # a real "venue" reading calibrate two physically different transforms and
+    # are not interchangeable. calibration.json records which mode it was
+    # measured in, so check it -- the failure is otherwise invisible, because
+    # the back-solve is self-consistent in ANY mode and the ball keeps aiming
+    # perfectly while every other pose is wrong.
+    cal_mode = cal_cfg.get("mount_mode")
+    if cal_mode is not None and cal_mode != mount_mode:
+        raise ValueError(
+            f"{event_dir.name}: rig.json is in mount_mode {mount_mode!r} but "
+            f"calibration.json was measured in {cal_mode!r}. These are not "
+            f"interchangeable -- they calibrate physically different transforms. "
+            f"Re-measure in {mount_mode!r}, or fix whichever file is wrong.")
     fixtures: list[PatchedFixture] = []
     heads: list[geo.Head] = []
 
@@ -564,8 +578,16 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
             heads.append(geo.Head(
                 name=entry["name"],
                 x=float(pos["x"]), z=float(pos["z"]), height=float(pos["y"]),
-                pan_range_deg=profile.pan_max_deg or 540.0,
-                tilt_range_deg=profile.tilt_max_deg or 270.0,
+                # The .qxf's declared range, overridable per fixture. A profile
+                # can be optimistic -- a head claiming 540 deg of Pan that
+                # really does 500 calibrates perfectly at the ball and drifts
+                # further off the further an aim gets from it. The calibration
+                # solver measures this when the captures span enough bearing;
+                # this is where its answer goes.
+                pan_range_deg=float(entry.get("pan_range_deg",
+                                              profile.pan_max_deg or 540.0)),
+                tilt_range_deg=float(entry.get("tilt_range_deg",
+                                               profile.tilt_max_deg or 270.0)),
                 beam_angle_deg=entry.get("beam_deg", profile.beam_deg or 3.0),
                 calibrated_ball_dmx=None if reading is None else tuple(reading),
                 pan_invert=bool(cal.get("pan_invert", False)),

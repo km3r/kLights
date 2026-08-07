@@ -611,12 +611,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   f"residual {solution.residual_deg:.2f} deg  "
                   f"spread {solution.bearing_spread_deg:.0f}/{solution.elev_spread_deg:.0f} deg")
             if solution.bearing_scale != 1.0:
-                nominal = (head.pan_range_deg
-                           if geo.MOUNT_PROFILES[solve_mode]["bearing_channel"] == "pan"
+                channel = geo.MOUNT_PROFILES[solve_mode]["bearing_channel"]
+                nominal = (head.pan_range_deg if channel == "pan"
                            else head.tilt_range_deg)
-                print(f"    bearing range measures {solution.bearing_scale * nominal:.0f} "
-                      f"deg, not the {nominal:.0f} deg the .qxf claims. Aims far "
-                      f"from the ball will be off until that is corrected.")
+                measured = solution.bearing_scale * nominal
+                print(f"    bearing range measures {measured:.0f} deg, not the "
+                      f"{nominal:.0f} deg the .qxf claims. Aims far from the ball "
+                      f"stay off until this is recorded -- add to this fixture in "
+                      f"rig.json:")
+                print(f'        "{channel}_range_deg": {measured:.0f}')
             for warning in solution.warnings:
                 print(f"    WARNING: {warning}")
             entries.append(solution.as_calibration_entry())

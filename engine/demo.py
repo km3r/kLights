@@ -108,7 +108,10 @@ def main() -> None:
     print(f"{stats.frames} frames in {stats.elapsed:.2f} s "
           f"= {stats.effective_fps:.3f} fps (target {args.fps})")
     print(f"worst interval error: {stats.worst_error * 1000:.3f} ms")
-    print(f"dropped frames: {stats.drops}")
+    print(f"dropped frames: {stats.drops}  "
+          f"evaluation errors: {stats.eval_errors}")
+    if runner.last_error:
+        print(f"last evaluation error:\n{runner.last_error}")
     if tapered:
         print(f"frames with at least one head tapered: "
               f"{sum(1 for n in tapered if n)}/{len(tapered)}")

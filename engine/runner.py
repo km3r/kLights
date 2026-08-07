@@ -35,6 +35,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -79,7 +80,12 @@ def install_timing_contract() -> list[str]:
 @dataclass
 class FrameStats:
     frames: int = 0
+    # Deadlines missed badly enough to resynchronise -- a machine problem.
     drops: int = 0
+    # Frames where show evaluation raised and the last good frame was re-sent --
+    # a show problem. Kept separate because one number covering both cannot tell
+    # you which of the two is happening, and they need opposite responses.
+    eval_errors: int = 0
     started: float = 0.0
     worst_error: float = 0.0     # seconds
     last_error: float = 0.0
@@ -113,6 +119,10 @@ class Runner:
         # goes black is a stopped show.
         self._last: dict[int, bytes] = {}
         self._blackout = bytes(512)
+        # The most recent evaluation traceback, for the UI to surface. Silently
+        # holding the last frame is right for the rig and wrong for the
+        # operator, who otherwise sees a show that has quietly stopped moving.
+        self.last_error: Optional[str] = None
 
     # -- panic ------------------------------------------------------------
 
@@ -152,7 +162,8 @@ class Runner:
                 self.on_frame(states)
             return frames
         except Exception:                                  # noqa: BLE001
-            self.stats.drops += 1
+            self.stats.eval_errors += 1
+            self.last_error = traceback.format_exc()
             return self._last or {u: self._blackout for u in self.ctx.rig.universes}
 
     # -- the loop ---------------------------------------------------------
