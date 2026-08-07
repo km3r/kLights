@@ -40,7 +40,7 @@ def main() -> int:
         # with its safety bypass. A snapshot of an idle engine would leave all
         # of those untested.
         for command in (
-            {"type": "select_look", "name": "sweep"},
+            {"type": "select_look", "name": "Lazy Circle"},
             {"type": "auto", "axis": "palette", "on": True},
             {"type": "color", "target": "pinspots", "color": [1.0, 0.2, 0.1]},
             {"type": "jog", "fixture": "Moving Head #1", "pan": 47, "tilt": 69},

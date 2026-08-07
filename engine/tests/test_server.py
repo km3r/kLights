@@ -181,9 +181,18 @@ check("presence shows the client by name",
       [p["name"] for p in after["presence"]] == ["phone"],
       f"{[p['name'] for p in after['presence']]}")
 
-client.send({"type": "select_look", "name": "sweep"})
-after = client.wait_for(lambda s: s["auto"]["look"] == "sweep")
-check("selecting a look takes effect", after["auto"]["look"] == "sweep")
+# Names come from the loaded library rather than being hardcoded, so this
+# survives a re-port. Two DIFFERENT looks are needed below, hence the pair.
+LOOK_A, LOOK_B = [l.name for l in controller.setlist.looks[:2]]
+
+client.send({"type": "select_look", "name": LOOK_A})
+after = client.wait_for(lambda s: s["auto"]["look"] == LOOK_A)
+check("selecting a look takes effect", after["auto"]["look"] == LOOK_A)
+check("the ported library is what is on offer", len(after["looks"]) > 100,
+      f"{len(after['looks'])} looks")
+check("and each carries the kind the UI groups by",
+      all("kind" in l for l in after["looks"]),
+      f"{sorted({l['kind'] for l in after['looks']})}")
 check("and it is held, so auto cannot steal it", after["auto"]["held"] is True)
 
 client.send({"type": "master", "value": 0.25})
@@ -209,8 +218,8 @@ check("a colour override reaches the fixtures",
 
 # The override must survive an auto-mode look change -- that is the whole
 # reason overrides are a separate list the controller re-attaches.
-client.send({"type": "select_look", "name": "drift"})
-after = client.wait_for(lambda s: s["auto"]["look"] == "drift")
+client.send({"type": "select_look", "name": LOOK_B})
+after = client.wait_for(lambda s: s["auto"]["look"] == LOOK_B)
 pins = [f for f in after["fixtures"] if "pinspots" in f["tags"]]
 check("the override survives a look change",
       all(f["color"][1] > f["color"][0] for f in pins),
@@ -282,11 +291,11 @@ check("both clients appear in presence",
       sorted(p["name"] for p in after["presence"]) == ["phone", "tablet"],
       f"{[p['name'] for p in after['presence']]}")
 
-second.send({"type": "select_look", "name": "bob"})
-after = client.wait_for(lambda s: s["auto"]["look"] == "bob")
-check("either client can drive the show", after["auto"]["look"] == "bob")
+second.send({"type": "select_look", "name": LOOK_A})
+after = client.wait_for(lambda s: s["auto"]["look"] == LOOK_A)
+check("either client can drive the show", after["auto"]["look"] == LOOK_A)
 who = [p for p in after["presence"] if p["name"] == "tablet"][0]
-check("and the UI can see who did it", "bob" in (who["last_action"] or ""),
+check("and the UI can see who did it", LOOK_A in (who["last_action"] or ""),
       who["last_action"])
 
 second.close()

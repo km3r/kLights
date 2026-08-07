@@ -1,0 +1,6992 @@
+{
+  "_comment": [
+    "Ported from the QLC+ workspace by shared/tools/port_library.py.",
+    "",
+    "Positions are OFFSETS from each head's own calibrated ball aim, not",
+    "stored DMX -- so these looks track recalibration, which the originals",
+    "could not. Chaser step lists became paths measured in bars, so slowing",
+    "one down now makes it smoother rather than steppier.",
+    "",
+    "Regenerate rather than hand-editing: the workspace is still the",
+    "source until QLC+ is retired."
+  ],
+  "source": "despacio.qxw",
+  "reference_bpm": 124.0,
+  "looks": [
+    {
+      "name": "MH White",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "Scene 0"
+    },
+    {
+      "name": "MH Red",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "source": "Scene 1"
+    },
+    {
+      "name": "MH Blue",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 2"
+    },
+    {
+      "name": "MH Pink",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 3"
+    },
+    {
+      "name": "MH Orange",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.498,
+        0.0
+      ],
+      "source": "Scene 4"
+    },
+    {
+      "name": "Heads - Ball",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 6"
+    },
+    {
+      "name": "Heads - Floor",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -25.313
+        ],
+        [
+          0.0,
+          -25.312
+        ],
+        [
+          0.0,
+          -25.313
+        ],
+        [
+          0.0,
+          -25.312
+        ]
+      ],
+      "source": "Scene 7"
+    },
+    {
+      "name": "Heads - Walls",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 8"
+    },
+    {
+      "name": "Lazy Circle",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            20.039,
+            0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            -20.039,
+            0.0
+          ]
+        ],
+        [
+          [
+            13.711,
+            14.766
+          ],
+          [
+            13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            14.766
+          ]
+        ],
+        [
+          [
+            20.039,
+            -0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            -20.039,
+            -0.0
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            14.766
+          ],
+          [
+            13.711,
+            14.766
+          ]
+        ],
+        [
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            -20.039,
+            0.0
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            20.039,
+            0.0
+          ]
+        ],
+        [
+          [
+            -13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            14.766
+          ],
+          [
+            13.711,
+            14.766
+          ],
+          [
+            13.711,
+            -14.766
+          ]
+        ],
+        [
+          [
+            -20.039,
+            -0.0
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            20.039,
+            -0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ]
+        ],
+        [
+          [
+            -13.711,
+            14.766
+          ],
+          [
+            13.711,
+            14.766
+          ],
+          [
+            13.711,
+            -14.766
+          ],
+          [
+            -13.711,
+            -14.766
+          ]
+        ]
+      ],
+      "bars": 16,
+      "source": "Chaser 18",
+      "notes": [
+        "8 steps, 4000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+      ]
+    },
+    {
+      "name": "Slow Sweep",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 19",
+      "notes": [
+        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Color Drift",
+      "kind": "color_path",
+      "tags": [],
+      "frames": [
+        {
+          "Moving Head #1": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.498,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "bars": 32,
+      "source": "Chaser 21",
+      "notes": [
+        "4 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+      ]
+    },
+    {
+      "name": "Heads Cross A",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 24"
+    },
+    {
+      "name": "Heads Cross B",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 25"
+    },
+    {
+      "name": "MH Sunset",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.502,
+        0.0
+      ],
+      "source": "Scene 26"
+    },
+    {
+      "name": "White Bump",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "intensity": 1.0,
+      "source": "Scene 33"
+    },
+    {
+      "name": "Cross Weave",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 16,
+      "source": "Chaser 35",
+      "notes": [
+        "2 steps, 16000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+      ]
+    },
+    {
+      "name": "Diagonal A",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 42"
+    },
+    {
+      "name": "Diagonal B",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 43"
+    },
+    {
+      "name": "Diagonal Pulse",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 16,
+      "source": "Chaser 44",
+      "notes": [
+        "2 steps, 12000 ms each = 12.40 bars at 124 bpm, snapped to 16"
+      ]
+    },
+    {
+      "name": "Chase Pos 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 45"
+    },
+    {
+      "name": "Chase Pos 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 46"
+    },
+    {
+      "name": "Chase Pos 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 47"
+    },
+    {
+      "name": "Chase Pos 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 48"
+    },
+    {
+      "name": "Corner Chase",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 49",
+      "notes": [
+        "4 steps, 5000 ms each = 10.33 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Grand Sweep",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            44.297
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            0.0,
+            -44.297
+          ],
+          [
+            -45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            31.641,
+            31.641
+          ],
+          [
+            31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            31.641
+          ]
+        ],
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            0.0,
+            -44.297
+          ],
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            0.0,
+            44.297
+          ]
+        ],
+        [
+          [
+            31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            31.641
+          ],
+          [
+            31.641,
+            31.641
+          ]
+        ],
+        [
+          [
+            0.0,
+            -44.297
+          ],
+          [
+            -45.352,
+            0.0
+          ],
+          [
+            0.0,
+            44.297
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            -31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            31.641
+          ],
+          [
+            31.641,
+            31.641
+          ],
+          [
+            31.641,
+            -31.641
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            0.0,
+            44.297
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            0.0,
+            -44.297
+          ]
+        ],
+        [
+          [
+            -31.641,
+            31.641
+          ],
+          [
+            31.641,
+            31.641
+          ],
+          [
+            31.641,
+            -31.641
+          ],
+          [
+            -31.641,
+            -31.641
+          ]
+        ]
+      ],
+      "bars": 16,
+      "source": "Chaser 50",
+      "notes": [
+        "8 steps, 4000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+      ]
+    },
+    {
+      "name": "Heads - Crowd",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ]
+      ],
+      "source": "Scene 51"
+    },
+    {
+      "name": "Ball Spiral Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          -72.773,
+          0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          0.0
+        ]
+      ],
+      "source": "Scene 52"
+    },
+    {
+      "name": "Ball Spiral Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          89.648,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          -76.992,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 53"
+    },
+    {
+      "name": "Ball Spiral Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          -71.719,
+          0.0
+        ]
+      ],
+      "source": "Scene 54"
+    },
+    {
+      "name": "Ball Spiral Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -72.773,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 55"
+    },
+    {
+      "name": "Rainbow Step 1",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.502,
+          0.7529
+        ],
+        "Moving Head #4": [
+          0.502,
+          0.7529,
+          1.0
+        ]
+      },
+      "source": "Scene 56",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Rainbow Step 2",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.502,
+          0.7529
+        ],
+        "Moving Head #3": [
+          0.502,
+          0.7529,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "source": "Scene 57",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Rainbow Step 3",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.502,
+          0.7529
+        ],
+        "Moving Head #2": [
+          0.502,
+          0.7529,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.498,
+          0.0
+        ]
+      },
+      "source": "Scene 58",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Rainbow Step 4",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          0.502,
+          0.7529,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.502,
+          0.7529
+        ]
+      },
+      "source": "Scene 59",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Ball Spiral",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            -72.773,
+            0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            0.0
+          ]
+        ],
+        [
+          [
+            89.648,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            -76.992,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            -71.719,
+            0.0
+          ]
+        ],
+        [
+          [
+            -72.773,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 60",
+      "notes": [
+        "4 steps, 3500 ms each = 7.23 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Rainbow Wheel",
+      "kind": "color_path",
+      "tags": [],
+      "frames": [
+        {
+          "Moving Head #1": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.502,
+            0.7529
+          ],
+          "Moving Head #4": [
+            0.502,
+            0.7529,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.502,
+            0.7529
+          ],
+          "Moving Head #3": [
+            0.502,
+            0.7529,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.502,
+            0.7529
+          ],
+          "Moving Head #2": [
+            0.502,
+            0.7529,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.498,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            0.502,
+            0.7529,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.502,
+            0.7529
+          ]
+        }
+      ],
+      "bars": 16,
+      "source": "Chaser 61",
+      "notes": [
+        "4 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+      ]
+    },
+    {
+      "name": "Ball Wave Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "source": "Scene 63"
+    },
+    {
+      "name": "Ball Wave Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 64"
+    },
+    {
+      "name": "Ball Wave Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ]
+      ],
+      "source": "Scene 65"
+    },
+    {
+      "name": "Ball Wave Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 66"
+    },
+    {
+      "name": "Ball Wave",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            -18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 67",
+      "notes": [
+        "4 steps, 3000 ms each = 6.20 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Dim Chase Step 1",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 68"
+    },
+    {
+      "name": "Dim Chase Step 2",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 69"
+    },
+    {
+      "name": "Dim Chase Step 3",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 70"
+    },
+    {
+      "name": "Dim Chase Step 4",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 71"
+    },
+    {
+      "name": "Spotlight Step 1",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 73"
+    },
+    {
+      "name": "Spotlight Step 2",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 74"
+    },
+    {
+      "name": "Spotlight Step 3",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 75"
+    },
+    {
+      "name": "Spotlight Step 4",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 76"
+    },
+    {
+      "name": "MH Breathe On",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 218"
+    },
+    {
+      "name": "Heads - Circle",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          2.109
+        ],
+        [
+          -45.352,
+          2.109
+        ],
+        [
+          -45.352,
+          2.109
+        ],
+        [
+          -45.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 78"
+    },
+    {
+      "name": "Neighbor Scan Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ],
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 79"
+    },
+    {
+      "name": "Neighbor Scan Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 80"
+    },
+    {
+      "name": "Neighbor Scan",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ],
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 81",
+      "notes": [
+        "2 steps, 3200 ms each = 3.31 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Prowl Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          -72.773,
+          0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 82"
+    },
+    {
+      "name": "Prowl Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          89.648,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          -76.992,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 83"
+    },
+    {
+      "name": "Prowl Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          -71.719,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 84"
+    },
+    {
+      "name": "Prowl Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -72.773,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          89.648,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 85"
+    },
+    {
+      "name": "Prowl",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            -72.773,
+            0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            0.0
+          ]
+        ],
+        [
+          [
+            89.648,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            -76.992,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            -71.719,
+            0.0
+          ]
+        ],
+        [
+          [
+            -72.773,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            89.648,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 86",
+      "notes": [
+        "4 steps, 3000 ms each = 6.20 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Crowd Cascade Step 1",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 87"
+    },
+    {
+      "name": "Crowd Cascade Step 2",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 88"
+    },
+    {
+      "name": "Crowd Cascade Step 3",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 89"
+    },
+    {
+      "name": "Crowd Cascade Step 4",
+      "kind": "intensity",
+      "tags": [],
+      "intensity": 1.0,
+      "source": "Scene 90"
+    },
+    {
+      "name": "Heads - Apex",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "source": "Scene 92"
+    },
+    {
+      "name": "Heads - Cathedral",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          46.406
+        ],
+        [
+          180.352,
+          46.406
+        ],
+        [
+          180.352,
+          46.406
+        ],
+        [
+          180.352,
+          46.406
+        ]
+      ],
+      "source": "Scene 93"
+    },
+    {
+      "name": "Heads - Zenith",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ]
+      ],
+      "source": "Scene 94"
+    },
+    {
+      "name": "Rise",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -25.313
+          ],
+          [
+            0.0,
+            -25.312
+          ],
+          [
+            0.0,
+            -25.313
+          ],
+          [
+            0.0,
+            -25.312
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 32,
+      "source": "Chaser 95",
+      "notes": [
+        "6 steps, 8000 ms each = 24.80 bars at 124 bpm, snapped to 32"
+      ]
+    },
+    {
+      "name": "Iris Out A",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ],
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 96"
+    },
+    {
+      "name": "Iris Out B",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 97"
+    },
+    {
+      "name": "Iris",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ],
+          [
+            -45.352,
+            -0.0
+          ],
+          [
+            -45.352,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 98",
+      "notes": [
+        "4 steps, 5000 ms each = 10.33 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Split Warm/Cool",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "source": "Scene 103",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Split Red/Cyan",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          1.0,
+          1.0
+        ]
+      },
+      "source": "Scene 104",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Split Pink/Green",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "source": "Scene 105",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Duo Cyan/Pink",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.502,
+        1.0,
+        1.0
+      ],
+      "source": "Scene 106"
+    },
+    {
+      "name": "Duo Green/Blue",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.502,
+        1.0,
+        0.502
+      ],
+      "source": "Scene 107"
+    },
+    {
+      "name": "Split Yellow/Blue",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "source": "Scene 167",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Split White/Orange",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.498,
+          0.0
+        ]
+      },
+      "source": "Scene 168",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Split Red/Green",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "source": "Scene 169",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "MH Yellow",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "source": "Scene 205"
+    },
+    {
+      "name": "MH Green",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "source": "Scene 206"
+    },
+    {
+      "name": "MH Cyan",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        1.0
+      ],
+      "source": "Scene 207"
+    },
+    {
+      "name": "Quad Spectrum",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "source": "Scene 208",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 1",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.0,
+          1.0
+        ]
+      },
+      "source": "Scene 209",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 2",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          1.0,
+          1.0
+        ]
+      },
+      "source": "Scene 210",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 3",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "source": "Scene 211",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 4",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #3": [
+          0.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "source": "Scene 212",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 5",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          1.0,
+          0.0
+        ]
+      },
+      "source": "Scene 213",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 6",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.498,
+          0.0
+        ],
+        "Moving Head #2": [
+          0.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "source": "Scene 214",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 7",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          1.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #3": [
+          1.0,
+          1.0,
+          0.0
+        ],
+        "Moving Head #4": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "source": "Scene 215",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk Step 8",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Moving Head #1": [
+          0.0,
+          1.0,
+          1.0
+        ],
+        "Moving Head #2": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "Moving Head #3": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Moving Head #4": [
+          1.0,
+          0.498,
+          0.0
+        ]
+      },
+      "source": "Scene 216",
+      "notes": [
+        "per-fixture colour (4 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Wheel Walk",
+      "kind": "color_path",
+      "tags": [],
+      "frames": [
+        {
+          "Moving Head #1": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #3": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #2": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #4": [
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #2": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #3": [
+            0.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.498,
+            0.0
+          ],
+          "Moving Head #2": [
+            0.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #4": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #3": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "Moving Head #4": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "Moving Head #1": [
+            0.0,
+            1.0,
+            1.0
+          ],
+          "Moving Head #2": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Moving Head #3": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Moving Head #4": [
+            1.0,
+            0.498,
+            0.0
+          ]
+        }
+      ],
+      "bars": 16,
+      "source": "Chaser 217",
+      "notes": [
+        "8 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+      ]
+    },
+    {
+      "name": "Pin Ball Glow",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.4706,
+        0.2353,
+        0.0784
+      ],
+      "source": "Scene 108"
+    },
+    {
+      "name": "Pin Amber",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.4706,
+        0.0
+      ],
+      "source": "Scene 109"
+    },
+    {
+      "name": "Pin Rose",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.1569,
+        0.3529
+      ],
+      "source": "Scene 110"
+    },
+    {
+      "name": "Pin Magenta",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.7843,
+        0.0,
+        0.7843
+      ],
+      "source": "Scene 111"
+    },
+    {
+      "name": "Pin Indigo",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.2353,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 112"
+    },
+    {
+      "name": "Pin Teal",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        0.7059,
+        0.6275
+      ],
+      "source": "Scene 113"
+    },
+    {
+      "name": "Pin Sea",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        0.3137
+      ],
+      "source": "Scene 114"
+    },
+    {
+      "name": "Pin Drift",
+      "kind": "color_path",
+      "tags": [],
+      "frames": [
+        {
+          "Pinspot #1": [
+            1.0,
+            0.4706,
+            0.0
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.4706,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            1.0,
+            0.1569,
+            0.3529
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.1569,
+            0.3529
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.7843,
+            0.0,
+            0.7843
+          ],
+          "Pinspot #2": [
+            0.7843,
+            0.0,
+            0.7843
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.2353,
+            0.0,
+            1.0
+          ],
+          "Pinspot #2": [
+            0.2353,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            0.7059,
+            0.6275
+          ],
+          "Pinspot #2": [
+            0.0,
+            0.7059,
+            0.6275
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            1.0,
+            0.3137
+          ],
+          "Pinspot #2": [
+            0.0,
+            1.0,
+            0.3137
+          ]
+        }
+      ],
+      "bars": 32,
+      "source": "Chaser 115",
+      "notes": [
+        "6 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+      ]
+    },
+    {
+      "name": "Pin Rainbow Step 1",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "source": "Scene 131"
+    },
+    {
+      "name": "Pin Rainbow Step 2",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.502,
+        0.0
+      ],
+      "source": "Scene 132"
+    },
+    {
+      "name": "Pin Rainbow Step 3",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        1.0,
+        0.0
+      ],
+      "source": "Scene 133"
+    },
+    {
+      "name": "Pin Rainbow Step 4",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.502,
+        1.0,
+        0.0
+      ],
+      "source": "Scene 134"
+    },
+    {
+      "name": "Pin Rainbow Step 5",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "source": "Scene 135"
+    },
+    {
+      "name": "Pin Rainbow Step 6",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        0.502
+      ],
+      "source": "Scene 136"
+    },
+    {
+      "name": "Pin Rainbow Step 7",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        1.0,
+        1.0
+      ],
+      "source": "Scene 137"
+    },
+    {
+      "name": "Pin Rainbow Step 8",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        0.502,
+        1.0
+      ],
+      "source": "Scene 138"
+    },
+    {
+      "name": "Pin Rainbow Step 9",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 139"
+    },
+    {
+      "name": "Pin Rainbow Step 10",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        0.502,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 140"
+    },
+    {
+      "name": "Pin Rainbow Step 11",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.0,
+        1.0
+      ],
+      "source": "Scene 141"
+    },
+    {
+      "name": "Pin Rainbow Step 12",
+      "kind": "color",
+      "tags": [],
+      "color": [
+        1.0,
+        0.0,
+        0.502
+      ],
+      "source": "Scene 142"
+    },
+    {
+      "name": "Pin Rainbow",
+      "kind": "color_path",
+      "tags": [],
+      "frames": [
+        {
+          "Pinspot #1": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            1.0,
+            0.502,
+            0.0
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.502,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "Pinspot #2": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.502,
+            1.0,
+            0.0
+          ],
+          "Pinspot #2": [
+            0.502,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Pinspot #2": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            1.0,
+            0.502
+          ],
+          "Pinspot #2": [
+            0.0,
+            1.0,
+            0.502
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            1.0,
+            1.0
+          ],
+          "Pinspot #2": [
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            0.502,
+            1.0
+          ],
+          "Pinspot #2": [
+            0.0,
+            0.502,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Pinspot #2": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            0.502,
+            0.0,
+            1.0
+          ],
+          "Pinspot #2": [
+            0.502,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            1.0,
+            0.0,
+            1.0
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "Pinspot #1": [
+            1.0,
+            0.0,
+            0.502
+          ],
+          "Pinspot #2": [
+            1.0,
+            0.0,
+            0.502
+          ]
+        }
+      ],
+      "bars": 32,
+      "source": "Chaser 143",
+      "notes": [
+        "12 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+      ]
+    },
+    {
+      "name": "Pin Split",
+      "kind": "color",
+      "tags": [],
+      "colors": {
+        "Pinspot #1": [
+          1.0,
+          0.4706,
+          0.0
+        ],
+        "Pinspot #2": [
+          0.0,
+          0.7059,
+          0.6275
+        ]
+      },
+      "source": "Scene 221",
+      "notes": [
+        "per-fixture colour (2 distinct) -- a split, duo or quad"
+      ]
+    },
+    {
+      "name": "Floor Ring Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ]
+      ],
+      "source": "Scene 117"
+    },
+    {
+      "name": "Floor Ring Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          -24.258,
+          -31.641
+        ]
+      ],
+      "source": "Scene 118"
+    },
+    {
+      "name": "Floor Ring Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ]
+      ],
+      "source": "Scene 119"
+    },
+    {
+      "name": "Floor Ring Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          13.711,
+          -18.984
+        ]
+      ],
+      "source": "Scene 120"
+    },
+    {
+      "name": "Floor Ring",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ]
+        ],
+        [
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            -24.258,
+            -31.641
+          ]
+        ],
+        [
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ]
+        ],
+        [
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            13.711,
+            -18.984
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 121",
+      "notes": [
+        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Floor Wipe Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -31.641,
+          -21.094
+        ],
+        [
+          -18.984,
+          -37.969
+        ],
+        [
+          0.0,
+          -50.625
+        ],
+        [
+          18.984,
+          -18.984
+        ]
+      ],
+      "source": "Scene 122"
+    },
+    {
+      "name": "Floor Wipe Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          6.328,
+          -27.422
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          6.328,
+          -27.422
+        ]
+      ],
+      "source": "Scene 123"
+    },
+    {
+      "name": "Floor Wipe Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -50.625
+        ],
+        [
+          18.984,
+          -18.984
+        ],
+        [
+          -31.641,
+          -21.094
+        ],
+        [
+          -18.984,
+          -37.969
+        ]
+      ],
+      "source": "Scene 124"
+    },
+    {
+      "name": "Floor Wipe Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          6.328,
+          -27.422
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          6.328,
+          -27.422
+        ]
+      ],
+      "source": "Scene 125"
+    },
+    {
+      "name": "Floor Wipe",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            -31.641,
+            -21.094
+          ],
+          [
+            -18.984,
+            -37.969
+          ],
+          [
+            0.0,
+            -50.625
+          ],
+          [
+            18.984,
+            -18.984
+          ]
+        ],
+        [
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            6.328,
+            -27.422
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            6.328,
+            -27.422
+          ]
+        ],
+        [
+          [
+            0.0,
+            -50.625
+          ],
+          [
+            18.984,
+            -18.984
+          ],
+          [
+            -31.641,
+            -21.094
+          ],
+          [
+            -18.984,
+            -37.969
+          ]
+        ],
+        [
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            6.328,
+            -27.422
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            6.328,
+            -27.422
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 126",
+      "notes": [
+        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Floor Cross Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -16.875
+        ],
+        [
+          -45.352,
+          -16.875
+        ],
+        [
+          45.352,
+          -16.875
+        ],
+        [
+          -45.352,
+          -16.875
+        ]
+      ],
+      "source": "Scene 127"
+    },
+    {
+      "name": "Floor Cross Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -16.875
+        ],
+        [
+          45.352,
+          -16.875
+        ],
+        [
+          -45.352,
+          -16.875
+        ],
+        [
+          45.352,
+          -16.875
+        ]
+      ],
+      "source": "Scene 128"
+    },
+    {
+      "name": "Floor Cross",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            45.352,
+            -16.875
+          ],
+          [
+            -45.352,
+            -16.875
+          ],
+          [
+            45.352,
+            -16.875
+          ],
+          [
+            -45.352,
+            -16.875
+          ]
+        ],
+        [
+          [
+            -45.352,
+            -16.875
+          ],
+          [
+            45.352,
+            -16.875
+          ],
+          [
+            -45.352,
+            -16.875
+          ],
+          [
+            45.352,
+            -16.875
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 129",
+      "notes": [
+        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Lazy Circle Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          20.039,
+          0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          -20.039,
+          0.0
+        ]
+      ],
+      "source": "Scene 179"
+    },
+    {
+      "name": "Lazy Circle Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          13.711,
+          14.766
+        ],
+        [
+          13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          14.766
+        ]
+      ],
+      "source": "Scene 180"
+    },
+    {
+      "name": "Lazy Circle Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          20.039,
+          -0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          -20.039,
+          -0.0
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "source": "Scene 181"
+    },
+    {
+      "name": "Lazy Circle Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          14.766
+        ],
+        [
+          13.711,
+          14.766
+        ]
+      ],
+      "source": "Scene 182"
+    },
+    {
+      "name": "Lazy Circle Step 5",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          -20.039,
+          0.0
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          20.039,
+          0.0
+        ]
+      ],
+      "source": "Scene 183"
+    },
+    {
+      "name": "Lazy Circle Step 6",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          14.766
+        ],
+        [
+          13.711,
+          14.766
+        ],
+        [
+          13.711,
+          -14.766
+        ]
+      ],
+      "source": "Scene 184"
+    },
+    {
+      "name": "Lazy Circle Step 7",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -20.039,
+          -0.0
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          20.039,
+          -0.0
+        ],
+        [
+          0.0,
+          -18.984
+        ]
+      ],
+      "source": "Scene 185"
+    },
+    {
+      "name": "Lazy Circle Step 8",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -13.711,
+          14.766
+        ],
+        [
+          13.711,
+          14.766
+        ],
+        [
+          13.711,
+          -14.766
+        ],
+        [
+          -13.711,
+          -14.766
+        ]
+      ],
+      "source": "Scene 186"
+    },
+    {
+      "name": "Grand Sweep Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          44.297
+        ],
+        [
+          45.352,
+          0.0
+        ],
+        [
+          0.0,
+          -44.297
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 187"
+    },
+    {
+      "name": "Grand Sweep Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          31.641,
+          31.641
+        ],
+        [
+          31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          31.641
+        ]
+      ],
+      "source": "Scene 188"
+    },
+    {
+      "name": "Grand Sweep Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          0.0,
+          -44.297
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          0.0,
+          44.297
+        ]
+      ],
+      "source": "Scene 189"
+    },
+    {
+      "name": "Grand Sweep Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          31.641
+        ],
+        [
+          31.641,
+          31.641
+        ]
+      ],
+      "source": "Scene 190"
+    },
+    {
+      "name": "Grand Sweep Step 5",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -44.297
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          0.0,
+          44.297
+        ],
+        [
+          45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 191"
+    },
+    {
+      "name": "Grand Sweep Step 6",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          31.641
+        ],
+        [
+          31.641,
+          31.641
+        ],
+        [
+          31.641,
+          -31.641
+        ]
+      ],
+      "source": "Scene 192"
+    },
+    {
+      "name": "Grand Sweep Step 7",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          0.0,
+          44.297
+        ],
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          0.0,
+          -44.297
+        ]
+      ],
+      "source": "Scene 193"
+    },
+    {
+      "name": "Grand Sweep Step 8",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -31.641,
+          31.641
+        ],
+        [
+          31.641,
+          31.641
+        ],
+        [
+          31.641,
+          -31.641
+        ],
+        [
+          -31.641,
+          -31.641
+        ]
+      ],
+      "source": "Scene 194"
+    },
+    {
+      "name": "Slow Sweep Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 195"
+    },
+    {
+      "name": "Slow Sweep Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 196"
+    },
+    {
+      "name": "Slow Sweep Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 197"
+    },
+    {
+      "name": "Slow Sweep Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 198"
+    },
+    {
+      "name": "Heads - Wall Graze",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ],
+        [
+          -45.352,
+          -0.0
+        ],
+        [
+          -45.352,
+          0.0
+        ]
+      ],
+      "source": "Scene 199"
+    },
+    {
+      "name": "Canopy Ring Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          17.93,
+          21.094
+        ],
+        [
+          17.93,
+          21.094
+        ],
+        [
+          17.93,
+          21.094
+        ],
+        [
+          17.93,
+          21.094
+        ]
+      ],
+      "source": "Scene 200"
+    },
+    {
+      "name": "Canopy Ring Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -17.93,
+          21.094
+        ],
+        [
+          -17.93,
+          21.094
+        ],
+        [
+          -17.93,
+          21.094
+        ],
+        [
+          -17.93,
+          21.094
+        ]
+      ],
+      "source": "Scene 201"
+    },
+    {
+      "name": "Canopy Ring Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -11.602,
+          14.766
+        ],
+        [
+          -11.602,
+          14.766
+        ],
+        [
+          -11.602,
+          14.766
+        ],
+        [
+          -11.602,
+          14.766
+        ]
+      ],
+      "source": "Scene 202"
+    },
+    {
+      "name": "Canopy Ring Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          11.602,
+          14.766
+        ],
+        [
+          11.602,
+          14.766
+        ],
+        [
+          11.602,
+          14.766
+        ],
+        [
+          11.602,
+          14.766
+        ]
+      ],
+      "source": "Scene 203"
+    },
+    {
+      "name": "Canopy Ring",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            17.93,
+            21.094
+          ],
+          [
+            17.93,
+            21.094
+          ],
+          [
+            17.93,
+            21.094
+          ],
+          [
+            17.93,
+            21.094
+          ]
+        ],
+        [
+          [
+            -17.93,
+            21.094
+          ],
+          [
+            -17.93,
+            21.094
+          ],
+          [
+            -17.93,
+            21.094
+          ],
+          [
+            -17.93,
+            21.094
+          ]
+        ],
+        [
+          [
+            -11.602,
+            14.766
+          ],
+          [
+            -11.602,
+            14.766
+          ],
+          [
+            -11.602,
+            14.766
+          ],
+          [
+            -11.602,
+            14.766
+          ]
+        ],
+        [
+          [
+            11.602,
+            14.766
+          ],
+          [
+            11.602,
+            14.766
+          ],
+          [
+            11.602,
+            14.766
+          ],
+          [
+            11.602,
+            14.766
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 204",
+      "notes": [
+        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Floor Bounce Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -31.641,
+          -21.094
+        ],
+        [
+          18.984,
+          -18.984
+        ],
+        [
+          0.0,
+          -50.625
+        ],
+        [
+          -18.984,
+          -37.969
+        ]
+      ],
+      "source": "Scene 171"
+    },
+    {
+      "name": "Floor Bounce Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -50.625
+        ],
+        [
+          -18.984,
+          -37.969
+        ],
+        [
+          -31.641,
+          -21.094
+        ],
+        [
+          18.984,
+          -18.984
+        ]
+      ],
+      "source": "Scene 172"
+    },
+    {
+      "name": "Floor Bounce",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            -31.641,
+            -21.094
+          ],
+          [
+            18.984,
+            -18.984
+          ],
+          [
+            0.0,
+            -50.625
+          ],
+          [
+            -18.984,
+            -37.969
+          ]
+        ],
+        [
+          [
+            0.0,
+            -50.625
+          ],
+          [
+            -18.984,
+            -37.969
+          ],
+          [
+            -31.641,
+            -21.094
+          ],
+          [
+            18.984,
+            -18.984
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 173",
+      "notes": [
+        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Floor Breathe Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          8.438,
+          -27.422
+        ],
+        [
+          8.438,
+          -27.422
+        ],
+        [
+          8.438,
+          -27.422
+        ],
+        [
+          8.438,
+          -27.422
+        ]
+      ],
+      "source": "Scene 174"
+    },
+    {
+      "name": "Floor Breathe Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          44.297,
+          -33.75
+        ],
+        [
+          44.297,
+          -33.75
+        ],
+        [
+          44.297,
+          -33.75
+        ],
+        [
+          44.297,
+          -33.75
+        ]
+      ],
+      "source": "Scene 175"
+    },
+    {
+      "name": "Floor Breathe",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            8.438,
+            -27.422
+          ],
+          [
+            8.438,
+            -27.422
+          ],
+          [
+            8.438,
+            -27.422
+          ],
+          [
+            8.438,
+            -27.422
+          ]
+        ],
+        [
+          [
+            44.297,
+            -33.75
+          ],
+          [
+            44.297,
+            -33.75
+          ],
+          [
+            44.297,
+            -33.75
+          ],
+          [
+            44.297,
+            -33.75
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 176",
+      "notes": [
+        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Teleport Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 147"
+    },
+    {
+      "name": "Teleport Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 148"
+    },
+    {
+      "name": "Teleport Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ]
+      ],
+      "source": "Scene 149"
+    },
+    {
+      "name": "Teleport Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 150"
+    },
+    {
+      "name": "Teleport Step 5",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "source": "Scene 151"
+    },
+    {
+      "name": "Teleport Step 6",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 152"
+    },
+    {
+      "name": "Teleport Step 7",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ]
+      ],
+      "source": "Scene 153"
+    },
+    {
+      "name": "Teleport Step 8",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 154"
+    },
+    {
+      "name": "Teleport",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 155",
+      "notes": [
+        "8 steps, 800 ms each = 3.31 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Apparition",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 156",
+      "notes": [
+        "8 steps, 1500 ms each = 6.20 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Freeze Frame Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 157"
+    },
+    {
+      "name": "Freeze Frame Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          180.352,
+          2.109
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 158"
+    },
+    {
+      "name": "Freeze Frame Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          180.352,
+          2.109
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 159"
+    },
+    {
+      "name": "Freeze Frame Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 160"
+    },
+    {
+      "name": "Freeze Frame",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "bars": 8,
+      "source": "Chaser 161",
+      "notes": [
+        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+      ]
+    },
+    {
+      "name": "Stutter Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "source": "Scene 162"
+    },
+    {
+      "name": "Stutter Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 163"
+    },
+    {
+      "name": "Stutter Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ]
+      ],
+      "source": "Scene 164"
+    },
+    {
+      "name": "Stutter Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ],
+        [
+          0.0,
+          -18.984
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 165"
+    },
+    {
+      "name": "Stutter",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ],
+          [
+            0.0,
+            -18.984
+          ]
+        ]
+      ],
+      "bars": 0.25,
+      "source": "Chaser 166",
+      "notes": [
+        "4 steps, 150 ms each = 0.31 bars at 124 bpm, snapped to 0.25"
+      ]
+    },
+    {
+      "name": "Glitch",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 226",
+      "notes": [
+        "8 steps, 800 ms each = 3.31 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Ascension Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ]
+      ],
+      "source": "Scene 227"
+    },
+    {
+      "name": "Ascension Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ],
+        [
+          0.0,
+          -88.594
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 228"
+    },
+    {
+      "name": "Ascension Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "source": "Scene 229"
+    },
+    {
+      "name": "Ascension Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 230"
+    },
+    {
+      "name": "Ascension Step 5",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "source": "Scene 231"
+    },
+    {
+      "name": "Ascension Step 6",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ],
+        [
+          0.0,
+          18.984
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 232"
+    },
+    {
+      "name": "Ascension Step 7",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ]
+      ],
+      "source": "Scene 233"
+    },
+    {
+      "name": "Ascension Step 8",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ],
+        [
+          0.0,
+          92.812
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 234"
+    },
+    {
+      "name": "Ascension",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ],
+        [
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ],
+          [
+            0.0,
+            -88.594
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 235",
+      "notes": [
+        "8 steps, 1000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+      ]
+    },
+    {
+      "name": "Blink Step 1",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ]
+      ],
+      "source": "Scene 236"
+    },
+    {
+      "name": "Blink Step 2",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 237"
+    },
+    {
+      "name": "Blink Step 3",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ]
+      ],
+      "source": "Scene 238"
+    },
+    {
+      "name": "Blink Step 4",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 239"
+    },
+    {
+      "name": "Blink Step 5",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ]
+      ],
+      "source": "Scene 240"
+    },
+    {
+      "name": "Blink Step 6",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ],
+        [
+          13.711,
+          -18.984
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 241"
+    },
+    {
+      "name": "Blink Step 7",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ]
+      ],
+      "source": "Scene 242"
+    },
+    {
+      "name": "Blink Step 8",
+      "kind": "pose",
+      "tags": [
+        "movers"
+      ],
+      "offsets": [
+        [
+          13.711,
+          -18.984
+        ],
+        [
+          -13.711,
+          -18.984
+        ],
+        [
+          -24.258,
+          -31.641
+        ],
+        [
+          24.258,
+          -31.641
+        ]
+      ],
+      "intensity": 1.0,
+      "source": "Scene 243"
+    },
+    {
+      "name": "Blink",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "steps": [
+        [
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ]
+        ],
+        [
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ]
+        ],
+        [
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ]
+        ],
+        [
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ]
+        ],
+        [
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ]
+        ],
+        [
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ],
+          [
+            13.711,
+            -18.984
+          ]
+        ],
+        [
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ]
+        ],
+        [
+          [
+            13.711,
+            -18.984
+          ],
+          [
+            -13.711,
+            -18.984
+          ],
+          [
+            -24.258,
+            -31.641
+          ],
+          [
+            24.258,
+            -31.641
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 244",
+      "notes": [
+        "8 steps, 1000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "name": "MH Color Auto",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "MH Beam Open",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "MH Strobe",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Despacio Idle",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "Peak",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "MH Color Spin",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "MH Slow Pulse",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Warm Up",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "Deep",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "Landing",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "Spiral",
+      "reason": "Collection -- rebuild with motion primitives"
+    },
+    {
+      "name": "Dim Chase",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Spotlight",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "MH Breathe Off",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "MH Breathe",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Crowd Cascade",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Drift",
+      "reason": "EFX -- rebuild with motion primitives"
+    },
+    {
+      "name": "Counter-Orbit",
+      "reason": "EFX -- rebuild with motion primitives"
+    },
+    {
+      "name": "Shiver",
+      "reason": "EFX -- rebuild with motion primitives"
+    },
+    {
+      "name": "Figure Eight",
+      "reason": "EFX -- rebuild with motion primitives"
+    },
+    {
+      "name": "Diamond Weave",
+      "reason": "EFX -- rebuild with motion primitives"
+    },
+    {
+      "name": "Build",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Drop",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Reset Heads (On)",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Reset Heads (Off)",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Reset Heads",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Pin Strobe",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Pin Breathe On",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Pin Breathe Off",
+      "reason": "writes nothing the engine models"
+    },
+    {
+      "name": "Pin Breathe",
+      "reason": "a step is neither position nor colour"
+    },
+    {
+      "name": "Night",
+      "reason": "fewer than two positional steps"
+    },
+    {
+      "name": "MH Medium Pulse",
+      "reason": "writes nothing the engine models"
+    }
+  ]
+}

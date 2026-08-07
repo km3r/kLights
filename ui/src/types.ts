@@ -114,7 +114,7 @@ export interface EngineState {
   taper: TaperState;
   clock: ClockState;
   auto: AutoState;
-  looks: { name: string; manual_only: boolean }[];
+  looks: { name: string; manual_only: boolean; kind?: string }[];
   palette: RGB[];
   palette_index: number;
   master: number;

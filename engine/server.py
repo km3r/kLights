@@ -45,6 +45,7 @@ from . import auto as autom
 from . import calibrate as calibmod
 from . import clock as clockmod
 from . import geometry as geo
+from . import library as libmod
 from . import motion
 from . import rig as rigmod
 from . import safety as safetymod
@@ -111,7 +112,14 @@ class ShowController:
         self.ctx = statemod.EvalContext(rig=self.rig, venue=self.rig.venue,
                                         taper=taper)
         self.clock = clockmod.MasterClock(bpm=bpm, now=0.0)
-        self.setlist = default_setlist()
+        # The ported library if the event has one, otherwise a small scaffold.
+        # Falling back rather than failing means a brand-new event runs before
+        # anything has been ported into it.
+        looks_path = self.event_dir / "looks.json"
+        if looks_path.exists():
+            self.setlist, self.library = libmod.load_setlist(looks_path)
+        else:
+            self.setlist, self.library = default_setlist(), []
         self.palette = default_palette()
         self.director = autom.AutoDirector(
             self.setlist,
@@ -492,6 +500,7 @@ class ShowController:
         states = self.latest_states
         g = self.rig.geometry
         stats = self.runner.stats
+        kinds = {e.name: e.kind for e in self.library}
 
         fixtures = []
         for f in self.rig.fixtures:
@@ -542,7 +551,10 @@ class ShowController:
                       "phrase_measured": self.clock.phrase_measured,
                       "taps": self.clock.taps},
             "auto": self.director.status(),
-            "looks": [{"name": l.name, "manual_only": l.manual_only}
+            # `kind` lets the UI group 197 looks into something navigable --
+            # a flat list that long is exactly why only a handful got used.
+            "looks": [{"name": l.name, "manual_only": l.manual_only,
+                       "kind": kinds.get(l.name, "look")}
                       for l in self.setlist.looks],
             "palette": [list(c) for c in self.palette.colors],
             "palette_index": self.palette.index,

@@ -9,27 +9,7 @@ export function ShowTab({ state, send }: {
 
   return (
     <>
-      <Card title="Looks" right={
-        auto.held ? <button className="small" onClick={() => send({ type: "release" })}>
-          Release hold
-        </button> : undefined
-      }>
-        <div className="grid tiles">
-          {state.looks.map((l) => (
-            <button key={l.name}
-                    className={auto.look === l.name ? "on" : ""}
-                    onClick={() => send({ type: "select_look", name: l.name })}>
-              {l.name}
-              {l.manual_only && <div className="small muted">manual only</div>}
-            </button>
-          ))}
-        </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>
-          {auto.held
-            ? "Held — auto mode will not change this until you release."
-            : `Auto changes on ${auto.last_change}.`}
-        </p>
-      </Card>
+      <Looks state={state} send={send} />
 
       <Tempo state={state} send={send} />
 
@@ -64,6 +44,90 @@ export function ShowTab({ state, send }: {
         </div>
       </Card>
     </>
+  );
+}
+
+const KIND_LABELS: Record<string, string> = {
+  pose: "Positions", path: "Moves", color: "Colours",
+  color_path: "Colour chases", intensity: "Levels", look: "Looks",
+};
+const KIND_ORDER = ["path", "pose", "color", "color_path", "intensity", "look"];
+
+/**
+ * The ported library, grouped and filterable.
+ *
+ * 197 looks came out of the workspace, and a flat list that long is precisely
+ * why only a handful got used on the night — the material was there, finding it
+ * on a phone was not. So they group by what they DO (which the port already
+ * knows, because it split scenes by which channels they touched) and there is a
+ * filter box, because at this size scanning is slower than typing.
+ */
+function Looks({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const [filter, setFilter] = useState("");
+  const [openKind, setOpenKind] = useState<string | null>(null);
+
+  const needle = filter.trim().toLowerCase();
+  const matching = state.looks.filter((l) => l.name.toLowerCase().includes(needle));
+
+  const groups = new Map<string, typeof matching>();
+  for (const look of matching) {
+    const kind = look.kind ?? "look";
+    if (!groups.has(kind)) groups.set(kind, []);
+    groups.get(kind)!.push(look);
+  }
+  const kinds = KIND_ORDER.filter((k) => groups.has(k));
+  // While filtering, show everything — hiding matches behind a collapsed group
+  // defeats the point of having typed.
+  const expanded = needle ? kinds : (openKind ? [openKind] : kinds.slice(0, 1));
+
+  return (
+    <Card title={`Looks — ${state.looks.length}`} right={
+      state.auto.held ? (
+        <button className="small" onClick={() => send({ type: "release" })}>
+          Release hold
+        </button>
+      ) : undefined
+    }>
+      <input className="field" placeholder="filter…" value={filter}
+             aria-label="filter looks"
+             onChange={(e) => setFilter(e.target.value)}
+             style={{
+               width: "100%", padding: "0.55rem", minHeight: 44,
+               background: "var(--panel-2)", border: "1px solid var(--line)",
+               borderRadius: 8, marginBottom: "0.6rem",
+             }} />
+
+      {kinds.map((kind) => (
+        <div key={kind} style={{ marginBottom: "0.5rem" }}>
+          <button className="small"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => setOpenKind(openKind === kind ? null : kind)}>
+            {KIND_LABELS[kind] ?? kind} · {groups.get(kind)!.length}
+          </button>
+          {expanded.includes(kind) && (
+            <div className="grid tiles" style={{ marginTop: "0.4rem" }}>
+              {groups.get(kind)!.map((l) => (
+                <button key={l.name}
+                        className={state.auto.look === l.name ? "on" : ""}
+                        onClick={() => send({ type: "select_look", name: l.name })}>
+                  {l.name}
+                  {l.manual_only && <div className="small muted">manual only</div>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {matching.length === 0 && (
+        <p className="small muted">Nothing matches “{filter}”.</p>
+      )}
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        {state.auto.held
+          ? "Held — auto mode will not change this until you release."
+          : `Auto changes on ${state.auto.last_change}.`}
+      </p>
+    </Card>
   );
 }
 

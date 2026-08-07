@@ -127,8 +127,8 @@ describe("show tab", () => {
   it("marks the running look and offers to release the hold", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    // The fixture is held on 'sweep'.
-    expect(screen.getByRole("button", { name: /^sweep$/ }).className)
+    // The fixture is held on 'Lazy Circle', a ported chaser.
+    expect(screen.getByRole("button", { name: /^Lazy Circle$/ }).className)
       .toContain("on");
     expect(screen.getByText(/Held/)).toBeInTheDocument();
 
@@ -139,8 +139,32 @@ describe("show tab", () => {
   it("selects a look by name", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    await user.click(screen.getByRole("button", { name: /^drift$/ }));
-    expect(socket.last()).toEqual({ type: "select_look", name: "drift" });
+    await user.click(screen.getByRole("button", { name: /^Slow Sweep$/ }));
+    expect(socket.last()).toEqual({ type: "select_look", name: "Slow Sweep" });
+  });
+
+  // 197 looks came out of the workspace. A flat list that long is exactly why
+  // only a handful got used, so they group by what they do and can be filtered.
+  it("groups the ported library by kind", () => {
+    mount();
+    expect(screen.getByRole("button", { name: /Moves · \d+/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Colours · \d+/ })).toBeInTheDocument();
+  });
+
+  it("filters across every group, not just the open one", async () => {
+    const user = userEvent.setup();
+    mount();
+    // 'Heads - Ball' is a pose; the first group open by default is Moves.
+    expect(screen.queryByRole("button", { name: /^Heads - Ball$/ })).toBeNull();
+    await user.type(screen.getByLabelText("filter looks"), "Heads - Ball");
+    expect(screen.getByRole("button", { name: /^Heads - Ball$/ })).toBeInTheDocument();
+  });
+
+  it("says so when a filter matches nothing", async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.type(screen.getByLabelText("filter looks"), "zzzz");
+    expect(screen.getByText(/Nothing matches/)).toBeInTheDocument();
   });
 
   it("taps tempo", async () => {
@@ -234,10 +258,15 @@ describe("move tab", () => {
     })));
     await user.click(screen.getByRole("button", { name: /Move/ }));
 
-    expect(screen.getByText(/beam core is in the crowd head band/i))
+    // Scoped to this head's card: with the real library loaded, several heads
+    // legitimately share a taper reason, so a page-wide query is ambiguous.
+    const card = screen.getByText("Moving Head #2").closest(".fixture")!;
+    const scoped = within(card as HTMLElement);
+    expect(scoped.getByText(/beam core is in the crowd head band/i))
       .toBeInTheDocument();
-    expect(screen.getByText(/floor/)).toBeInTheDocument();
-    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(scoped.getByText(/floor/)).toBeInTheDocument();
+    expect(scoped.getByText("50%")).toBeInTheDocument();
+    expect(card.textContent).toContain("6.5 m");
   });
 });
 
