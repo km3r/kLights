@@ -20,6 +20,25 @@
 *.obj text
 *.mtl text
 
+# The UI build must be byte-reproducible, or the CI guard that rebuilds it and
+# diffs against the committed copy cannot tell "someone forgot to rebuild" from
+# "this checkout has different line endings".
+#
+# Two separate problems, both caused by `* text=auto` above:
+#
+#   * ui/index.html is INPUT to vite. Checked out as CRLF on Windows, vite treats
+#     the stray CR as page content and emits it plus its own newline, so the
+#     built index.html gets \r\r\n and a fresh Windows clone can no longer
+#     reproduce the committed bundle. Pinning the web sources to LF fixes it at
+#     the source rather than papering over it in the comparison.
+#   * ui/dist is OUTPUT. Normalizing a build artifact is meaningless -- nothing
+#     ever hand-edits it -- and it makes every byte comparison platform-specific.
+ui/index.html text eol=lf
+ui/src/** text eol=lf
+ui/*.json text eol=lf
+ui/*.ts text eol=lf
+ui/dist/** -text
+
 # GDTF is a ZIP container; Blender scenes and renders are binary.
 *.gdtf binary
 *.blend binary

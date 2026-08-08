@@ -11,6 +11,36 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F12, the guards
+
+- **CI** (`.github/workflows/ci.yml`): the engine suites on Linux and Windows
+  across Python 3.10 and 3.12, the UI suite and typecheck, and a bundle job
+  that rebuilds `ui/dist` and fails if it differs from what is committed. A
+  second step asserts every asset `index.html` references is actually tracked —
+  the specific shape of the near-miss below, which survives a matching rebuild
+  if the new assets were simply never added.
+- **`python -m engine.tests`** — discovers every suite, runs each in its own
+  subprocess (they set process-wide timing and assert on wall-clock behaviour,
+  so sharing an interpreter would make one suite's leftovers decide another's
+  result), and reports once. Also runs the four module self-tests. Replaces a
+  bash `for` loop that stopped at the first failure, on a Windows-primary
+  project. `-k` narrows, `-v` streams.
+- **`python scripts/preflight.py`** — the one command before leaving for a
+  venue: suites, patch sheet, rig validation, the event's own venue checks,
+  QLC+ parity, and the bundle guard. Exit 0 means go.
+
+### Fixed — F12
+
+- **The UI build was not byte-reproducible.** `.gitattributes` had `* text=auto`,
+  so a Windows clone checked out `ui/index.html` with CRLF, vite treated the
+  stray CR as page content, and the rebuilt `index.html` came out with `\r\r\n`.
+  A fresh clone therefore could not reproduce the committed bundle, which would
+  have made the new CI guard fire on every Windows run and be disabled as noise
+  within a week. The web sources are now pinned to `eol=lf` and `ui/dist` is
+  marked `-text`: normalising a build artifact is meaningless, and it made every
+  byte comparison platform-specific. Verified by rebuilding in a fresh clone
+  with `core.autocrlf=true`.
+
 ### Added
 - `LICENSE` — Apache-2.0.
 - `docs/SAFETY.md` — what the beam taper guards and what it does not, the three

@@ -1,0 +1,120 @@
+name: CI
+
+# The engine is stdlib-only and the UI's lockfile is committed, so nothing here
+# resolves a dependency it has not pinned. That is the point: if CI needs an
+# install step the venue does not have, CI is no longer testing the venue.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: engine ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the documented floor; 3.12 is what development runs on.
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # No pip install step, deliberately -- see the note at the top.
+      - name: Run every suite
+        run: python -m engine.tests
+
+  ui:
+    name: ui tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - name: Typecheck
+        run: npx tsc -b
+        working-directory: ui
+      - run: npm test
+        working-directory: ui
+
+  bundle:
+    # The job this whole file was written for.
+    #
+    # ui/dist is committed on purpose, so a show laptop needs only Python and a
+    # checkout. That trades a build step at the venue for a promise that the
+    # committed bundle matches the committed source -- and nothing was keeping
+    # that promise. The tracked assets and the built ones had diverged to the
+    # point where a `git commit -a` would have published an index.html
+    # referencing two files that were not in the tree: a blank console at load-in,
+    # discovered at load-in.
+    #
+    # Runs on both platforms because the failure this replaces was
+    # platform-specific: with `* text=auto`, a Windows checkout handed vite a
+    # CRLF index.html, vite treated the stray CR as content, and the rebuilt file
+    # got \r\r\n. The bundle was correct and still did not match. That is fixed
+    # in .gitattributes (ui/dist is -text, the web sources are eol=lf); this job
+    # is what stops it coming back.
+    name: bundle matches source (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+      - name: Committed bundle must equal a fresh build
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain ui/dist)" ]; then
+            echo "::error::ui/dist does not match a build from this commit's source."
+            echo "Rebuild and commit it as one set:"
+            echo "    cd ui && npm run build && cd .. && git add -A ui/dist"
+            echo
+            git status --porcelain ui/dist
+            git diff --stat ui/dist
+            exit 1
+          fi
+          echo "ui/dist matches a fresh build."
+
+      # index.html referencing an asset that is not committed is the specific
+      # shape of the near-miss, and it survives even a matching rebuild if the
+      # new assets were simply never `git add`ed. Cheap to check directly.
+      - name: Every asset index.html references is tracked
+        shell: bash
+        run: |
+          missing=0
+          for ref in $(grep -o 'assets/[A-Za-z0-9._-]*' ui/dist/index.html | sort -u); do
+            if git ls-files --error-unmatch "ui/dist/$ref" >/dev/null 2>&1; then
+              echo "ok       $ref"
+            else
+              echo "::error::ui/dist/index.html references $ref, which is not tracked by git."
+              missing=1
+            fi
+          done
+          exit $missing

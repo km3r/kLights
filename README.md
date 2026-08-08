@@ -140,10 +140,20 @@ python previz/ue_remote.py previz/unreal/Content/Python/go.py
 ## Tests
 
 The engine's tests are standalone scripts with no test-runner dependency — run
-one directly, or all of them:
+one directly (`python engine/tests/test_clock.py`), or all of them plus the
+module self-tests:
 
 ```bash
-for t in engine/tests/test_*.py; do python "$t" || break; done
+python -m engine.tests
+```
+
+Each suite runs in its own subprocess, because several set process-wide timing
+and assert on wall-clock behaviour. `-k <substring>` narrows it, `-v` streams a
+suite's own output instead of capturing it. Before a venue, run the lot along
+with the patch, venue and bundle checks:
+
+```bash
+python scripts/preflight.py
 ```
 
 Two of them are load-bearing. `test_geometry_parity.py` compares every aim
@@ -170,6 +180,12 @@ The UI has its own suite, run against a fixture captured from a real engine:
 ```bash
 cd ui && npm test
 ```
+
+CI runs all of the above on Linux and Windows, and adds the one check that
+cannot be made by being careful: it rebuilds `ui/dist` and fails if the result
+differs from what is committed. That bundle is committed on purpose so a show
+laptop needs no Node — which means a stale or half-staged one ships a blank
+console to the venue, and it nearly did.
 
 ## The QLC+ path
 
