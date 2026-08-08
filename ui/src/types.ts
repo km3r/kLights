@@ -62,6 +62,12 @@ export interface FixtureState {
   beam_deg?: number;
   intensity?: number;
   color?: RGB;
+  /** RGBW white component, 0..1. Present only when non-zero — a swatch drawn
+   *  from RGB alone reads colder than the fixture actually is. */
+  white?: number;
+  /** Shutter position in the fixture's slow-to-fast strobe band, 0..1. Not Hz:
+   *  the profile declares no frequency at either end. */
+  strobe?: number;
   safety?: SafetyState;
   aim?: { bearing: number; elevation: number };
   lands_on?: string;
@@ -107,6 +113,40 @@ export interface TaperState {
   enabled: boolean;
 }
 
+/** The three independent slots. Picking a colour must not disturb the movement
+ *  and vice versa, which is what having slots at all is for. */
+export type Slot = "movement" | "color" | "level";
+
+export interface LookInfo {
+  name: string;
+  manual_only: boolean;
+  kind?: string;
+  /** Which tab owns this look. Sent by the engine rather than derived here, so
+   *  the UI cannot disagree with the engine about where a look goes. */
+  slot: Slot;
+  /** The fixture groups this look writes — what the pill filters select on. */
+  groups: string[];
+  /** Set when this is one step of a chase that also ported — filed under the
+   *  parent rather than listed beside it. */
+  step_of?: string | null;
+}
+
+/** Per slot, per fixture group: which look is loaded. A pinspot colour and a
+ *  mover colour are different decisions and are held separately. */
+export type SlotSelection = Record<string, string>;
+
+export interface Selection {
+  movement: SlotSelection;
+  color: SlotSelection;
+  level: SlotSelection;
+}
+
+export interface Preset extends Selection {
+  name: string;
+  speed?: number;
+  master?: number;
+}
+
 export interface EngineState {
   type: "state";
   rev: number;
@@ -114,13 +154,21 @@ export interface EngineState {
   taper: TaperState;
   clock: ClockState;
   auto: AutoState;
-  looks: { name: string; manual_only: boolean; kind?: string }[];
+  looks: LookInfo[];
+  /** What is loaded into each of the three independent slots. */
+  selection: Selection;
+  presets: Preset[];
+  /** Fixture groups in the rig, biggest first — the pill filters. */
+  groups: string[];
   palette: RGB[];
   palette_index: number;
   master: number;
   blackout: boolean;
   panicked: boolean;
   color_overrides: Record<string, RGB>;
+  /** Hand dimming by target ("all", a group, or a fixture name), 0..1. A
+   *  multiplier over whatever the Bright pattern is doing. */
+  level_overrides: Record<string, number>;
   fixtures: FixtureState[];
   venue: VenueState;
   presence: Peer[];
@@ -137,7 +185,11 @@ export interface EngineState {
 /** Everything the UI can ask the engine to do. */
 export type Command =
   | { type: "hello"; name: string }
-  | { type: "select_look"; name: string; hold?: boolean }
+  | { type: "select_look"; name: string; hold?: boolean; slot?: Slot }
+  | { type: "clear_slot"; slot: Slot; group?: string }
+  | { type: "preset_save"; name: string }
+  | { type: "preset_apply"; name: string }
+  | { type: "preset_delete"; name: string }
   | { type: "release" }
   | { type: "next_look" }
   | { type: "master"; value: number }
@@ -153,6 +205,7 @@ export type Command =
   | { type: "auto_interval"; axis: "looks" | "palette"; value: number }
   | { type: "energy"; source: "manual" | "phrase"; value?: number }
   | { type: "color"; target: string; color: RGB; clear?: boolean }
+  | { type: "level"; target: string; value?: number; clear?: boolean }
   | { type: "palette_select"; index: number }
   | { type: "jog"; fixture: string; pan: number; tilt: number }
   | { type: "jog_clear"; fixture?: string }

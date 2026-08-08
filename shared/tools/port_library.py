@@ -40,7 +40,7 @@ import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import sys
 
@@ -63,20 +63,52 @@ class PortedLook:
     name: str
     kind: str                       # "pose" | "color" | "path" | "mixed"
     tags: list[str]
+    # The rig groups this look actually writes, from the fixtures the scene
+    # touched. Without it a scene that coloured only the pinspots ported as an
+    # untagged uniform colour and repainted the movers too -- "Pin Ball Glow"
+    # writes two pinspots in the workspace and was recolouring the whole rig.
+    groups: list[str] = field(default_factory=list)
     offsets: Optional[list[list[float]]] = None      # per head, (bearing, elev)
     steps: Optional[list[list[list[float]]]] = None  # per step, per head
     color: Optional[list[float]] = None
     colors: Optional[dict[str, list[float]]] = None
+    # Per fixture, 0..1. The pinspots are RGBW and several looks blend a real
+    # white component -- "Pin Ball Glow" is RGB(120,60,20) plus W=80, and reading
+    # only RGB ported it as a cooler, dimmer light with no complaint.
+    whites: Optional[dict[str, float]] = None
     frames: Optional[list[dict[str, list[float]]]] = None
     bars: Optional[float] = None
     intensity: Optional[float] = None
+    # Per fixture, where the scene dims fixtures differently. Collapsing this to
+    # one number threw away exactly the information the per-fixture COLOUR
+    # handling was added to preserve.
+    intensities: Optional[dict[str, float]] = None
+    # Per fixture, 0..1 across the fixture's own strobe band.
+    strobes: Optional[dict[str, float]] = None
+    # A level CHASE: per step, {fixture: level}. Without this the porter had no
+    # concept of an intensity chaser at all, so "Spotlight", "Dim Chase" and
+    # "Crowd Cascade" were skipped and their step scenes were left loose in the
+    # library as separate looks -- the chase itself was unreachable.
+    levels: Optional[list[dict[str, float]]] = None
+    # Per step, alongside `levels` -- the Breathe pair chases the shutter rather
+    # than the dimmer, so a level chase has to be able to carry both.
+    strobe_steps: Optional[list[dict[str, float]]] = None
+    # Name of the chaser this scene is a step OF, when one ported. "Spotlight
+    # Step 1..4" are meaningless on their own and were cluttering the level list
+    # with four entries for one routine; they stay reachable, but behind the
+    # chase rather than beside it.
+    step_of: Optional[str] = None
     source: str = ""
     notes: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict:
-        out: dict = {"name": self.name, "kind": self.kind, "tags": self.tags}
-        for key in ("offsets", "steps", "frames", "color", "colors",
-                    "bars", "intensity"):
+        out: dict = {"name": self.name, "kind": self.kind, "tags": self.tags,
+                     "groups": self.groups}
+        if self.step_of:
+            out["step_of"] = self.step_of
+        for key in ("offsets", "steps", "frames", "levels", "strobe_steps",
+                    "color", "colors", "whites", "bars", "intensity",
+                    "intensities", "strobes"):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
@@ -120,10 +152,41 @@ class Porter:
         self.ms_per_bar = 4 * 60_000.0 / reference_bpm
         self.skipped: list[tuple[str, str]] = []
 
-        # QLC+ fixture ID -> our patched fixture. The workspace and rig.json are
-        # both derived from the same patch sheet, so the ids line up; anything
-        # that does not is reported rather than guessed at.
-        self.by_qlc_id = {f.fid: f for f in self.rig.fixtures}
+    def groups_for(self, names: Iterable[str]) -> list[str]:
+        """The rig groups covering a set of fixture names.
+
+        A group is a rig tag ("movers", "pinspots"). Reported per look so the
+        engine can scope the layer, and so the UI can offer a filter that means
+        something: the whole reason "colour" needed splitting by fixture type is
+        that a pinspot palette and a mover palette are different decisions.
+        """
+        wanted = set(names)
+        if not wanted:
+            return []
+        members = {tag: {f.name for f in self.rig.fixtures if tag in f.tags}
+                   for tag in self.rig.tags()}
+
+        # Tags entirely inside what the look wrote, biggest first, dropping any
+        # that a bigger one already covers. "corner movers" and "movers" hold
+        # the same four heads here, and listing both says nothing twice.
+        covered: list[str] = []
+        for tag in sorted(members, key=lambda t: (-len(members[t]), t)):
+            if members[tag] and members[tag] <= wanted \
+                    and not any(members[tag] <= members[c] for c in covered):
+                covered.append(tag)
+        if covered:
+            return covered
+
+        # Nothing fully covered: the look writes SOME of a group -- the
+        # "Spotlight Step" scenes name three of four heads. Report the smallest
+        # group that contains them all, because "movers" is both the honest
+        # answer and the filter a person would look under. The per-fixture data
+        # still scopes what actually changes; a fixture the look does not name
+        # is left alone rather than blanked.
+        containing = [t for t in members if wanted <= members[t]]
+        if containing:
+            return [min(containing, key=lambda t: (len(members[t]), t))]
+        return sorted(wanted)
 
     # -- decoding ---------------------------------------------------------
 
@@ -156,7 +219,8 @@ class Porter:
                         round(aim.elev_deg - frame.elev_to_ball, 3)])
         return out
 
-    def colors_for(self, values_by_fixture: dict[int, dict[int, int]]
+    def colors_for(self, values_by_fixture: dict[int, dict[int, int]],
+                   whites: Optional[dict[str, float]] = None
                    ) -> dict[str, list[float]]:
         """{fixture name: RGB} for every fixture this scene colours.
 
@@ -191,21 +255,68 @@ class Porter:
                            (rigmod.RED, rigmod.GREEN, rigmod.BLUE)]
             if all(o is not None for o in rgb_offsets) and \
                     any(o in values for o in rgb_offsets):
+                # A component the scene does not write reads as 0. Unlike
+                # `offsets_for`, which refuses a partial position, there is no
+                # way to express "set red and leave green alone" -- the engine's
+                # colour is one RGB triple, not three channels. Verified against
+                # the workspace: no scene writes a partial R/G/B set, so this
+                # branch does not fire on the material being ported.
                 out[fixture.name] = [round(values.get(o, 0) / 255.0, 4)
                                      for o in rgb_offsets]
+                white = offsets.get(rigmod.WHITE)
+                if whites is not None and white is not None and white in values:
+                    whites[fixture.name] = round(values[white] / 255.0, 4)
         return out
 
+    def strobe_for(self, values_by_fixture: dict[int, dict[int, int]]
+                   ) -> Optional[dict[str, float]]:
+        """{fixture name: 0..1 within its own strobe band}, for what strobes.
+
+        Read against the profile's declared band rather than as a raw byte: the
+        MJ-OS-018 is OPEN at 0-7 AND at 250-255, with the strobe between, so a
+        raw value carries no meaning without the band. Fixtures sitting in an
+        open band are left out entirely -- "shutter open" is the default and
+        does not need a look to assert it.
+        """
+        out: dict[str, float] = {}
+        for fixture in self.rig.fixtures:
+            values = values_by_fixture.get(fixture.fid)
+            if not values:
+                continue
+            offset = fixture.profile.offsets(fixture.mode).get(rigmod.STROBE)
+            band = fixture.strobe_band()
+            if offset is None or band is None or offset not in values:
+                continue
+            lo, hi = band
+            value = values[offset]
+            if lo <= value <= hi and hi > lo:
+                out[fixture.name] = round((value - lo) / (hi - lo), 4)
+        return out or None
+
     def intensity_for(self, values_by_fixture: dict[int, dict[int, int]]
-                      ) -> Optional[float]:
-        levels = []
+                      ) -> tuple[Optional[float], Optional[dict[str, float]]]:
+        """(overall level, per-fixture levels where they differ).
+
+        The per-fixture half exists for the same reason the colour half does: a
+        scene that dims two heads differently is expressing something, and
+        flattening it to the maximum turns a two-level look into a flat one.
+        Where every fixture agrees, only the single number is emitted -- that
+        case stays portable to a rig with different fixture names.
+        """
+        levels: dict[str, float] = {}
         for fixture in self.rig.fixtures:
             values = values_by_fixture.get(fixture.fid)
             if not values:
                 continue
             dim = fixture.profile.offsets(fixture.mode).get(rigmod.DIMMER)
             if dim is not None and dim in values:
-                levels.append(values[dim] / 255.0)
-        return round(max(levels), 3) if levels else None
+                levels[fixture.name] = round(values[dim] / 255.0, 3)
+        if not levels:
+            return None, None
+        overall = round(max(levels.values()), 3)
+        if len(set(levels.values())) == 1:
+            return overall, None
+        return overall, levels
 
     # -- the port ---------------------------------------------------------
 
@@ -217,8 +328,10 @@ class Porter:
         name = func.get("Name", "?")
         values = self.scene_values(func)
         offsets = self.offsets_for(values)
-        colors = self.colors_for(values)
-        intensity = self.intensity_for(values)
+        whites: dict[str, float] = {}
+        colors = self.colors_for(values, whites)
+        intensity, intensities = self.intensity_for(values)
+        strobes = self.strobe_for(values)
 
         # One colour if every coloured fixture agrees, per-fixture if not.
         # Collapsing the uniform case keeps the common look portable to a rig
@@ -233,7 +346,7 @@ class Porter:
                 per_fixture = colors
 
         if offsets is None and color is None and per_fixture is None \
-                and intensity is None:
+                and intensity is None and strobes is None:
             self.skipped.append((name, "writes nothing the engine models"))
             return None
 
@@ -241,10 +354,24 @@ class Porter:
         kind = ("mixed" if offsets and has_color else
                 "pose" if offsets else
                 "color" if has_color else "intensity")
+        written = {f.name for f in self.rig.fixtures if values.get(f.fid)}
         look = PortedLook(name=name, kind=kind,
                           tags=["movers"] if offsets else [],
+                          groups=self.groups_for(written),
                           offsets=offsets, color=color, intensity=intensity,
+                          intensities=intensities, strobes=strobes,
+                          whites={k: v for k, v in whites.items() if v > 0} or None,
                           source=f"Scene {func.get('ID')}")
+        if strobes:
+            look.notes.append(
+                f"strobe on {', '.join(sorted(strobes))} -- 0..1 across the "
+                f"fixture's own band, since the raw byte means nothing without it")
+        if look.whites:
+            look.notes.append(
+                f"white channel on {', '.join(sorted(look.whites))} -- these are "
+                f"RGBW, and the W is part of the colour")
+        if look.intensities:
+            look.notes.append("per-fixture levels differ")
         if per_fixture is not None:
             look.colors = per_fixture
             look.notes.append(
@@ -255,6 +382,7 @@ class Porter:
     def port_chaser(self, func, scenes_by_id: dict[int, ET.Element]) -> Optional[PortedLook]:
         name = func.get("Name", "?")
         steps = []
+        dropped = 0
         for step in sorted(func.findall(NS + "Step"),
                            key=lambda s: int(s.get("Number", 0))):
             scene = scenes_by_id.get(int((step.text or "0").strip()))
@@ -262,12 +390,26 @@ class Porter:
                 continue
             offsets = self.offsets_for(self.scene_values(scene))
             if offsets is None:
-                # Not a movement chase. It may still be a COLOUR chase -- the
-                # Rainbow Wheel and Wheel Walk families step through wheel slots
-                # rather than positions, and they are a named section of the old
-                # console, so dropping them would lose real material.
-                return self.port_color_chaser(func, scenes_by_id)
+                # A step that writes no position. Skip the STEP, not the chase:
+                # abandoning the whole chaser here threw away "Build", six good
+                # positional steps, because its seventh wrote nothing.
+                dropped += 1
+                continue
             steps.append(offsets)
+        if not steps:
+            # No positional step at all. It may still be a COLOUR chase -- the
+            # Rainbow Wheel and Wheel Walk families step through wheel slots
+            # rather than positions -- or a LEVEL chase, which is what Spotlight,
+            # Dim Chase and Crowd Cascade are. All three are named sections of
+            # the old console, so dropping any of them loses real material.
+            #
+            # Only the LAST branch records a skip. Letting each failing branch
+            # append one put the same chaser in the list three times under three
+            # different reasons, which reads as three lost looks.
+            colour = self.port_color_chaser(func, scenes_by_id, record=False)
+            if colour is not None:
+                return colour
+            return self.port_level_chaser(func, scenes_by_id)
         if len(steps) < 2:
             self.skipped.append((name, "fewer than two positional steps"))
             return None
@@ -277,15 +419,19 @@ class Porter:
         if duration <= 0:
             duration = 1000.0
         raw_bars = duration * len(steps) / self.ms_per_bar
+        notes = [f"{len(steps)} steps, {duration:.0f} ms each "
+                 f"= {raw_bars:.2f} bars at {self.bpm:.0f} bpm, "
+                 f"snapped to {snap_bars(raw_bars):g}"]
+        if dropped:
+            notes.append(f"{dropped} step(s) wrote no position and were skipped")
         return PortedLook(
-            name=name, kind="path", tags=["movers"], steps=steps,
+            name=name, kind="path", tags=["movers"],
+            groups=self.groups_for(f.name for f in self.rig.movers), steps=steps,
             bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",
-            notes=[f"{len(steps)} steps, {duration:.0f} ms each "
-                   f"= {raw_bars:.2f} bars at {self.bpm:.0f} bpm, "
-                   f"snapped to {snap_bars(raw_bars):g}"])
+            notes=notes)
 
-    def port_color_chaser(self, func, scenes_by_id: dict[int, ET.Element]
-                          ) -> Optional[PortedLook]:
+    def port_color_chaser(self, func, scenes_by_id: dict[int, ET.Element],
+                          record: bool = True) -> Optional[PortedLook]:
         """A chaser whose steps are colours rather than positions.
 
         Emitted as a list of colour frames rather than a path: colour on a
@@ -296,18 +442,29 @@ class Porter:
         """
         name = func.get("Name", "?")
         frames: list[dict[str, list[float]]] = []
+        dropped = 0
         for step in sorted(func.findall(NS + "Step"),
                            key=lambda s: int(s.get("Number", 0))):
             scene = scenes_by_id.get(int((step.text or "0").strip()))
             if scene is None:
                 continue
-            colors = self.colors_for(self.scene_values(scene))
+            step_whites: dict[str, float] = {}
+            colors = self.colors_for(self.scene_values(scene), step_whites)
             if not colors:
-                self.skipped.append((name, "a step is neither position nor colour"))
-                return None
-            frames.append(colors)
+                # Skip the step, not the chase -- same reasoning as
+                # `port_chaser`, and it makes the skip reason honest when what
+                # is really wrong is that too few steps survived.
+                dropped += 1
+                continue
+            # A frame is [r, g, b] or [r, g, b, w]. "Pin Drift" steps through
+            # the same warm pastels the Pin scenes hold, and those are RGBW --
+            # so a chase frame needs the W as much as a scene does.
+            frames.append({name: (rgb + [step_whites[name]]
+                                  if step_whites.get(name) else rgb)
+                           for name, rgb in colors.items()})
         if len(frames) < 2:
-            self.skipped.append((name, "fewer than two colour steps"))
+            if record:
+                self.skipped.append((name, "fewer than two colour steps"))
             return None
 
         speed = func.find(NS + "Speed")
@@ -316,10 +473,74 @@ class Porter:
             duration = 1000.0
         raw_bars = duration * len(frames) / self.ms_per_bar
         return PortedLook(
-            name=name, kind="color_path", tags=[], frames=frames,
+            name=name, kind="color_path", tags=[],
+            groups=self.groups_for({n for fr in frames for n in fr}), frames=frames,
             bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",
             notes=[f"{len(frames)} colour steps; stepped, not interpolated -- a "
-                   f"mechanical wheel has no in-between slots"])
+                   f"mechanical wheel has no in-between slots"]
+                  + ([f"{dropped} step(s) wrote no colour and were skipped"]
+                     if dropped else []))
+
+    def port_level_chaser(self, func, scenes_by_id: dict[int, ET.Element]
+                          ) -> Optional[PortedLook]:
+        """A chaser whose steps differ only in LEVEL.
+
+        The whole "Spotlight" / "Dim Chase" / "Crowd Cascade" family, plus the
+        Breathe pair. The porter previously had no third branch here, so each of
+        those chasers was skipped and its step scenes were left loose in the
+        library as separate one-step looks -- the chase itself unreachable, and
+        the steps individually meaningless.
+
+        Stepped rather than interpolated, matching the colour chases: the source
+        is a step list, and inventing a fade between two dimmer levels would be
+        asserting a shape the original never had. A level chase composes as a
+        MULTIPLIER over whatever colour and position are running -- see
+        `library.level_layers`.
+        """
+        name = func.get("Name", "?")
+        levels: list[dict[str, float]] = []
+        strobes: list[dict[str, float]] = []
+        for step in sorted(func.findall(NS + "Step"),
+                           key=lambda s: int(s.get("Number", 0))):
+            scene = scenes_by_id.get(int((step.text or "0").strip()))
+            if scene is None:
+                continue
+            values = self.scene_values(scene)
+            overall, per_fixture = self.intensity_for(values)
+            step_strobe = self.strobe_for(values)
+            # An EMPTY step is kept, unlike in the position and colour chases.
+            # "MH Breathe" is literally Breathe On / Breathe Off, and the Off
+            # half writes nothing the engine models -- dropping it would leave a
+            # one-step chase that never breathes. In a level chase, "back to
+            # normal" is a step.
+            if per_fixture is None and overall is not None:
+                per_fixture = {f.name: overall for f in self.rig.fixtures
+                               if f.profile.offsets(f.mode).get(rigmod.DIMMER)
+                               in (values.get(f.fid) or {})}
+            levels.append(per_fixture or {})
+            strobes.append(step_strobe or {})
+        if len(levels) < 2 or not any(levels) and not any(strobes):
+            self.skipped.append((
+                name, "fewer than two level steps" if len(levels) < 2
+                else "every step of this chase is empty"))
+            return None
+
+        speed = func.find(NS + "Speed")
+        duration = float(speed.get("Duration", 0)) if speed is not None else 0.0
+        if duration <= 0:
+            duration = 1000.0
+        raw_bars = duration * len(levels) / self.ms_per_bar
+        notes = [f"{len(levels)} level steps, {duration:.0f} ms each "
+                 f"= {raw_bars:.2f} bars, snapped to {snap_bars(raw_bars):g}",
+                 "applied as a MULTIPLIER, so it composes with whatever colour "
+                 "and position are running rather than replacing them"]
+        return PortedLook(
+            name=name, kind="level_path", tags=[],
+            groups=self.groups_for({n for fr in levels for n in fr}
+                                   | {n for fr in strobes for n in fr}), levels=levels,
+            strobe_steps=strobes if any(strobes) else None,
+            bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",
+            notes=notes)
 
     def run(self, workspace: Path) -> list[PortedLook]:
         root = ET.parse(workspace).getroot()
@@ -348,6 +569,31 @@ class Porter:
                 continue
             if ported is not None:
                 looks.append(ported)
+
+        # Mark scenes that are a step of a chase that ported. "Spotlight Step 1"
+        # is not a look anyone wants to pick; four of them beside the Spotlight
+        # chase itself is the flat-list problem the whole port exists to fix.
+        # Kept rather than dropped -- picking a single step is a legitimate, if
+        # rare, thing to do -- but the UI files them under the parent.
+        by_name = {look.name: look for look in looks}
+        for func in functions:
+            if func.get("Type") != "Chaser" or func.get("Name", "?") not in by_name:
+                continue
+            for step in func.findall(NS + "Step"):
+                scene = scenes_by_id.get(int((step.text or "0").strip()))
+                if scene is None:
+                    continue
+                child = by_name.get(scene.get("Name", ""))
+                # Only scenes NAMED after the parent. Being used by a chase does
+                # not make a scene an artefact of it -- "MH Red" and
+                # "Heads - Ball" are first-class looks that several chases
+                # happen to step through, and filing them under a parent would
+                # hide most of the library. "Spotlight Step 1" and
+                # "MH Breathe On" are the real artefacts, and they say so in
+                # their own names.
+                if (child is not None and child.source.startswith("Scene")
+                        and child.name.startswith(func.get("Name", "\0"))):
+                    child.step_of = func.get("Name")
         return looks
 
 

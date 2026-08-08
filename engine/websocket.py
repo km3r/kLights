@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import os
 import socket
 import struct
 from typing import Optional
@@ -175,8 +174,10 @@ class WebSocket:
     def send(self, text: str) -> None:
         self.send_raw(encode_frame(text.encode("utf-8"), OP_TEXT))
 
-    def ping(self) -> None:
-        self.send_raw(encode_frame(os.urandom(4), OP_PING))
+    # No server-initiated ping. The state broadcast runs at 10 Hz, so a
+    # connection is never idle long enough for an intermediary to time it out --
+    # a keepalive here would be a second mechanism doing the same job. Client
+    # pings are still answered in `receive`, which is what browsers actually do.
 
     def close(self) -> None:
         if self.closed:

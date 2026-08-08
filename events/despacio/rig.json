@@ -13,9 +13,29 @@
     "the same frame venue.json uses. A fixture with a position becomes a",
     "geometry head, in file order.",
     "",
+    "These coordinates moved 4572 mm in x and z on 2026-08-07, when the room was",
+    "remodelled twice as long and twice as wide with the rig standing on a truss",
+    "frame in the middle of it rather than on the walls. NOTHING ABOUT THE RIG",
+    "MOVED: measure from venue.json's `truss` rectangle and the four heads are",
+    "still 500 mm inboard of the bar at each corner, and the two pinspots still",
+    "centred on two opposite sides. The origin is still the ROOM's corner, and",
+    "the room now begins 4572 mm further out.",
+    "",
     "'hold' pins a channel every single frame. Reset is held at 0 because this",
     "fixture treats 250-255 as a hold-to-reset command, and a stuck LTP value",
-    "there once put every head into a permanent reset loop."
+    "there once put every head into a permanent reset loop.",
+    "",
+    "'beam_deg' overrides the .qxf's cone angle. The MJ-OS-018 profile claims 3",
+    "degrees and these read visibly wider than that in the room, so they are set",
+    "to 8 -- STATED 2026-08-08, not measured. Measure it if it matters: this is",
+    "not only cosmetic, because engine/safety.py sizes the beam's half-width at",
+    "range from it, so a wider number makes the crowd taper dim earlier. That is",
+    "the conservative direction, but it does change the show.",
+    "",
+    "A position does NOT make a fixture a geometry head -- load_rig only builds",
+    "a head for something that has Pan AND Tilt. The pinspots are placed so the",
+    "previz can draw them; they take no head index and shift nobody's",
+    "calibration."
   ],
 
   "name": "despacio",
@@ -31,7 +51,8 @@
       "universe": 0,
       "address": 1,
       "tags": ["movers", "corner movers"],
-      "position": { "x": 8644, "y": 2971, "z": 8644 },
+      "beam_deg": 8,
+      "position": { "x": 13216, "y": 2971, "z": 13216 },
       "hold": { "reset": 0, "Auto/Sound Mode": 0 },
       "notes": "corner: back-right"
     },
@@ -44,7 +65,8 @@
       "universe": 0,
       "address": 12,
       "tags": ["movers", "corner movers"],
-      "position": { "x": 8644, "y": 2971, "z": 500 },
+      "beam_deg": 8,
+      "position": { "x": 13216, "y": 2971, "z": 5072 },
       "hold": { "reset": 0, "Auto/Sound Mode": 0 },
       "notes": "corner: front-right"
     },
@@ -57,7 +79,8 @@
       "universe": 0,
       "address": 23,
       "tags": ["movers", "corner movers"],
-      "position": { "x": 500, "y": 2971, "z": 500 },
+      "beam_deg": 8,
+      "position": { "x": 5072, "y": 2971, "z": 5072 },
       "hold": { "reset": 0, "Auto/Sound Mode": 0 },
       "notes": "corner: front-left"
     },
@@ -70,7 +93,8 @@
       "universe": 0,
       "address": 34,
       "tags": ["movers", "corner movers"],
-      "position": { "x": 500, "y": 2971, "z": 8644 },
+      "beam_deg": 8,
+      "position": { "x": 5072, "y": 2971, "z": 13216 },
       "hold": { "reset": 0, "Auto/Sound Mode": 0 },
       "notes": "corner: back-left"
     },
@@ -83,6 +107,7 @@
       "universe": 0,
       "address": 45,
       "tags": ["pinspots"],
+      "position": { "x": 9144, "y": 2971, "z": 5072 },
       "hold": { "Total function control": 255, "Auto FX": 0 },
       "notes": "Channel 0 is a mode selector, not a dimmer. Confirmed on hardware 2026-08-01: the usable band is 240-255 (RGBW On); the .qxf's 9-134 White Dimmer band does not behave as a dimmer. Holding it at 255 every frame means the fixture is always in RGBW mode and brightness comes entirely from the R/G/B/W channels, which do behave linearly. Held by channel NAME because no generic role fits a mode selector."
     },
@@ -95,8 +120,9 @@
       "universe": 0,
       "address": 51,
       "tags": ["pinspots"],
+      "position": { "x": 9144, "y": 2971, "z": 13216 },
       "hold": { "Total function control": 255, "Auto FX": 0 },
-      "notes": "See Pinspot #1."
+      "notes": "See Pinspot #1. Same plane as the movers (y 2971), centred on its side of the truss, and set inboard by the same 500 mm they are -- stated 2026-08-07, not measured. If 'north/south' meant the OTHER pair of sides, swap x and z in both pinspots' positions and nothing else changes."
     }
   ]
 }

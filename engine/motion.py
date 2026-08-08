@@ -27,12 +27,26 @@ would break outright across the 0/255 boundary of a centre-anchored channel.
 from __future__ import annotations
 
 import math
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 from . import geometry as geo
 
 # A movement function: (phase 0..1) -> (d_bearing, d_elevation) in degrees.
+#
+# Each carries its own natural cycle length on a `bars` attribute, which
+# `as_move` uses unless the caller overrides it. Without that the `bars`
+# argument on a pattern was silently discarded -- `orbit(15, bars=16)` read as
+# a 16-bar orbit and ran at whatever `as_move` defaulted to.
 Offset = Callable[[float], tuple[float, float]]
+
+DEFAULT_BARS = 8.0
+
+
+def _with_bars(fn: Offset, bars: float) -> Offset:
+    if bars <= 0:
+        raise ValueError("bars must be positive")
+    fn.bars = bars                                          # type: ignore[attr-defined]
+    return fn
 
 
 # ------------------------------------------------------------------ easing --
@@ -90,7 +104,7 @@ def orbit(radius_deg: float, bars: float = 8.0, offset: float = 0.0,
         theta = 2.0 * math.pi * ((p + offset) % 1.0)
         return (radius_deg * math.sin(theta),
                 radius_deg * math.cos(theta) / elongation)
-    return offset_at
+    return _with_bars(offset_at, bars)
 
 
 def pendulum(swing_deg: float, bars: float = 4.0, offset: float = 0.0,
@@ -103,11 +117,12 @@ def pendulum(swing_deg: float, bars: float = 4.0, offset: float = 0.0,
     def offset_at(p: float) -> tuple[float, float]:
         value = swing_deg * math.sin(2.0 * math.pi * ((p + offset) % 1.0))
         return (0.0, value) if vertical else (value, 0.0)
-    return offset_at
+    return _with_bars(offset_at, bars)
 
 
 def path(poses: Sequence[tuple[float, float]], easing: Easing = ease_in_out,
-         closed: bool = True, offset: float = 0.0) -> Offset:
+         closed: bool = True, offset: float = 0.0,
+         bars: float = DEFAULT_BARS) -> Offset:
     """Interpolate through a list of (bearing, elevation) offsets.
 
     This is the stepped-chaser bridge: hand it the poses an old chase stepped
@@ -121,7 +136,7 @@ def path(poses: Sequence[tuple[float, float]], easing: Easing = ease_in_out,
         raise ValueError("path needs at least one pose")
     if len(poses) == 1:
         single = poses[0]
-        return lambda p: single
+        return _with_bars(lambda p: single, bars)
 
     n = len(poses)
     segments = n if closed else n - 1
@@ -135,7 +150,7 @@ def path(poses: Sequence[tuple[float, float]], easing: Easing = ease_in_out,
         b = poses[(index + 1) % n]
         return (a[0] + (b[0] - a[0]) * local,
                 a[1] + (b[1] - a[1]) * local)
-    return offset_at
+    return _with_bars(offset_at, bars)
 
 
 def points_to_offsets(rig_geo: geo.RigGeometry, head: int,
@@ -170,7 +185,7 @@ def pulse(depth: float = 1.0, bars: float = 1.0, offset: float = 0.0,
     def level_at(p: float) -> float:
         t = (p + offset) % 1.0
         return 1.0 - depth * easing(t)
-    return level_at
+    return _with_bars(level_at, bars)
 
 
 def chase(count: int, bars: float = 1.0, width: float = 0.5,
@@ -187,12 +202,12 @@ def chase(count: int, bars: float = 1.0, width: float = 0.5,
         distance = min(distance, count - distance)      # wrap around the ring
         span = width * count
         return max(0.0, 1.0 - distance / span) if span > 0 else 0.0
-    return level_at
+    return _with_bars(level_at, bars)
 
 
 # ------------------------------------------------------------------ adapter --
 
-def as_move(offset_fn: Offset, bars: float = 8.0,
+def as_move(offset_fn: Offset, bars: Optional[float] = None,
             per_head_offset: bool = True) -> Callable:
     """Wrap a movement function for `state.move_layer`.
 
@@ -200,7 +215,14 @@ def as_move(offset_fn: Offset, bars: float = 8.0,
     position off the context, and spreading heads evenly around the cycle. The
     per-head spread is what stops four heads moving in lockstep, which reads as
     one big light rather than four.
+
+    `bars` defaults to whatever the pattern was built with, so the cycle length
+    is stated once at the place that knows it. Passing it here overrides that,
+    for reusing one pattern at two lengths.
     """
+    if bars is None:
+        bars = getattr(offset_fn, "bars", DEFAULT_BARS)
+
     def offset_for(ctx, head: int) -> tuple[float, float]:
         n = len(ctx.geometry.heads) if ctx.geometry is not None else 1
         spread = (head / n) if (per_head_offset and n) else 0.0

@@ -76,6 +76,12 @@ Orange+Green, Green+Blue, Blue+Yellow, Yellow+Red — then 140–255 = auto colo
 
 ## Mounting convention assumed by `aim_calc.py`
 
+> These are `aim_calc.py`'s own frozen numbers and describe the rig relative to itself,
+> which has not changed. The live config moved on: as of 2026-08-08 `venue.json` puts
+> this same 30 ft square on a free-standing truss frame in the middle of a 60 ft room,
+> so every absolute coordinate there is 4572 mm larger in x and z. Nothing below depends
+> on that.
+
 Room = 30 ft (9144 mm) square, heads at 10 ft (3048 mm), ball also at 10 ft — heads and
 ball are at the **same height**, so "look at the ball" comes out almost exactly level for
 every head by symmetry, before any offset/inversion is applied. Room geometry (room size,

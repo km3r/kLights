@@ -137,6 +137,14 @@ class Runner:
         # goes black is a stopped show.
         self._last: dict[int, bytes] = {}
         self._blackout = bytes(512)
+        # The mapping from wall time to engine time, so any thread can ask what
+        # time it is on the show's clock. Needed because a command's timestamp
+        # has to be taken when it ARRIVES, not when the frame loop gets round to
+        # it -- a tap stamped at the next frame boundary is quantised to the
+        # frame grid, which at 40 fps makes the tempo estimate step in jumps of
+        # several bpm.
+        self._begin: Optional[float] = None
+        self._start_time = 0.0
         # The most recent evaluation traceback, for the UI to surface. Silently
         # holding the last frame is right for the rig and wrong for the
         # operator, who otherwise sees a show that has quietly stopped moving.
@@ -160,6 +168,20 @@ class Runner:
     @property
     def panicked(self) -> bool:
         return self._panic
+
+    # -- the clock, readable from any thread -------------------------------
+
+    def now(self) -> float:
+        """Engine time, right now. Thread-safe.
+
+        `ctx.time` only advances once per frame, so reading it off-thread gives
+        the time of the last frame boundary rather than the present. Anything
+        timestamping an external event -- a tap arriving on the socket thread --
+        wants this instead.
+        """
+        if self._begin is None:
+            return self.ctx.time
+        return self._start_time + (time.perf_counter() - self._begin)
 
     # -- one frame --------------------------------------------------------
 
@@ -219,6 +241,7 @@ class Runner:
         clock = time.perf_counter
         begin = clock()
         self.stats = FrameStats(started=begin)
+        self._begin, self._start_time = begin, start_time
         deadline = begin + period
 
         while not self._stop.is_set():

@@ -164,6 +164,7 @@ class FixtureProfile:
     pan_max_deg: float
     tilt_max_deg: float
     beam_deg: float
+    lumens: float                           # 0 when the .qxf does not declare it
     path: Path
 
     @property
@@ -266,6 +267,7 @@ def parse_qxf(path: Path) -> FixtureProfile:
     physical = root.find(QXF_NS + "Physical")
     pan_max = tilt_max = 0.0
     beam = 0.0
+    lumens = 0.0
     if physical is not None:
         focus = physical.find(QXF_NS + "Focus")
         if focus is not None:
@@ -277,13 +279,29 @@ def parse_qxf(path: Path) -> FixtureProfile:
             # ends of its range and the narrow end is the conservative choice
             # for safety work -- a narrow beam concentrates more energy.
             beam = float(lens.get("DegreesMin") or 0)
+        bulb = physical.find(QXF_NS + "Bulb")
+        if bulb is not None:
+            # Output at full, for previz only -- nothing in the show path reads
+            # it. Most .qxf files in the wild leave it at 0, so every consumer
+            # has to have an answer for "not declared"; it is read here rather
+            # than typed into the previz because the two fixtures we own DO
+            # declare it (1300 and 48), and a 27:1 ratio is not something to
+            # eyeball.
+            # NOTE this is BULB lumens -- what the emitter makes, not what
+            # leaves the lens. On a 3-degree beam most of it never gets out of
+            # the fixture, and on a wide fresnel most of it does, so comparing
+            # two profiles' Lumens directly overstates how much brighter the
+            # narrow one really is. `rig.json` can override it per fixture,
+            # which is where a measured number belongs.
+            lumens = float(bulb.get("Lumens") or 0)
 
     return FixtureProfile(
         manufacturer=_text(root, "Manufacturer") or "?",
         model=_text(root, "Model") or "?",
         type=_text(root, "Type") or "?",
         channels=channels, modes=modes,
-        pan_max_deg=pan_max, tilt_max_deg=tilt_max, beam_deg=beam, path=path)
+        pan_max_deg=pan_max, tilt_max_deg=tilt_max, beam_deg=beam,
+        lumens=lumens, path=path)
 
 
 class ProfileLibrary:
@@ -353,8 +371,42 @@ class PatchedFixture:
     address: int                            # 1-based DMX start, as on the fixture
     tags: tuple[str, ...] = ()              # "corner movers", "pinspots", ...
     head: Optional[int] = None              # index into Rig.geometry.heads
+    # Where the unit hangs, in mm, y up, origin front-left floor corner -- the
+    # venue.json frame. Present for anything rig.json places, moving or not:
+    # previz needs a static fixture's position to draw it, and the taper needs a
+    # mover's to aim it, and those are the same fact.
+    position: Optional[tuple[float, float, float]] = None
+    # What this unit actually puts out, overriding the .qxf's Bulb Lumens. The
+    # profile figure is the EMITTER's output, and how much of it clears the
+    # optics differs enormously between a 3-degree beam and a wide fresnel -- so
+    # two profiles' Lumens are not comparable, and previz brightness ratios were
+    # visibly wrong when taken from them. Set this when the real output is known.
+    lumens: Optional[float] = None
+    # The full cone angle this unit really throws, overriding the .qxf's Lens
+    # DegreesMin. Same reasoning as `lumens`: the profile is what the maker
+    # claims, and on cheap fixtures it is optimistic. This one is NOT cosmetic --
+    # `safety.clearance` sizes the beam's half-width at range from it, so a wider
+    # number makes the taper dim earlier. That is the conservative direction, but
+    # it does change the show, so it belongs in the rig file where it is visible
+    # rather than buried in a shared profile.
+    beam_deg: Optional[float] = None
     hold: dict[str, int] = field(default_factory=dict)   # role -> value, every frame
     notes: str = ""
+
+    @property
+    def output_beam_deg(self) -> float:
+        """This unit's full cone angle: the rig's number if it has one, else the
+        profile's, else 3 degrees."""
+        return float(self.beam_deg if self.beam_deg is not None
+                     else (self.profile.beam_deg or 3.0))
+
+    @property
+    def output_lumens(self) -> float:
+        """This unit's output at full: the rig's number if it has one, else the
+        profile's, else 0 for "not declared" -- which every caller must handle,
+        since most `.qxf` files in the wild leave it at 0."""
+        return float(self.lumens if self.lumens is not None
+                     else self.profile.lumens)
 
     @property
     def channel_count(self) -> int:
@@ -393,6 +445,25 @@ class PatchedFixture:
     def has(self, key: str) -> bool:
         return self.offset_of(key) is not None
 
+    def strobe_band(self) -> Optional[tuple[int, int]]:
+        """The shutter channel's slow-to-fast range, read from the profile.
+
+        Found by label rather than hardcoded, because the value that means
+        "strobing" is entirely fixture-specific -- on the MJ-OS-018 it is 8-249
+        with OPEN on both sides of it, so a naive 0-255 ramp would spend each end
+        of its travel not strobing at all. Returns None when the profile
+        declares a shutter with no recognisable strobe band, which is the honest
+        answer: better to leave the channel alone than to guess a value.
+        """
+        offset = self.offset_of(STROBE)
+        if offset is None:
+            return None
+        channel = self.profile.channels[self.profile.modes[self.mode][offset]]
+        for cap in channel.capabilities:
+            if "strobe" in cap.label.lower() and "no" not in cap.label.lower():
+                return (cap.lo, cap.hi)
+        return None
+
     @property
     def is_mover(self) -> bool:
         return self.has(PAN) and self.has(TILT)
@@ -412,6 +483,33 @@ class Rig:
 
     def by_tag(self, tag: str) -> tuple[PatchedFixture, ...]:
         return tuple(f for f in self.fixtures if tag in f.tags)
+
+    def tags(self) -> tuple[str, ...]:
+        """Every distinct group in the rig, biggest first.
+
+        These are the fixture TYPES the UI filters by and the engine scopes
+        looks to. Biggest first so a look covering the whole rig is described by
+        the broadest tag that fits rather than by an arbitrary one.
+
+        Tags holding exactly the same fixtures are collapsed to one. The
+        despacio rig tags its heads both "movers" and "corner movers", which are
+        the same four units -- offering both as filters would put "Movers" in
+        the row twice and make the choice between them meaningless.
+        """
+        members: dict[str, frozenset[str]] = {}
+        for fixture in self.fixtures:
+            for tag in fixture.tags:
+                members.setdefault(tag, frozenset())
+        for tag in members:
+            members[tag] = frozenset(f.name for f in self.fixtures if tag in f.tags)
+
+        out: list[str] = []
+        seen: set[frozenset[str]] = set()
+        for tag in sorted(members, key=lambda t: (-len(members[t]), t)):
+            if members[tag] and members[tag] not in seen:
+                seen.add(members[tag])
+                out.append(tag)
+        return tuple(out)
 
     def by_id(self, fid: int) -> PatchedFixture:
         for f in self.fixtures:
@@ -560,6 +658,11 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
     fixtures: list[PatchedFixture] = []
     heads: list[geo.Head] = []
 
+    def _can_aim(profile: FixtureProfile, mode: str) -> bool:
+        """Does this fixture, in this mode, have both Pan and Tilt?"""
+        offsets = profile.offsets(mode)
+        return PAN in offsets and TILT in offsets
+
     for entry in rig_cfg["fixtures"]:
         profile = library.get(entry["manufacturer"], entry["model"])
         if profile is None:
@@ -568,10 +671,20 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
                 f"{entry['model']!r} in any of "
                 f"{[str(r) for r in library.roots]}")
         head_index = None
-
+        position = None
         if "position" in entry:
-            head_index = len(heads)
             pos = entry["position"]
+            position = (float(pos["x"]), float(pos["y"]), float(pos["z"]))
+
+        # A position alone does NOT make a geometry head. A head is a thing that
+        # can be *aimed*, and the head list is an ordered, calibration-bearing
+        # index: every entry needs a Pan/Tilt reading measured on the night, and
+        # `validate()` insists the movers and the heads line up one for one. Let
+        # a positioned pinspot in and it takes an index, shifts every head after
+        # it, and quietly re-points the show. So the test is the fixture's own
+        # channel list, which is the only honest source for "does it move".
+        if position is not None and _can_aim(profile, entry["mode"]):
+            head_index = len(heads)
             cal = next((c for c in cal_cfg.get("heads", [])
                         if c.get("fixture") == entry["name"]), {})
             reading = cal.get("ball_dmx")
@@ -599,8 +712,12 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
             fid=entry["id"], name=entry["name"], profile=profile,
             mode=entry["mode"], universe=int(entry.get("universe", 0)),
             address=int(entry["address"]), tags=tuple(entry.get("tags", [])),
-            head=head_index, hold=dict(entry.get("hold", {})),
-            notes=entry.get("notes", "")))
+            head=head_index, position=position,
+            lumens=(None if entry.get("lumens") is None
+                    else float(entry["lumens"])),
+            beam_deg=(None if entry.get("beam_deg") is None
+                      else float(entry["beam_deg"])),
+            hold=dict(entry.get("hold", {})), notes=entry.get("notes", "")))
 
     geometry = geo.RigGeometry(
         heads=tuple(heads), ball=venue.ball, mount_mode=mount_mode,

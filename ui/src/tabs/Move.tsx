@@ -1,14 +1,14 @@
 import { Card } from "../components";
+import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
 
 /**
- * Movement: speed, and what each head is currently doing.
+ * Movement: the route, the rate, and what each head is doing about it.
  *
- * There is no grid of stored movement scenes here, and that is the point. In
- * the old console every combination of route and rate was its own chase, which
- * is how 179 of them accumulated. A movement is now a route (chosen with the
- * look) evaluated at a rate (set here), so the two multiply instead of being
- * enumerated.
+ * A route and a rate are separate here, which is the point. In the old console
+ * every combination of the two was its own stored chase, which is how 179
+ * accumulated. Now they multiply instead of being enumerated — and picking a
+ * route leaves the colour and level slots untouched.
  */
 export function MoveTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
@@ -17,6 +17,9 @@ export function MoveTab({ state, send }: {
 
   return (
     <>
+      <LookPicker state={state} send={send} slot="movement" title="Route"
+                  empty="Nothing loaded — the heads are holding still." />
+
       <Card title="Speed">
         <div className="row">
           {[0.25, 0.5, 1, 2, 4].map((s) => (

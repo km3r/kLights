@@ -3,73 +3,164 @@
 Lighting design, control and previsualization for a small moving-head and wash
 rig, across multiple events.
 
+The show runs on a **parametric Python engine**. It holds parameters rather
+than stored DMX values, owns its own 40 fps frame clock, knows the room in three
+dimensions, and dims beams that get near people — per frame, from the current
+aim. A web UI drives it from a phone; Unreal renders it in 3D by listening to
+the same Art-Net the rig sees.
+
 ```
 lights/
 ├── docs/                     Generic pipeline documentation
-│   └── pipeline.md           Art-Net, QLC+ output, BlenderDMX, script reference
+│   └── pipeline.md           Art-Net, the engine, previz, legacy QLC+ setup
+├── engine/                   The show engine (stdlib only, no dependencies)
+│   ├── geometry.py           Where a head is, where it points, what DMX aims it
+│   ├── rig.py venue.py       What is patched; the room it is patched into
+│   ├── state.py              Parameters and the layered per-frame evaluation
+│   ├── safety.py             Beam-aware intensity taper
+│   ├── clock.py motion.py    Musical time; movement as a path over bars
+│   ├── auto.py library.py    Self-running axes; the ported look library
+│   ├── calibrate.py          Fast re-aim, drift detection, snapshots
+│   ├── runner.py output/     The frame clock and the Art-Net driver
+│   ├── server.py websocket.py  HTTP + WebSocket, hand-rolled RFC 6455
+│   └── tests/                Standalone test scripts, one per area
+├── ui/                       React console — six tabs, phone through desktop
+│   └── dist/                 Committed build, so a venue needs no Node
+├── previz/                   Unreal previz: an Art-Net listener, never in the path
+├── spike/                    Timing spike that settled the frame-clock question
 ├── shared/                   Reusable across every event
 │   ├── fixtures/             .qxf fixture definitions, one per hardware model
 │   ├── gdtf/                 Generated GDTF profiles for BlenderDMX
 │   ├── inventory.json        The units we actually own
-│   └── tools/                Art-Net utilities, GDTF builder, patch validator,
-│                             BlenderDMX patcher, Blender scene helpers
+│   └── tools/                Art-Net utilities, library porter, GDTF builder,
+│                             patch validator, BlenderDMX helpers
 └── events/
     ├── cosmos26/             ARCHIVED — the Year-3 Cosmos rig
     └── despacio/             4 moving heads + 2 pinspots on a mirror ball
 ```
 
 **The organizing rule:** a file belongs to an event if it encodes *this room,
-this rig, or this night* — workspaces, patch sheets, venue geometry,
-calibration, 3D scenes, controller layouts. It belongs in `shared/` if it
-describes *hardware we own* or *a thing we do to any show*. Events come and go;
-the inventory and the tools carry forward, and a new show draws on them à la
-carte.
+this rig, or this night* — patch sheets, venue geometry, calibration, look
+libraries, workspaces, 3D scenes. It belongs in `shared/` if it describes
+*hardware we own* or *a thing we do to any show*, and in `engine/` if it is
+show logic that does not know which event it is running. Events come and go;
+the inventory, the tools and the engine carry forward.
 
 ## Events
 
 | Event | Status | Rig |
 |---|---|---|
-| [despacio](events/despacio/README.md) | Ran 2026-08 | 4× MingJie MJ-OS-018 beams in the corners of a 30 ft room, sideways-mounted, aimed at a centre-hung mirror ball, + 2 pinspots. Has its own geometry/calibration engine (`aim_calc.py`) and a mobile web console. |
-| [cosmos26](events/cosmos26/README.md) | Archived | 4× Par 36 wash, 2× pinspot, 2× YeeSite pixel bar, Scorpion laser, Mini Kinta, dimmer. APC40-driven. |
+| [despacio](events/despacio/README.md) | Ran 2026-08 | 4× MingJie MJ-OS-018 beams in the corners of a 30 ft room, sideways-mounted, aimed at a centre-hung mirror ball, + 2 pinspots. Now the engine's reference event: `rig.json`, `venue.json`, `calibration.json` and a 198-look library ported from its QLC+ workspace. |
+| [cosmos26](events/cosmos26/README.md) | Archived | 4× Par 36 wash, 2× pinspot, 2× YeeSite pixel bar, Scorpion laser, Mini Kinta, dimmer. APC40-driven, QLC+ only. |
 
-## Getting started
+## Running a show
 
-Validate every event's patch:
+Start the engine and its UI. This is the whole show:
+
+```bash
+python -m engine.server --artnet 255.255.255.255
+```
+
+It prints the rig it loaded, which timing settings took effect, and the URLs to
+open — including the LAN one to type into a phone. Defaults are the despacio
+event, port 8765, 40 fps and 124 BPM; `--event`, `--port`, `--fps` and `--bpm`
+override them. With no `--artnet` it runs against a null output, which is the
+safe way to try things with the rig plugged in.
+
+The UI is served from the committed `ui/dist/`, so a show laptop needs Python
+and a checkout and nothing else. Six tabs, all driven by the same WebSocket
+state: **Show** (looks, master, blackout), **Move**, **Color**, **Rig**,
+**Venue** and **Setup**.
+
+Smoke-test the frame path without the UI:
+
+```bash
+python -m engine.demo --artnet 127.0.0.1 --seconds 30
+```
+
+Point [`shared/tools/artnet_listener.py`](shared/tools/artnet_listener.py) at
+it to see the frames, or `--no-taper` to see what the safety taper is holding
+back.
+
+## At the venue
+
+Re-aim after the heads get nudged overnight — three captures per head solve
+position, offsets and invert flags together:
+
+```bash
+python -m engine.calibrate solve captures.json --write
+```
+
+`drift` flags which heads moved from a set of readings, `snap` and `diff`
+record and compare calibration snapshots, and `jog` parks one head at a
+Pan/Tilt so you can eyeball it. Every subcommand takes `--event`.
+
+Validate the patch after editing one:
 
 ```bash
 python shared/tools/validate_patch.py
 ```
 
-Rebuild the GDTF profiles BlenderDMX consumes:
+Re-port the look library from a QLC+ workspace (writes `looks.json`):
 
 ```bash
-python shared/tools/build_gdtf.py
+python shared/tools/port_library.py --write
 ```
 
-Check the despacio show is venue-ready (geometry self-test, structural
-validation, fixture install, web-UI sync):
+The despacio show also keeps its own one-command readiness check, covering the
+geometry self-test, patch and mount-mode guardrails:
 
 ```bash
 python events/despacio/preflight.py
 ```
 
-See [`docs/pipeline.md`](docs/pipeline.md) for the full Art-Net → BlenderDMX
-setup, and each event's README for its rig, patch and rigging notes.
+## Previz
 
-## Where this is going
+Unreal 5.8 renders the show live by listening to Art-Net — it sits beside the
+rig, never between the engine and it, so previz cannot break a show. It decodes
+with `engine.geometry`, the show's own decoder, rather than a GDTF profile,
+because the heads are mounted sideways in a way a fixture profile cannot
+express. See [`previz/README.md`](previz/README.md) for the runbook, the mirror
+ball, and the several things about Unreal's volumetric fog that are the
+opposite of the obvious guess.
 
-The current stack programs shows in QLC+ and drives DMX over USB. That model
-stores *values*, which makes per-fixture colour control, phrase-aware
-automation, smooth interpolated motion and venue portability all expensive or
-impossible. The project is moving to a parametric Python show engine with a
-web UI, outputting Art-Net/sACN directly — which also decouples previz, since
-any previz tool can simply listen on the wire.
+```bash
+python previz/ue_remote.py previz/unreal/Content/Python/go.py
+```
 
-QLC+ and the existing workspaces stay runnable as the fallback until the
-engine reaches parity.
+## Tests
+
+The engine's tests are standalone scripts with no test-runner dependency — run
+one directly, or all of them:
+
+```bash
+for t in engine/tests/test_*.py; do python "$t" || break; done
+```
+
+`test_geometry_parity.py` is the load-bearing one: it compares every aim
+against `events/despacio/aim_calc.py`, the code that drove the real show, and
+insists they agree to within one 8-bit step.
+
+The UI has its own suite, run against a fixture captured from a real engine:
+
+```bash
+cd ui && npm test
+```
+
+## The QLC+ path
+
+QLC+ programmed every show before the engine, and the workspaces stay runnable
+as the fallback. That model stores *values*, which is why per-fixture colour,
+phrase-aware automation, smooth interpolated motion and venue portability were
+each expensive or impossible — see
+[`docs/pipeline.md`](docs/pipeline.md#the-legacy-qlc-path) for the setup, and
+`events/<name>/README.md` for a show's own patch and rigging notes.
 
 ## Requirements
 
-Python 3.10+ (stdlib only — the tools have no pip dependencies).
-Blender 3.3+ with the BlenderDMX addon for previz.
-QLC+ 4.14+ for the current show stack.
+- **Python 3.10+** — stdlib only. The engine, the tools and the previz host
+  half have no pip dependencies at all.
+- **Node 18+** — only to rebuild the UI (`cd ui && npm run build`). Never
+  needed at a venue; `ui/dist/` is committed.
+- **Unreal Engine 5.8** — for previz.
+- **Blender 3.3+ with BlenderDMX**, **QLC+ 4.14+** — for the legacy path.

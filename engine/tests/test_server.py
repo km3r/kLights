@@ -22,8 +22,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import state as statemod
 from engine import websocket as wsmod
-from engine.server import ShowController, ShowServer
+from engine.server import ShowController, ShowServer, load_presets
 
 failures: list[str] = []
 
@@ -182,18 +183,111 @@ check("presence shows the client by name",
       f"{[p['name'] for p in after['presence']]}")
 
 # Names come from the loaded library rather than being hardcoded, so this
-# survives a re-port. Two DIFFERENT looks are needed below, hence the pair.
-LOOK_A, LOOK_B = [l.name for l in controller.setlist.looks[:2]]
+# survives a re-port. One of each slot, because the whole point is that they are
+# independent.
+MOVE_A, MOVE_B = [e.name for e in controller.library if e.is_movement][:2]
+COLOR_A, COLOR_B = [e.name for e in controller.library if e.is_color][:2]
+LEVEL_A = next(e.name for e in controller.library if e.kind == "level_path")
+LOOK_A, LOOK_B = MOVE_A, MOVE_B
 
-client.send({"type": "select_look", "name": LOOK_A})
-after = client.wait_for(lambda s: s["auto"]["look"] == LOOK_A)
-check("selecting a look takes effect", after["auto"]["look"] == LOOK_A)
+def loaded(state, slot):
+    """Slot selections as a flat set of names -- selection is per fixture GROUP
+    now (a pinspot colour and a mover colour are held separately), and most of
+    these assertions only care about which looks are up."""
+    return set(state["selection"][slot].values())
+
+
+client.send({"type": "select_look", "name": MOVE_A})
+after = client.wait_for(lambda s: MOVE_A in loaded(s, "movement"))
+check("selecting a look takes effect", MOVE_A in loaded(after, "movement"))
 check("the ported library is what is on offer", len(after["looks"]) > 100,
       f"{len(after['looks'])} looks")
-check("and each carries the kind the UI groups by",
-      all("kind" in l for l in after["looks"]),
-      f"{sorted({l['kind'] for l in after['looks']})}")
+check("and each carries the kind, slot and groups the UI files it by",
+      all({"kind", "slot", "groups"} <= set(l) for l in after["looks"]),
+      f"slots {sorted({l['slot'] for l in after['looks']})}, "
+      f"groups {sorted({g for l in after['looks'] for g in l['groups']})}")
 check("and it is held, so auto cannot steal it", after["auto"]["held"] is True)
+
+# -- the three slots do not overwrite each other -----------------------------
+# This is the bug the slot model exists to fix: while one selection replaced the
+# whole show, picking a colour discarded the move you had running.
+client.send({"type": "select_look", "name": COLOR_A})
+after = client.wait_for(lambda s: COLOR_A in loaded(s, "color"))
+check("picking a colour keeps the movement",
+      loaded(after, "movement") == {MOVE_A} and loaded(after, "color") == {COLOR_A},
+      f"{after['selection']}")
+
+client.send({"type": "select_look", "name": MOVE_B})
+after = client.wait_for(lambda s: MOVE_B in loaded(s, "movement"))
+check("changing the movement keeps the colour",
+      loaded(after, "color") == {COLOR_A}, f"{after['selection']}")
+
+client.send({"type": "select_look", "name": LEVEL_A})
+after = client.wait_for(lambda s: LEVEL_A in loaded(s, "level"))
+check("and a level chase sits alongside both",
+      loaded(after, "movement") == {MOVE_B} and loaded(after, "color") == {COLOR_A}
+      and loaded(after, "level") == {LEVEL_A}, f"{after['selection']}")
+
+# -- and looks scoped to different fixture types coexist ----------------------
+# "Pin Ball Glow" writes only the two pinspots in the workspace. It used to port
+# as an untagged uniform colour, so selecting it repainted the four movers as
+# well -- and one colour slot for the whole rig meant it also discarded whatever
+# the movers were on.
+MOVER_COLOR = next(e.name for e in controller.library
+                   if e.is_color and "pinspots" not in e.groups)
+PIN_COLOR = next(e.name for e in controller.library
+                 if e.is_color and "pinspots" in e.groups)
+client.send({"type": "select_look", "name": MOVER_COLOR})
+client.send({"type": "select_look", "name": PIN_COLOR})
+after = client.wait_for(lambda s: PIN_COLOR in loaded(s, "color"))
+check("a pinspot colour and a mover colour are up at the same time",
+      loaded(after, "color") == {MOVER_COLOR, PIN_COLOR}, f"{after['selection']['color']}")
+
+movers = [f for f in after["fixtures"] if f["is_mover"]]
+pins = [f for f in after["fixtures"] if not f["is_mover"]]
+check("and neither repaints the other's fixtures",
+      all(m["color"] != pins[0]["color"] for m in movers),
+      f"movers {movers[0]['color']}, pinspots {pins[0]['color']}")
+
+client.send({"type": "clear_slot", "slot": "color", "group": "pinspots"})
+after = client.wait_for(lambda s: PIN_COLOR not in loaded(s, "color"))
+check("one group's colour clears without touching the other",
+      loaded(after, "color") == {MOVER_COLOR}, f"{after['selection']['color']}")
+
+client.send({"type": "clear_slot", "slot": "level"})
+after = client.wait_for(lambda s: not loaded(s, "level"))
+check("a slot can be emptied without disturbing the others",
+      loaded(after, "movement") == {MOVE_B}, f"{after['selection']}")
+
+client.send({"type": "clear_slot", "slot": "movement"})
+after = client.wait_for(lambda s: any("cannot be empty" in n for n in s["notices"]))
+check("but movement cannot be emptied -- the heads must point somewhere",
+      loaded(after, "movement") == {MOVE_B}, f"{after['selection']['movement']}")
+
+# -- presets restore every slot and every group at once -----------------------
+client.send({"type": "select_look", "name": PIN_COLOR})
+client.send({"type": "preset_save", "name": "test preset"})
+after = client.wait_for(lambda s: any(p["name"] == "test preset" for p in s["presets"]))
+saved = next(p for p in after["presets"] if p["name"] == "test preset")
+check("a preset saves the whole picture, per group",
+      set(saved["color"].values()) == {MOVER_COLOR, PIN_COLOR}, f"{saved['color']}")
+
+client.send({"type": "select_look", "name": MOVE_A})
+client.send({"type": "clear_slot", "slot": "color"})
+after = client.wait_for(lambda s: not loaded(s, "color"))
+client.send({"type": "preset_apply", "name": "test preset"})
+after = client.wait_for(lambda s: PIN_COLOR in loaded(s, "color"))
+check("and applying it restores every slot at once",
+      loaded(after, "movement") == {MOVE_B}
+      and loaded(after, "color") == {MOVER_COLOR, PIN_COLOR},
+      f"{after['selection']}")
+client.send({"type": "preset_delete", "name": "test preset"})
+after = client.wait_for(lambda s: not any(p["name"] == "test preset" for p in s["presets"]))
+check("and it can be deleted again", True)
+# The test writes into the real event directory; leave it as it was found.
+presets_path = REPO / "events" / "despacio" / "presets.json"
+if presets_path.exists() and not load_presets(presets_path.parent):
+    presets_path.unlink()
 
 client.send({"type": "master", "value": 0.25})
 after = client.wait_for(lambda s: abs(s["master"] - 0.25) < 1e-6)
@@ -224,6 +318,84 @@ pins = [f for f in after["fixtures"] if "pinspots" in f["tags"]]
 check("the override survives a look change",
       all(f["color"][1] > f["color"][0] for f in pins),
       f"{[f['color'] for f in pins]}")
+
+# -- hand dimming, per group and per fixture ---------------------------------
+print("\n3b. dimming by fixture and by group")
+client.send({"type": "select_look", "name": MOVE_A})
+client.send({"type": "master", "value": 1.0})
+client.send({"type": "clear_slot", "slot": "level"})
+after = client.wait_for(lambda s: abs(s["master"] - 1.0) < 1e-6 and not loaded(s, "level"))
+
+
+def levels(state):
+    return {f["name"]: round(f.get("intensity", 0), 2) for f in state["fixtures"]}
+
+
+PIN = next(f["name"] for f in after["fixtures"] if not f["is_mover"])
+HEAD = next(f["name"] for f in after["fixtures"] if f["is_mover"])
+
+client.send({"type": "level", "target": "pinspots", "value": 0.3})
+after = client.wait_for(lambda s: abs(levels(s)[PIN] - 0.3) < 0.02)
+check("a GROUP can be dimmed on its own",
+      abs(levels(after)[PIN] - 0.3) < 0.02 and levels(after)[HEAD] > 0.5,
+      f"{PIN} {levels(after)[PIN]}, {HEAD} {levels(after)[HEAD]}")
+
+# Per-FIXTURE targeting silently did nothing before: `_targets` matched tags
+# only, so a fixture name selected an empty set and the layer was a no-op --
+# which also meant every per-fixture colour in the UI did nothing.
+client.send({"type": "level", "target": HEAD, "value": 0.1})
+after = client.wait_for(lambda s: levels(s)[HEAD] < 0.2)
+others = [v for k, v in levels(after).items()
+          if k != HEAD and k in {f["name"] for f in after["fixtures"] if f["is_mover"]}]
+check("a single FIXTURE can be dimmed, leaving its neighbours alone",
+      levels(after)[HEAD] < 0.2 and all(v > 0.9 for v in others),
+      f"{HEAD} {levels(after)[HEAD]}, others {others}")
+
+client.send({"type": "color", "target": PIN, "color": [1.0, 0.0, 1.0]})
+after = client.wait_for(lambda s: any(
+    f["name"] == PIN and f["color"] == [1.0, 0.0, 1.0] for f in s["fixtures"]))
+pins = [f for f in after["fixtures"] if not f["is_mover"]]
+check("and a single fixture can be coloured -- the same fix",
+      pins[0]["color"] != pins[1]["color"],
+      f"{pins[0]['name']} {pins[0]['color']}, {pins[1]['name']} {pins[1]['color']}")
+client.send({"type": "color", "target": PIN, "clear": True})
+
+# The trim is a MULTIPLIER over the pattern, not a replacement for it. Checked
+# in-process rather than over the socket: a level chase runs over 8 BARS, so
+# sampling the broadcast would need a fifteen-second test to see two steps, and
+# what actually matters here is the arithmetic, not the timing.
+client.send({"type": "select_look", "name": LEVEL_A})
+client.wait_for(lambda s: LEVEL_A in loaded(s, "level"))
+time.sleep(0.2)
+
+
+def head_level_at(bar: float) -> float:
+    controller.ctx.motion_bar = bar
+    show = controller.director._show
+    controller._attach_overrides(show)
+    states = statemod.evaluate(controller.ctx, show)
+    fid = next(f.fid for f in controller.rig.fixtures if f.name == HEAD)
+    return states[fid].intensity
+
+
+BARS = (1.0, 3.0, 5.0, 7.0)
+with_trim = {round(head_level_at(b), 4) for b in BARS}
+controller.apply({"type": "level", "target": HEAD, "clear": True}, None)
+without = {round(head_level_at(b), 4) for b in BARS}
+check("a level PATTERN still varies under a hand trim", len(with_trim) > 1,
+      f"trimmed {sorted(with_trim)}")
+check("and the trim multiplies it rather than replacing it",
+      all(any(abs(t - w * 0.1) < 1e-6 for w in without) for t in with_trim),
+      f"trimmed {sorted(with_trim)} == 0.1 x {sorted(without)}")
+controller.apply({"type": "level", "target": HEAD, "value": 0.1}, None)
+
+client.send({"type": "level", "target": HEAD, "clear": True})
+client.send({"type": "level", "target": "pinspots", "clear": True})
+after = client.wait_for(lambda s: not s["level_overrides"])
+check("clearing a trim hands the fixture back to the pattern",
+      not after["level_overrides"], f"{after['level_overrides']}")
+client.send({"type": "clear_slot", "slot": "level"})
+
 
 
 # -- safety is visible, and jog says it is bypassed ----------------------------
@@ -406,6 +578,53 @@ try:
           f"{reloaded.ctx.taper.crowd_level}")
 finally:
     venue_path.write_text(original, encoding="utf-8")
+
+
+# -- 10. calibration cannot be fed, or write, a reading nobody took -----------
+print("\n10. captures the operator never actually took")
+head_name = next(f.name for f in controller.rig.fixtures if f.is_mover)
+ball = list(controller.rig.venue.ball)
+controller.apply({"type": "capture_clear"}, None)
+controller.apply({"type": "jog_clear"}, None)
+
+try:
+    controller.apply({"type": "capture", "fixture": head_name,
+                      "target": ball, "label": "mirror ball"}, None)
+    check("a capture with no jog is refused", False, "it was accepted")
+except ValueError as exc:
+    check("a capture with no jog is refused", "not jogging" in str(exc), str(exc)[:70])
+check("and nothing was recorded", not controller.captures.get(head_name),
+      f"{len(controller.captures.get(head_name, []))} stored")
+
+# The reachable path was two good captures plus one taken before jogging: the
+# solver fits all three, reports a large residual, and --write took it anyway.
+controller.apply({"type": "jog", "fixture": head_name, "pan": 133, "tilt": 68}, None)
+controller.apply({"type": "capture", "fixture": head_name, "target": ball,
+                  "label": "mirror ball"}, None)
+controller.apply({"type": "capture", "fixture": head_name, "pan": 0, "tilt": 0,
+                  "target": [500.0, 0.0, 8644.0], "label": "bogus"}, None)
+cal_before = (REPO / "events" / "despacio" / "calibration.json").read_text(encoding="utf-8")
+try:
+    controller.apply({"type": "solve", "write": True}, None)
+    check("a badly-fitting solve is not written", False, "it wrote")
+except ValueError as exc:
+    check("a badly-fitting solve is not written", "refusing to write" in str(exc),
+          str(exc)[:90])
+check("the stored calibration is untouched",
+      (REPO / "events" / "despacio" / "calibration.json").read_text(encoding="utf-8")
+      == cal_before)
+controller.apply({"type": "capture_clear"}, None)
+controller.apply({"type": "jog_clear"}, None)
+
+
+# -- 11. a tap is timed when it ARRIVES, not at the next frame ----------------
+print("\n11. tap timestamps")
+controller.commands.queue.clear()
+controller.submit({"type": "tap"}, None)
+_msg, _client, at = controller.commands.get_nowait()
+check("submit stamps the command with engine time, off the frame grid",
+      at != controller.ctx.time or controller.runner._begin is None,
+      f"arrival {at:.4f} vs last frame {controller.ctx.time:.4f}")
 
 
 client.close()

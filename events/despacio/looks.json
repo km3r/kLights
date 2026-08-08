@@ -17,6 +17,9 @@
       "name": "MH White",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         1.0,
@@ -28,6 +31,9 @@
       "name": "MH Red",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         0.0,
@@ -39,6 +45,9 @@
       "name": "MH Blue",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         0.0,
         0.0,
@@ -50,6 +59,9 @@
       "name": "MH Pink",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         0.0,
@@ -61,6 +73,9 @@
       "name": "MH Orange",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         0.498,
@@ -73,6 +88,9 @@
       "kind": "pose",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "offsets": [
         [
@@ -100,6 +118,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           0.0,
@@ -126,6 +147,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           180.352,
@@ -147,10 +171,31 @@
       "source": "Scene 8"
     },
     {
+      "name": "MH Strobe",
+      "kind": "intensity",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "strobes": {
+        "Moving Head #1": 0.8797,
+        "Moving Head #2": 0.8797,
+        "Moving Head #3": 0.8797,
+        "Moving Head #4": 0.8797
+      },
+      "source": "Scene 10",
+      "notes": [
+        "strobe on Moving Head #1, Moving Head #2, Moving Head #3, Moving Head #4 -- 0..1 across the fixture's own band, since the raw byte means nothing without it"
+      ]
+    },
+    {
       "name": "Lazy Circle",
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -310,6 +355,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "steps": [
         [
           [
@@ -394,6 +442,9 @@
       "name": "Color Drift",
       "kind": "color_path",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "frames": [
         {
           "Moving Head #1": [
@@ -496,6 +547,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           45.352,
@@ -522,6 +576,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           -45.352,
@@ -546,6 +603,9 @@
       "name": "MH Sunset",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         0.502,
@@ -554,9 +614,30 @@
       "source": "Scene 26"
     },
     {
+      "name": "MH Slow Pulse",
+      "kind": "intensity",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "strobes": {
+        "Moving Head #1": 0.0166,
+        "Moving Head #2": 0.0166,
+        "Moving Head #3": 0.0166,
+        "Moving Head #4": 0.0166
+      },
+      "source": "Scene 28",
+      "notes": [
+        "strobe on Moving Head #1, Moving Head #2, Moving Head #3, Moving Head #4 -- 0..1 across the fixture's own band, since the raw byte means nothing without it"
+      ]
+    },
+    {
       "name": "White Bump",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         1.0,
@@ -570,6 +651,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -621,6 +705,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           0.0,
@@ -647,6 +734,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           180.352,
@@ -672,6 +762,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -723,6 +816,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           0.0,
@@ -748,6 +844,9 @@
       "kind": "pose",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "offsets": [
         [
@@ -775,6 +874,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           180.352,
@@ -801,6 +903,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           180.352,
@@ -826,6 +931,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -912,6 +1020,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -1071,6 +1182,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           0.0,
@@ -1097,6 +1211,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral",
       "offsets": [
         [
           0.0,
@@ -1123,6 +1241,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral",
       "offsets": [
         [
           89.648,
@@ -1149,6 +1271,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral",
       "offsets": [
         [
           180.352,
@@ -1175,6 +1301,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral",
       "offsets": [
         [
           -72.773,
@@ -1199,6 +1329,9 @@
       "name": "Rainbow Step 1",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -1230,6 +1363,9 @@
       "name": "Rainbow Step 2",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -1261,6 +1397,9 @@
       "name": "Rainbow Step 3",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -1292,6 +1431,9 @@
       "name": "Rainbow Step 4",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           0.502,
@@ -1324,6 +1466,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -1409,6 +1554,9 @@
       "name": "Rainbow Wheel",
       "kind": "color_path",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "frames": [
         {
           "Moving Head #1": [
@@ -1511,6 +1659,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave",
       "offsets": [
         [
           0.0,
@@ -1537,6 +1689,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave",
       "offsets": [
         [
           0.0,
@@ -1563,6 +1719,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave",
       "offsets": [
         [
           0.0,
@@ -1589,6 +1749,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave",
       "offsets": [
         [
           0.0,
@@ -1614,6 +1778,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -1699,6 +1866,10 @@
       "name": "Dim Chase Step 1",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase",
       "intensity": 1.0,
       "source": "Scene 68"
     },
@@ -1706,6 +1877,10 @@
       "name": "Dim Chase Step 2",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase",
       "intensity": 1.0,
       "source": "Scene 69"
     },
@@ -1713,6 +1888,10 @@
       "name": "Dim Chase Step 3",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase",
       "intensity": 1.0,
       "source": "Scene 70"
     },
@@ -1720,49 +1899,203 @@
       "name": "Dim Chase Step 4",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase",
       "intensity": 1.0,
       "source": "Scene 71"
+    },
+    {
+      "name": "Dim Chase",
+      "kind": "level_path",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "levels": [
+        {
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0
+        }
+      ],
+      "bars": 8,
+      "source": "Chaser 72",
+      "notes": [
+        "4 level steps, 4500 ms each = 9.30 bars, snapped to 8",
+        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+      ]
     },
     {
       "name": "Spotlight Step 1",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight",
       "intensity": 1.0,
-      "source": "Scene 73"
+      "intensities": {
+        "Moving Head #1": 1.0,
+        "Moving Head #2": 0.431,
+        "Moving Head #4": 0.431
+      },
+      "source": "Scene 73",
+      "notes": [
+        "per-fixture levels differ"
+      ]
     },
     {
       "name": "Spotlight Step 2",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight",
       "intensity": 1.0,
-      "source": "Scene 74"
+      "intensities": {
+        "Moving Head #1": 0.431,
+        "Moving Head #2": 1.0,
+        "Moving Head #3": 0.431
+      },
+      "source": "Scene 74",
+      "notes": [
+        "per-fixture levels differ"
+      ]
     },
     {
       "name": "Spotlight Step 3",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight",
       "intensity": 1.0,
-      "source": "Scene 75"
+      "intensities": {
+        "Moving Head #2": 0.431,
+        "Moving Head #3": 1.0,
+        "Moving Head #4": 0.431
+      },
+      "source": "Scene 75",
+      "notes": [
+        "per-fixture levels differ"
+      ]
     },
     {
       "name": "Spotlight Step 4",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight",
       "intensity": 1.0,
-      "source": "Scene 76"
+      "intensities": {
+        "Moving Head #1": 0.431,
+        "Moving Head #3": 0.431,
+        "Moving Head #4": 1.0
+      },
+      "source": "Scene 76",
+      "notes": [
+        "per-fixture levels differ"
+      ]
+    },
+    {
+      "name": "Spotlight",
+      "kind": "level_path",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "levels": [
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 0.431,
+          "Moving Head #4": 0.431
+        },
+        {
+          "Moving Head #1": 0.431,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 0.431
+        },
+        {
+          "Moving Head #2": 0.431,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 0.431
+        },
+        {
+          "Moving Head #1": 0.431,
+          "Moving Head #3": 0.431,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 8,
+      "source": "Chaser 77",
+      "notes": [
+        "4 level steps, 4000 ms each = 8.27 bars, snapped to 8",
+        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+      ]
     },
     {
       "name": "MH Breathe On",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "MH Breathe",
       "intensity": 1.0,
       "source": "Scene 218"
+    },
+    {
+      "name": "MH Breathe",
+      "kind": "level_path",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "levels": [
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {}
+      ],
+      "bars": 8,
+      "source": "Chaser 220",
+      "notes": [
+        "2 level steps, 8000 ms each = 8.27 bars, snapped to 8",
+        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+      ]
     },
     {
       "name": "Heads - Circle",
       "kind": "pose",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "offsets": [
         [
@@ -1790,6 +2123,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Neighbor Scan",
       "offsets": [
         [
           45.352,
@@ -1816,6 +2153,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Neighbor Scan",
       "offsets": [
         [
           -45.352,
@@ -1841,6 +2182,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -1892,6 +2236,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl",
       "offsets": [
         [
           0.0,
@@ -1919,6 +2267,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl",
       "offsets": [
         [
           89.648,
@@ -1946,6 +2298,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl",
       "offsets": [
         [
           180.352,
@@ -1973,6 +2329,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl",
       "offsets": [
         [
           -72.773,
@@ -1999,6 +2359,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -2084,6 +2447,10 @@
       "name": "Crowd Cascade Step 1",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade",
       "intensity": 1.0,
       "source": "Scene 87"
     },
@@ -2091,6 +2458,10 @@
       "name": "Crowd Cascade Step 2",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade",
       "intensity": 1.0,
       "source": "Scene 88"
     },
@@ -2098,6 +2469,10 @@
       "name": "Crowd Cascade Step 3",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade",
       "intensity": 1.0,
       "source": "Scene 89"
     },
@@ -2105,14 +2480,53 @@
       "name": "Crowd Cascade Step 4",
       "kind": "intensity",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade",
       "intensity": 1.0,
       "source": "Scene 90"
+    },
+    {
+      "name": "Crowd Cascade",
+      "kind": "level_path",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "levels": [
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0
+        },
+        {
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0
+        },
+        {
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 8,
+      "source": "Chaser 91",
+      "notes": [
+        "4 level steps, 4500 ms each = 9.30 bars, snapped to 8",
+        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+      ]
     },
     {
       "name": "Heads - Apex",
       "kind": "pose",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "offsets": [
         [
@@ -2140,6 +2554,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           180.352,
@@ -2166,6 +2583,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "offsets": [
         [
           0.0,
@@ -2191,6 +2611,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -2314,6 +2737,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Iris",
       "offsets": [
         [
           45.352,
@@ -2340,6 +2767,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Iris",
       "offsets": [
         [
           -45.352,
@@ -2365,6 +2796,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -2447,9 +2881,165 @@
       ]
     },
     {
+      "name": "Build",
+      "kind": "path",
+      "tags": [
+        "movers"
+      ],
+      "groups": [
+        "corner movers"
+      ],
+      "steps": [
+        [
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ],
+          [
+            180.352,
+            2.109
+          ]
+        ],
+        [
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ],
+          [
+            45.352,
+            -0.0
+          ],
+          [
+            45.352,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ],
+          [
+            0.0,
+            18.984
+          ]
+        ],
+        [
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ],
+          [
+            0.0,
+            92.812
+          ]
+        ]
+      ],
+      "bars": 4,
+      "source": "Chaser 101",
+      "notes": [
+        "6 steps, 1000 ms each = 3.10 bars at 124 bpm, snapped to 4",
+        "1 step(s) wrote no position and were skipped"
+      ]
+    },
+    {
+      "name": "Drop",
+      "kind": "level_path",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "levels": [
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 0.431,
+          "Moving Head #4": 0.431
+        }
+      ],
+      "bars": 0.5,
+      "source": "Chaser 102",
+      "notes": [
+        "2 level steps, 400 ms each = 0.41 bars, snapped to 0.5",
+        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+      ]
+    },
+    {
       "name": "Split Warm/Cool",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2481,6 +3071,9 @@
       "name": "Split Red/Cyan",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2512,6 +3105,9 @@
       "name": "Split Pink/Green",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2543,6 +3139,9 @@
       "name": "Duo Cyan/Pink",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         0.502,
         1.0,
@@ -2554,6 +3153,9 @@
       "name": "Duo Green/Blue",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         0.502,
         1.0,
@@ -2565,6 +3167,9 @@
       "name": "Split Yellow/Blue",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2596,6 +3201,9 @@
       "name": "Split White/Orange",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2627,6 +3235,9 @@
       "name": "Split Red/Green",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2658,6 +3269,9 @@
       "name": "MH Yellow",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         1.0,
         1.0,
@@ -2669,6 +3283,9 @@
       "name": "MH Green",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         0.0,
         1.0,
@@ -2680,6 +3297,9 @@
       "name": "MH Cyan",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "color": [
         0.0,
         1.0,
@@ -2691,6 +3311,9 @@
       "name": "Quad Spectrum",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2722,6 +3345,10 @@
       "name": "Wheel Walk Step 1",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2753,6 +3380,10 @@
       "name": "Wheel Walk Step 2",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2784,6 +3415,10 @@
       "name": "Wheel Walk Step 3",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2815,6 +3450,10 @@
       "name": "Wheel Walk Step 4",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           0.0,
@@ -2846,6 +3485,10 @@
       "name": "Wheel Walk Step 5",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           0.0,
@@ -2877,6 +3520,10 @@
       "name": "Wheel Walk Step 6",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2908,6 +3555,10 @@
       "name": "Wheel Walk Step 7",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           1.0,
@@ -2939,6 +3590,10 @@
       "name": "Wheel Walk Step 8",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk",
       "colors": {
         "Moving Head #1": [
           0.0,
@@ -2970,6 +3625,9 @@
       "name": "Wheel Walk",
       "kind": "color_path",
       "tags": [],
+      "groups": [
+        "corner movers"
+      ],
       "frames": [
         {
           "Moving Head #1": [
@@ -3158,39 +3816,72 @@
       "name": "Pin Ball Glow",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         0.4706,
         0.2353,
         0.0784
       ],
-      "source": "Scene 108"
+      "whites": {
+        "Pinspot #1": 0.3137,
+        "Pinspot #2": 0.3137
+      },
+      "source": "Scene 108",
+      "notes": [
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+      ]
     },
     {
       "name": "Pin Amber",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         1.0,
         0.4706,
         0.0
       ],
-      "source": "Scene 109"
+      "whites": {
+        "Pinspot #1": 0.2353,
+        "Pinspot #2": 0.2353
+      },
+      "source": "Scene 109",
+      "notes": [
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+      ]
     },
     {
       "name": "Pin Rose",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         1.0,
         0.1569,
         0.3529
       ],
-      "source": "Scene 110"
+      "whites": {
+        "Pinspot #1": 0.1176,
+        "Pinspot #2": 0.1176
+      },
+      "source": "Scene 110",
+      "notes": [
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+      ]
     },
     {
       "name": "Pin Magenta",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         0.7843,
         0.0,
@@ -3202,6 +3893,9 @@
       "name": "Pin Indigo",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         0.2353,
         0.0,
@@ -3213,6 +3907,9 @@
       "name": "Pin Teal",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         0.0,
         0.7059,
@@ -3224,40 +3921,57 @@
       "name": "Pin Sea",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "color": [
         0.0,
         1.0,
         0.3137
       ],
-      "source": "Scene 114"
+      "whites": {
+        "Pinspot #1": 0.1569,
+        "Pinspot #2": 0.1569
+      },
+      "source": "Scene 114",
+      "notes": [
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+      ]
     },
     {
       "name": "Pin Drift",
       "kind": "color_path",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "frames": [
         {
           "Pinspot #1": [
             1.0,
             0.4706,
-            0.0
+            0.0,
+            0.2353
           ],
           "Pinspot #2": [
             1.0,
             0.4706,
-            0.0
+            0.0,
+            0.2353
           ]
         },
         {
           "Pinspot #1": [
             1.0,
             0.1569,
-            0.3529
+            0.3529,
+            0.1176
           ],
           "Pinspot #2": [
             1.0,
             0.1569,
-            0.3529
+            0.3529,
+            0.1176
           ]
         },
         {
@@ -3300,12 +4014,14 @@
           "Pinspot #1": [
             0.0,
             1.0,
-            0.3137
+            0.3137,
+            0.1569
           ],
           "Pinspot #2": [
             0.0,
             1.0,
-            0.3137
+            0.3137,
+            0.1569
           ]
         }
       ],
@@ -3319,6 +4035,10 @@
       "name": "Pin Rainbow Step 1",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         1.0,
         0.0,
@@ -3330,6 +4050,10 @@
       "name": "Pin Rainbow Step 2",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         1.0,
         0.502,
@@ -3341,6 +4065,10 @@
       "name": "Pin Rainbow Step 3",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         1.0,
         1.0,
@@ -3352,6 +4080,10 @@
       "name": "Pin Rainbow Step 4",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.502,
         1.0,
@@ -3363,6 +4095,10 @@
       "name": "Pin Rainbow Step 5",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.0,
         1.0,
@@ -3374,6 +4110,10 @@
       "name": "Pin Rainbow Step 6",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.0,
         1.0,
@@ -3385,6 +4125,10 @@
       "name": "Pin Rainbow Step 7",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.0,
         1.0,
@@ -3396,6 +4140,10 @@
       "name": "Pin Rainbow Step 8",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.0,
         0.502,
@@ -3407,6 +4155,10 @@
       "name": "Pin Rainbow Step 9",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.0,
         0.0,
@@ -3418,6 +4170,10 @@
       "name": "Pin Rainbow Step 10",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         0.502,
         0.0,
@@ -3429,6 +4185,10 @@
       "name": "Pin Rainbow Step 11",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         1.0,
         0.0,
@@ -3440,6 +4200,10 @@
       "name": "Pin Rainbow Step 12",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow",
       "color": [
         1.0,
         0.0,
@@ -3451,6 +4215,9 @@
       "name": "Pin Rainbow",
       "kind": "color_path",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "frames": [
         {
           "Pinspot #1": [
@@ -3607,6 +4374,9 @@
       "name": "Pin Split",
       "kind": "color",
       "tags": [],
+      "groups": [
+        "pinspots"
+      ],
       "colors": {
         "Pinspot #1": [
           1.0,
@@ -3619,8 +4389,12 @@
           0.6275
         ]
       },
+      "whites": {
+        "Pinspot #1": 0.2353
+      },
       "source": "Scene 221",
       "notes": [
+        "white channel on Pinspot #1 -- these are RGBW, and the W is part of the colour",
         "per-fixture colour (2 distinct) -- a split, duo or quad"
       ]
     },
@@ -3630,6 +4404,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring",
       "offsets": [
         [
           24.258,
@@ -3656,6 +4434,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring",
       "offsets": [
         [
           -24.258,
@@ -3682,6 +4464,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring",
       "offsets": [
         [
           -13.711,
@@ -3708,6 +4494,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring",
       "offsets": [
         [
           13.711,
@@ -3733,6 +4523,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -3820,6 +4613,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe",
       "offsets": [
         [
           -31.641,
@@ -3846,6 +4643,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe",
       "offsets": [
         [
           -24.258,
@@ -3872,6 +4673,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe",
       "offsets": [
         [
           0.0,
@@ -3898,6 +4703,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe",
       "offsets": [
         [
           -24.258,
@@ -3923,6 +4732,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -4010,6 +4822,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Cross",
       "offsets": [
         [
           45.352,
@@ -4036,6 +4852,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Cross",
       "offsets": [
         [
           -45.352,
@@ -4061,6 +4881,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -4112,6 +4935,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           0.0,
@@ -4138,6 +4965,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           13.711,
@@ -4164,6 +4995,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           20.039,
@@ -4190,6 +5025,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           13.711,
@@ -4216,6 +5055,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           0.0,
@@ -4242,6 +5085,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           -13.711,
@@ -4268,6 +5115,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           -20.039,
@@ -4294,6 +5145,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle",
       "offsets": [
         [
           -13.711,
@@ -4320,6 +5175,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           0.0,
@@ -4346,6 +5205,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           31.641,
@@ -4372,6 +5235,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           45.352,
@@ -4398,6 +5265,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           31.641,
@@ -4424,6 +5295,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           0.0,
@@ -4450,6 +5325,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           -31.641,
@@ -4476,6 +5355,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           -45.352,
@@ -4502,6 +5385,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep",
       "offsets": [
         [
           -31.641,
@@ -4528,6 +5415,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep",
       "offsets": [
         [
           45.352,
@@ -4554,6 +5445,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep",
       "offsets": [
         [
           0.0,
@@ -4580,6 +5475,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep",
       "offsets": [
         [
           -45.352,
@@ -4606,6 +5505,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep",
       "offsets": [
         [
           0.0,
@@ -4631,6 +5534,9 @@
       "kind": "pose",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "offsets": [
         [
@@ -4658,6 +5564,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring",
       "offsets": [
         [
           17.93,
@@ -4684,6 +5594,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring",
       "offsets": [
         [
           -17.93,
@@ -4710,6 +5624,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring",
       "offsets": [
         [
           -11.602,
@@ -4736,6 +5654,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring",
       "offsets": [
         [
           11.602,
@@ -4761,6 +5683,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -4848,6 +5773,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Bounce",
       "offsets": [
         [
           -31.641,
@@ -4874,6 +5803,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Bounce",
       "offsets": [
         [
           0.0,
@@ -4899,6 +5832,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -4950,6 +5886,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Breathe",
       "offsets": [
         [
           8.438,
@@ -4976,6 +5916,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Breathe",
       "offsets": [
         [
           44.297,
@@ -5001,6 +5945,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -5047,11 +5994,33 @@
       ]
     },
     {
+      "name": "MH Medium Pulse",
+      "kind": "intensity",
+      "tags": [],
+      "groups": [
+        "corner movers"
+      ],
+      "strobes": {
+        "Moving Head #1": 0.1535,
+        "Moving Head #2": 0.1535,
+        "Moving Head #3": 0.1535,
+        "Moving Head #4": 0.1535
+      },
+      "source": "Scene 130",
+      "notes": [
+        "strobe on Moving Head #1, Moving Head #2, Moving Head #3, Moving Head #4 -- 0..1 across the fixture's own band, since the raw byte means nothing without it"
+      ]
+    },
+    {
       "name": "Teleport Step 1",
       "kind": "pose",
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5078,6 +6047,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5105,6 +6078,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5131,6 +6108,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5158,6 +6139,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           180.352,
@@ -5184,6 +6169,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           180.352,
@@ -5211,6 +6200,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5237,6 +6230,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport",
       "offsets": [
         [
           0.0,
@@ -5263,6 +6260,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -5422,6 +6422,9 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
       "steps": [
         [
           [
@@ -5580,6 +6583,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame",
       "offsets": [
         [
           0.0,
@@ -5607,6 +6614,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame",
       "offsets": [
         [
           180.352,
@@ -5634,6 +6645,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame",
       "offsets": [
         [
           180.352,
@@ -5661,6 +6676,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame",
       "offsets": [
         [
           0.0,
@@ -5687,6 +6706,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -5774,6 +6796,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter",
       "offsets": [
         [
           0.0,
@@ -5800,6 +6826,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter",
       "offsets": [
         [
           0.0,
@@ -5827,6 +6857,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter",
       "offsets": [
         [
           0.0,
@@ -5853,6 +6887,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter",
       "offsets": [
         [
           0.0,
@@ -5879,6 +6917,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -5965,6 +7006,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -6124,6 +7168,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6150,6 +7198,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6177,6 +7229,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6203,6 +7259,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6230,6 +7290,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6256,6 +7320,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6283,6 +7351,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6309,6 +7381,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension",
       "offsets": [
         [
           0.0,
@@ -6335,6 +7411,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -6494,6 +7573,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           24.258,
@@ -6520,6 +7603,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           24.258,
@@ -6547,6 +7634,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           -24.258,
@@ -6573,6 +7664,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           -24.258,
@@ -6600,6 +7695,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           -13.711,
@@ -6626,6 +7725,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           -13.711,
@@ -6653,6 +7756,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           13.711,
@@ -6679,6 +7786,10 @@
       "tags": [
         "movers"
       ],
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink",
       "offsets": [
         [
           13.711,
@@ -6705,6 +7816,9 @@
       "kind": "path",
       "tags": [
         "movers"
+      ],
+      "groups": [
+        "corner movers"
       ],
       "steps": [
         [
@@ -6869,10 +7983,6 @@
       "reason": "writes nothing the engine models"
     },
     {
-      "name": "MH Strobe",
-      "reason": "writes nothing the engine models"
-    },
-    {
       "name": "Despacio Idle",
       "reason": "Collection -- rebuild with motion primitives"
     },
@@ -6882,10 +7992,6 @@
     },
     {
       "name": "MH Color Spin",
-      "reason": "writes nothing the engine models"
-    },
-    {
-      "name": "MH Slow Pulse",
       "reason": "writes nothing the engine models"
     },
     {
@@ -6905,24 +8011,8 @@
       "reason": "Collection -- rebuild with motion primitives"
     },
     {
-      "name": "Dim Chase",
-      "reason": "a step is neither position nor colour"
-    },
-    {
-      "name": "Spotlight",
-      "reason": "a step is neither position nor colour"
-    },
-    {
       "name": "MH Breathe Off",
       "reason": "writes nothing the engine models"
-    },
-    {
-      "name": "MH Breathe",
-      "reason": "a step is neither position nor colour"
-    },
-    {
-      "name": "Crowd Cascade",
-      "reason": "a step is neither position nor colour"
     },
     {
       "name": "Drift",
@@ -6945,14 +8035,6 @@
       "reason": "EFX -- rebuild with motion primitives"
     },
     {
-      "name": "Build",
-      "reason": "a step is neither position nor colour"
-    },
-    {
-      "name": "Drop",
-      "reason": "a step is neither position nor colour"
-    },
-    {
       "name": "Reset Heads (On)",
       "reason": "writes nothing the engine models"
     },
@@ -6962,7 +8044,7 @@
     },
     {
       "name": "Reset Heads",
-      "reason": "a step is neither position nor colour"
+      "reason": "every step of this chase is empty"
     },
     {
       "name": "Pin Strobe",
@@ -6978,15 +8060,11 @@
     },
     {
       "name": "Pin Breathe",
-      "reason": "a step is neither position nor colour"
+      "reason": "every step of this chase is empty"
     },
     {
       "name": "Night",
       "reason": "fewer than two positional steps"
-    },
-    {
-      "name": "MH Medium Pulse",
-      "reason": "writes nothing the engine models"
     }
   ]
 }

@@ -51,7 +51,7 @@ def orbit_look(radius_deg: float = 20.0, bars: float = 8.0) -> statemod.Show:
     show.color.append(statemod.color_layer((1.0, 0.1, 0.0), tags=("pinspots",)))
 
     show.movement.append(statemod.move_layer(
-        motion.as_move(motion.orbit(radius_deg, elongation=1.5), bars=bars),
+        motion.as_move(motion.orbit(radius_deg, bars=bars, elongation=1.5)),
         tags=("movers",)))
     return show
 
@@ -64,7 +64,8 @@ def set_list() -> autom.SetList:
     look and colour being its own stored scene, which is how 179 of them
     accumulated and why only a handful got used.
     """
-    def look(name, offset_fn, bars, tags=("movers",)):
+    # Cycle lengths are stated on the patterns themselves; `as_move` reads them.
+    def look(name, offset_fn, tags=("movers",)):
         def make(color):
             show = statemod.Show(master=0.9)
             show.base.append(statemod.pose_layer(
@@ -73,16 +74,17 @@ def set_list() -> autom.SetList:
             show.color.append(statemod.color_layer(color, tags=tags))
             show.color.append(statemod.color_layer(color, tags=("pinspots",)))
             show.movement.append(statemod.move_layer(
-                motion.as_move(offset_fn, bars=bars), tags=tags))
+                motion.as_move(offset_fn), tags=tags))
             show.fx.append(autom.energy_intensity_layer())
+            show.fx.append(autom.energy_strobe_layer())
             return show
         return autom.Look(name=name, make=make)
 
     return autom.SetList([
-        look("drift", motion.orbit(15.0, elongation=1.5), bars=16.0),
-        look("sweep", motion.pendulum(45.0), bars=8.0),
-        look("wide orbit", motion.orbit(40.0), bars=8.0),
-        look("bob", motion.pendulum(18.0, vertical=True), bars=4.0),
+        look("drift", motion.orbit(15.0, bars=16.0, elongation=1.5)),
+        look("sweep", motion.pendulum(45.0, bars=8.0)),
+        look("wide orbit", motion.orbit(40.0, bars=8.0)),
+        look("bob", motion.pendulum(18.0, bars=4.0, vertical=True)),
     ])
 
 

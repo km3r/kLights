@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Card, rgbCss } from "../components";
+import { LookPicker } from "../LookPicker";
 import type { Command, EngineState, RGB } from "../types";
 
 /**
@@ -30,6 +31,9 @@ export function ColorTab({ state, send }: {
 
   return (
     <>
+      <LookPicker state={state} send={send} slot="color" title="Colour look"
+                  empty="Nothing loaded — colour comes from the palette." />
+
       <Card title="Applies to">
         <div className="grid small">
           {targets.map((t) => (

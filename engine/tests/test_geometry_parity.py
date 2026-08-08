@@ -185,18 +185,33 @@ g = loaded.geometry
 assert g is not None, "rig.json produced no geometry"
 assert g.mount_mode == old.MOUNT_MODE, (
     f"rig.json mount_mode {g.mount_mode!r} != despacio_config.json's {old.MOUNT_MODE!r}")
-assert g.ball == (old.BALL_X, old.BALL_HEIGHT, old.BALL_Z), (
-    f"venue.json ball {g.ball} != despacio_config.json's "
-    f"{(old.BALL_X, old.BALL_HEIGHT, old.BALL_Z)}")
+### Positions are compared RELATIVE TO THE BALL, not as absolute coordinates.
+#
+# The rig can legitimately be re-sited in the room -- it was, on 2026-08-07,
+# when the walls moved out and the whole rig gained 4572 mm in x and z because
+# it hangs on a free-standing truss rather than on the walls. That moves every
+# absolute coordinate and changes nothing whatsoever about the show: an aim is
+# built entirely from where a head is RELATIVE to the ball it is calibrated on.
+# Comparing absolutes here would have failed that move while catching no error,
+# which is the definition of a guard that costs more than it earns.
+#
+# It still catches every transcription slip it was written for. A head typed
+# into the wrong corner, a swapped pair, a ball at the wrong height, one head
+# 500 mm out -- all of those change the offsets below.
+assert g.ball[1] == old.BALL_HEIGHT, (
+    f"venue.json ball height {g.ball[1]} != despacio_config.json's "
+    f"{old.BALL_HEIGHT}")
 assert len(g.heads) == len(old.HEADS), (
     f"rig.json has {len(g.heads)} positioned heads, despacio_config.json has "
     f"{len(old.HEADS)}")
 
 for i, head in enumerate(g.heads):
     want_x, want_z = old.HEADS[i]
-    assert (head.x, head.z) == (want_x, want_z), (
-        f"head {i} ({head.name}) at ({head.x},{head.z}), "
-        f"despacio_config.json says ({want_x},{want_z})")
+    got = (head.x - g.ball[0], head.z - g.ball[2])
+    want = (want_x - old.BALL_X, want_z - old.BALL_Z)
+    assert got == want, (
+        f"head {i} ({head.name}) sits {got} from the ball, "
+        f"despacio_config.json puts it {want}")
     assert head.height == old.HEAD_HEIGHT[i], (
         f"head {i} height {head.height} != {old.HEAD_HEIGHT[i]}")
     assert head.calibrated_ball_dmx == old.CALIBRATED_BALL_DMX["venue"][i], (

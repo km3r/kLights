@@ -81,6 +81,35 @@ class Canopy:
 
 
 @dataclass(frozen=True)
+class Truss:
+    """The frame the rig hangs on: a rectangle of bar standing in the room.
+
+    Structure rather than architecture, and the reason it is worth naming is
+    that it, not the walls, is what the rig is measured from. A room can be
+    re-measured, repainted or replaced; the 500 mm from a head to the bar it is
+    clamped to does not change. Anything reasoning about where the fixtures are
+    should reason about this rectangle.
+
+    Deliberately invisible to the safety taper. A bar is thin, it hangs above
+    the head band, and the taper exists to protect eyes -- so modelling it there
+    would add occlusion the taper could lean on without protecting anybody. The
+    previz does give it collision, because a beam aimed into it really does stop.
+    """
+    enabled: bool
+    footprint: Box                # min/max are the bar's CENTRELINE
+    height: float                 # centre of the bar's section
+    bar: float                    # section size, square
+
+    @property
+    def span_x(self) -> float:
+        return self.footprint.max_x - self.footprint.min_x
+
+    @property
+    def span_z(self) -> float:
+        return self.footprint.max_z - self.footprint.min_z
+
+
+@dataclass(frozen=True)
 class Venue:
     name: str
     width: float
@@ -91,6 +120,7 @@ class Venue:
     apex_height: float
     crowd_zone: Optional[CrowdZone]
     canopy: Optional[Canopy]
+    truss: Optional[Truss] = None
     elev_extreme_deg: float = 90.0
 
     @property
@@ -120,6 +150,16 @@ def load_venue(path: Path) -> Venue:
                         height=float(k["height"]), radius=float(k["radius"]),
                         center_x=float(center["x"]), center_z=float(center["z"]))
 
+    truss = None
+    if "truss" in cfg:
+        t = cfg["truss"]
+        truss = Truss(
+            enabled=bool(t.get("enabled", True)),
+            footprint=Box(float(t["min_x"]), float(t["max_x"]),
+                          float(t["height"]), float(t["height"]),
+                          float(t["min_z"]), float(t["max_z"])),
+            height=float(t["height"]), bar=float(t.get("bar", 300.0)))
+
     return Venue(
         name=cfg.get("name", Path(path).parent.name),
         width=float(cfg["width"]), depth=float(cfg["depth"]),
@@ -131,5 +171,5 @@ def load_venue(path: Path) -> Venue:
         # the taper from killing the show's signature look.
         ball_radius=float(cfg.get("ball_radius", 200.0)),
         apex_height=float(cfg.get("apex_height", cfg["height"])),
-        crowd_zone=crowd, canopy=canopy,
+        crowd_zone=crowd, canopy=canopy, truss=truss,
         elev_extreme_deg=float(cfg.get("elev_extreme_deg", 90.0)))

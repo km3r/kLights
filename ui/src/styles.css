@@ -29,7 +29,12 @@
 
 * { box-sizing: border-box; }
 
-html, body, #root { height: 100%; }
+/* 100dvh, not 100%. On a phone `height: 100%` resolves against the LAYOUT
+   viewport, which stays tall while the URL bar is showing -- so the bottom row
+   is pushed below the visible area and the page grows a scrollbar it should not
+   have. dvh tracks the visible viewport as the bar collapses. The 100% first is
+   the fallback for anything without dvh. */
+html, body, #root { height: 100%; height: 100dvh; }
 
 body {
   margin: 0;
@@ -39,6 +44,12 @@ body {
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
+
+/* Nothing may push the page sideways. A single overflowing element makes the
+   phone zoom out to fit it, which shrinks everything AND leaves the fixed-height
+   layout drawn short of the bottom of the screen -- one horizontal overflow
+   presents as two unrelated-looking bugs. */
+html, body { max-width: 100%; overflow-x: hidden; }
 
 button, input, select { font: inherit; color: inherit; }
 
@@ -65,11 +76,23 @@ button.danger.on { background: rgba(255, 95, 86, 0.25); }
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100%;
+  /* Grid tracks default to `auto`, which is min-content-bounded -- so a wide
+     child stretches the whole grid rather than scrolling inside itself. */
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 100%;
+  overflow: hidden;
   padding-top: env(safe-area-inset-top);
 }
 
 .main {
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  /* A grid item's implicit `min-height: auto` is its MIN-CONTENT height, so a
+     tall header plus tall content pushes the 1fr track -- and with it the tab
+     bar -- past the bottom of the screen. This is what lets the middle actually
+     scroll instead of stretching the page. */
+  min-height: 0;
   -webkit-overflow-scrolling: touch;
   padding: 0.75rem 0.75rem 1.5rem;
 }
@@ -77,10 +100,18 @@ button.danger.on { background: rgba(255, 95, 86, 0.25); }
 .tabbar {
   display: grid;
   grid-auto-flow: column;
+  /* minmax(0, 1fr), not the default `auto`: auto columns are floored at their
+     content width, so five labels that do not fit stretch the bar past the
+     screen instead of truncating. */
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
   background: var(--panel);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
+  min-width: 0;
+}
+.tabbar button > span:not(.glyph) {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tabbar button {
   border: 0;
@@ -137,7 +168,13 @@ button.danger.on { background: rgba(255, 95, 86, 0.25); }
   gap: 0.5rem;
 }
 
-.header-row { display: flex; align-items: center; gap: 0.6rem; }
+/* Wraps. This row holds the master fader plus Blackout and Panic, and buttons
+   will not shrink below their own text -- on a 320 px phone that overflowed,
+   which is what forced the zoom-out. */
+.header-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  flex-wrap: wrap; min-width: 0;
+}
 .header-row .grow { flex: 1; min-width: 0; }
 
 .status-dot {
@@ -158,13 +195,19 @@ button.danger.on { background: rgba(255, 95, 86, 0.25); }
 .beat i.on { background: var(--accent); }
 
 .master {
-  display: flex; align-items: center; gap: 0.6rem; flex: 1;
+  display: flex; align-items: center; gap: 0.6rem;
+  /* Basis 12rem so it takes a whole row of its own rather than being squeezed
+     to a stub next to the two buttons. */
+  flex: 1 1 12rem; min-width: 0;
 }
-.master input[type="range"] { flex: 1; }
+.master input[type="range"] { flex: 1; min-width: 0; }
 
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
   height: 34px; background: transparent; margin: 0;
+  /* A range input's default intrinsic width is ~129 px and it does not shrink
+     below it inside a flex row without this. */
+  min-width: 0; max-width: 100%;
 }
 input[type="range"]::-webkit-slider-runnable-track {
   height: 8px; border-radius: 4px; background: var(--panel-2);
@@ -207,6 +250,10 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius);
   padding: 0.75rem;
   margin-bottom: 0.75rem;
+  min-width: 0;
+  /* Look names can be long and unbroken; without this one of them widens the
+     card, the card widens the page, and the phone zooms out. */
+  overflow-wrap: anywhere;
 }
 .card > h2 {
   margin: 0 0 0.6rem;
@@ -217,12 +264,17 @@ input[type="range"]::-moz-range-thumb {
 }
 .card > h2 .grow { flex: 1; }
 
-.grid { display: grid; gap: 0.5rem; }
-.grid.tiles { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-.grid.small { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
-.grid.two { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* Every track is minmax(0, …) at the low end. `minmax(120px, 1fr)` cannot go
+   below 120 px, so on a narrow phone the last column hangs off the edge; the
+   min() keeps the floor at 120 px only while there is room for it. */
+.grid { display: grid; gap: 0.5rem; min-width: 0; }
+.grid > * { min-width: 0; }
+.grid.tiles { grid-template-columns: repeat(auto-fill, minmax(min(120px, 100%), 1fr)); }
+.grid.small { grid-template-columns: repeat(auto-fill, minmax(min(84px, 100%), 1fr)); }
+.grid.two { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
 
-.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; min-width: 0; }
+.row > * { min-width: 0; }
 .row.tight { gap: 0.35rem; }
 .spread { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 
@@ -285,5 +337,48 @@ label.field input, label.field select {
   background: var(--panel-2);
 }
 .toggle.on { border-color: var(--accent); background: rgba(90, 169, 255, 0.12); }
-.toggle .label { display: flex; flex-direction: column; }
+.toggle .label { display: flex; flex-direction: column; min-width: 0; text-align: left; }
 .toggle .label small { color: var(--dim); font-size: 11px; }
+
+/* One hand-dimmer row: a label line above its fader. */
+.dimmer { margin-bottom: 0.35rem; min-width: 0; }
+.dimmer .spread { gap: 0.5rem; }
+.dimmer .master { flex: 1 1 auto; }
+
+/* Fixture-type filter. A scrolling row rather than a wrapping one: it stays a
+   single predictable line whatever the rig holds, and a rig with six groups
+   should not push the list of looks down the screen. */
+.pills {
+  display: flex; gap: 0.35rem;
+  overflow-x: auto; scrollbar-width: none;
+  padding-bottom: 2px; min-width: 0;
+}
+.pills::-webkit-scrollbar { display: none; }
+.pills button {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  min-height: 38px;
+  font-size: 13px;
+  display: flex; align-items: center; gap: 0.35rem;
+}
+.pills button .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex: none;
+}
+.pills button.on .dot { background: var(--text); }
+
+/* What each slot currently holds, on the Show tab. A link rather than a button
+   because it navigates to the tab that owns that slot. */
+.slot {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.55rem 0.7rem; min-height: 44px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel-2); color: inherit; text-decoration: none;
+  min-width: 0; overflow-wrap: anywhere;
+}
+.slot:active { background: var(--tap); }
+
+/* Buttons hold two lines of text often enough (a name plus a hint) that the
+   default centre alignment reads as ragged. */
+button { max-width: 100%; overflow-wrap: anywhere; }

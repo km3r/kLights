@@ -15,7 +15,7 @@ import type { Command, EngineState } from "../types";
  * the rig — and doing that mid-show would move every aim at once. Those stay in
  * venue.json behind a restart.
  */
-export function VenueTab({ state, send }: {
+export function VenueSection({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
   const crowd = state.venue.crowd;

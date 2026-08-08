@@ -60,6 +60,11 @@ UI_DIST = REPO / "ui" / "dist"
 
 BROADCAST_HZ = 10.0
 
+# A solve fitting worse than this is not written over a working calibration.
+# Comfortably above the 0.67 deg worst case the solver hits on clean captures,
+# and well below the tens of degrees a mistaken capture produces.
+MAX_WRITE_RESIDUAL_DEG = 5.0
+
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
         ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml",
         ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
@@ -134,7 +139,7 @@ class ShowController:
             before_frame=self._drain, on_show=self._attach_overrides,
             on_frame=self._publish)
 
-        self.commands: "queue.Queue[tuple[dict, Optional[Client]]]" = queue.Queue()
+        self.commands: "queue.Queue[tuple[dict, Optional[Client], float]]" = queue.Queue()
         self.clients: dict[str, Client] = {}
         self.master = 0.9
         self.blackout = False
@@ -143,12 +148,57 @@ class ShowController:
         # they survive an auto-mode look change.
         self.override_layers: list[statemod.Layer] = []
         self.color_overrides: dict[str, tuple[float, float, float]] = {}
+        # Hand dimming, per fixture or per group. A multiplier, applied after
+        # the level slot and before the master -- so it trims a running pattern
+        # rather than replacing it, and the master still governs the lot.
+        self.level_overrides: dict[str, float] = {}
         self.jog: dict[str, tuple[int, int]] = {}
         self.captures: dict[str, list[calibmod.Capture]] = {}
 
         self.latest_states: dict[int, statemod.FixtureState] = {}
         self.notices: list[str] = []
         self.rev = 0
+
+        # The three independent slots. Selecting a colour must not disturb the
+        # movement and vice versa -- while one selection replaced the entire
+        # show, picking a colour threw away the move you had running, which is
+        # the opposite of what splitting the scenes during the port was for.
+        self.by_name = {e.name: e for e in self.library}
+        # Colour and level are stored PER FIXTURE GROUP, so the pinspots can be
+        # on their own colour while the movers are on another. One slot for the
+        # whole rig meant picking a pinspot palette threw away the movers', and
+        # the two are simply different decisions.
+        #
+        # MOVEMENT is read through to the set list rather than stored, because
+        # auto mode advances that itself; two copies of "which movement look is
+        # up" would need syncing on every auto change, and the one that got
+        # missed would be the one the UI displays.
+        self.slots: dict[str, dict[str, str]] = {"color": {}, "level": {}}
+        self.presets = load_presets(self.event_dir)
+        self._recompose()
+
+    @property
+    def selection(self) -> dict[str, dict[str, str]]:
+        current = self.setlist.current()
+        entry = self.entry(current.name) if current else None
+        movement = ({g: current.name for g in (entry.groups or ("movers",))}
+                    if current and entry else {})
+        return {"movement": movement,
+                "color": dict(self.slots["color"]),
+                "level": dict(self.slots["level"])}
+
+    def slot_entries(self, slot: str) -> list[libmod.LibraryEntry]:
+        """The distinct looks filling one slot across all groups.
+
+        De-duplicated by name: a look covering two groups occupies both, and
+        applying its layers twice would double its effect.
+        """
+        seen: dict[str, libmod.LibraryEntry] = {}
+        for name in self.slots[slot].values():
+            entry = self.entry(name)
+            if entry is not None:
+                seen[name] = entry
+        return list(seen.values())
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -166,11 +216,11 @@ class ShowController:
         a frame, so a command can never land mid-evaluation."""
         while True:
             try:
-                message, client = self.commands.get_nowait()
+                message, client, at = self.commands.get_nowait()
             except queue.Empty:
                 return
             try:
-                self.apply(message, client)
+                self.apply(message, client, at)
             except Exception as exc:                        # noqa: BLE001
                 # One bad command must not stop the others, and must not stop
                 # the show. Record it where the UI can see it.
@@ -192,11 +242,23 @@ class ShowController:
     # -- commands ----------------------------------------------------------
 
     def submit(self, message: dict, client: Optional[Client]) -> None:
-        self.commands.put((message, client))
+        """Queue a command, stamped with the time it ARRIVED.
 
-    def apply(self, message: dict, client: Optional[Client]) -> None:
+        The stamp matters for exactly one command and matters a lot for it. A
+        tap applied at the next frame boundary is a tap quantised to the frame
+        grid: at 40 fps near 128 bpm the reachable beat intervals are 18, 19 or
+        20 frames, so the tempo can only land on 133.3, 126.3 or 120.0 and a
+        metronomic 128.00 reads as 126.32. The median cannot rescue that,
+        because it is quantisation rather than noise. Stamping here keeps the
+        queue's frame-boundary guarantee for the MUTATION while giving the clock
+        the real arrival time.
+        """
+        self.commands.put((message, client, self.runner.now()))
+
+    def apply(self, message: dict, client: Optional[Client],
+              at: Optional[float] = None) -> None:
         kind = message.get("type")
-        now = self.ctx.time
+        now = self.ctx.time if at is None else at
         handler = getattr(self, f"_cmd_{kind}", None)
         if handler is None:
             raise ValueError(f"unknown command {kind!r}")
@@ -206,17 +268,137 @@ class ShowController:
             client.last_action = describe(message)
             client.last_action_at = time.time()
 
-    # look selection -------------------------------------------------------
+    # slots ----------------------------------------------------------------
+
+    def entry(self, name: Optional[str]) -> Optional[libmod.LibraryEntry]:
+        return self.by_name.get(name) if name else None
+
+    def _recompose(self) -> None:
+        """Rebuild the Show from the three slots.
+
+        The director keeps owning WHICH movement look is up (that is what auto
+        look changes change), but it no longer owns the whole Show -- it
+        delegates back here so the colour and level slots survive a look change.
+        """
+        def compose(look, color: tuple[float, float, float]):
+            movement = self.entry(look.name) if look is not None else None
+            return libmod.compose(
+                movement if movement is not None and movement.is_movement else None,
+                self.slot_entries("color"), self.slot_entries("level"), color)
+        self.director.compose = compose
+        self.director.rebuild()
 
     def _cmd_select_look(self, m: dict, now: float) -> None:
-        self.director.select(m["name"], hold=m.get("hold", True))
+        """Select a look INTO ITS OWN SLOT, worked out from what it sets.
+
+        The caller does not say which slot; the library already knows, because
+        the port split every scene by which channels it touched. A `mixed` entry
+        fills movement and colour together, since it genuinely states both --
+        and either stays independently changeable afterwards.
+        """
+        name = m["name"]
+        entry = self.by_name.get(name)
+        if entry is None:
+            raise KeyError(f"no look named {name!r}")
+        slot = m.get("slot") or entry.slot
+        if slot not in ("movement", "color", "level"):
+            raise ValueError(f"unknown slot {slot!r}")
+        if slot == "movement":
+            self.director.select(name, hold=m.get("hold", True))
+        else:
+            # Fills its slot for every group it writes, and only those -- so a
+            # pinspot colour replaces the pinspot colour and leaves the movers
+            # alone. A look covering the whole rig naturally replaces both.
+            for group in (entry.groups or ("movers",)):
+                self.slots[slot][group] = name
+        if entry.kind == "mixed":
+            for group in (entry.groups or ("movers",)):
+                self.slots["color"][group] = name
+        self._recompose()
+
+    def _cmd_clear_slot(self, m: dict, now: float) -> None:
+        slot = m["slot"]
+        if slot not in ("movement", "color", "level"):
+            raise ValueError(f"unknown slot {slot!r}")
+        if slot == "movement":
+            raise ValueError(
+                "the movement slot cannot be empty -- with nothing aiming the "
+                "heads they would hold wherever the last look left them. Pick "
+                "another position instead.")
+        group = m.get("group")
+        if group is None:
+            self.slots[slot].clear()
+        else:
+            self.slots[slot].pop(group, None)
+        self._recompose()
 
     def _cmd_release(self, m: dict, now: float) -> None:
         self.director.release()
 
     def _cmd_next_look(self, m: dict, now: float) -> None:
         self.setlist.advance()
-        self.director.rebuild()
+        self._recompose()
+
+    # presets ---------------------------------------------------------------
+
+    def _cmd_preset_save(self, m: dict, now: float) -> None:
+        """Snapshot all three slots plus the tempo feel under one name.
+
+        A preset is the thing a slot-based console loses: with colour, movement
+        and level independent you can build a picture in three taps, and then
+        have no way to get back to it. Saved to the event so it survives a
+        restart -- a preset that lives in memory is a preset you rebuild.
+        """
+        name = str(m["name"]).strip()[:40]
+        if not name:
+            raise ValueError("a preset needs a name")
+        self.presets = [p for p in self.presets if p["name"] != name]
+        self.presets.append({
+            "name": name, **self.selection,
+            "speed": round(self.clock.speed, 3),
+            "master": round(self.master, 3),
+        })
+        save_presets(self.event_dir, self.presets)
+        self.note(f"saved preset {name!r}")
+
+    def _cmd_preset_apply(self, m: dict, now: float) -> None:
+        name = m["name"]
+        preset = next((p for p in self.presets if p["name"] == name), None)
+        if preset is None:
+            raise KeyError(f"no preset named {name!r}")
+        # A preset naming a look that has since been re-ported away applies the
+        # rest rather than failing whole -- a preset is a shortcut, and half a
+        # shortcut beats an error message mid-set.
+        missing = []
+        for slot in ("color", "level"):
+            self.slots[slot] = {}
+            for group, value in (preset.get(slot) or {}).items():
+                if value in self.by_name:
+                    self.slots[slot][group] = value
+                elif value:
+                    missing.append(value)
+        movement = next(iter((preset.get("movement") or {}).values()), None)
+        if movement in self.by_name:
+            self.director.select(movement, hold=True)
+        elif movement:
+            missing.append(movement)
+        if missing:
+            self.note(f"preset {name!r}: {', '.join(missing)} no longer exist(s)")
+        if preset.get("speed"):
+            self.clock.set_speed(float(preset["speed"]), now)
+        if preset.get("master") is not None:
+            self.master = max(0.0, min(1.0, float(preset["master"])))
+        self.director.held = True
+        self._recompose()
+
+    def _cmd_preset_delete(self, m: dict, now: float) -> None:
+        name = m["name"]
+        before = len(self.presets)
+        self.presets = [p for p in self.presets if p["name"] != name]
+        if len(self.presets) == before:
+            raise KeyError(f"no preset named {name!r}")
+        save_presets(self.event_dir, self.presets)
+        self.note(f"deleted preset {name!r}")
 
     # levels ---------------------------------------------------------------
 
@@ -299,11 +481,36 @@ class ShowController:
         self.palette.index = int(m["index"]) % len(self.palette.colors)
         self.director.rebuild()
 
+    def _cmd_level(self, m: dict, now: float) -> None:
+        """Dim one fixture, one group, or everything, by hand.
+
+        The counterpart to the colour picker, and the same shape: an override
+        layer keyed by target, so a level trimmed by hand survives an auto-mode
+        look change. Distinct from the Bright slot, which holds a PATTERN from
+        the library -- this is the operator saying "that head is too hot right
+        now", which no stored look can anticipate.
+
+        A multiplier, not an absolute. It sits after the level pattern and
+        before the master, so pattern x hand-trim x master x safety all compose
+        in the order an operator would expect: the pattern keeps running, the
+        trim rides on top of it, and the master still takes everything down.
+        """
+        target = m.get("target", "all")
+        if m.get("clear"):
+            self.level_overrides.pop(target, None)
+        else:
+            self.level_overrides[target] = max(0.0, min(1.0, float(m["value"])))
+        self._rebuild_overrides()
+
     def _rebuild_overrides(self) -> None:
         layers: list[statemod.Layer] = []
         for target, color in self.color_overrides.items():
             tags = None if target == "all" else (target,)
             layers.append(statemod.color_layer(color, tags=tags))
+        for target, level in self.level_overrides.items():
+            tags = None if target == "all" else (target,)
+            layers.append(statemod.intensity_layer(
+                lambda ctx, fixture, level=level: level, tags=tags))
         for name, (pan, tilt) in self.jog.items():
             layers.append(statemod.raw_pose_layer({name: (pan, tilt)}, intensity=1.0))
         self.override_layers = layers
@@ -327,8 +534,25 @@ class ShowController:
         self._rebuild_overrides()
 
     def _cmd_capture(self, m: dict, now: float) -> None:
+        """Record where a head is pointing right now, against a known target.
+
+        Refuses if the head is not being jogged. A capture IS the current
+        pan/tilt, and the jog dict is the only place that number exists -- so
+        defaulting it silently recorded (0, 0), which the solver then fitted
+        into a calibration with a large residual and no other complaint. Since
+        the jog dict is keyed per fixture, the reachable case was simply
+        selecting a second head and capturing before jogging it.
+        """
         name = m["fixture"]
-        pan, tilt = self.jog.get(name, (int(m.get("pan", 0)), int(m.get("tilt", 0))))
+        if name not in self.jog:
+            if "pan" not in m or "tilt" not in m:
+                raise ValueError(
+                    f"{name} is not jogging -- aim it first, then capture. "
+                    f"A capture records where the head IS, so there is nothing "
+                    f"to record until it has been pointed somewhere.")
+            pan, tilt = int(m["pan"]), int(m["tilt"])
+        else:
+            pan, tilt = self.jog[name]
         self.captures.setdefault(name, []).append(calibmod.Capture(
             target=tuple(float(c) for c in m["target"]),
             pan=pan, tilt=tilt, label=m.get("label", "")))
@@ -356,8 +580,20 @@ class ShowController:
                       + ("  " + "; ".join(solution.warnings) if solution.warnings else ""))
         if not results:
             raise ValueError("no head has 2 or more captures yet")
-        self.last_solution = results
         if m.get("write"):
+            # A bad fit must not be written just because someone pressed the
+            # write button. The residual is the solver telling you the captures
+            # disagree; overwriting a good calibration with one that does not
+            # fit is worse than not solving at all, and it happens at load-in
+            # when nobody is reading the notices.
+            bad = [s for s in results if s.residual_deg > MAX_WRITE_RESIDUAL_DEG]
+            if bad:
+                raise ValueError(
+                    "refusing to write: "
+                    + "; ".join(f"{s.head_name} residual {s.residual_deg:.1f} deg"
+                                for s in bad)
+                    + f" (limit {MAX_WRITE_RESIDUAL_DEG:g}). Re-aim and re-capture; "
+                      "a capture taken before the head was jogged is the usual cause.")
             self._write_calibration(results)
 
     def _write_calibration(self, results) -> None:
@@ -380,6 +616,8 @@ class ShowController:
 
     def _cmd_drift(self, m: dict, now: float) -> None:
         """Compare fresh ball readings against the stored calibration."""
+        if self.rig.geometry is None:
+            raise ValueError("no geometry to check drift against")
         readings = m["readings"]
         heads = self.rig.geometry.heads
         drifts = [calibmod.drift_for_head(h, self.rig.venue.ball,
@@ -500,7 +738,7 @@ class ShowController:
         states = self.latest_states
         g = self.rig.geometry
         stats = self.runner.stats
-        kinds = {e.name: e.kind for e in self.library}
+        by_name = self.by_name
 
         fixtures = []
         for f in self.rig.fixtures:
@@ -522,6 +760,12 @@ class ShowController:
             if st is not None:
                 entry["intensity"] = round(st.intensity, 3)
                 entry["color"] = [round(c, 3) for c in st.color]
+                # RGBW fixtures blend a real white component, so a swatch drawn
+                # from RGB alone shows a colder light than the room has.
+                if st.white > 0:
+                    entry["white"] = round(st.white, 3)
+                if st.strobe > 0:
+                    entry["strobe"] = round(st.strobe, 3)
                 if st.safety is not None:
                     entry["safety"] = {"taper": round(st.safety.taper, 3),
                                        "reason": st.safety.reason}
@@ -546,22 +790,34 @@ class ShowController:
                       "beat": round(self.ctx.beat, 3),
                       "bar": round(self.ctx.bar, 3),
                       "phrase": round(self.ctx.phrase, 3),
-                      "beat_in_bar": round(self.ctx.beat % 4, 3),
+                      "beat_in_bar": round(
+                          self.ctx.beat % self.clock.meter.beats_per_bar, 3),
                       "source": self.clock.source,
                       "phrase_measured": self.clock.phrase_measured,
                       "taps": self.clock.taps},
             "auto": self.director.status(),
-            # `kind` lets the UI group 197 looks into something navigable --
-            # a flat list that long is exactly why only a handful got used.
+            # `kind` and `slot` let the UI put each look on the tab that owns it
+            # and group within that -- a flat list of 200 is exactly why only a
+            # handful got used. `step_of` files a chase's own steps under the
+            # chase instead of beside it.
             "looks": [{"name": l.name, "manual_only": l.manual_only,
-                       "kind": kinds.get(l.name, "look")}
+                       "kind": by_name[l.name].kind if l.name in by_name else "look",
+                       "slot": by_name[l.name].slot if l.name in by_name else "movement",
+                       "groups": list(by_name[l.name].groups) if l.name in by_name else [],
+                       "step_of": by_name[l.name].step_of if l.name in by_name else None}
                       for l in self.setlist.looks],
+            "selection": self.selection,
+            "presets": self.presets,
+            # The fixture types the UI filters by, biggest group first. Sent
+            # rather than derived in the UI so both agree on what a group is.
+            "groups": list(self.rig.tags()),
             "palette": [list(c) for c in self.palette.colors],
             "palette_index": self.palette.index,
             "master": round(self.master, 3),
             "blackout": self.blackout,
             "panicked": self.runner.panicked,
             "color_overrides": {k: list(v) for k, v in self.color_overrides.items()},
+            "level_overrides": dict(self.level_overrides),
             "fixtures": fixtures,
             "venue": venue_summary(self.rig.venue),
             "taper": {"crowd_level": self.ctx.taper.crowd_level,
@@ -579,6 +835,32 @@ class ShowController:
             "last_error": self.runner.last_error,
             "drift": getattr(self, "last_drift", None),
         }
+
+
+def load_presets(event_dir: Path) -> list[dict]:
+    path = Path(event_dir) / "presets.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("presets", [])
+    except (json.JSONDecodeError, OSError):
+        # A corrupt presets file must not stop the show starting. Presets are a
+        # convenience; the rig is not.
+        return []
+
+
+def save_presets(event_dir: Path, presets: list[dict]) -> None:
+    (Path(event_dir) / "presets.json").write_text(
+        json.dumps({
+            "_comment": [
+                "Named combinations of the three slots -- movement, colour and",
+                "level -- plus the speed and master they were built at.",
+                "",
+                "Written by the UI. Safe to hand-edit; a preset naming a look",
+                "that no longer exists applies the rest and skips that slot.",
+            ],
+            "presets": presets,
+        }, indent=2) + "\n", encoding="utf-8")
 
 
 def venue_summary(venue) -> dict:
@@ -603,6 +885,10 @@ def describe(message: dict) -> str:
         return f"selected {message.get('name')!r}"
     if kind == "color":
         return f"coloured {message.get('target', 'all')}"
+    if kind == "level":
+        target = message.get("target", "all")
+        return (f"cleared the level on {target}" if message.get("clear")
+                else f"dimmed {target} to {round(float(message.get('value', 1)) * 100)}%")
     if kind == "auto":
         return f"turned {message.get('axis')} {'on' if message.get('on') else 'off'}"
     if kind in ("tap", "downbeat", "bpm", "speed"):
@@ -633,15 +919,17 @@ def default_setlist() -> autom.SetList:
                 show.movement.append(statemod.move_layer(
                     motion.as_move(offset_fn, bars=bars), tags=("movers",)))
             show.fx.append(autom.energy_intensity_layer())
+            show.fx.append(autom.energy_strobe_layer())
             return show
         return autom.Look(name=name, make=make)
 
+    # Cycle lengths live on the patterns themselves now, so they are stated once.
     return autom.SetList([
         look("ball", None, 0.0),
-        look("drift", motion.orbit(15.0, elongation=1.5), 16.0),
-        look("sweep", motion.pendulum(45.0), 8.0),
-        look("wide orbit", motion.orbit(40.0), 8.0),
-        look("bob", motion.pendulum(18.0, vertical=True), 4.0),
+        look("drift", motion.orbit(15.0, bars=16.0, elongation=1.5), None),
+        look("sweep", motion.pendulum(45.0, bars=8.0), None),
+        look("wide orbit", motion.orbit(40.0, bars=8.0), None),
+        look("bob", motion.pendulum(18.0, bars=4.0, vertical=True), None),
     ])
 
 

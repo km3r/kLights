@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Banner, Card } from "../components";
+import { RigSection } from "./Rig";
+import { VenueSection } from "./Venue";
 import type { Command, EngineState, FixtureState } from "../types";
 
 /**
@@ -21,12 +23,18 @@ function corners(head: FixtureState | undefined, state: EngineState) {
 }
 
 /**
- * Calibration from the phone, standing under the light.
+ * Everything about the room and the rig, in one place.
  *
- * This is what retires the Tkinter form and its workflow — eyeball each head at
- * the ball, read the faders, type eight numbers in, re-run a build script,
- * restart QLC+. The heads got nudged overnight at despacio and recalibrating
- * was slow and manual.
+ * Venue, calibration and patch were three separate tabs, which was three places
+ * to look for one job: getting set up. They are one tab now, in the order the
+ * work actually happens — who is on the desk, what the room is, aim the heads,
+ * then the read-only patch and engine health at the bottom for when something
+ * is wrong.
+ *
+ * Calibration here is what retires the Tkinter form and its workflow — eyeball
+ * each head at the ball, read the faders, type eight numbers in, re-run a build
+ * script, restart QLC+. The heads got nudged overnight at despacio and
+ * recalibrating was slow and manual.
  *
  * Jog BYPASSES THE SAFETY TAPER, necessarily: the taper works from the aim, the
  * aim comes from the geometry, and the geometry is exactly what has not been
@@ -71,6 +79,8 @@ export function SetupTab({ state, send, name, setName }: {
           see each other, which is how two people on a desk actually works.
         </p>
       </Card>
+
+      <VenueSection state={state} send={send} />
 
       <Card title="Jog" right={
         <button className="small" onClick={() => send({ type: "jog_clear" })}>
@@ -129,12 +139,23 @@ export function SetupTab({ state, send, name, setName }: {
           the invert flags instead of you guessing them — two aims at the same
           bearing determine nothing, and it will say so.
         </p>
+        {/* A capture records where the head IS, and that number only exists
+            once the head is being jogged. Capturing before then used to record
+            (0, 0) silently, which the solver then fitted. Disabled rather than
+            rejected on arrival, so the reason is visible before the press. */}
+        {!head?.jogging && (
+          <Banner kind="warn">
+            Jog <b>{selected}</b> onto the target first — a capture records
+            where the head is pointing, and until you move it there is nothing
+            to record.
+          </Banner>
+        )}
         <div className="grid two">
-          <button onClick={() => send({
+          <button disabled={!head?.jogging} onClick={() => send({
             type: "capture", fixture: selected, target: ball, label: "mirror ball",
           })}>Ball</button>
           {corners(head, state).map((c) => (
-            <button key={c.label} onClick={() => send({
+            <button key={c.label} disabled={!head?.jogging} onClick={() => send({
               type: "capture", fixture: selected, target: c.target, label: c.label,
             })}>
               {c.label}
@@ -194,6 +215,28 @@ export function SetupTab({ state, send, name, setName }: {
           : state.notices.slice().reverse().map((n, i) => (
               <div key={i} className="small mono muted">{n}</div>
             ))}
+      </Card>
+
+      <RigSection state={state} />
+
+      <Card title="Panic">
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Forces zeros onto the wire and stops evaluating the show at all. It
+          does not need the show to be healthy or the engine to be keeping up,
+          which is what makes it different from Blackout — and why it lives
+          here rather than under your thumb next to the master.
+        </p>
+        <p className="small muted">
+          <b>Blackout</b> is the one you want mid-set: the show carries on
+          underneath, so letting go picks up where it has got to. Reach for
+          Panic when something has gone wrong, not when you want the room dark.
+        </p>
+        <button className={state.panicked ? "danger on" : "danger"}
+                style={{ width: "100%" }}
+                onClick={() => send(state.panicked
+                  ? { type: "clear_panic" } : { type: "panic" })}>
+          {state.panicked ? "Release panic" : "Panic — force output to zero"}
+        </button>
       </Card>
     </>
   );

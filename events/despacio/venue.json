@@ -10,15 +10,27 @@
     "",
     "MEASURE THESE ON SITE. The numbers below are the despacio room as built, and",
     "the head band is a stated assumption rather than a measurement -- see its",
-    "own comment."
+    "own comment.",
+    "",
+    "ROOM GREW 2026-08-07. The rig does not hang on the walls: it hangs on a",
+    "truss frame standing in the middle of a room twice as long and twice as",
+    "wide, with a ceiling half again as high. The truss rectangle below is",
+    "exactly where the walls used to be modelled, so the rig's own geometry --",
+    "the 9.144 m square it is rigged on, the ball in the middle of it, the heads",
+    "500 mm inboard of the bar -- is unchanged; every coordinate simply moved",
+    "4572 mm in x and z because the origin is still the ROOM's front-left floor",
+    "corner and the room now starts 4572 mm further out on each side.",
+    "",
+    "The canopy did NOT move. It is still rigged at 4600 mm, which is now well",
+    "below the ceiling rather than flush with it."
   ],
 
   "name": "despacio room",
-  "width": 9144,
-  "depth": 9144,
-  "height": 4600,
+  "width": 18288,
+  "depth": 18288,
+  "height": 6900,
 
-  "ball": { "x": 4572, "y": 2743, "z": 4572 },
+  "ball": { "x": 9144, "y": 2743, "z": 9144 },
 
   "_ball_radius_comment": [
     "A mirror ball is a SOLID sphere, so it genuinely blocks a beam rather than",
@@ -27,17 +39,51 @@
     "at all -- without it the taper would dim the show's signature look for no",
     "reason.",
     "",
-    "200 mm radius (a 16-inch ball) is an ESTIMATE. Measure the real one: too",
-    "large and the taper trusts an occlusion that is not there."
+    "300 mm radius (a 24-inch ball) was set by hand on 2026-08-07, replacing an",
+    "estimated 200. Still not measured. Measure the real one: too large and the",
+    "taper trusts an occlusion that is not there, and this is the direction that",
+    "errs toward NOT dimming -- a bigger ball here means the taper believes more",
+    "beams are blocked than really are."
   ],
-  "ball_radius": 200,
+  "ball_radius": 300,
 
   "_apex_comment": [
     "The point directly above the ball that the aerial poses converge on. With a",
     "parachute rigged this is the canopy height and the beams land ON it and it",
-    "glows; without one it is the ceiling."
+    "glows; without one it is the ceiling.",
+    "",
+    "These were the same number while the ceiling was 4600. They are not any",
+    "more: unrig the canopy and this must be raised to 6900 by hand, or every",
+    "aerial pose will be computed as stopping 2.3 m short of what it now hits."
   ],
   "apex_height": 4600,
+
+  "_truss_comment": [
+    "WHAT THE RIG HANGS ON. A rectangular frame of bar standing free in the",
+    "room, not against its walls -- min/max are the bar's CENTRELINE, height is",
+    "the centre of its section, and `bar` is how thick that section is.",
+    "",
+    "`bar` is 60 mm -- a single thin pole, not box truss. It is the previz's",
+    "whole physical model of the structure, so if the real thing is a 290 mm",
+    "box section, say so here; nothing but the drawing depends on it.",
+    "",
+    "This is the 9.144 m square the show was designed around: before 2026-08-07",
+    "the model had walls here, and every measurement in rig.json is still taken",
+    "from this rectangle (the heads sit 500 mm inboard of it, at bar height).",
+    "So if the room is ever re-measured, this frame is the thing to keep fixed",
+    "relative to the fixtures -- the walls can go anywhere.",
+    "",
+    "The safety taper ignores it deliberately. A bar is thin, it is above the",
+    "head band, and the taper's job is people's eyes; the previz DOES give it",
+    "collision, so a beam aimed into it stops there as it really would."
+  ],
+  "truss": {
+    "enabled": true,
+    "min_x": 4572, "max_x": 13716,
+    "min_z": 4572, "max_z": 13716,
+    "height": 2971,
+    "bar": 60
+  },
 
   "_crowd_zone_comment": [
     "Where people stand, and how high their eyes are. The taper drives intensity",
@@ -49,12 +95,15 @@
     "top -- someone on someone's shoulders is exactly who gets hit. Raising the",
     "floor of the band buys back throw at the cost of catching shorter people.",
     "",
-    "The footprint is inset from the walls because the corners hold the heads",
-    "themselves and nobody stands in them."
+    "The footprint is inset from the TRUSS, not from the walls -- the corners",
+    "hold the heads themselves and nobody stands in them. It did not grow when",
+    "the room did: people stand under the rig, not out in the far corners.",
+    "Widen it here if that stops being true, because a beam over somebody",
+    "standing outside this box is not tapered at all."
   ],
   "crowd_zone": {
-    "min_x": 1200, "max_x": 7944,
-    "min_z": 1200, "max_z": 7944,
+    "min_x": 5772, "max_x": 12516,
+    "min_z": 5772, "max_z": 12516,
     "head_band_min": 1400,
     "head_band_max": 2000
   },
@@ -72,7 +121,7 @@
     "enabled": true,
     "height": 4600,
     "radius": 2000,
-    "center": { "x": 4572, "z": 4572 }
+    "center": { "x": 9144, "z": 9144 }
   },
 
   "elev_extreme_deg": 90

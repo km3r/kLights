@@ -24,7 +24,26 @@ function mount() {
   return socket;
 }
 
-beforeEach(() => localStorage.clear());
+/**
+ * Click a TAB, not just any button whose label happens to match.
+ *
+ * "Move" also appears as "Move changes" in the auto panel and inside look
+ * names, so an unscoped query is ambiguous the moment the app grows. Scoping to
+ * the tab bar is both unambiguous and closer to what a user does.
+ */
+async function goTo(user: ReturnType<typeof userEvent.setup>, label: RegExp) {
+  const bar = document.querySelector("nav.tabbar") as HTMLElement;
+  await user.click(within(bar).getByRole("button", { name: label }));
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  // The app persists the current tab in the URL hash so a phone waking up comes
+  // back where it was. jsdom keeps `location` across tests in a file, so
+  // without this every test after the first starts on whichever tab the
+  // previous one left open.
+  location.hash = "";
+});
 
 describe("connection", () => {
   it("says hello with a name so presence is not anonymous", () => {
@@ -76,16 +95,34 @@ describe("header", () => {
     expect(socket.last()).toEqual({ type: "blackout", on: true });
 
     act(() => socket.push(stateWith((s) => { s.blackout = true; })));
-    await user.click(screen.getByRole("button", { name: /^blackout$/i }));
+    await user.click(screen.getByRole("button", { name: /blackout on/i }));
     expect(socket.last()).toEqual({ type: "blackout", on: false });
   });
 
-  it("offers to clear a panic rather than re-panicking", async () => {
+  it("distinguishes blackout from panic in words, not just in colour", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => { s.blackout = true; s.panicked = true; })));
+    // Blackout leaves the show running underneath; panic bypasses it entirely.
+    expect(screen.getByText(/still running underneath/i)).toBeInTheDocument();
+    expect(screen.getByText(/not being evaluated at all/i)).toBeInTheDocument();
+  });
+
+  it("offers to release a panic from the banner, wherever you are", async () => {
     const user = userEvent.setup();
     const socket = mount();
     act(() => socket.push(stateWith((s) => { s.panicked = true; })));
-    await user.click(screen.getByRole("button", { name: /panicked/i }));
+    // The panic BUTTON now lives on Setup -- it is not something to have under
+    // a thumb next to the master -- but releasing must stay one tap from
+    // anywhere, so the banner carries it.
+    await user.click(screen.getByRole("button", { name: /^release$/i }));
     expect(socket.last()).toEqual({ type: "clear_panic" });
+  });
+
+  it("keeps panic off the header, where blackout is enough", () => {
+    mount();
+    const header = document.querySelector(".header") as HTMLElement;
+    expect(within(header).getByRole("button", { name: /blackout/i })).toBeInTheDocument();
+    expect(within(header).queryByRole("button", { name: /^panic/i })).toBeNull();
   });
 });
 
@@ -123,15 +160,95 @@ describe("banners", () => {
   });
 });
 
-describe("show tab", () => {
-  it("marks the running look and offers to release the hold", async () => {
+/**
+ * The three slots are the heart of the reorganisation: colour, movement and
+ * level are picked on their own tabs and do not disturb each other. These tests
+ * guard that separation, since it is invisible until it breaks.
+ */
+describe("slots", () => {
+  it("shows what each slot holds, and they are all filled at once", () => {
+    mount();
+    // The fixture has a move, a colour AND a level chase loaded together --
+    // which was impossible while one selection replaced the whole show.
+    const now = screen.getByText(/On now/i).closest(".card")!;
+    expect(now.textContent).toContain("Lazy Circle");
+    expect(now.textContent).toContain("MH Red");
+    expect(now.textContent).toContain("Spotlight");
+  });
+
+  it("offers only movement looks on the Move tab", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Move/);
+    const card = screen.getByText(/^Route$/).closest(".card")! as HTMLElement;
+    // 'MH Red' is a colour: it must not be reachable from here, or picking a
+    // route could clobber the colour.
+    await user.type(within(card).getByLabelText(/filter movement/), "MH Red");
+    expect(within(card).queryByRole("button", { name: /^MH Red/ })).toBeNull();
+  });
+
+  it("offers only colour looks on the Color tab", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Color/);
+    const card = screen.getByText("Colour look").closest(".card")! as HTMLElement;
+    await user.type(within(card).getByLabelText(/filter color/), "Lazy Circle");
+    expect(within(card).queryByRole("button", { name: /^Lazy Circle/ })).toBeNull();
+  });
+
+  it("selects into a slot and can clear it again", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    // The fixture is held on 'Lazy Circle', a ported chaser.
-    expect(screen.getByRole("button", { name: /^Lazy Circle$/ }).className)
-      .toContain("on");
-    expect(screen.getByText(/Held/)).toBeInTheDocument();
+    await goTo(user, /Bright/);
+    const card = screen.getByText("Bright pattern").closest(".card")! as HTMLElement;
+    await user.click(within(card).getByRole("button", { name: /^Clear/ }));
+    expect(socket.last()).toEqual({ type: "clear_slot", slot: "level" });
+  });
 
+  it("files a chase's own steps under the chase, not beside it", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Bright/);
+    const card = screen.getByText("Bright pattern").closest(".card")! as HTMLElement;
+    // 'Spotlight Step 1' is one step of the 'Spotlight' chase. Four of them
+    // beside the chase itself is the flat-list problem in miniature.
+    await user.type(within(card).getByLabelText(/filter level/), "Spotlight Step");
+    expect(within(card).queryByRole("button", { name: /^Spotlight Step 1/ })).toBeNull();
+    await user.click(within(card).getByRole("button", { name: /individual chase step/i }));
+    expect(within(card).getByRole("button", { name: /Spotlight Step 1/ }))
+      .toBeInTheDocument();
+  });
+});
+
+describe("presets", () => {
+  it("recalls a whole picture, and names what it holds", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    const card = screen.getByText(/^Presets/).closest(".card")! as HTMLElement;
+    // The name appears twice: once as a recall tile, once in the delete list.
+    // The tile is first.
+    await user.click(within(card).getAllByRole("button", { name: /^peak/ })[0]!);
+    expect(socket.last()).toEqual({ type: "preset_apply", name: "peak" });
+  });
+
+  it("saves the current picture under a typed name", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.type(screen.getByLabelText("preset name"), "drop");
+    await user.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+  });
+
+  it("will not save an unnamed preset", () => {
+    mount();
+    expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+  });
+});
+
+describe("show tab", () => {
+  it("offers to release a held look", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
     await user.click(screen.getByRole("button", { name: /release hold/i }));
     expect(socket.last()).toEqual({ type: "release" });
   });
@@ -139,31 +256,37 @@ describe("show tab", () => {
   it("selects a look by name", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    await user.click(screen.getByRole("button", { name: /^Slow Sweep$/ }));
+    await goTo(user, /Move/);
+    await user.click(screen.getByRole("button", { name: /^Slow Sweep/ }));
     expect(socket.last()).toEqual({ type: "select_look", name: "Slow Sweep" });
   });
 
-  // 197 looks came out of the workspace. A flat list that long is exactly why
-  // only a handful got used, so they group by what they do and can be filtered.
-  it("groups the ported library by kind", () => {
+  // 206 looks came out of the workspace. A flat list that long is exactly why
+  // only a handful got used, so they split by slot and group by what they do.
+  it("groups the ported library by kind", async () => {
+    const user = userEvent.setup();
     mount();
+    await goTo(user, /Move/);
     expect(screen.getByRole("button", { name: /Moves · \d+/ })).toBeInTheDocument();
+    await goTo(user, /Color/);
     expect(screen.getByRole("button", { name: /Colours · \d+/ })).toBeInTheDocument();
   });
 
   it("filters across every group, not just the open one", async () => {
     const user = userEvent.setup();
     mount();
+    await goTo(user, /Move/);
     // 'Heads - Ball' is a pose; the first group open by default is Moves.
-    expect(screen.queryByRole("button", { name: /^Heads - Ball$/ })).toBeNull();
-    await user.type(screen.getByLabelText("filter looks"), "Heads - Ball");
-    expect(screen.getByRole("button", { name: /^Heads - Ball$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Heads - Ball/ })).toBeNull();
+    await user.type(screen.getByLabelText("filter movement looks"), "Heads - Ball");
+    expect(screen.getByRole("button", { name: /^Heads - Ball/ })).toBeInTheDocument();
   });
 
   it("says so when a filter matches nothing", async () => {
     const user = userEvent.setup();
     mount();
-    await user.type(screen.getByLabelText("filter looks"), "zzzz");
+    await goTo(user, /Move/);
+    await user.type(screen.getByLabelText("filter movement looks"), "zzzz");
     expect(screen.getByText(/Nothing matches/)).toBeInTheDocument();
   });
 
@@ -205,7 +328,7 @@ describe("show tab", () => {
   it("toggles auto axes one at a time", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    await user.click(screen.getByRole("button", { name: /Look changes/i }));
+    await user.click(screen.getByRole("button", { name: /Move changes/i }));
     expect(socket.last()).toEqual({ type: "auto", axis: "look_changes", on: true });
     // The fixture already has palette on, so this must turn it OFF.
     await user.click(screen.getByRole("button", { name: /^Palette/i }));
@@ -215,7 +338,7 @@ describe("show tab", () => {
 
 describe("colour", () => {
   async function openColor(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: /Color/ }));
+    await goTo(user, /Color/);
   }
 
   it("applies a palette colour to the chosen target", async () => {
@@ -241,7 +364,8 @@ describe("colour", () => {
     await openColor(user);
     // The fixture has an override on pinspots.
     await user.click(screen.getByRole("button", { name: "pinspots" }));
-    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await user.click(within(screen.getByText("Quick palette").closest(".card") as HTMLElement)
+        .getByRole("button", { name: /^clear$/i }));
     expect(socket.last()).toMatchObject({ type: "color", target: "pinspots", clear: true });
   });
 });
@@ -256,7 +380,7 @@ describe("move tab", () => {
       mh.lands_on = "floor";
       mh.throw_mm = 6480;
     })));
-    await user.click(screen.getByRole("button", { name: /Move/ }));
+    await goTo(user, /Move/);
 
     // Scoped to this head's card: with the real library loaded, several heads
     // legitimately share a taper reason, so a page-wide query is ambiguous.
@@ -270,44 +394,47 @@ describe("move tab", () => {
   });
 });
 
-describe("rig tab", () => {
+describe("rig info (now at the bottom of Setup)", () => {
   it("surfaces what the engine is NOT driving", async () => {
     const user = userEvent.setup();
     const socket = mount();
     act(() => socket.push(stateWith((s) => {
       s.warnings = ["YeeSite bar: 90 channels claim role 'dimmer' -- only the first is driven"];
     })));
-    await user.click(screen.getByRole("button", { name: /Rig/ }));
+    await goTo(user, /Setup/);
     expect(screen.getByText(/only the first is driven/)).toBeInTheDocument();
   });
 
   it("reports engine health honestly", async () => {
     const user = userEvent.setup();
     mount();
-    await user.click(screen.getByRole("button", { name: /Rig/ }));
+    await goTo(user, /Setup/);
     expect(screen.getByText("40.00 fps")).toBeInTheDocument();
     expect(screen.getByText("0 drop(s)")).toBeInTheDocument();
   });
 });
 
 describe("setup tab", () => {
-  async function openSetup(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: /Setup/ }));
-  }
+  const openSetup = (user: ReturnType<typeof userEvent.setup>) => goTo(user, /Setup/);
 
   it("computes capture targets from the head's own position", async () => {
     const user = userEvent.setup();
     const socket = mount();
     await openSetup(user);
-    // Moving Head #1 is at (8644, 8644) in a 9144 mm room, so its adjacent
-    // corners — the ones ~90 degrees either side of the ball — are at
-    // (8644, 500) and (500, 8644).
+    // The adjacent corners — the ones ~90 degrees either side of the ball, and
+    // the only targets that span enough bearing for the solver to derive
+    // handedness. Derived from the fixture rather than hardcoded: the room's
+    // dimensions are a property of the venue file and changed once already, and
+    // a test that pins them fails for a reason that is not a bug.
+    const head = despacioState.fixtures.find((f) => f.name === "Moving Head #1")!;
+    const [hx, , hz] = head.position!;
+    const { width: w, depth: d } = despacioState.venue;
     await user.click(screen.getByRole("button", { name: /corner across/ }));
     expect(socket.last()).toMatchObject({
-      type: "capture", fixture: "Moving Head #1", target: [8644, 0, 500],
+      type: "capture", fixture: "Moving Head #1", target: [hx, 0, d! - hz],
     });
     await user.click(screen.getByRole("button", { name: /corner along wall/ }));
-    expect(socket.last()).toMatchObject({ target: [500, 0, 8644] });
+    expect(socket.last()).toMatchObject({ target: [w! - hx, 0, hz] });
   });
 
   it("captures the ball at the venue's actual ball position", async () => {
@@ -318,6 +445,29 @@ describe("setup tab", () => {
     expect(socket.last()).toMatchObject({
       type: "capture", target: despacioState.venue.ball,
     });
+  });
+
+  it("will not capture a head that is not being jogged", async () => {
+    const user = userEvent.setup();
+    // Moving Head #2 is not in the fixture's jog set. A capture records where
+    // the head IS, and that number does not exist until it has been jogged --
+    // capturing anyway used to record (0, 0), which the solver then fitted into
+    // a calibration with a large residual and no other complaint.
+    const socket = mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /MH #2/ }));
+
+    expect(screen.getByRole("button", { name: /^Ball$/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /corner across/ })).toBeDisabled();
+    expect(screen.getByText(/nothing to record/)).toBeInTheDocument();
+
+    const before = socket.sent.length;
+    await user.click(screen.getByRole("button", { name: /^Ball$/ }));
+    expect(socket.sent.length).toBe(before);
+
+    // Jogging it opens the capture up again.
+    await user.click(screen.getAllByRole("button", { name: "+10" })[0]!);
+    expect(socket.last()).toMatchObject({ type: "jog", fixture: "Moving Head #2" });
   });
 
   it("jogs by the requested step", async () => {
@@ -365,9 +515,9 @@ describe("setup tab", () => {
   });
 });
 
-describe("venue tab", () => {
+describe("venue (now part of Setup)", () => {
   async function openVenue(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: /Venue/ }));
+    await goTo(user, /Setup/);
   }
 
   it("states plainly what the crowd level buys", async () => {
@@ -465,7 +615,7 @@ describe("navigation", () => {
   it("keeps the tab in the URL so a reload lands where you were", async () => {
     const user = userEvent.setup();
     mount();
-    await user.click(screen.getByRole("button", { name: /Setup/ }));
+    await goTo(user, /Setup/);
     expect(location.hash).toBe("#setup");
   });
 });

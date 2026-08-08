@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "Cosmos",
+	"Description": "Previsualization for the Cosmos show engine. Listens to Art-Net; never sits between the engine and the rig.",
+	"Plugins": [
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		}
+	]
+}

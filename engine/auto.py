@@ -261,6 +261,13 @@ class AutoDirector:
         self.config = config
         self.palette = palette or Palette()
         self.energy_source = energy or ManualEnergy()
+        # How a chosen look becomes a Show. Overridable because the director
+        # owns WHICH movement look is up, not what the whole show is: the
+        # controller composes the movement slot with the separately-selected
+        # colour and level slots, so an auto look change no longer discards
+        # them. Default is the look on its own.
+        self.compose: Callable[[Look, tuple[float, float, float]],
+                               statemod.Show] = lambda look, color: look.make(color)
 
         self.held = False
         self.energy = 0.0
@@ -291,14 +298,23 @@ class AutoDirector:
         return self.rebuild()
 
     def release(self) -> None:
-        """Resume automatic look changes at the next boundary."""
+        """Resume automatic look changes at the next boundary.
+
+        The mark is cleared rather than left stale. While a look is held the
+        boundary counter is not advancing, so releasing at phrase 8.75 against a
+        mark last written at phrase 4 would read as a crossing and change the
+        look on the very next frame -- which is precisely the jump the operator
+        was holding to avoid. Clearing re-baselines on the next update, so the
+        change lands where the docstring says it does.
+        """
         self.held = False
+        self._change_mark = None
 
     def rebuild(self) -> statemod.Show:
         look = self.setlist.current()
         if look is None:
             raise ValueError("set list is empty")
-        self._show = look.make(self.palette.current())
+        self._show = self.compose(look, self.palette.current())
         return self._show
 
     # -- per frame ---------------------------------------------------------
@@ -312,9 +328,16 @@ class AutoDirector:
         # bar 40 a rate going 1.0 -> 1.5 would move the motion phase by 20 bars
         # in one frame and snap every running move. Same reasoning as the
         # clock's re-anchoring, and the same failure if it is skipped.
+        #
+        # The `timing` axis is what gates this. Off means movement stops
+        # following the clock and every move freezes where it stands -- which is
+        # the literal reading of the axis, and a useful hold in its own right.
+        # Musical position keeps advancing regardless, so anything landing ON
+        # the music is unaffected and turning timing back on resumes from where
+        # the rig froze rather than snapping to where it would have been.
         if self._last_bar is None:
             self.motion_bar = position.bar
-        else:
+        elif self.config.timing:
             delta = position.bar - self._last_bar
             if delta < 0:                      # a phase nudge ran time backwards
                 delta = 0.0
@@ -328,7 +351,12 @@ class AutoDirector:
         else:
             self.energy, self.rate, self.strobe = 0.0, 1.0, False
 
-        if self.config.look_changes and not self.held:
+        if not (self.config.look_changes and not self.held):
+            # Gate shut. Forget the mark so re-opening it re-baselines rather
+            # than comparing against a boundary index from minutes ago -- see
+            # `release`. Same reasoning for the axis being toggled off and on.
+            self._change_mark = None
+        else:
             mark = _boundary_index(position, self.config.change_every_phrases,
                                    phrase_measured)
             if self._crossed("_change_mark", mark):
@@ -338,7 +366,9 @@ class AutoDirector:
                     "phrase boundary" if phrase_measured else "bar boundary (phrase counted)")
                 changed = True
 
-        if self.config.palette:
+        if not self.config.palette:
+            self._palette_mark = None          # re-baseline on re-enable
+        else:
             mark = _boundary_index(position, self.config.palette_every_phrases,
                                    phrase_measured)
             if self._crossed("_palette_mark", mark):
@@ -414,3 +444,21 @@ def energy_intensity_layer(tags: Optional[Sequence[str]] = None):
     """
     return statemod.intensity_layer(
         lambda ctx, fixture: getattr(ctx, "auto_intensity", 1.0), tags=tags)
+
+
+def energy_strobe_layer(tags: Optional[Sequence[str]] = ("movers",),
+                        rate: float = 0.75):
+    """Open the shutter into a strobe when energy crosses `strobe_above`.
+
+    Paired with `energy_intensity_layer` for the same reason: switching the
+    energy axis off should remove the behaviour rather than leave every look
+    carrying a disabled branch. `rate` is 0..1 across the fixture's own slow-to-
+    fast band -- the profile gives no Hz calibration, so quoting a frequency
+    would be a number the hardware never agreed to.
+    """
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        if not getattr(ctx, "strobe", False):
+            return
+        for f in statemod._targets(ctx, tags):
+            out[f.fid].strobe = max(0.0, min(1.0, rate))
+    return layer

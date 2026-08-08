@@ -56,7 +56,10 @@ class FixtureState:
     intensity: float = 0.0
     color: tuple[float, float, float] = (1.0, 1.0, 1.0)   # linear 0..1 RGB
     white: float = 0.0
-    strobe_hz: float = 0.0
+    # Shutter: 0 is open, above 0 is a position in the fixture's own slow-to-fast
+    # strobe band. Not in Hz -- the profile declares "Strobe slow to fast" and no
+    # frequency at either end, so a Hz figure here would be invented.
+    strobe: float = 0.0
     gobo: Optional[int] = None
     # Literal 16-bit pan/tilt, bypassing the aim maths. Only calibration sets
     # this, and only because the aim maths is the thing being calibrated -- you
@@ -116,13 +119,22 @@ Layer = Callable[[EvalContext, dict[int, FixtureState]], None]
 def _targets(ctx: EvalContext, tags: Optional[Sequence[str]]) -> list[rigmod.PatchedFixture]:
     """Fixtures a layer applies to. `None` means every fixture.
 
-    Selection is by TAG, never by fixture id -- that is what lets a look built
-    for four corner heads run unchanged on a club rig with eight.
+    Selection is by TAG for anything a look does -- that is what lets a look
+    built for four corner heads run unchanged on a club rig with eight, and a
+    look should never name a specific unit.
+
+    A fixture NAME also matches, and only for the operator's sake: soloing one
+    head or dimming one pinspot from the phone is inherently about that unit,
+    and there is no tag for "this one". Matching names here rather than adding a
+    parallel mechanism is what makes the colour and level overrides work at all
+    -- before it, every per-fixture target in the UI silently did nothing,
+    because the name matched no tag and the layer applied to an empty set.
     """
     if tags is None:
         return list(ctx.rig.fixtures)
     wanted = set(tags)
-    return [f for f in ctx.rig.fixtures if wanted & set(f.tags)]
+    return [f for f in ctx.rig.fixtures
+            if wanted & set(f.tags) or f.name in wanted]
 
 
 def pose_layer(aim_for: Callable[[EvalContext, int], geo.Aim],
@@ -362,6 +374,16 @@ def render(ctx: EvalContext, states: dict[int, FixtureState]) -> dict[int, bytea
         gobo_idx = f.index_of(rigmod.GOBO)
         if gobo_idx is not None and state.gobo is not None:
             frame[gobo_idx] = max(0, min(255, state.gobo))
+
+        # Shutter. Left alone at 0 unless something asked for a strobe, so the
+        # baseline (open) stands -- writing an "open" value every frame would
+        # override a profile that holds its shutter elsewhere.
+        strobe_idx = f.index_of(rigmod.STROBE)
+        if strobe_idx is not None and state.strobe > 0:
+            band = f.strobe_band()
+            if band is not None:
+                lo, hi = band
+                frame[strobe_idx] = lo + round(max(0.0, min(1.0, state.strobe)) * (hi - lo))
 
     return frames
 

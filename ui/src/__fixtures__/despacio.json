@@ -39,988 +39,2096 @@
     {
       "name": "MH White",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Red",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Blue",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Pink",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Orange",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Ball",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Floor",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Walls",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
+    },
+    {
+      "name": "MH Strobe",
+      "manual_only": true,
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Lazy Circle",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Slow Sweep",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Color Drift",
       "manual_only": false,
-      "kind": "color_path"
+      "kind": "color_path",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads Cross A",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads Cross B",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Sunset",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
+    },
+    {
+      "name": "MH Slow Pulse",
+      "manual_only": true,
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "White Bump",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Cross Weave",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Diagonal A",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Diagonal B",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Diagonal Pulse",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Chase Pos 1",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Chase Pos 2",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Chase Pos 3",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Chase Pos 4",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Corner Chase",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Grand Sweep",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Crowd",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Ball Spiral Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral"
     },
     {
       "name": "Ball Spiral Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral"
     },
     {
       "name": "Ball Spiral Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral"
     },
     {
       "name": "Ball Spiral Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Spiral"
     },
     {
       "name": "Rainbow Step 1",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Rainbow Step 2",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Rainbow Step 3",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Rainbow Step 4",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Ball Spiral",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Rainbow Wheel",
       "manual_only": false,
-      "kind": "color_path"
+      "kind": "color_path",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Ball Wave Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave"
     },
     {
       "name": "Ball Wave Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave"
     },
     {
       "name": "Ball Wave Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave"
     },
     {
       "name": "Ball Wave Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ball Wave"
     },
     {
       "name": "Ball Wave",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Dim Chase Step 1",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase"
     },
     {
       "name": "Dim Chase Step 2",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase"
     },
     {
       "name": "Dim Chase Step 3",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase"
     },
     {
       "name": "Dim Chase Step 4",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Dim Chase"
+    },
+    {
+      "name": "Dim Chase",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Spotlight Step 1",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight"
     },
     {
       "name": "Spotlight Step 2",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight"
     },
     {
       "name": "Spotlight Step 3",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight"
     },
     {
       "name": "Spotlight Step 4",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Spotlight"
+    },
+    {
+      "name": "Spotlight",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Breathe On",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "MH Breathe"
+    },
+    {
+      "name": "MH Breathe",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Circle",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Neighbor Scan Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Neighbor Scan"
     },
     {
       "name": "Neighbor Scan Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Neighbor Scan"
     },
     {
       "name": "Neighbor Scan",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Prowl Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl"
     },
     {
       "name": "Prowl Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl"
     },
     {
       "name": "Prowl Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl"
     },
     {
       "name": "Prowl Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Prowl"
     },
     {
       "name": "Prowl",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Crowd Cascade Step 1",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade"
     },
     {
       "name": "Crowd Cascade Step 2",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade"
     },
     {
       "name": "Crowd Cascade Step 3",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade"
     },
     {
       "name": "Crowd Cascade Step 4",
       "manual_only": true,
-      "kind": "intensity"
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Crowd Cascade"
+    },
+    {
+      "name": "Crowd Cascade",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Apex",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Cathedral",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Heads - Zenith",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Rise",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Iris Out A",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Iris"
     },
     {
       "name": "Iris Out B",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Iris"
     },
     {
       "name": "Iris",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
+    },
+    {
+      "name": "Build",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
+    },
+    {
+      "name": "Drop",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split Warm/Cool",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split Red/Cyan",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split Pink/Green",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Duo Cyan/Pink",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Duo Green/Blue",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split Yellow/Blue",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split White/Orange",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Split Red/Green",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Yellow",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Green",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "MH Cyan",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Quad Spectrum",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Wheel Walk Step 1",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 2",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 3",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 4",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 5",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 6",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 7",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk Step 8",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Wheel Walk"
     },
     {
       "name": "Wheel Walk",
       "manual_only": false,
-      "kind": "color_path"
+      "kind": "color_path",
+      "slot": "color",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Ball Glow",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Amber",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Rose",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Magenta",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Indigo",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Teal",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Sea",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Drift",
       "manual_only": false,
-      "kind": "color_path"
+      "kind": "color_path",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Rainbow Step 1",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 2",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 3",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 4",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 5",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 6",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 7",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 8",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 9",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 10",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 11",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow Step 12",
-      "manual_only": false,
-      "kind": "color"
+      "manual_only": true,
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": "Pin Rainbow"
     },
     {
       "name": "Pin Rainbow",
       "manual_only": false,
-      "kind": "color_path"
+      "kind": "color_path",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Pin Split",
       "manual_only": false,
-      "kind": "color"
+      "kind": "color",
+      "slot": "color",
+      "groups": [
+        "pinspots"
+      ],
+      "step_of": null
     },
     {
       "name": "Floor Ring Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring"
     },
     {
       "name": "Floor Ring Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring"
     },
     {
       "name": "Floor Ring Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring"
     },
     {
       "name": "Floor Ring Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Ring"
     },
     {
       "name": "Floor Ring",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Floor Wipe Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe"
     },
     {
       "name": "Floor Wipe Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe"
     },
     {
       "name": "Floor Wipe Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe"
     },
     {
       "name": "Floor Wipe Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Wipe"
     },
     {
       "name": "Floor Wipe",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Floor Cross Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Cross"
     },
     {
       "name": "Floor Cross Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Cross"
     },
     {
       "name": "Floor Cross",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Lazy Circle Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 5",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 6",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 7",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Lazy Circle Step 8",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Lazy Circle"
     },
     {
       "name": "Grand Sweep Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 5",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 6",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 7",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Grand Sweep Step 8",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Grand Sweep"
     },
     {
       "name": "Slow Sweep Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep"
     },
     {
       "name": "Slow Sweep Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep"
     },
     {
       "name": "Slow Sweep Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep"
     },
     {
       "name": "Slow Sweep Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Slow Sweep"
     },
     {
       "name": "Heads - Wall Graze",
       "manual_only": false,
-      "kind": "pose"
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Canopy Ring Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring"
     },
     {
       "name": "Canopy Ring Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring"
     },
     {
       "name": "Canopy Ring Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring"
     },
     {
       "name": "Canopy Ring Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Canopy Ring"
     },
     {
       "name": "Canopy Ring",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Floor Bounce Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Bounce"
     },
     {
       "name": "Floor Bounce Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Bounce"
     },
     {
       "name": "Floor Bounce",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Floor Breathe Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Breathe"
     },
     {
       "name": "Floor Breathe Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Floor Breathe"
     },
     {
       "name": "Floor Breathe",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
+    },
+    {
+      "name": "MH Medium Pulse",
+      "manual_only": true,
+      "kind": "intensity",
+      "slot": "level",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Teleport Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 5",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 6",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 7",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport Step 8",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Teleport"
     },
     {
       "name": "Teleport",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Apparition",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Freeze Frame Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame"
     },
     {
       "name": "Freeze Frame Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame"
     },
     {
       "name": "Freeze Frame Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame"
     },
     {
       "name": "Freeze Frame Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Freeze Frame"
     },
     {
       "name": "Freeze Frame",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Stutter Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter"
     },
     {
       "name": "Stutter Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter"
     },
     {
       "name": "Stutter Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter"
     },
     {
       "name": "Stutter Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Stutter"
     },
     {
       "name": "Stutter",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Glitch",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Ascension Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 5",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 6",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 7",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension Step 8",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Ascension"
     },
     {
       "name": "Ascension",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     },
     {
       "name": "Blink Step 1",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 2",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 3",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 4",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 5",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 6",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 7",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink Step 8",
-      "manual_only": false,
-      "kind": "pose"
+      "manual_only": true,
+      "kind": "pose",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": "Blink"
     },
     {
       "name": "Blink",
       "manual_only": false,
-      "kind": "path"
+      "kind": "path",
+      "slot": "movement",
+      "groups": [
+        "corner movers"
+      ],
+      "step_of": null
     }
+  ],
+  "selection": {
+    "movement": {
+      "corner movers": "Lazy Circle"
+    },
+    "color": {
+      "corner movers": "MH Red"
+    },
+    "level": {
+      "corner movers": "Spotlight"
+    }
+  },
+  "presets": [
+    {
+      "name": "opener",
+      "movement": "Lazy Circle",
+      "color": "MH Red",
+      "level": null,
+      "speed": 1.0,
+      "master": 0.9
+    },
+    {
+      "name": "peak",
+      "movement": "Grand Sweep",
+      "color": "MH White",
+      "level": "Spotlight",
+      "speed": 2.0,
+      "master": 1.0
+    }
+  ],
+  "groups": [
+    "corner movers",
+    "pinspots"
   ],
   "palette": [
     [
@@ -1075,6 +2183,7 @@
       0.1
     ]
   },
+  "level_overrides": {},
   "fixtures": [
     {
       "id": 0,
@@ -1088,16 +2197,16 @@
       "address": 1,
       "is_mover": true,
       "position": [
-        8644.0,
+        13216.0,
         2971.0,
-        8644.0
+        13216.0
       ],
       "beam_deg": 3.0,
       "intensity": 0.9,
       "color": [
         1.0,
-        1.0,
-        1.0
+        0.0,
+        0.0
       ],
       "safety": {
         "taper": 1.0,
@@ -1124,27 +2233,27 @@
       "address": 12,
       "is_mover": true,
       "position": [
-        8644.0,
+        13216.0,
         2971.0,
-        500.0
+        5072.0
       ],
       "beam_deg": 3.0,
-      "intensity": 0.9,
+      "intensity": 0.388,
       "color": [
         1.0,
-        1.0,
-        1.0
+        0.0,
+        0.0
       ],
       "safety": {
         "taper": 1.0,
-        "reason": "beam is blocked or leaves the room before eye height"
+        "reason": "beam clears the crowd head band"
       },
       "aim": {
         "bearing": -43.17,
         "elevation": -4.57
       },
       "lands_on": "wall",
-      "throw_mm": 9644,
+      "throw_mm": 14744,
       "jogging": false,
       "captures": 0
     },
@@ -1160,16 +2269,16 @@
       "address": 23,
       "is_mover": true,
       "position": [
-        500.0,
+        5072.0,
         2971.0,
-        500.0
+        5072.0
       ],
       "beam_deg": 3.0,
-      "intensity": 0.45,
+      "intensity": 0.0,
       "color": [
         1.0,
-        1.0,
-        1.0
+        0.0,
+        0.0
       ],
       "safety": {
         "taper": 0.5,
@@ -1196,16 +2305,16 @@
       "address": 34,
       "is_mover": true,
       "position": [
-        500.0,
+        5072.0,
         2971.0,
-        8644.0
+        13216.0
       ],
       "beam_deg": 3.0,
-      "intensity": 0.9,
+      "intensity": 0.388,
       "color": [
         1.0,
-        1.0,
-        1.0
+        0.0,
+        0.0
       ],
       "safety": {
         "taper": 1.0,
@@ -1216,7 +2325,7 @@
         "elevation": 0.03
       },
       "lands_on": "wall",
-      "throw_mm": 9613,
+      "throw_mm": 14698,
       "jogging": false,
       "captures": 0
     },
@@ -1230,7 +2339,7 @@
       "universe": 0,
       "address": 45,
       "is_mover": false,
-      "intensity": 0.63,
+      "intensity": 0.9,
       "color": [
         1.0,
         0.2,
@@ -1249,7 +2358,7 @@
       "universe": 0,
       "address": 51,
       "is_mover": false,
-      "intensity": 0.63,
+      "intensity": 0.9,
       "color": [
         1.0,
         0.2,
@@ -1261,19 +2370,19 @@
   ],
   "venue": {
     "name": "despacio room",
-    "width": 9144.0,
-    "depth": 9144.0,
-    "height": 4600.0,
+    "width": 18288.0,
+    "depth": 18288.0,
+    "height": 6900.0,
     "ball": [
-      4572.0,
+      9144.0,
       2743.0,
-      4572.0
+      9144.0
     ],
     "crowd": {
-      "min_x": 1200.0,
-      "max_x": 7944.0,
-      "min_z": 1200.0,
-      "max_z": 7944.0,
+      "min_x": 5772.0,
+      "max_x": 12516.0,
+      "min_z": 5772.0,
+      "max_z": 12516.0,
       "head_band_min": 1400.0,
       "head_band_max": 2000.0
     },

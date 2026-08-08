@@ -5,18 +5,27 @@ Load a ported look library into runnable looks.
 workspace. This turns each entry into an `auto.Look` -- a factory that takes the
 current palette colour and returns a layer stack.
 
-The five kinds map onto the engine's layers rather than onto QLC+'s flat
-namespace, which is the whole gain from the port:
+The kinds map onto the engine's layers rather than onto QLC+'s flat namespace,
+and each occupies exactly one of three independent SLOTS:
 
-  pose        a held position, as offsets from each head's own ball aim
-  path        a route through several positions, interpolated over N bars
-  color       a colour, uniform or per fixture
-  color_path  a stepped colour sequence (a wheel has no in-between slots)
-  intensity   a level
+  slot        kinds                    what it sets
+  ----------------------------------------------------------------------------
+  movement    pose, path, mixed        where the heads point
+  color       color, color_path        what colour everything is
+  level       intensity, level_path    a brightness MULTIPLIER over the above
 
-Because they are separate, a pose and a colour COMPOSE. In the workspace every
-combination had to be its own stored scene, which is how 179 accumulated and why
-only a handful got used; here the same material recombines freely.
+**The three slots are filled independently.** Picking a colour does not disturb
+the movement, and picking a movement does not disturb the colour -- which is the
+entire point of having split the scenes during the port, and was not true while
+selecting any look replaced the whole show. A `mixed` entry fills the movement
+and colour slots together, because it genuinely states both; either can then be
+changed without losing the other.
+
+**The level slot MULTIPLIES.** It is never a base layer, so a level chase dims
+whatever colour and position are running rather than replacing them, and it
+composes with the master and with the safety taper instead of fighting them. A
+level look that replaced the base would blank the colour the moment it was
+selected -- which is what "we lost the actual dimming" was describing.
 
 Offsets are relative to each head's calibrated ball aim, so every ported look
 tracks recalibration automatically. That is a property the stored DMX could not
@@ -29,7 +38,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from . import auto as autom
 from . import geometry as geo
@@ -47,13 +56,33 @@ class LibraryEntry:
     name: str
     kind: str
     tags: tuple[str, ...]
+    # The rig groups this look writes ("corner movers", "pinspots"). Layers are
+    # scoped to these: without it a pinspot-only scene ported as an untagged
+    # uniform colour and repainted the movers as well. It is also the axis the
+    # UI filters on, because a pinspot palette and a mover palette are two
+    # different decisions and were sharing one list.
+    groups: tuple[str, ...] = ()
     offsets: Optional[list[list[float]]] = None
     steps: Optional[list[list[list[float]]]] = None
     frames: Optional[list[dict[str, list[float]]]] = None
+    # A level chase: per step, {fixture: multiplier}, and optionally the shutter
+    # alongside it (the Breathe pair chases the shutter, not the dimmer).
+    levels: Optional[list[dict[str, float]]] = None
+    strobe_steps: Optional[list[dict[str, float]]] = None
+    strobes: Optional[dict[str, float]] = None
+    # Set when this entry is one step of a chase that also ported. Reachable,
+    # but filed under the parent rather than listed beside it -- four
+    # "Spotlight Step N" entries next to "Spotlight" is the flat-list problem.
+    step_of: Optional[str] = None
     color: Optional[list[float]] = None
     colors: Optional[dict[str, list[float]]] = None
+    # Per fixture 0..1. The pinspots are RGBW and several looks blend real white
+    # into the colour -- dropping it made them cooler and dimmer than authored.
+    whites: Optional[dict[str, float]] = None
     bars: Optional[float] = None
     intensity: Optional[float] = None
+    # Per fixture, present only where the scene dimmed fixtures differently.
+    intensities: Optional[dict[str, float]] = None
     source: str = ""
 
     @property
@@ -64,6 +93,24 @@ class LibraryEntry:
     def is_color(self) -> bool:
         return self.kind in ("color", "color_path", "mixed")
 
+    @property
+    def is_level(self) -> bool:
+        return self.kind in ("intensity", "level_path")
+
+    @property
+    def slot(self) -> str:
+        """Which of the three slots this entry fills.
+
+        `mixed` lands in movement and is ALSO applied to colour when selected --
+        see `ShowController`. One entry, two slots, because it really does state
+        both; the slots stay independently changeable afterwards.
+        """
+        if self.is_level:
+            return "level"
+        if self.is_movement:
+            return "movement"
+        return "color"
+
 
 def load_entries(path: Path) -> list[LibraryEntry]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -71,10 +118,15 @@ def load_entries(path: Path) -> list[LibraryEntry]:
     for raw in data.get("looks", []):
         out.append(LibraryEntry(
             name=raw["name"], kind=raw["kind"], tags=tuple(raw.get("tags", [])),
+            groups=tuple(raw.get("groups", [])),
             offsets=raw.get("offsets"), steps=raw.get("steps"),
-            frames=raw.get("frames"), color=raw.get("color"),
-            colors=raw.get("colors"), bars=raw.get("bars"),
-            intensity=raw.get("intensity"), source=raw.get("source", "")))
+            frames=raw.get("frames"), levels=raw.get("levels"),
+            strobe_steps=raw.get("strobe_steps"), strobes=raw.get("strobes"),
+            step_of=raw.get("step_of"),
+            color=raw.get("color"),
+            colors=raw.get("colors"), whites=raw.get("whites"),
+            bars=raw.get("bars"), intensity=raw.get("intensity"),
+            intensities=raw.get("intensities"), source=raw.get("source", "")))
     return out
 
 
@@ -111,70 +163,251 @@ def path_offsets(steps: list[list[list[float]]], bars: float,
 
 
 def color_frames_layer(frames: list[dict[str, list[float]]], bars: float):
-    """A stepped colour sequence, held per step rather than interpolated."""
+    """A stepped colour sequence, held per step rather than interpolated.
+
+    A frame value is [r, g, b], or [r, g, b, w] where the fixture is RGBW and
+    the step blends real white -- "Pin Drift" walks the same warm pastels the
+    Pin scenes hold, and reading only three components made every step of it
+    colder than authored.
+    """
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
         index = int(motion.phase(ctx.motion_bar, bars) * len(frames)) % len(frames)
         for fixture in ctx.rig.fixtures:
             rgb = frames[index].get(fixture.name)
             if rgb is not None:
                 out[fixture.fid].color = (rgb[0], rgb[1], rgb[2])
+                out[fixture.fid].white = rgb[3] if len(rgb) > 3 else 0.0
     return layer
 
 
-def per_fixture_color_layer(colors: dict[str, list[float]]):
+def per_fixture_color_layer(colors: dict[str, list[float]],
+                            whites: Optional[dict[str, float]] = None):
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
         for fixture in ctx.rig.fixtures:
             rgb = colors.get(fixture.name)
             if rgb is not None:
                 out[fixture.fid].color = (rgb[0], rgb[1], rgb[2])
+            if whites is not None and fixture.name in whites:
+                out[fixture.fid].white = whites[fixture.name]
     return layer
 
 
-# ------------------------------------------------------------------- looks --
+def white_layer(whites: dict[str, float]):
+    """The W of an RGBW fixture, where the look sets one.
 
-def build_look(entry: LibraryEntry, base_bars: float = 8.0) -> autom.Look:
-    """One library entry as a runnable look.
-
-    Every look aims at the ball first and then applies its own offsets, so a
-    colour-only entry still produces a usable picture rather than leaving the
-    heads wherever the last look left them. That is a change from the workspace,
-    where selecting a colour deliberately left position alone -- here the layer
-    order gives that composability back without the look having to be partial.
+    Separate from the colour layer because a uniform-colour look can still have
+    per-fixture white -- "Pin Ball Glow" gives both pinspots the same RGB and
+    the same W, but the W is per fixture in the source and only the pinspots
+    have the channel at all.
     """
-    def make(palette_color: tuple[float, float, float]) -> statemod.Show:
-        show = statemod.Show()
-        show.base.append(statemod.pose_layer(
-            lambda ctx, head: ctx.geometry.aim_at_ball(head), tags=("movers",),
-            intensity=entry.intensity if entry.intensity is not None else 1.0))
-        show.base.append(statemod.on_layer(
-            entry.intensity if entry.intensity is not None else 0.7,
-            tags=("pinspots",)))
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        for fixture in ctx.rig.fixtures:
+            if fixture.name in whites:
+                out[fixture.fid].white = whites[fixture.name]
+    return layer
 
-        if entry.color is not None:
-            show.color.append(statemod.color_layer(tuple(entry.color)))
-        elif entry.colors is not None:
-            show.color.append(per_fixture_color_layer(entry.colors))
-        elif entry.frames is not None:
-            show.color.append(color_frames_layer(entry.frames,
-                                                 entry.bars or base_bars))
-        else:
-            show.color.append(statemod.color_layer(palette_color))
 
-        if entry.offsets is not None:
-            show.movement.append(statemod.move_layer(
-                pose_offsets(entry.offsets), tags=("movers",)))
-        elif entry.steps is not None:
-            show.movement.append(statemod.move_layer(
-                path_offsets(entry.steps, entry.bars or base_bars),
-                tags=("movers",)))
+def per_fixture_intensity_layer(levels: dict[str, float],
+                                groups: Sequence[str] = ()):
+    """Scale intensity per fixture, where a look dims them differently.
 
-        show.fx.append(autom.energy_intensity_layer())
-        return show
+    A fixture INSIDE the look's own groups that the look does not name is taken
+    to be OFF. That is what the source means: QLC+ merged Intensity as HTP, so
+    an unwritten dimmer contributed nothing and the fixture went dark. Reading
+    "unnamed" as "leave alone" instead made three of the five ported level
+    chases completely inert -- "Dim Chase" writes three heads at full and omits
+    the fourth, which is the entire chase.
 
-    # Maintenance and one-shot entries stay reachable by hand but must never be
-    # selected by a timer -- the same reasoning as a blackout in the set list.
-    manual_only = entry.kind == "intensity" or "reset" in entry.name.lower()
-    return autom.Look(name=entry.name, make=make, manual_only=manual_only)
+    A fixture OUTSIDE the groups is genuinely untouched, so a mover chase does
+    not blank the pinspots.
+    """
+    scope = set(groups)
+
+    def level_for(ctx, fixture) -> float:
+        if fixture.name in levels:
+            return levels[fixture.name]
+        if scope & set(fixture.tags):
+            return 0.0
+        return 1.0
+    return statemod.intensity_layer(level_for)
+
+
+def level_frames_layer(levels: list[dict[str, float]],
+                       strobes: Optional[list[dict[str, float]]],
+                       bars: float, groups: Sequence[str] = ()):
+    """A stepped level chase, applied as a MULTIPLIER.
+
+    Stepped rather than faded because the source is a step list -- inventing a
+    ramp between two dimmer values asserts a shape the original never had.
+
+    Multiplying is the whole point. "Spotlight" puts one head at full and its
+    neighbours at 43%; as a base layer that would blank whatever colour was
+    running and ignore the master, which is what made the level looks read as
+    broken. As a multiplier it dims the picture that is already there.
+
+    A fixture inside the chase's own groups that a step does not name is OFF for
+    that step, not left alone. That is what the source means -- QLC+ merged
+    Intensity as HTP, so an unwritten dimmer contributed nothing -- and it is
+    the whole shape of these chases: "Dim Chase" writes three heads at full and
+    omits the fourth, "Crowd Cascade" writes two of four. Reading the omission
+    as "leave alone" made every one of them a no-op that changed nothing.
+
+    Fixtures outside the groups are untouched, so a mover chase leaves the
+    pinspots to whatever else is driving them.
+    """
+    scope = set(groups)
+    empty: dict[str, float] = {}
+
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        index = int(motion.phase(ctx.motion_bar, bars) * len(levels)) % len(levels)
+        frame = levels[index]
+        strobe = (strobes or [empty] * len(levels))[index]
+        for fixture in ctx.rig.fixtures:
+            if fixture.name in frame:
+                out[fixture.fid].intensity *= frame[fixture.name]
+            elif scope & set(fixture.tags):
+                out[fixture.fid].intensity = 0.0
+            if fixture.name in strobe:
+                out[fixture.fid].strobe = strobe[fixture.name]
+    return layer
+
+
+def strobe_layer(strobes: dict[str, float]):
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        for fixture in ctx.rig.fixtures:
+            if fixture.name in strobes:
+                out[fixture.fid].strobe = strobes[fixture.name]
+    return layer
+
+
+# ------------------------------------------------------------------- slots --
+
+DEFAULT_BARS = 8.0
+
+
+def base_layers(show: statemod.Show) -> None:
+    """Point everything at the ball and open it up.
+
+    Always present, whatever is selected, so that a colour with no movement --
+    or nothing at all -- still produces a picture instead of leaving the heads
+    wherever the last look happened to stop.
+
+    Full brightness, deliberately. Everything that dims lives downstream: the
+    level slot, the master, and the safety taper. A pinspot has no dimmer
+    channel, so `render` scales its RGB by this level -- which means a colour
+    look's authored bytes ARE its brightness, and seeding anything below 1.0
+    here would silently scale every ported colour.
+    """
+    show.base.append(statemod.pose_layer(
+        lambda ctx, head: ctx.geometry.aim_at_ball(head), tags=("movers",),
+        intensity=1.0))
+    show.base.append(statemod.on_layer(1.0, tags=("pinspots",)))
+
+
+def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
+    if entry is None:
+        return
+    if entry.offsets is not None:
+        show.movement.append(statemod.move_layer(
+            pose_offsets(entry.offsets), tags=("movers",)))
+    elif entry.steps is not None:
+        show.movement.append(statemod.move_layer(
+            path_offsets(entry.steps, entry.bars or DEFAULT_BARS),
+            tags=("movers",)))
+
+
+def color_layers(show: statemod.Show, entry: LibraryEntry) -> None:
+    """One colour look, scoped to the fixtures it actually writes.
+
+    The scoping is the fix for a real defect: "Pin Ball Glow" writes two
+    pinspots in the workspace, ported as a uniform colour with no tags, and so
+    repainted all four movers amber as well. A look now only touches its own
+    group, which is also what lets a pinspot colour and a mover colour be up at
+    the same time.
+    """
+    tags = tuple(entry.groups) or None
+    if entry.color is not None:
+        show.color.append(statemod.color_layer(tuple(entry.color), tags=tags))
+    elif entry.colors is not None:
+        show.color.append(per_fixture_color_layer(entry.colors, entry.whites))
+    elif entry.frames is not None:
+        show.color.append(color_frames_layer(entry.frames,
+                                             entry.bars or DEFAULT_BARS))
+    # White rides after the colour layer, because `color_layer` resets it.
+    if entry.whites and entry.colors is None:
+        show.color.append(white_layer(entry.whites))
+
+
+def level_layers(show: statemod.Show, entry: LibraryEntry) -> None:
+    """One level look. Everything here goes in `fx`, and everything multiplies.
+
+    `fx` rather than `base` is the fix for "we lost the actual dimming": a level
+    look must scale the colour and position already established, and then be
+    scaled itself by the master and the safety taper. Anything in `base` would
+    instead wipe them.
+    """
+    tags = tuple(entry.groups) or None
+    if entry.levels is not None:
+        show.fx.append(level_frames_layer(entry.levels, entry.strobe_steps,
+                                          entry.bars or DEFAULT_BARS,
+                                          entry.groups))
+        return
+    if entry.intensities:
+        show.fx.append(per_fixture_intensity_layer(entry.intensities,
+                                                   entry.groups))
+    elif entry.intensity is not None:
+        level = entry.intensity
+        show.fx.append(statemod.intensity_layer(
+            lambda ctx, fixture: level, tags=tags))
+    if entry.strobes:
+        show.fx.append(strobe_layer(entry.strobes))
+
+
+def compose(movement: Optional[LibraryEntry],
+            colors: Sequence[LibraryEntry] = (),
+            levels: Sequence[LibraryEntry] = (),
+            palette_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+            ) -> statemod.Show:
+    """The slots, plus the base and the auto-mode effects, as one Show.
+
+    `colors` and `levels` are LISTS because each slot is filled per fixture
+    group: the pinspots can be on their own colour while the movers are on
+    another, which is the whole point of splitting them. Each entry is scoped to
+    its own group, so they cannot fight.
+
+    The palette goes down first and unscoped, so any group with no colour look
+    of its own still gets a colour rather than rendering whatever the last look
+    left behind.
+    """
+    show = statemod.Show()
+    base_layers(show)
+    show.color.append(statemod.color_layer(palette_color))
+    for entry in colors:
+        color_layers(show, entry)
+    movement_layers(show, movement)
+    for entry in levels:
+        level_layers(show, entry)
+    show.fx.append(autom.energy_intensity_layer())
+    show.fx.append(autom.energy_strobe_layer())
+    return show
+
+
+def build_look(entry: LibraryEntry) -> autom.Look:
+    """One entry as a standalone Look, for auto mode's set list.
+
+    Auto mode advances the MOVEMENT slot, so this is what a movement entry looks
+    like on its own; the controller re-composes it with whatever colour and
+    level are selected.
+    """
+    return autom.Look(
+        name=entry.name,
+        make=lambda color: compose(entry if entry.is_movement else None,
+                                   [entry] if entry.is_color else [],
+                                   [entry] if entry.is_level else [], color),
+        # Levels and resets stay reachable by hand but must never be picked by a
+        # timer -- the same reasoning as a blackout parked in the set list.
+        manual_only=entry.is_level or "reset" in entry.name.lower()
+        or entry.step_of is not None)
 
 
 def load_setlist(path: Path) -> tuple[autom.SetList, list[LibraryEntry]]:

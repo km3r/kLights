@@ -68,10 +68,17 @@ for i, head in enumerate(g.heads):
 #
 # Aimed at the floor in this head's own corner, which is outside the crowd
 # footprint by design -- nobody stands where the heads are mounted.
+#
+# Taken relative to the HEAD rather than to a wall. It used to read
+# `venue.width - 150`, which was the same point only because the rig was
+# modelled as hanging on the walls; once the room grew around a free-standing
+# truss that expression stopped meaning "this head's own corner" and started
+# meaning "a floor corner 7 m past it", which is a different and much shallower
+# beam. The test is about the corner the head is IN.
 print("\n3. beam aimed outside the crowd footprint")
 for i, head in enumerate(g.heads):
-    corner_x = 150.0 if head.x < center_x else venue.width - 150.0
-    corner_z = 150.0 if head.z < center_z else venue.depth - 150.0
+    corner_x = head.x + (-350.0 if head.x < center_x else 350.0)
+    corner_z = head.z + (-350.0 if head.z < center_z else 350.0)
     c = safety.clearance(g, i, g.aim_at_point(i, corner_x, 0.0, corner_z), venue)
     check(f"{head.name} -> own corner floor", c.taper == 1.0,
           f"taper={c.taper:.3f} ({c.reason})")
@@ -96,9 +103,22 @@ for i, head in enumerate(g.heads):
 print("\n5. sweep through the crowd zone")
 HEAD = 0
 STEPS = 240          # 6 seconds of sweep at 40 fps
+# Across the crowd footprint, NOT across the whole room. Those were the same
+# thing while the room ended where the rig did; once it grew to 18 m the
+# room-wide version spent most of its frames sweeping empty floor and doubled
+# the distance covered per frame, which is the one thing this test measures.
+#
+# The 4 m of clear air at each end is not padding, it is the point: the target
+# is at eye height, so a beam aimed just outside the footprint has already
+# crossed it on the way down and still tapers. It has to be aimed well past
+# before the descent clears the crowd, and both ENDS of the sweep have to be
+# genuinely untapered or there is no ramp to measure.
+CLEARANCE = 4000.0
+SWEEP_LO = crowd.footprint.min_x - CLEARANCE
+SWEEP_HI = crowd.footprint.max_x + CLEARANCE
 sweep = []
 for k in range(STEPS + 1):
-    x = -2000.0 + (venue.width + 4000.0) * k / STEPS
+    x = SWEEP_LO + (SWEEP_HI - SWEEP_LO) * k / STEPS
     aim = g.aim_at_point(HEAD, x, band_mid, center_z)
     sweep.append(safety.taper(g, HEAD, aim, venue))
 
@@ -137,7 +157,7 @@ from engine import state as statemod
 
 FAST_STEPS = 20          # the same sweep in half a second instead of six
 ctx = statemod.EvalContext(rig=rig, venue=venue)
-positions = [-2000.0 + (venue.width + 4000.0) * k / FAST_STEPS
+positions = [SWEEP_LO + (SWEEP_HI - SWEEP_LO) * k / FAST_STEPS
              for k in range(FAST_STEPS + 1)]
 
 limited = []

@@ -4,13 +4,16 @@ import type { EngineState } from "../types";
 /**
  * What is patched, what it is doing, and what the engine is not driving.
  *
+ * Read-only, and last on the Setup tab: it is reference material for when
+ * something is wrong, not a control surface.
+ *
  * The last part matters most. The old console had an "Unsorted" section for
  * widgets it did not know how to place, so nothing could exist in the workspace
  * without appearing somewhere. The equivalent here is the warnings list: a
  * channel with no role, a pixel bar whose cells are not being driven, a mover
  * quantising to 8 bits. Surfacing them beats discovering them on the night.
  */
-export function RigTab({ state }: { state: EngineState }) {
+export function RigSection({ state }: { state: EngineState }) {
   const v = state.venue;
 
   return (

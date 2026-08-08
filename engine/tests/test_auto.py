@@ -276,6 +276,78 @@ check("movement phase tracks its own rate, not musical position",
 print(f"  status: {director.status()}")
 
 
+# -- a shut gate re-baselines, it does not bank up a crossing ----------------
+print("\nreleasing a hold lands on the next boundary, not the next frame")
+
+
+def _looks(*names):
+    return autom.SetList([autom.Look(name=n, make=lambda c: statemod.Show())
+                          for n in names])
+
+
+FPS = 1 / 40.0
+gate = autom.AutoDirector(_looks("A", "B", "C"),
+                          autom.AutoConfig(look_changes=True))
+gclock = clockmod.MasterClock(bpm=120.0, now=0.0)   # 2 phrases = 32 s
+
+
+def spin(d, seconds, t):
+    for _ in range(int(seconds / FPS)):
+        t += FPS
+        d.update(gclock.position(t), phrase_measured=True)
+    return t
+
+
+t = spin(gate, 70.0, 0.0)
+check("boundaries fire while free-running", gate.changes >= 2, f"{gate.changes}")
+
+gate.select("A", hold=True)
+banked = gate.changes
+t = spin(gate, 70.0, t)                     # hold across two more boundaries
+check("a held look does not change", gate.changes == banked, f"{gate.changes}")
+
+gate.release()
+t += FPS
+gate.update(gclock.position(t), phrase_measured=True)
+check("and releasing does not immediately fire the missed boundary",
+      gate.changes == banked and gate.setlist.current().name == "A",
+      f"{gate.setlist.current().name}, {gate.changes - banked} change(s)")
+t = spin(gate, 70.0, t)
+check("but the next real boundary still fires", gate.changes > banked,
+      f"{gate.changes - banked} after release")
+
+# Same for the axis being switched off and back on.
+axis = autom.AutoDirector(_looks("X", "Y"), autom.AutoConfig(look_changes=True))
+t = spin(axis, 70.0, 0.0)
+axis.config.look_changes = False
+t = spin(axis, 70.0, t)
+banked = axis.changes
+axis.config.look_changes = True
+t += FPS
+axis.update(gclock.position(t), phrase_measured=True)
+check("re-enabling the axis does not fire immediately",
+      axis.changes == banked, f"{axis.changes - banked} change(s)")
+
+
+# -- the timing axis is a real switch, not a label ---------------------------
+print("\nthe timing axis actually gates movement")
+timing = autom.AutoDirector(_looks("A"), autom.AutoConfig(timing=True))
+t = spin(timing, 10.0, 0.0)
+moved_on = timing.motion_bar
+timing.config.timing = False
+t = spin(timing, 10.0, t)
+frozen = timing.motion_bar
+check("movement advances with timing on", moved_on > 0.5, f"{moved_on:.2f} bars")
+check("and freezes with it off", abs(frozen - moved_on) < 1e-9,
+      f"{moved_on:.3f} -> {frozen:.3f} bars")
+timing.config.timing = True
+t = spin(timing, 10.0, t)
+check("turning it back on resumes rather than snapping forward",
+      frozen < timing.motion_bar < frozen + 6.0,
+      f"{frozen:.2f} -> {timing.motion_bar:.2f} (musical bar is "
+      f"{gclock.position(t).bar:.2f})")
+
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

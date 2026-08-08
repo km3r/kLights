@@ -1,131 +1,146 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Card, Toggle } from "../components";
 import type { Command, EngineState } from "../types";
 
+/**
+ * Show-level controls: what the whole rig is doing, not what any one part of it
+ * looks like.
+ *
+ * Deliberately holds no look pickers. Colour, movement and level each live on
+ * their own tab because they are independent slots — mixing them back in here
+ * would rebuild the flat list the split was meant to retire. What is left is the
+ * stuff that applies across all three: the clock, the automation, and presets
+ * for recalling a whole picture at once.
+ */
 export function ShowTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
-  const auto = state.auto;
-
   return (
     <>
-      <Looks state={state} send={send} />
-
+      <Now state={state} send={send} />
+      <Presets state={state} send={send} />
       <Tempo state={state} send={send} />
-
-      <Card title="Auto">
-        <div className="grid two">
-          <Toggle label="Look changes"
-                  hint={state.clock.phrase_measured
-                    ? "on phrase boundaries" : "on bars — phrase is counted"}
-                  on={auto.axes.look_changes}
-                  onChange={(on) => send({ type: "auto", axis: "look_changes", on })} />
-          <Toggle label="Palette" hint="rotate colour over time"
-                  on={auto.axes.palette}
-                  onChange={(on) => send({ type: "auto", axis: "palette", on })} />
-          <Toggle label="Energy" hint="drives level, rate and strobe"
-                  on={auto.axes.energy}
-                  onChange={(on) => send({ type: "auto", axis: "energy", on })} />
-        </div>
-
-        {!state.clock.phrase_measured && auto.axes.look_changes && (
-          <p className="small muted">
-            No source is supplying phrase, so phrase position is counted from
-            your last downbeat. Changes land on bars instead — one bar early is
-            a small error, half a phrase out is a visible one.
-          </p>
-        )}
-
-        {auto.axes.energy && <Energy state={state} send={send} />}
-
-        <div className="spread small muted" style={{ marginTop: "0.5rem" }}>
-          <span>{auto.changes} look change(s), {auto.palette_changes} palette</span>
-          <span className="mono">rate {auto.rate.toFixed(2)}×</span>
-        </div>
-      </Card>
+      <Auto state={state} send={send} />
     </>
   );
 }
 
-const KIND_LABELS: Record<string, string> = {
-  pose: "Positions", path: "Moves", color: "Colours",
-  color_path: "Colour chases", intensity: "Levels", look: "Looks",
+const GROUP_LABELS: Record<string, string> = {
+  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
+  pars: "Pars", bars: "Bars",
 };
-const KIND_ORDER = ["path", "pose", "color", "color_path", "intensity", "look"];
+const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
 
 /**
- * The ported library, grouped and filterable.
+ * What is currently loaded, and where to go to change it.
  *
- * 197 looks came out of the workspace, and a flat list that long is precisely
- * why only a handful got used on the night — the material was there, finding it
- * on a phone was not. So they group by what they DO (which the port already
- * knows, because it split scenes by which channels they touched) and there is a
- * filter box, because at this size scanning is slower than typing.
+ * One row per slot per fixture group, because a pinspot colour and a mover
+ * colour are separate selections — collapsing them to one line would hide the
+ * fact that both are up.
  */
-function Looks({ state, send }: { state: EngineState; send: (c: Command) => void }) {
-  const [filter, setFilter] = useState("");
-  const [openKind, setOpenKind] = useState<string | null>(null);
-
-  const needle = filter.trim().toLowerCase();
-  const matching = state.looks.filter((l) => l.name.toLowerCase().includes(needle));
-
-  const groups = new Map<string, typeof matching>();
-  for (const look of matching) {
-    const kind = look.kind ?? "look";
-    if (!groups.has(kind)) groups.set(kind, []);
-    groups.get(kind)!.push(look);
-  }
-  const kinds = KIND_ORDER.filter((k) => groups.has(k));
-  // While filtering, show everything — hiding matches behind a collapsed group
-  // defeats the point of having typed.
-  const expanded = needle ? kinds : (openKind ? [openKind] : kinds.slice(0, 1));
+function Now({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const slots: [string, string, string][] = [
+    ["Move", "movement", "#move"],
+    ["Colour", "color", "#color"],
+    ["Bright", "level", "#bright"],
+  ];
+  type Row = { key: string; label: string; value: string | null; href: string };
+  const rows: Row[] = slots.flatMap(([label, slot, href]): Row[] => {
+    const loaded = state.selection[slot as keyof typeof state.selection] ?? {};
+    const groups = state.groups.filter((g) => loaded[g]);
+    if (groups.length === 0) return [{ key: label, label, value: null, href }];
+    return groups.map((g) => ({
+      key: `${label}:${g}`,
+      // Only name the fixture type when there is more than one to confuse.
+      label: state.groups.length > 1 ? `${label} · ${groupLabel(g)}` : label,
+      value: loaded[g]!, href,
+    }));
+  });
 
   return (
-    <Card title={`Looks — ${state.looks.length}`} right={
+    <Card title="On now" right={
       state.auto.held ? (
         <button className="small" onClick={() => send({ type: "release" })}>
           Release hold
         </button>
       ) : undefined
     }>
-      <input className="field" placeholder="filter…" value={filter}
-             aria-label="filter looks"
-             onChange={(e) => setFilter(e.target.value)}
-             style={{
-               width: "100%", padding: "0.55rem", minHeight: 44,
-               background: "var(--panel-2)", border: "1px solid var(--line)",
-               borderRadius: 8, marginBottom: "0.6rem",
-             }} />
+      <div className="grid two">
+        {rows.map((r) => (
+          <a key={r.key} href={r.href} className="slot">
+            <span className="small muted">{r.label}</span>
+            <span className={r.value ? "" : "muted"}>{r.value ?? "—"}</span>
+          </a>
+        ))}
+      </div>
+      <p className="small muted" style={{ margin: "0.6rem 0 0" }}>
+        Every row is independent — changing one leaves the rest alone, including
+        across fixture types.
+      </p>
+    </Card>
+  );
+}
 
-      {kinds.map((kind) => (
-        <div key={kind} style={{ marginBottom: "0.5rem" }}>
-          <button className="small"
-                  style={{ width: "100%", justifyContent: "flex-start" }}
-                  onClick={() => setOpenKind(openKind === kind ? null : kind)}>
-            {KIND_LABELS[kind] ?? kind} · {groups.get(kind)!.length}
-          </button>
-          {expanded.includes(kind) && (
-            <div className="grid tiles" style={{ marginTop: "0.4rem" }}>
-              {groups.get(kind)!.map((l) => (
-                <button key={l.name}
-                        className={state.auto.look === l.name ? "on" : ""}
-                        onClick={() => send({ type: "select_look", name: l.name })}>
-                  {l.name}
-                  {l.manual_only && <div className="small muted">manual only</div>}
-                </button>
-              ))}
-            </div>
-          )}
+/**
+ * Named combinations of all three slots.
+ *
+ * The cost of making the slots independent is that a picture you liked takes
+ * three taps to rebuild and is easy to lose. A preset is the answer: it stores
+ * what each slot held, plus the speed and master it was built at.
+ */
+function Presets({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const [name, setName] = useState("");
+  const save = () => {
+    if (!name.trim()) return;
+    send({ type: "preset_save", name: name.trim() });
+    setName("");
+  };
+
+  return (
+    <Card title={`Presets — ${state.presets.length}`}>
+      {state.presets.length > 0 && (
+        <div className="grid tiles">
+          {state.presets.map((p) => (
+            <button key={p.name} onClick={() => send({ type: "preset_apply", name: p.name })}>
+              {p.name}
+              <div className="small muted">
+                {[p.movement, p.color, p.level]
+                  .reduce((n, m) => n + Object.keys(m ?? {}).length, 0)} slot(s)
+              </div>
+            </button>
+          ))}
         </div>
-      ))}
+      )}
 
-      {matching.length === 0 && (
-        <p className="small muted">Nothing matches “{filter}”.</p>
+      <div className="row" style={{ marginTop: state.presets.length ? "0.6rem" : 0 }}>
+        <input className="field" placeholder="name this picture…" value={name}
+               aria-label="preset name"
+               onChange={(e) => setName(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+               style={{
+                 flex: "1 1 10rem", minWidth: 0, padding: "0.55rem", minHeight: 44,
+                 background: "var(--panel-2)", border: "1px solid var(--line)",
+                 borderRadius: 8,
+               }} />
+        <button onClick={save} disabled={!name.trim()}>Save</button>
+      </div>
+
+      {state.presets.length > 0 && (
+        <details style={{ marginTop: "0.5rem" }}>
+          <summary className="small muted">Delete a preset</summary>
+          <div className="row" style={{ marginTop: "0.4rem" }}>
+            {state.presets.map((p) => (
+              <button key={p.name} className="small danger"
+                      onClick={() => send({ type: "preset_delete", name: p.name })}>
+                {p.name} ✕
+              </button>
+            ))}
+          </div>
+        </details>
       )}
       <p className="small muted" style={{ marginBottom: 0 }}>
-        {state.auto.held
-          ? "Held — auto mode will not change this until you release."
-          : `Auto changes on ${state.auto.last_change}.`}
+        Saves the move, colour and level that are up now, with the speed and
+        master. Stored with the event, so it survives a restart.
       </p>
     </Card>
   );
@@ -141,21 +156,16 @@ function Looks({ state, send }: { state: EngineState; send: (c: Command) => void
  */
 function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const [bpmDraft, setBpmDraft] = useState<string | null>(null);
-  const lastTap = useRef(0);
-
-  const tap = () => {
-    lastTap.current = Date.now();
-    send({ type: "tap" });
-  };
 
   return (
     <Card title="Tempo" right={<span className="small muted">{state.clock.source}</span>}>
       <div className="row">
-        <button style={{ flex: "1 1 140px", minHeight: 64, fontSize: 18 }} onClick={tap}>
+        <button style={{ flex: "1 1 8rem", minHeight: 64, fontSize: 18 }}
+                onClick={() => send({ type: "tap" })}>
           TAP
           <div className="small muted">{state.clock.taps} tap(s)</div>
         </button>
-        <div style={{ flex: "1 1 140px" }}>
+        <div style={{ flex: "1 1 8rem", minWidth: 0 }}>
           <label className="field">
             BPM
             <input type="number" min={40} max={250} step={0.5}
@@ -197,6 +207,52 @@ function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void
   );
 }
 
+function Auto({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const auto = state.auto;
+  return (
+    <Card title="Auto">
+      <div className="grid two">
+        <Toggle label="Timing" hint="movement follows the clock"
+                on={auto.axes.timing}
+                onChange={(on) => send({ type: "auto", axis: "timing", on })} />
+        <Toggle label="Move changes"
+                hint={state.clock.phrase_measured
+                  ? "on phrase boundaries" : "on bars — phrase is counted"}
+                on={auto.axes.look_changes}
+                onChange={(on) => send({ type: "auto", axis: "look_changes", on })} />
+        <Toggle label="Palette" hint="rotate colour over time"
+                on={auto.axes.palette}
+                onChange={(on) => send({ type: "auto", axis: "palette", on })} />
+        <Toggle label="Energy" hint="drives level, rate and strobe"
+                on={auto.axes.energy}
+                onChange={(on) => send({ type: "auto", axis: "energy", on })} />
+      </div>
+
+      {!auto.axes.timing && (
+        <p className="small muted">
+          Timing is off, so movement is frozen where it stands. Musical position
+          keeps running underneath — turning it back on resumes rather than
+          snapping forward.
+        </p>
+      )}
+      {!state.clock.phrase_measured && auto.axes.look_changes && (
+        <p className="small muted">
+          No source is supplying phrase, so phrase position is counted from your
+          last downbeat. Changes land on bars instead — one bar early is a small
+          error, half a phrase out is a visible one.
+        </p>
+      )}
+
+      {auto.axes.energy && <Energy state={state} send={send} />}
+
+      <div className="spread small muted" style={{ marginTop: "0.5rem" }}>
+        <span>{auto.changes} move change(s), {auto.palette_changes} palette</span>
+        <span className="mono">rate {auto.rate.toFixed(2)}×</span>
+      </div>
+    </Card>
+  );
+}
+
 function Energy({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const [manual, setManual] = useState(0.5);
   return (
@@ -211,6 +267,7 @@ function Energy({ state, send }: { state: EngineState; send: (c: Command) => voi
         <span className="small mono muted">now {state.auto.energy.toFixed(2)}</span>
       </div>
       <input type="range" min={0} max={1} step={0.01} value={manual}
+             aria-label="manual energy"
              style={{ width: "100%" }}
              onChange={(e) => {
                const v = Number(e.target.value);

@@ -88,6 +88,108 @@ check("every ported pose round-trips to its original DMX", not mismatches,
 check("enough poses were actually compared", compared > 200, f"{compared}")
 
 
+# -- 2b. ROUND-TRIP: a ported COLOUR renders the workspace's colour bytes -----
+#
+# The position round-trip above is what the port was originally guarded by, and
+# it is blind to colour by construction. That is exactly how the pinspots' white
+# channel went missing: RGB matched, W was never read, and nothing complained.
+# So drive each colour look through the REAL renderer and diff the colour bytes.
+print("\n2b. colour round-trip (the gap that lost the white channel)")
+from engine import rig as rigmod                                    # noqa: E402
+
+ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+COLOUR_ROLES = (rigmod.RED, rigmod.GREEN, rigmod.BLUE, rigmod.WHITE,
+                rigmod.COLOR_WHEEL)
+
+colour_compared = 0
+colour_bad: list[str] = []
+white_seen = 0
+for entry in entries:
+    if not entry.is_color or entry.name not in scenes:
+        continue
+    values_by_fixture = {int(fv.get("ID")): parse_values(fv.text or "")
+                         for fv in scenes[entry.name].findall(NS + "FixtureVal")}
+    # The palette colour must not be able to mask a failure, so feed a colour
+    # nothing in the library uses -- if a look falls through to the palette its
+    # bytes will not match and we want to hear about it.
+    frames = statemod.frame(ctx, libmod.build_look(entry).make((0.13, 0.29, 0.71)))
+    for fixture in rig.fixtures:
+        original = values_by_fixture.get(fixture.fid)
+        if not original:
+            continue
+        offsets = fixture.profile.offsets(fixture.mode)
+        for role in COLOUR_ROLES:
+            off = offsets.get(role)
+            if off is None or off not in original:
+                continue
+            got = frames[fixture.universe][fixture.address - 1 + off]
+            want = original[off]
+            if role is rigmod.WHITE and want > 0:
+                white_seen += 1
+            # One byte of slack: the port stores 0..1 rounded to 4 places and the
+            # renderer scales back through 255.
+            if abs(got - want) > 1:
+                colour_bad.append(f"{entry.name}/{fixture.name}/{role}: "
+                                  f"{got} vs {want}")
+            colour_compared += 1
+
+check("every ported colour renders the workspace's own bytes", not colour_bad,
+      f"{colour_compared} channels compared"
+      + (f"; e.g. {colour_bad[0]} ({len(colour_bad)} bad)" if colour_bad else ""))
+check("the white channel is actually exercised", white_seen >= 8,
+      f"{white_seen} non-zero W channels compared -- this is what regressed")
+check("enough colour channels were compared", colour_compared > 200,
+      f"{colour_compared}")
+
+# Colour CHASES too. They are Chasers, not Scenes, so the loop above never sees
+# them -- and "Pin Drift" walks the same RGBW pastels the Pin scenes hold, so a
+# gap here loses exactly what the scene fix just recovered.
+chasers = {f.get("Name"): f for f in engine_el.findall(NS + "Function")
+           if f.get("Type") == "Chaser"}
+scenes_by_id = {int(f.get("ID")): f for f in engine_el.findall(NS + "Function")
+                if f.get("Type") == "Scene"}
+step_compared = 0
+step_bad: list[str] = []
+for entry in entries:
+    if entry.kind != "color_path" or entry.name not in chasers:
+        continue
+    originals = []
+    for step in sorted(chasers[entry.name].findall(NS + "Step"),
+                       key=lambda s: int(s.get("Number", 0))):
+        scene = scenes_by_id.get(int((step.text or "0").strip()))
+        if scene is None:
+            continue
+        values = {int(fv.get("ID")): parse_values(fv.text or "")
+                  for fv in scene.findall(NS + "FixtureVal")}
+        if any(values.values()):
+            originals.append(values)
+    look = libmod.build_look(entry).make((0.13, 0.29, 0.71))
+    bars = entry.bars or 8.0
+    for index, values_by_fixture in enumerate(originals[:len(entry.frames or [])]):
+        # Land the phase in the middle of this frame's slot.
+        ctx.motion_bar = bars * (index + 0.5) / len(entry.frames)
+        rendered = statemod.frame(ctx, look)
+        for fixture in rig.fixtures:
+            original = values_by_fixture.get(fixture.fid)
+            if not original:
+                continue
+            offsets = fixture.profile.offsets(fixture.mode)
+            for role in COLOUR_ROLES:
+                off = offsets.get(role)
+                if off is None or off not in original:
+                    continue
+                got = rendered[fixture.universe][fixture.address - 1 + off]
+                if abs(got - original[off]) > 1:
+                    step_bad.append(f"{entry.name}[{index}]/{fixture.name}/{role}: "
+                                    f"{got} vs {original[off]}")
+                step_compared += 1
+ctx.motion_bar = 0.0
+
+check("each step of a colour chase renders its own step's bytes", not step_bad,
+      f"{step_compared} channels across {len([e for e in entries if e.kind == 'color_path'])} chases"
+      + (f"; e.g. {step_bad[0]} ({len(step_bad)} bad)" if step_bad else ""))
+
+
 # -- 3. paths are continuous and musical --------------------------------------
 print("\n3. paths")
 paths = [e for e in entries if e.kind == "path"]

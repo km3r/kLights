@@ -112,7 +112,13 @@ class TapTempo:
         if len(self.times) < 2:
             return None
         intervals = [b - a for a, b in zip(self.times, self.times[1:])]
-        bpm = 60.0 / statistics.median(intervals)
+        median = statistics.median(intervals)
+        # Two taps at the same instant. Reachable whenever taps are timestamped
+        # on a grid coarser than a double-tap -- and a divide by zero here would
+        # surface as a failed command rather than as "you tapped twice".
+        if median <= 0:
+            return None
+        bpm = 60.0 / median
         return bpm if MIN_BPM <= bpm <= MAX_BPM else None
 
     def reset(self) -> None:

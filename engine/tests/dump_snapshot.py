@@ -39,8 +39,14 @@ def main() -> int:
         # a held look, an auto axis on, a colour override, and a jogging head
         # with its safety bypass. A snapshot of an idle engine would leave all
         # of those untested.
+        # All three slots filled, so the fixture proves they coexist -- a
+        # snapshot with only a movement look would let a regression that wipes
+        # the colour slot on selection pass unnoticed, which is the exact bug
+        # the slot model was introduced to fix.
         for command in (
-            {"type": "select_look", "name": "Lazy Circle"},
+            {"type": "select_look", "name": "Lazy Circle"},      # movement
+            {"type": "select_look", "name": "MH Red"},           # colour
+            {"type": "select_look", "name": "Spotlight"},        # level chase
             {"type": "auto", "axis": "palette", "on": True},
             {"type": "color", "target": "pinspots", "color": [1.0, 0.2, 0.1]},
             {"type": "jog", "fixture": "Moving Head #1", "pan": 47, "tilt": 69},
@@ -68,6 +74,13 @@ def main() -> int:
     snapshot["stats"] = {"fps": 40.0, "frames": 1000, "drops": 0,
                          "eval_errors": 0, "worst_error_ms": 0.31}
     snapshot["rev"] = 7
+    # A couple of presets, so the Show tab's recall path renders in tests.
+    snapshot["presets"] = [
+        {"name": "opener", "movement": "Lazy Circle", "color": "MH Red",
+         "level": None, "speed": 1.0, "master": 0.9},
+        {"name": "peak", "movement": "Grand Sweep", "color": "MH White",
+         "level": "Spotlight", "speed": 2.0, "master": 1.0},
+    ]
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
