@@ -88,13 +88,19 @@ export function LookPicker({ state, send, slot, title, empty }: {
   // defeats the point of having typed.
   const expanded = needle ? kinds : (openKind ? [openKind] : kinds.slice(0, 1));
 
-  const clearable = slot !== "movement"
-    && (active ? loaded[active] : Object.keys(loaded).length > 0);
+  // Movement has nothing to clear TO — the heads hold their last pose — so that
+  // slot gets no button at all rather than one that can never be enabled.
+  const clearable = slot !== "movement";
+  const anyLoaded = active ? loaded[active] != null
+                           : Object.keys(loaded).length > 0;
 
   return (
     <Card title={title} right={
+      // Disabled rather than absent: a button appearing in the heading the
+      // moment a look loads makes the heading taller, which steps the entire
+      // picker -- the list you just tapped in -- down the page.
       clearable ? (
-        <button className="small" onClick={() => send({
+        <button className="small" disabled={!anyLoaded} onClick={() => send({
           type: "clear_slot", slot, ...(active ? { group: active } : {}),
         })}>
           Clear{active ? ` ${groupLabel(active)}` : " all"}
@@ -149,6 +155,7 @@ export function LookPicker({ state, send, slot, title, empty }: {
                         onClick={() => send({ type: "select_look", name: l.name })}>
                   {l.name}
                   {l.step_of && <div className="small muted">of {l.step_of}</div>}
+                  {l.cued && <div className="small muted">travels dark</div>}
                   {/* Which lights this touches, when the list is not already
                       filtered to one type. */}
                   {!active && l.groups.length > 0 && !l.step_of && (

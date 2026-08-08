@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -103,6 +103,49 @@ GROUP_ROLES: dict[str, str] = {
 }
 
 
+def _hex_rgb(text: Optional[str]) -> Optional[tuple[int, int, int]]:
+    """`#rrggbb` as a 0-255 triple, or None for anything else."""
+    if text and text.startswith("#") and len(text) == 7:
+        try:
+            return (int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16))
+        except ValueError:
+            return None
+    return None
+
+
+def _resolve_split_slots(caps: list[Capability]) -> list[Capability]:
+    """Fill in `Capability.pair` for wheel slots that name two colours.
+
+    A colour wheel's in-between positions put half of one segment and half of
+    the next in front of the lens, and the beam comes out split down the middle
+    rather than blended. `.qxf` names these by convention -- "Green + Blue" --
+    but records a single approximate tint for them, so the two real colours have
+    to come from somewhere else.
+
+    They come from the SAME CHANNEL's own single-colour slots, which is the
+    point: "Green + Blue" resolves to exactly the `#00ff00` and `#0000ff` that
+    channel already declares for Green and for Blue. No colour-name table, no
+    guessing -- a profile is internally consistent or the pair is left None and
+    the slot keeps behaving exactly as it did before.
+
+    Deliberately tolerant: an unresolvable name is not an error. Plenty of
+    capabilities have a "+" in them for other reasons, and a profile is allowed
+    to describe hardware we cannot draw perfectly.
+    """
+    single = {c.label.strip().lower(): c.rgb
+              for c in caps if c.rgb is not None and "+" not in c.label}
+    out = []
+    for cap in caps:
+        if cap.pair is None and cap.rgb is not None and "+" in cap.label:
+            parts = [p.strip().lower() for p in cap.label.split("+")]
+            if len(parts) == 2:
+                first, second = single.get(parts[0]), single.get(parts[1])
+                if first is not None and second is not None:
+                    cap = replace(cap, pair=(first, second))
+        out.append(cap)
+    return out
+
+
 def merge_for_group(group: Optional[str]) -> str:
     """QLC+'s merge rule: Intensity is HTP, everything else LTP."""
     return "HTP" if group == "Intensity" else "LTP"
@@ -118,6 +161,23 @@ class Capability:
     hi: int
     label: str
     rgb: Optional[tuple[int, int, int]] = None
+    # The TWO colours actually in the aperture, when this slot is a split.
+    #
+    # A colour wheel is a disc of coloured segments, and the positions between
+    # two of them put half of each in front of the lens -- so the beam comes out
+    # two-toned, split across its width, rather than blended. The MingJie wheel
+    # declares seven of these (80-139: "Cyan + Pink" through "Yellow + Red") and
+    # they are half the colours the show actually uses.
+    #
+    # `rgb` stays whatever the `.qxf` says, which for these slots is a single
+    # approximate tint -- fine for "what colour is this roughly", which is what
+    # the engine's nearest-slot colour matching wants, and useless for drawing
+    # one. This is the pair, and it is None for an ordinary single-colour slot.
+    pair: Optional[tuple[tuple[int, int, int], tuple[int, int, int]]] = None
+
+    @property
+    def is_split(self) -> bool:
+        return self.pair is not None
 
     @property
     def mid(self) -> int:
@@ -242,12 +302,16 @@ def parse_qxf(path: Path) -> FixtureProfile:
 
         caps = []
         for cap in c.findall(QXF_NS + "Capability"):
-            res1 = cap.get("Res1") or ""
-            rgb = None
-            if res1.startswith("#") and len(res1) == 7:
-                rgb = (int(res1[1:3], 16), int(res1[3:5], 16), int(res1[5:7], 16))
-            caps.append(Capability(lo=int(cap.get("Min")), hi=int(cap.get("Max")),
-                                   label=(cap.text or "").strip(), rgb=rgb))
+            rgb = _hex_rgb(cap.get("Res1"))
+            # Res2 is QLC+'s own way of saying "this slot is two colours at
+            # once". None of our profiles use it, but honouring it first means a
+            # profile that does needs no name to parse.
+            second = _hex_rgb(cap.get("Res2"))
+            caps.append(Capability(
+                lo=int(cap.get("Min")), hi=int(cap.get("Max")),
+                label=(cap.text or "").strip(), rgb=rgb,
+                pair=None if (rgb is None or second is None) else (rgb, second)))
+        caps = _resolve_split_slots(caps)
 
         channels[name] = ChannelDef(name=name, role=role, group=group,
                                     preset=preset, default=int(c.get("Default") or 0),
@@ -390,6 +454,13 @@ class PatchedFixture:
     # it does change the show, so it belongs in the rig file where it is visible
     # rather than buried in a shared profile.
     beam_deg: Optional[float] = None
+    # How fast the yoke actually slews, deg/s per axis. Nothing in a .qxf can
+    # carry this -- QLC+ has no field for it -- so `engine.servo` falls back to
+    # a published figure for the fixture class, and this is where a MEASURED one
+    # goes. Previz-only today: the show sends a command and the fixture's own
+    # servo obeys it, but a previz that ignores the servo teleports.
+    pan_speed_deg_s: Optional[float] = None
+    tilt_speed_deg_s: Optional[float] = None
     hold: dict[str, int] = field(default_factory=dict)   # role -> value, every frame
     notes: str = ""
 
@@ -717,6 +788,10 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
                     else float(entry["lumens"])),
             beam_deg=(None if entry.get("beam_deg") is None
                       else float(entry["beam_deg"])),
+            pan_speed_deg_s=(None if entry.get("pan_speed_deg_s") is None
+                             else float(entry["pan_speed_deg_s"])),
+            tilt_speed_deg_s=(None if entry.get("tilt_speed_deg_s") is None
+                              else float(entry["tilt_speed_deg_s"])),
             hold=dict(entry.get("hold", {})), notes=entry.get("notes", "")))
 
     geometry = geo.RigGeometry(

@@ -12,9 +12,14 @@ import type { Command, EngineState } from "./types";
 // across all of them and Setup for the room and the rig. Venue and Rig used to
 // be their own tabs; they are both setup, and splitting them meant three places
 // to look for one job.
+// The glyphs are all text-presentation dingbats, drawn in the tab colour like
+// any other text. Colour used to be 🎨, which has emoji presentation forced by
+// Unicode -- so it alone rendered as a full-colour bitmap that ignored the
+// active/inactive tint and sat at a different weight from its neighbours. The
+// filled circle is what the old console used for the same tab.
 const TABS = [
   { id: "show", label: "Show", glyph: "★" },
-  { id: "color", label: "Color", glyph: "🎨" },
+  { id: "color", label: "Color", glyph: "●" },
   { id: "move", label: "Move", glyph: "↔" },
   { id: "bright", label: "Bright", glyph: "☀" },
   { id: "setup", label: "Setup", glyph: "⚙" },

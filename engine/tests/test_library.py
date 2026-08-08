@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO))
 
 from engine import geometry as geo
 from engine import library as libmod
-from engine import motion, state as statemod
+from engine import motion, servo as servomod, state as statemod
 from engine.rig import load_rig
 from shared.tools.port_library import NS, Porter, parse_values, snap_bars
 
@@ -225,6 +225,142 @@ check("the route passes through its first waypoint",
       abs(closest[0] - first_waypoint[0]) < 0.5
       and abs(closest[1] - first_waypoint[1]) < 0.5,
       f"nearest {tuple(round(c, 2) for c in closest)} to {first_waypoint}")
+
+
+# -- 3b. the dark moves ------------------------------------------------------
+#
+# A whole family of routines -- the ones that go dark to travel and snap on when
+# they arrive -- ported as ordinary lit sweeps, because the porter read position
+# and nothing else out of a chaser and then spread it evenly over the cycle.
+# Every check here fails against that version of the port.
+print("\n3b. dark moves keep their darkness and their timing")
+
+DARK_MOVES = ["Teleport", "Apparition", "Freeze Frame", "Stutter", "Glitch",
+              "Ascension", "Blink"]
+cued = [e for e in entries if e.is_cued]
+check("the whole Dark Moves family came through as cued chases",
+      set(DARK_MOVES) <= {e.name for e in cued},
+      f"{len(cued)} cued: {sorted(e.name for e in cued)}")
+
+# The source's own timing, from the workspace rather than from the port, so this
+# compares the port against the thing it was ported FROM.
+chasers = {f.get("Name"): f for f in engine_el.findall(NS + "Function")
+           if f.get("Type") == "Chaser"}
+timing_bad = []
+for entry in cued:
+    func = chasers[entry.name]
+    ordered = sorted(func.findall(NS + "Step"),
+                     key=lambda s: int(s.get("Number", 0)))
+    want = Porter(EVENT).step_spans_for(func, ordered)
+    # Steps whose scene wrote no position are dropped, so compare what survived.
+    if len(want) == len(entry.step_spans) and want != entry.step_spans:
+        timing_bad.append(f"{entry.name}: {entry.step_spans} vs {want}")
+check("each cued step keeps the source's own fade and hold", not timing_bad,
+      timing_bad[0] if timing_bad else
+      f"{len(cued)} chases, e.g. Teleport {by_name['Teleport'].step_spans[:2]} ms")
+
+# The cycle is the sum of the steps, not the chaser's Duration times the step
+# count. Teleport is 4 x (800 travel + 3200 hold) = 16 s; read as 8 x 800 it
+# came out at 6.4 s and ran two and a half times too fast.
+teleport = by_name["Teleport"]
+check("a per-step chase's cycle is its real length",
+      teleport.bars == snap_bars(16000 / (4 * 60_000 / 124)),
+      f"{teleport.bars} bars for {sum(sum(s) for s in teleport.step_spans):.0f} ms")
+
+
+def sample(entry, fraction):
+    """Every fixture's intensity and every head's aim at a point in the cycle."""
+    show = libmod.compose(entry)
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    ctx.motion_bar = (entry.bars or 8.0) * fraction
+    states = {f.fid: statemod.FixtureState() for f in rig.fixtures}
+    for layer in show.stack():                    # no safety: this is the look
+        layer(ctx, states)
+    return states
+
+
+def at_step(entry, index, into=0.5):
+    """The fraction of the cycle `into` the way through one step's fade (or its
+    hold, when `into` is above 1)."""
+    total = sum(f + h for f, h in entry.step_spans)
+    before = sum(f + h for f, h in entry.step_spans[:index])
+    fade, hold = entry.step_spans[index]
+    offset = fade * into if into <= 1 else fade + hold * (into - 1)
+    return (before + offset) / total
+
+
+movers = [f for f in rig.fixtures if f.head is not None]
+travelling = sample(teleport, at_step(teleport, 0, 0.5))
+arrived = sample(teleport, at_step(teleport, 1, 1.5))
+check("Teleport is dark while it travels",
+      all(travelling[f.fid].intensity == 0.0 for f in movers),
+      f"{[round(travelling[f.fid].intensity, 3) for f in movers]}")
+check("and lit once it has arrived",
+      all(arrived[f.fid].intensity == 1.0 for f in movers),
+      f"{[round(arrived[f.fid].intensity, 3) for f in movers]}")
+
+# The other half of the effect: it must be STILL while lit. A chase that eases
+# through its poses is never still and never absent, which is precisely the
+# ordinary lit sweep every one of these routines was written to be the opposite
+# of -- and is what the port produced.
+held = [sample(teleport, at_step(teleport, 1, 1.0 + k / 10.0))[movers[0].fid].aim
+        for k in range(11)]
+check("and it holds still while it is lit",
+      max(abs(a.bearing_delta - held[0].bearing_delta)
+          + abs(a.elev_deg - held[0].elev_deg) for a in held) < 1e-9,
+      f"{len(held)} samples across the hold")
+moved = travelling[movers[0].fid].aim
+check("and it really does move during the dark stretch",
+      abs(moved.elev_deg - held[0].elev_deg) > 10.0,
+      f"{moved.elev_deg:.1f} deg halfway, {held[0].elev_deg:.1f} deg arrived")
+
+# Teleport and Apparition are the same eight poses and the same dark travel;
+# the ONLY difference in the source is that Apparition's arrival step fades its
+# dimmer up over three seconds. If the port cannot tell them apart, it has not
+# ported the dimmer at all -- which was the state of things.
+apparition = by_name["Apparition"]
+rising = [sample(apparition, at_step(apparition, 1, k / 4.0))[movers[0].fid].intensity
+          for k in range(5)]
+check("Apparition materialises where Teleport snaps",
+      rising == sorted(rising) and rising[0] < 0.3 and rising[-1] > 0.9,
+      f"{[round(v, 2) for v in rising]} across its arrival fade")
+
+# Freeze Frame's whole claim is that no beam is ever caught mid-sweep: the pair
+# that is moving is the dark one, every step.
+freeze = by_name["Freeze Frame"]
+caught = []
+for k in range(1, 40):
+    fraction = k / 40.0
+    now = sample(freeze, fraction)
+    then = sample(freeze, fraction + 0.004)
+    for f in movers:
+        drift = (abs(now[f.fid].aim.bearing_delta - then[f.fid].aim.bearing_delta)
+                 + abs(now[f.fid].aim.elev_deg - then[f.fid].aim.elev_deg))
+        if drift > 0.5 and now[f.fid].intensity > 0.01:
+            caught.append(f"{f.name} at {fraction:.2f}")
+check("Freeze Frame never lights a beam that is moving", not caught,
+      f"{len(caught)} caught; first {caught[0]}" if caught else
+      "39 samples across the cycle")
+
+# Whether a head can cross that much room in the time the chase allows is a
+# fact about the yoke, not about the port -- so this reports rather than
+# insists, and only a travel that is not remotely long enough fails.
+print("     dark travel vs what the heads need, at 124 bpm:")
+short = []
+for entry in cued:
+    cycle = (entry.bars or 8.0) * (4 * 60.0 / 124)
+    margins = servomod.cue_margins(rig.geometry, entry.steps, entry.step_spans,
+                                   cycle)
+    worst = max(((need - allow), allow, need, i)
+                for i, (allow, need) in enumerate(margins))
+    gap, allow, need, index = worst
+    print(f"       {entry.name:<14} worst step {index + 1}: "
+          f"{allow * 1000:>5.0f} ms allowed, {need * 1000:>5.0f} ms needed"
+          + ("   <-- the dimmer returns mid-swing" if gap > 0 else ""))
+    if allow > 0 and need > allow * 2:
+        short.append(entry.name)
+check("no dark move allows less than half the travel it needs", not short,
+      f"{short}" if short else "against the assumed yoke speeds in engine.servo")
 
 
 # -- 4. per-fixture colour survived -------------------------------------------

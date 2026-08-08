@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Named combinations of the three slots -- movement, colour and",
+    "level -- plus the speed and master they were built at.",
+    "",
+    "Written by the UI. Safe to hand-edit; a preset naming a look",
+    "that no longer exists applies the rest and skips that slot."
+  ],
+  "presets": [
+    {
+      "name": "Phase a",
+      "movement": {
+        "corner movers": "Ball Wave"
+      },
+      "color": {
+        "corner movers": "Split Pink/Green",
+        "pinspots": "Pin Teal"
+      },
+      "level": {},
+      "speed": 1.0,
+      "master": 0.9
+    }
+  ]
+}

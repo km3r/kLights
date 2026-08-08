@@ -346,7 +346,7 @@
       "bars": 16,
       "source": "Chaser 18",
       "notes": [
-        "8 steps, 4000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+        "8 steps, 32000 ms in all = 16.53 bars at 124 bpm, snapped to 16"
       ]
     },
     {
@@ -435,7 +435,7 @@
       "bars": 8,
       "source": "Chaser 19",
       "notes": [
-        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+        "4 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -696,7 +696,7 @@
       "bars": 16,
       "source": "Chaser 35",
       "notes": [
-        "2 steps, 16000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+        "2 steps, 32000 ms in all = 16.53 bars at 124 bpm, snapped to 16"
       ]
     },
     {
@@ -807,7 +807,7 @@
       "bars": 16,
       "source": "Chaser 44",
       "notes": [
-        "2 steps, 12000 ms each = 12.40 bars at 124 bpm, snapped to 16"
+        "2 steps, 24000 ms in all = 12.40 bars at 124 bpm, snapped to 16"
       ]
     },
     {
@@ -1012,7 +1012,7 @@
       "bars": 8,
       "source": "Chaser 49",
       "notes": [
-        "4 steps, 5000 ms each = 10.33 bars at 124 bpm, snapped to 8"
+        "4 steps, 20000 ms in all = 10.33 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -1173,7 +1173,7 @@
       "bars": 16,
       "source": "Chaser 50",
       "notes": [
-        "8 steps, 4000 ms each = 16.53 bars at 124 bpm, snapped to 16"
+        "8 steps, 32000 ms in all = 16.53 bars at 124 bpm, snapped to 16"
       ]
     },
     {
@@ -1547,7 +1547,7 @@
       "bars": 8,
       "source": "Chaser 60",
       "notes": [
-        "4 steps, 3500 ms each = 7.23 bars at 124 bpm, snapped to 8"
+        "4 steps, 14000 ms in all = 7.23 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -1859,7 +1859,7 @@
       "bars": 8,
       "source": "Chaser 67",
       "notes": [
-        "4 steps, 3000 ms each = 6.20 bars at 124 bpm, snapped to 8"
+        "4 steps, 12000 ms in all = 6.20 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -2227,7 +2227,7 @@
       "bars": 4,
       "source": "Chaser 81",
       "notes": [
-        "2 steps, 3200 ms each = 3.31 bars at 124 bpm, snapped to 4"
+        "2 steps, 6400 ms in all = 3.31 bars at 124 bpm, snapped to 4"
       ]
     },
     {
@@ -2437,10 +2437,44 @@
           ]
         ]
       ],
+      "step_spans": [
+        [
+          2000.0,
+          1000.0
+        ],
+        [
+          2000.0,
+          1000.0
+        ],
+        [
+          2000.0,
+          1000.0
+        ],
+        [
+          2000.0,
+          1000.0
+        ]
+      ],
+      "step_levels": [
+        {
+          "Moving Head #1": 1.0
+        },
+        {
+          "Moving Head #2": 1.0
+        },
+        {
+          "Moving Head #3": 1.0
+        },
+        {
+          "Moving Head #4": 1.0
+        }
+      ],
       "bars": 8,
       "source": "Chaser 86",
       "notes": [
-        "4 steps, 3000 ms each = 6.20 bars at 124 bpm, snapped to 8"
+        "4 steps, 12000 ms in all = 6.20 bars at 124 bpm, snapped to 8",
+        "CUED: travels 2000/2000/2000/2000 ms and holds 1000/1000/1000/1000 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -2728,7 +2762,7 @@
       "bars": 32,
       "source": "Chaser 95",
       "notes": [
-        "6 steps, 8000 ms each = 24.80 bars at 124 bpm, snapped to 32"
+        "6 steps, 48000 ms in all = 24.80 bars at 124 bpm, snapped to 32"
       ]
     },
     {
@@ -2877,7 +2911,7 @@
       "bars": 8,
       "source": "Chaser 98",
       "notes": [
-        "4 steps, 5000 ms each = 10.33 bars at 124 bpm, snapped to 8"
+        "4 steps, 20000 ms in all = 10.33 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -2999,10 +3033,10 @@
           ]
         ]
       ],
-      "bars": 4,
+      "bars": 16,
       "source": "Chaser 101",
       "notes": [
-        "6 steps, 1000 ms each = 3.10 bars at 124 bpm, snapped to 4",
+        "6 steps, 27900 ms in all = 14.41 bars at 124 bpm, snapped to 16",
         "1 step(s) wrote no position and were skipped"
       ]
     },
@@ -4604,7 +4638,7 @@
       "bars": 8,
       "source": "Chaser 121",
       "notes": [
-        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+        "4 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -4813,7 +4847,7 @@
       "bars": 8,
       "source": "Chaser 126",
       "notes": [
-        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+        "4 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -4926,7 +4960,7 @@
       "bars": 4,
       "source": "Chaser 129",
       "notes": [
-        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+        "2 steps, 8000 ms in all = 4.13 bars at 124 bpm, snapped to 4"
       ]
     },
     {
@@ -5764,7 +5798,7 @@
       "bars": 8,
       "source": "Chaser 204",
       "notes": [
-        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+        "4 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8"
       ]
     },
     {
@@ -5877,7 +5911,7 @@
       "bars": 4,
       "source": "Chaser 173",
       "notes": [
-        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+        "2 steps, 8000 ms in all = 4.13 bars at 124 bpm, snapped to 4"
       ]
     },
     {
@@ -5990,7 +6024,7 @@
       "bars": 4,
       "source": "Chaser 176",
       "notes": [
-        "2 steps, 4000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+        "2 steps, 8000 ms in all = 4.13 bars at 124 bpm, snapped to 4"
       ]
     },
     {
@@ -6410,10 +6444,76 @@
           ]
         ]
       ],
-      "bars": 4,
+      "step_spans": [
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          3200.0
+        ],
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          3200.0
+        ],
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          3200.0
+        ],
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          3200.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 8,
       "source": "Chaser 155",
       "notes": [
-        "8 steps, 800 ms each = 3.31 bars at 124 bpm, snapped to 4"
+        "8 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8",
+        "CUED: travels 800/0/800/0 ms and holds 0/3200/0/3200 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3, 5, 7",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -6571,10 +6671,76 @@
           ]
         ]
       ],
-      "bars": 8,
+      "step_spans": [
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          3000.0,
+          3000.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          3000.0,
+          3000.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          3000.0,
+          3000.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          3000.0,
+          3000.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 16,
       "source": "Chaser 156",
       "notes": [
-        "8 steps, 1500 ms each = 6.20 bars at 124 bpm, snapped to 8"
+        "8 steps, 30000 ms in all = 15.50 bars at 124 bpm, snapped to 16",
+        "CUED: travels 1500/3000/1500/3000 ms and holds 0/3000/0/3000 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3, 5, 7",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -6784,10 +6950,48 @@
           ]
         ]
       ],
+      "step_spans": [
+        [
+          900.0,
+          3100.0
+        ],
+        [
+          900.0,
+          3100.0
+        ],
+        [
+          900.0,
+          3100.0
+        ],
+        [
+          900.0,
+          3100.0
+        ]
+      ],
+      "step_levels": [
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #3": 1.0
+        },
+        {
+          "Moving Head #2": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #3": 1.0
+        },
+        {
+          "Moving Head #2": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
       "bars": 8,
       "source": "Chaser 161",
       "notes": [
-        "4 steps, 4000 ms each = 8.27 bars at 124 bpm, snapped to 8"
+        "4 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8",
+        "CUED: travels 900/900/900/900 ms and holds 3100/3100/3100/3100 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -6995,10 +7199,46 @@
           ]
         ]
       ],
-      "bars": 0.25,
+      "step_spans": [
+        [
+          150.0,
+          0.0
+        ],
+        [
+          0.0,
+          700.0
+        ],
+        [
+          150.0,
+          0.0
+        ],
+        [
+          0.0,
+          700.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 1,
       "source": "Chaser 166",
       "notes": [
-        "4 steps, 150 ms each = 0.31 bars at 124 bpm, snapped to 0.25"
+        "4 steps, 1700 ms in all = 0.88 bars at 124 bpm, snapped to 1",
+        "CUED: travels 150/0/150/0 ms and holds 0/700/0/700 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -7156,10 +7396,76 @@
           ]
         ]
       ],
+      "step_spans": [
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          700.0
+        ],
+        [
+          900.0,
+          0.0
+        ],
+        [
+          0.0,
+          1000.0
+        ],
+        [
+          800.0,
+          0.0
+        ],
+        [
+          0.0,
+          600.0
+        ],
+        [
+          1000.0,
+          0.0
+        ],
+        [
+          0.0,
+          1300.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
       "bars": 4,
       "source": "Chaser 226",
       "notes": [
-        "8 steps, 800 ms each = 3.31 bars at 124 bpm, snapped to 4"
+        "8 steps, 7100 ms in all = 3.67 bars at 124 bpm, snapped to 4",
+        "CUED: travels 800/0/900/0 ms and holds 0/700/0/1000 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3, 5, 7",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -7561,10 +7867,76 @@
           ]
         ]
       ],
-      "bars": 4,
+      "step_spans": [
+        [
+          1000.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1000.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1000.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1000.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 8,
       "source": "Chaser 235",
       "notes": [
-        "8 steps, 1000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+        "8 steps, 14000 ms in all = 7.23 bars at 124 bpm, snapped to 8",
+        "CUED: travels 1000/0/1000/0 ms and holds 0/2500/0/2500 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3, 5, 7",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     },
     {
@@ -7966,10 +8338,76 @@
           ]
         ]
       ],
-      "bars": 4,
+      "step_spans": [
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ],
+        [
+          1500.0,
+          0.0
+        ],
+        [
+          0.0,
+          2500.0
+        ]
+      ],
+      "step_levels": [
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        },
+        {},
+        {
+          "Moving Head #1": 1.0,
+          "Moving Head #2": 1.0,
+          "Moving Head #3": 1.0,
+          "Moving Head #4": 1.0
+        }
+      ],
+      "bars": 8,
       "source": "Chaser 244",
       "notes": [
-        "8 steps, 1000 ms each = 4.13 bars at 124 bpm, snapped to 4"
+        "8 steps, 16000 ms in all = 8.27 bars at 124 bpm, snapped to 8",
+        "CUED: travels 1500/0/1500/0 ms and holds 0/2500/0/2500 ms, kept literally rather than interpolated -- the dimmer changes from step to step, so the travel time is the effect; dark on step(s) 1, 3, 5, 7",
+        "a fixture a step does not write is DARK there. The source merged Intensity HTP, so those heads actually sat at whatever the MH Dim fader was parked at; here they go out, which is what the routine was reaching for"
       ]
     }
   ],

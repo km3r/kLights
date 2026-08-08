@@ -342,8 +342,15 @@ label.field input, label.field select {
 
 /* One hand-dimmer row: a label line above its fader. */
 .dimmer { margin-bottom: 0.35rem; min-width: 0; }
-.dimmer .spread { gap: 0.5rem; }
 .dimmer .master { flex: 1 1 auto; }
+
+/* The fader shares its line with the reset, and the reset's space is reserved
+   whether or not it is showing -- see the comment where it is rendered. It sits
+   here rather than on the label line above because the 44 px touch target it
+   needs is height this line already has, so reserving it costs nothing; on the
+   label line it would have added 44 px to every row in the card. */
+.dimmer-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.dimmer-row .reset { flex: 0 0 auto; padding-left: 0.6rem; padding-right: 0.6rem; }
 
 /* Fixture-type filter. A scrolling row rather than a wrapping one: it stays a
    single predictable line whatever the rig holds, and a rig with six groups

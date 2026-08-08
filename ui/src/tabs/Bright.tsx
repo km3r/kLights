@@ -52,27 +52,36 @@ function Dimmers({ state, send }: { state: EngineState; send: (c: Command) => vo
 
   return (
     <Card title="Dimmers" right={
-      trimmed.length > 0 ? (
-        <button className="small" onClick={() => trimmed.forEach(clear)}>
-          Reset all
-        </button>
-      ) : undefined
+      // Present always, disabled when there is nothing to reset. Rendered
+      // conditionally it grew the heading the instant the first fader moved,
+      // and the whole card stepped down the page under the finger.
+      <button className="small" disabled={trimmed.length === 0}
+              onClick={() => trimmed.forEach(clear)}>
+        Reset all
+      </button>
     }>
       {rows.map((r, i) => (
         <div key={r.target} className="dimmer"
              style={i === state.groups.length ? { marginTop: "0.6rem" } : undefined}>
-          <div className="spread">
-            <span className={i < state.groups.length ? "" : "small"}>
-              {r.label}
-              {r.sub && <span className="small muted"> · {r.sub}</span>}
-            </span>
-            {state.level_overrides[r.target] != null && (
-              <button className="small" onClick={() => clear(r.target)}>reset</button>
-            )}
+          <div className={i < state.groups.length ? "" : "small"}>
+            {r.label}
+            {r.sub && <span className="small muted"> · {r.sub}</span>}
           </div>
-          <Fader value={level(r.target)} label={`${r.label} level`}
-                 onInput={(v) => set(r.target, v)}
-                 onCommit={() => commit(r.target)} />
+          <div className="dimmer-row">
+            <Fader value={level(r.target)} label={`${r.label} level`}
+                   onInput={(v) => set(r.target, v)}
+                   onCommit={() => commit(r.target)} />
+            {/* Hidden rather than absent: the row is a fixed height whether or
+                not this is showing, so nothing moves at the moment a trim
+                starts existing. Inline because the reserved space has to hold
+                in the tests too, where the stylesheet is not loaded. */}
+            <button className="small reset"
+                    style={{ visibility: state.level_overrides[r.target] != null
+                               ? "visible" : "hidden" }}
+                    onClick={() => clear(r.target)}>
+              reset
+            </button>
+          </div>
         </div>
       ))}
       <p className="small muted" style={{ marginBottom: 0 }}>

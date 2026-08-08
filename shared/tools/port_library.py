@@ -85,6 +85,13 @@ class PortedLook:
     intensities: Optional[dict[str, float]] = None
     # Per fixture, 0..1 across the fixture's own strobe band.
     strobes: Optional[dict[str, float]] = None
+    # A CUED movement chase: per step (fade ms, hold ms) off the source chaser,
+    # and the dimmer each fixture holds at that step. Emitted only where the
+    # chase's dimmer pattern changes from step to step -- the Dark Moves family
+    # -- because there the timing and the darkness ARE the routine. Everything
+    # else keeps the stepped-becomes-continuous translation.
+    step_spans: Optional[list[list[float]]] = None
+    step_levels: Optional[list[dict[str, float]]] = None
     # A level CHASE: per step, {fixture: level}. Without this the porter had no
     # concept of an intensity chaser at all, so "Spotlight", "Dim Chase" and
     # "Crowd Cascade" were skipped and their step scenes were left loose in the
@@ -106,7 +113,8 @@ class PortedLook:
                      "groups": self.groups}
         if self.step_of:
             out["step_of"] = self.step_of
-        for key in ("offsets", "steps", "frames", "levels", "strobe_steps",
+        for key in ("offsets", "steps", "step_spans", "step_levels",
+                    "frames", "levels", "strobe_steps",
                     "color", "colors", "whites", "bars", "intensity",
                     "intensities", "strobes"):
             value = getattr(self, key)
@@ -318,6 +326,59 @@ class Porter:
             return overall, None
         return overall, levels
 
+    def dimmers_for(self, values_by_fixture: dict[int, dict[int, int]]
+                    ) -> dict[str, float]:
+        """{fixture name: dimmer 0..1} for every fixture this scene WRITES.
+
+        Deliberately not `intensity_for`: that answers "how bright is this
+        scene", collapsing the common case to one number. Here the question is
+        the opposite one -- WHICH fixtures the step leaves unwritten -- and the
+        omissions are the answer, so nothing may be collapsed away.
+        """
+        out: dict[str, float] = {}
+        for fixture in self.rig.fixtures:
+            values = values_by_fixture.get(fixture.fid)
+            if not values:
+                continue
+            dim = fixture.profile.offsets(fixture.mode).get(rigmod.DIMMER)
+            if dim is not None and dim in values:
+                out[fixture.name] = round(values[dim] / 255.0, 3)
+        return out
+
+    def step_spans_for(self, func, steps) -> list[list[float]]:
+        """Per step, [fade ms, hold ms], honouring the chaser's speed modes.
+
+        QLC+ keeps three timings on a chaser and a flag per timing saying
+        whether the steps share it (`Common`) or each carries its own
+        (`PerStep`), and a step's saved Duration is its FadeIn plus its Hold.
+        The porter used to read the chaser's Duration alone and multiply by the
+        step count, which is wrong twice over for a `PerStep` chase: Teleport's
+        four 800 ms travels and four 3200 ms holds -- 16 s -- came out as
+        8 x 800 ms = 6.4 s, so it ran two and a half times too fast AND with
+        every step the same length, which is the one shape it does not have.
+        """
+        speed = func.find(NS + "Speed")
+        modes = func.find(NS + "SpeedModes")
+        common_fade = float(speed.get("FadeIn", 0)) if speed is not None else 0.0
+        common_total = float(speed.get("Duration", 0)) if speed is not None else 0.0
+        if common_total <= 0:
+            common_total = 1000.0
+        # A shared fade longer than the shared step is a fade the chase never
+        # finishes; QLC+ cuts it off at the step boundary. Clamping keeps the
+        # cycle exactly the Duration the chaser states, so the bar count a
+        # `Common` chase ports to is unchanged by any of this.
+        common_fade = min(common_fade, common_total)
+        per_step_fade = modes is not None and modes.get("FadeIn") == "PerStep"
+        per_step_total = modes is not None and modes.get("Duration") == "PerStep"
+
+        out: list[list[float]] = []
+        for step in steps:
+            fade = float(step.get("FadeIn", 0)) if per_step_fade else common_fade
+            total = (fade + float(step.get("Hold", 0))) if per_step_total \
+                else common_total
+            out.append([fade, max(0.0, total - fade)])
+        return out
+
     # -- the port ---------------------------------------------------------
 
     def scene_values(self, func) -> dict[int, dict[int, int]]:
@@ -380,15 +441,39 @@ class Porter:
         return look
 
     def port_chaser(self, func, scenes_by_id: dict[int, ET.Element]) -> Optional[PortedLook]:
+        """A chaser whose steps are positions.
+
+        Two shapes come out of here. Most become a `path`: the stored poses turn
+        into waypoints and the chase becomes continuous motion, which is the
+        whole premise of `engine.motion`.
+
+        A chase whose DIMMER PATTERN CHANGES from step to step becomes a CUED
+        path instead, keeping its own travel and hold times. That is the Dark
+        Moves family -- the head is unlit for exactly as long as the move takes,
+        snaps on when it arrives, and holds -- and none of it survives being
+        spread smoothly over a cycle: a beam that is always moving and never
+        absent is the ordinary lit sweep each of those routines was written to
+        be the opposite of. The dimmer was being read for scenes and thrown away
+        for chasers, so all seven ported as exactly that.
+
+        The test for "carries its own darkness" is the pattern CHANGING, not a
+        dimmer merely being present: a chase that lights the same fixtures at
+        the same level on every step is stating a brightness, not an effect, and
+        stays an ordinary path.
+        """
         name = func.get("Name", "?")
         steps = []
+        levels: list[dict[str, float]] = []
+        spans: list[list[float]] = []
         dropped = 0
-        for step in sorted(func.findall(NS + "Step"),
-                           key=lambda s: int(s.get("Number", 0))):
+        ordered = sorted(func.findall(NS + "Step"),
+                         key=lambda s: int(s.get("Number", 0)))
+        for span, step in zip(self.step_spans_for(func, ordered), ordered):
             scene = scenes_by_id.get(int((step.text or "0").strip()))
             if scene is None:
                 continue
-            offsets = self.offsets_for(self.scene_values(scene))
+            values = self.scene_values(scene)
+            offsets = self.offsets_for(values)
             if offsets is None:
                 # A step that writes no position. Skip the STEP, not the chase:
                 # abandoning the whole chaser here threw away "Build", six good
@@ -396,6 +481,8 @@ class Porter:
                 dropped += 1
                 continue
             steps.append(offsets)
+            levels.append(self.dimmers_for(values))
+            spans.append(span)
         if not steps:
             # No positional step at all. It may still be a COLOUR chase -- the
             # Rainbow Wheel and Wheel Walk families step through wheel slots
@@ -414,19 +501,40 @@ class Porter:
             self.skipped.append((name, "fewer than two positional steps"))
             return None
 
-        speed = func.find(NS + "Speed")
-        duration = float(speed.get("Duration", 0)) if speed is not None else 0.0
-        if duration <= 0:
-            duration = 1000.0
-        raw_bars = duration * len(steps) / self.ms_per_bar
-        notes = [f"{len(steps)} steps, {duration:.0f} ms each "
+        cycle_ms = sum(fade + hold for fade, hold in spans)
+        if cycle_ms <= 0:
+            # A chaser that states no timing anywhere. The old code's fallback
+            # was one second a step; keep it, and keep it out of the cue path,
+            # which cannot normalise a cycle of zero length.
+            cycle_ms = 1000.0 * len(steps)
+            spans = [[1000.0, 0.0] for _ in steps]
+        raw_bars = cycle_ms / self.ms_per_bar
+        notes = [f"{len(steps)} steps, {cycle_ms:.0f} ms in all "
                  f"= {raw_bars:.2f} bars at {self.bpm:.0f} bpm, "
                  f"snapped to {snap_bars(raw_bars):g}"]
         if dropped:
             notes.append(f"{dropped} step(s) wrote no position and were skipped")
+
+        cued = len({tuple(sorted(level.items())) for level in levels}) > 1
+        if cued:
+            dark = [i + 1 for i, level in enumerate(levels) if not level]
+            notes.append(
+                f"CUED: travels {'/'.join(f'{f:.0f}' for f, _ in spans[:4])} ms "
+                f"and holds {'/'.join(f'{h:.0f}' for _, h in spans[:4])} ms, "
+                f"kept literally rather than interpolated -- the dimmer changes "
+                f"from step to step, so the travel time is the effect"
+                + (f"; dark on step(s) {', '.join(map(str, dark))}" if dark else ""))
+            notes.append(
+                "a fixture a step does not write is DARK there. The source "
+                "merged Intensity HTP, so those heads actually sat at whatever "
+                "the MH Dim fader was parked at; here they go out, which is "
+                "what the routine was reaching for")
+
         return PortedLook(
             name=name, kind="path", tags=["movers"],
             groups=self.groups_for(f.name for f in self.rig.movers), steps=steps,
+            step_spans=spans if cued else None,
+            step_levels=levels if cued else None,
             bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",
             notes=notes)
 

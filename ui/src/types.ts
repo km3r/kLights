@@ -129,6 +129,11 @@ export interface LookInfo {
   /** Set when this is one step of a chase that also ported — filed under the
    *  parent rather than listed beside it. */
   step_of?: string | null;
+  /** A movement look that drives the dimmer itself: it goes dark to travel and
+   *  snaps on when it arrives. Flagged because an operator who picks one and
+   *  watches the rig start blinking should be able to tell the routine from a
+   *  fault. */
+  cued?: boolean;
 }
 
 /** Per slot, per fixture group: which look is loaded. A pinspot colour and a
@@ -150,6 +155,9 @@ export interface Preset extends Selection {
 export interface EngineState {
   type: "state";
   rev: number;
+  /** Engine version. The bundle is served from disk but a phone can hold a
+   *  cached one, so this is the only reliable answer to "which engine is this". */
+  version: string;
   event: string;
   taper: TaperState;
   clock: ClockState;

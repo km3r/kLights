@@ -59,11 +59,13 @@ function Now({ state, send }: { state: EngineState; send: (c: Command) => void }
 
   return (
     <Card title="On now" right={
-      state.auto.held ? (
-        <button className="small" onClick={() => send({ type: "release" })}>
-          Release hold
-        </button>
-      ) : undefined
+      // Disabled rather than absent, like every other heading action: auto mode
+      // takes and drops the hold on its own, so a conditional button here made
+      // the card twitch taller and shorter with nobody touching anything.
+      <button className="small" disabled={!state.auto.held}
+              onClick={() => send({ type: "release" })}>
+        Release hold
+      </button>
     }>
       <div className="grid two">
         {rows.map((r) => (

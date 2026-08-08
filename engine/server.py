@@ -41,6 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from . import __version__
 from . import auto as autom
 from . import calibrate as calibmod
 from . import clock as clockmod
@@ -783,6 +784,9 @@ class ShowController:
         return {
             "type": "state",
             "rev": self.rev,
+            # So a phone that loaded a stale bundle from cache can be told which
+            # engine it is actually driving, rather than the operator guessing.
+            "version": __version__,
             "event": self.rig.name,
             "clock": {"bpm": round(self.clock.bpm, 2),
                       "effective_bpm": round(self.clock.effective_bpm, 2),
@@ -800,9 +804,14 @@ class ShowController:
             # and group within that -- a flat list of 200 is exactly why only a
             # handful got used. `step_of` files a chase's own steps under the
             # chase instead of beside it.
+            # `cued` warns that this movement look drives the dimmer itself --
+            # it travels dark. Worth saying on screen: an operator who picks one
+            # and sees the rig start blinking should know that is the routine
+            # and not a fault, and that it will fight a level chase for control.
             "looks": [{"name": l.name, "manual_only": l.manual_only,
                        "kind": by_name[l.name].kind if l.name in by_name else "look",
                        "slot": by_name[l.name].slot if l.name in by_name else "movement",
+                       "cued": by_name[l.name].is_cued if l.name in by_name else False,
                        "groups": list(by_name[l.name].groups) if l.name in by_name else [],
                        "step_of": by_name[l.name].step_of if l.name in by_name else None}
                       for l in self.setlist.looks],
@@ -1192,6 +1201,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"event   {controller.rig.name}  "
           f"({len(controller.rig.fixtures)} fixtures, universes {controller.rig.universes})")
     print(f"output  {'Art-Net -> ' + args.artnet if args.artnet else 'null (no wire)'}")
+    # The taper is the only thing standing between a stored pose and someone's
+    # eyes, and its policy is editable from a phone. Say what it is set to every
+    # time, so "why is nothing dimming" is answered before it is asked.
+    taper = controller.ctx.taper
+    if not taper.enabled:
+        print("safety  TAPER DISABLED -- beams are not guarded. See docs/SAFETY.md")
+    else:
+        print(f"safety  taper on, crowd level {taper.crowd_level:.0%}"
+              f"{' -- beams over the crowd go dark' if taper.crowd_level == 0 else ''}"
+              f"  (docs/SAFETY.md)")
     print(f"timing  {', '.join(controller.runner.applied_timing)}")
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     for url in local_addresses(args.port):

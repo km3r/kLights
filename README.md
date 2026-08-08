@@ -9,10 +9,15 @@ dimensions, and dims beams that get near people — per frame, from the current
 aim. A web UI drives it from a phone; Unreal renders it in 3D by listening to
 the same Art-Net the rig sees.
 
+> **Read [`docs/SAFETY.md`](docs/SAFETY.md) before pointing this at a rig.** The
+> beam taper is a glare and comfort guard, not an optical-safety guarantee, and
+> three of its inputs are still estimates rather than measurements.
+
 ```
 lights/
 ├── docs/                     Generic pipeline documentation
-│   └── pipeline.md           Art-Net, the engine, previz, legacy QLC+ setup
+│   ├── pipeline.md           Art-Net, the engine, previz, legacy QLC+ setup
+│   └── SAFETY.md             What the beam taper guards, and what it does not
 ├── engine/                   The show engine (stdlib only, no dependencies)
 │   ├── geometry.py           Where a head is, where it points, what DMX aims it
 │   ├── rig.py venue.py       What is patched; the room it is patched into
@@ -24,7 +29,7 @@ lights/
 │   ├── runner.py output/     The frame clock and the Art-Net driver
 │   ├── server.py websocket.py  HTTP + WebSocket, hand-rolled RFC 6455
 │   └── tests/                Standalone test scripts, one per area
-├── ui/                       React console — six tabs, phone through desktop
+├── ui/                       React console — five tabs, phone through desktop
 │   └── dist/                 Committed build, so a venue needs no Node
 ├── previz/                   Unreal previz: an Art-Net listener, never in the path
 ├── spike/                    Timing spike that settled the frame-clock question
@@ -50,7 +55,7 @@ the inventory, the tools and the engine carry forward.
 
 | Event | Status | Rig |
 |---|---|---|
-| [despacio](events/despacio/README.md) | Ran 2026-08 | 4× MingJie MJ-OS-018 beams in the corners of a 30 ft room, sideways-mounted, aimed at a centre-hung mirror ball, + 2 pinspots. Now the engine's reference event: `rig.json`, `venue.json`, `calibration.json` and a 198-look library ported from its QLC+ workspace. |
+| [despacio](events/despacio/README.md) | Ran 2026-08 | 4× MingJie MJ-OS-018 beams in the corners of a 30 ft room, sideways-mounted, aimed at a centre-hung mirror ball, + 2 pinspots. Now the engine's reference event: `rig.json`, `venue.json`, `calibration.json` and a 206-look library ported from its QLC+ workspace. |
 | [cosmos26](events/cosmos26/README.md) | Archived | 4× Par 36 wash, 2× pinspot, 2× YeeSite pixel bar, Scorpion laser, Mini Kinta, dimmer. APC40-driven, QLC+ only. |
 
 ## Running a show
@@ -68,9 +73,10 @@ override them. With no `--artnet` it runs against a null output, which is the
 safe way to try things with the rig plugged in.
 
 The UI is served from the committed `ui/dist/`, so a show laptop needs Python
-and a checkout and nothing else. Six tabs, all driven by the same WebSocket
-state: **Show** (looks, master, blackout), **Move**, **Color**, **Rig**,
-**Venue** and **Setup**.
+and a checkout and nothing else. Five tabs, all driven by the same WebSocket
+state: **Show** (presets, tempo, auto), **Color**, **Move**, **Bright**, and
+**Setup** — which also holds the rig, venue and calibration panels, plus Panic.
+Master and Blackout live in the header, on every tab.
 
 Smoke-test the frame path without the UI:
 
@@ -120,9 +126,12 @@ Unreal 5.8 renders the show live by listening to Art-Net — it sits beside the
 rig, never between the engine and it, so previz cannot break a show. It decodes
 with `engine.geometry`, the show's own decoder, rather than a GDTF profile,
 because the heads are mounted sideways in a way a fixture profile cannot
-express. See [`previz/README.md`](previz/README.md) for the runbook, the mirror
-ball, and the several things about Unreal's volumetric fog that are the
-opposite of the obvious guess.
+express. The heads model a real yoke (`engine.servo`), so a move takes the time
+it takes — without that the previz teleported between routines and could not
+show either what a routine change costs or what a dark move looks like. See
+[`previz/README.md`](previz/README.md) for the runbook, the mirror ball, and the
+several things about Unreal's volumetric fog that are the opposite of the
+obvious guess.
 
 ```bash
 python previz/ue_remote.py previz/unreal/Content/Python/go.py
@@ -137,9 +146,24 @@ one directly, or all of them:
 for t in engine/tests/test_*.py; do python "$t" || break; done
 ```
 
-`test_geometry_parity.py` is the load-bearing one: it compares every aim
+Two of them are load-bearing. `test_geometry_parity.py` compares every aim
 against `events/despacio/aim_calc.py`, the code that drove the real show, and
-insists they agree to within one 8-bit step.
+insists they agree to within one 8-bit step. `test_qlc_parity.py` diffs whole
+DMX frames against QLC+ across the ported library and requires every differing
+channel to fall in a category that was *derived* — held, base, taper — leaving
+`dropped` and `unexplained` as the findings.
+
+```bash
+python shared/tools/qlc_parity.py check --verbose
+```
+
+By default that models QLC+ from the workspace's stored scene values. To diff
+against what QLC+ really emits, record it off the wire first and compare
+against that:
+
+```bash
+python shared/tools/qlc_parity.py capture --out captures.json --all
+```
 
 The UI has its own suite, run against a fixture captured from a real engine:
 
@@ -164,3 +188,9 @@ each expensive or impossible — see
   needed at a venue; `ui/dist/` is committed.
 - **Unreal Engine 5.8** — for previz.
 - **Blender 3.3+ with BlenderDMX**, **QLC+ 4.14+** — for the legacy path.
+
+## Licence
+
+[Apache-2.0](LICENSE). Note the warranty disclaimer in particular: this software
+aims light at people and its safety model is documented, deliberately limited,
+and unvalidated against any standard. See [`docs/SAFETY.md`](docs/SAFETY.md).

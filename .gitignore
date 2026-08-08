@@ -24,6 +24,12 @@ bar_usermanual.pdf
 events/*/backups/
 *.bak
 
+# Scratch. Untracked AND unignored is the dangerous combination: it survives
+# every `git status` unnoticed until one `git add .` puts megabytes of stale
+# duplicates into history. Anything in here is disposable by definition.
+temp/
+scratch/
+
 # Unreal generated trees. The .uproject, Config/ and Content/Python/ are source;
 # everything else the editor writes is derived from them and is gigabytes of it.
 previz/unreal/Binaries/

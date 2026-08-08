@@ -85,6 +85,9 @@ export function RigSection({ state }: { state: EngineState }) {
           <div>worst {state.stats.worst_error_ms.toFixed(2)} ms</div>
           <div>rev {state.rev}</div>
         </div>
+        <p className="small muted mono" style={{ margin: "0.5rem 0 0" }}>
+          engine v{state.version} · event {state.event}
+        </p>
         {state.last_error && (
           <pre className="small" style={{
             whiteSpace: "pre-wrap", color: "var(--warn)",

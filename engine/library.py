@@ -64,6 +64,13 @@ class LibraryEntry:
     groups: tuple[str, ...] = ()
     offsets: Optional[list[list[float]]] = None
     steps: Optional[list[list[list[float]]]] = None
+    # A CUED movement chase: per step, (fade ms, hold ms) from the source, and
+    # per step the dimmer each fixture holds there. Present only where the
+    # source chase alternates dark travel with lit holds -- the Dark Moves
+    # family -- because there the timing IS the look and interpolating it away
+    # turns a teleport into an ordinary sweep. See `motion.cue_path`.
+    step_spans: Optional[list[list[float]]] = None
+    step_levels: Optional[list[dict[str, float]]] = None
     frames: Optional[list[dict[str, list[float]]]] = None
     # A level chase: per step, {fixture: multiplier}, and optionally the shutter
     # alongside it (the Breathe pair chases the shutter, not the dimmer).
@@ -88,6 +95,18 @@ class LibraryEntry:
     @property
     def is_movement(self) -> bool:
         return self.kind in ("pose", "path", "mixed")
+
+    @property
+    def is_cued(self) -> bool:
+        """A movement chase that carries its own dimmer and its own timing.
+
+        Still a MOVEMENT entry, and it still fills only the movement slot: the
+        darkness belongs to the move, it is not a level look the operator
+        chose. Putting it in the level slot instead would evict whatever level
+        chase is running the moment a dark move is selected, and give it back
+        when one is picked -- silently breaking the routine.
+        """
+        return bool(self.step_spans and self.steps)
 
     @property
     def is_color(self) -> bool:
@@ -120,6 +139,7 @@ def load_entries(path: Path) -> list[LibraryEntry]:
             name=raw["name"], kind=raw["kind"], tags=tuple(raw.get("tags", [])),
             groups=tuple(raw.get("groups", [])),
             offsets=raw.get("offsets"), steps=raw.get("steps"),
+            step_spans=raw.get("step_spans"), step_levels=raw.get("step_levels"),
             frames=raw.get("frames"), levels=raw.get("levels"),
             strobe_steps=raw.get("strobe_steps"), strobes=raw.get("strobes"),
             step_of=raw.get("step_of"),
@@ -160,6 +180,60 @@ def path_offsets(steps: list[list[list[float]]], bars: float,
     def offset_for(ctx, head: int) -> tuple[float, float]:
         return per_head[head % len(per_head)](motion.phase(ctx.motion_bar, bars))
     return offset_for
+
+
+def cue_offsets(steps: list[list[list[float]]], spans: list[list[float]],
+                bars: float, easing=motion.ease_in_out):
+    """A route whose steps keep their own travel and hold times.
+
+    Same transpose as `path_offsets` -- the port stores [step][head] because
+    that is how a chaser reads -- but each head walks the cue list rather than a
+    cycle divided into equal segments.
+    """
+    pairs = [(float(f), float(h)) for f, h in spans]
+    per_head = [motion.cue_path([tuple(step[h % len(step)]) for step in steps],
+                                pairs, easing=easing)
+                for h in range(len(steps[0]))]
+
+    def offset_for(ctx, head: int) -> tuple[float, float]:
+        return per_head[head % len(per_head)](motion.phase(ctx.motion_bar, bars))
+    return offset_for
+
+
+def cue_level_layer(step_levels: list[dict[str, float]],
+                    spans: list[list[float]], bars: float,
+                    groups: Sequence[str] = ()):
+    """The dimmer half of a cued chase: dark to travel, lit on arrival.
+
+    This is the half the port dropped. The source scenes wrote Pan/Tilt on every
+    step and the Dimmer only on the arrival steps; the porter read position and
+    nothing else, so every one of these routines came through as a lit sweep
+    through the same poses -- the one thing they were each written NOT to be.
+
+    A fixture the step does not name is DARK for that step, not left alone,
+    exactly as in `level_frames_layer`: the source console merged Intensity HTP,
+    so an unwritten dimmer contributed nothing. Here that omission is the entire
+    effect rather than an accident of it -- and it is passed to `cue_value` as
+    None rather than 0, because an unwritten channel is RELEASED at the step
+    boundary while a written one fades. A head that dimmed out gradually across
+    its travel would be a beam you watch swing away, which is the opposite of
+    what these routines do.
+
+    A MULTIPLIER, like every other level layer, so a dark move still obeys the
+    master and the safety taper, and so a level chase selected on top of it
+    composes instead of fighting.
+    """
+    scope = set(groups)
+    pairs = [(float(f), float(h)) for f, h in spans]
+
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        p = motion.phase(ctx.motion_bar, bars)
+        for fixture in ctx.rig.fixtures:
+            if not (scope & set(fixture.tags)):
+                continue
+            values = [step.get(fixture.name) for step in step_levels]
+            out[fixture.fid].intensity *= motion.cue_value(values, pairs, p)
+    return layer
 
 
 def color_frames_layer(frames: list[dict[str, list[float]]], bars: float):
@@ -305,11 +379,24 @@ def base_layers(show: statemod.Show) -> None:
 
 
 def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
+    """One movement look. A cued chase also contributes its own dimmer.
+
+    That level layer goes in `movement`, not `fx`, so it lands before the level
+    slot and the master: a dark move dims the picture the look established, and
+    anything the operator selects afterwards still multiplies on top of it.
+    """
     if entry is None:
         return
     if entry.offsets is not None:
         show.movement.append(statemod.move_layer(
             pose_offsets(entry.offsets), tags=("movers",)))
+    elif entry.is_cued:
+        bars = entry.bars or DEFAULT_BARS
+        show.movement.append(statemod.move_layer(
+            cue_offsets(entry.steps, entry.step_spans, bars), tags=("movers",)))
+        if entry.step_levels:
+            show.movement.append(cue_level_layer(
+                entry.step_levels, entry.step_spans, bars, entry.groups))
     elif entry.steps is not None:
         show.movement.append(statemod.move_layer(
             path_offsets(entry.steps, entry.bars or DEFAULT_BARS),

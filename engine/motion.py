@@ -18,6 +18,11 @@ through and interpolates between them, which turns the existing 179-scene
 library into continuous motion without re-authoring any of it. That is the
 bridge F9 needs to port the library broadly rather than hand-picking survivors.
 
+`cue_path()` is the deliberate exception, for the chases that travel DARK -- see
+the "cues" section below. When the audience cannot see the move, its duration
+stops being a rendering choice and becomes the effect itself, so that timing is
+carried over literally instead of being smoothed away.
+
 Interpolation happens in AIM space -- unwrapped bearing delta and elevation in
 degrees -- never in DMX. Interpolating DMX would quantise every intermediate
 position to a byte, which is the steppiness this module exists to remove, and
@@ -151,6 +156,102 @@ def path(poses: Sequence[tuple[float, float]], easing: Easing = ease_in_out,
         return (a[0] + (b[0] - a[0]) * local,
                 a[1] + (b[1] - a[1]) * local)
     return _with_bars(offset_at, bars)
+
+
+# ------------------------------------------------------------------- cues --
+#
+# Everything above turns a stepped chase into continuous motion, which is this
+# module's whole premise and is right for a chase that moves LIT: you watch the
+# beam travel, so a smooth route is strictly better than a jump.
+#
+# It is wrong for a chase that goes DARK to travel. There the travel time is not
+# a rendering detail, it is the effect: the head is unlit for exactly as long as
+# it takes to get there, snaps on on arrival, and holds. Spread that evenly over
+# the cycle and the beam is never still and never absent -- which is how the
+# whole "Dark Moves" family (Teleport, Apparition, Stutter, Glitch, Ascension,
+# Blink, Freeze Frame) came through the port as ordinary lit sweeps, the exact
+# look each of them was written to be the opposite of.
+#
+# So a cue keeps its source timing literally: per step, how long the move in
+# takes and how long it is held afterwards. `path()` remains the default; this
+# is for the chases whose shape lives in their timing.
+
+
+def cue_at(spans: Sequence[tuple[float, float]], p: float) -> tuple[int, float]:
+    """(step index, progress 0..1 into that step's fade; 1.0 once holding).
+
+    `spans` is per step (fade, hold) in any single unit -- ms straight off the
+    source chaser is the intended one -- and is normalised here, so the caller
+    states durations once and never has to keep a set of fractions summing to 1.
+    """
+    total = sum(fade + hold for fade, hold in spans)
+    if total <= 0:
+        raise ValueError("a cue list needs at least one non-zero span")
+    x = (p % 1.0) * total
+    for index, (fade, hold) in enumerate(spans):
+        if x < fade:
+            return index, (x / fade if fade > 0 else 1.0)
+        x -= fade
+        if x < hold:
+            return index, 1.0
+        x -= hold
+    # Only reachable on the last step by floating-point drift at p ~ 1.
+    return len(spans) - 1, 1.0
+
+
+def cue_path(poses: Sequence[tuple[float, float]],
+             spans: Sequence[tuple[float, float]],
+             easing: Easing = ease_in_out, offset: float = 0.0,
+             bars: float = DEFAULT_BARS) -> Offset:
+    """Move into each pose over its own fade, then hold it for its own hold.
+
+    Wraps: step 0 is entered from the LAST pose, because a chase loops.
+    """
+    if len(poses) != len(spans):
+        raise ValueError(f"{len(poses)} poses but {len(spans)} spans")
+
+    def offset_at(p: float) -> tuple[float, float]:
+        index, t = cue_at(spans, p + offset)
+        a = poses[index - 1]                       # -1 wraps to the last pose
+        b = poses[index]
+        local = easing(t)
+        return (a[0] + (b[0] - a[0]) * local,
+                a[1] + (b[1] - a[1]) * local)
+    return _with_bars(offset_at, bars)
+
+
+def cue_value(values: Sequence[Optional[float]],
+              spans: Sequence[tuple[float, float]], p: float,
+              released: float = 0.0) -> float:
+    """One scalar -- a dimmer level -- through the same cue list.
+
+    `None` means the step does not SET this value, which is a different thing
+    from setting it to zero and is the whole mechanism of a dark move. A fade
+    belongs to the channels a step writes; anything it does not write is
+    released the instant the step begins, and drops to `released` at once. So a
+    dark step goes dark and THEN travels, rather than dimming out across the
+    travel -- the difference between a beam that vanishes and one you watch
+    fade away as it swings, which is the effect these routines are made of.
+
+    Values that ARE set ramp LINEARLY over the fade, unlike position: this is a
+    dimmer fade and the source console's are linear. That one fact is what
+    separates Teleport from Apparition -- identical poses, identical dark
+    travel, and Apparition's arrival step simply fades its dimmer up over three
+    seconds instead of snapping it. Both fall out of the same data.
+
+    `released` is 0 because this engine has no equivalent of the console's
+    master dimmer fader. There, an unwritten dimmer fell back to whatever that
+    fader was parked at, so "dark" was really "however low you left it" -- and
+    the whole family silently stopped working if it was left high. Here dark is
+    dark, which is what the routines were reaching for.
+    """
+    index, t = cue_at(spans, p)
+    target = values[index]
+    if target is None:
+        return released
+    previous = values[index - 1]
+    previous = released if previous is None else previous
+    return previous + (target - previous) * t
 
 
 def points_to_offsets(rig_geo: geo.RigGeometry, head: int,

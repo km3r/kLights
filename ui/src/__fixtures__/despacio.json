@@ -1,6 +1,7 @@
 {
   "type": "state",
   "rev": 7,
+  "version": "0.1.0",
   "event": "despacio",
   "clock": {
     "bpm": 124.0,
@@ -41,6 +42,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -51,6 +53,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -61,6 +64,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -71,6 +75,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -81,6 +86,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -91,6 +97,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -101,6 +108,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -111,6 +119,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -121,6 +130,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -131,6 +141,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -141,6 +152,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -151,6 +163,7 @@
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -161,6 +174,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -171,6 +185,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -181,6 +196,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -191,6 +207,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -201,6 +218,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -211,6 +229,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -221,6 +240,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -231,6 +251,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -241,6 +262,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -251,6 +273,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -261,6 +284,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -271,6 +295,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -281,6 +306,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -291,6 +317,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -301,6 +328,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -311,6 +339,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -321,6 +350,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -331,6 +361,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -341,6 +372,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -351,6 +383,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -361,6 +394,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -371,6 +405,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -381,6 +416,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -391,6 +427,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -401,6 +438,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -411,6 +449,7 @@
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -421,6 +460,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -431,6 +471,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -441,6 +482,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -451,6 +493,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -461,6 +504,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -471,6 +515,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -481,6 +526,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -491,6 +537,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -501,6 +548,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -511,6 +559,7 @@
       "manual_only": true,
       "kind": "level_path",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -521,6 +570,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -531,6 +581,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -541,6 +592,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -551,6 +603,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -561,6 +614,7 @@
       "manual_only": true,
       "kind": "level_path",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -571,6 +625,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -581,6 +636,7 @@
       "manual_only": true,
       "kind": "level_path",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -591,6 +647,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -601,6 +658,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -611,6 +669,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -621,6 +680,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -631,6 +691,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -641,6 +702,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -651,6 +713,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -661,6 +724,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -671,6 +735,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -681,6 +746,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -691,6 +757,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -701,6 +768,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -711,6 +779,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -721,6 +790,7 @@
       "manual_only": true,
       "kind": "level_path",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -731,6 +801,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -741,6 +812,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -751,6 +823,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -761,6 +834,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -771,6 +845,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -781,6 +856,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -791,6 +867,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -801,6 +878,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -811,6 +889,7 @@
       "manual_only": true,
       "kind": "level_path",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -821,6 +900,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -831,6 +911,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -841,6 +922,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -851,6 +933,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -861,6 +944,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -871,6 +955,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -881,6 +966,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -891,6 +977,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -901,6 +988,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -911,6 +999,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -921,6 +1010,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -931,6 +1021,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -941,6 +1032,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -951,6 +1043,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -961,6 +1054,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -971,6 +1065,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -981,6 +1076,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -991,6 +1087,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1001,6 +1098,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1011,6 +1109,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1021,6 +1120,7 @@
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1031,6 +1131,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1041,6 +1142,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1051,6 +1153,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1061,6 +1164,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1071,6 +1175,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1081,6 +1186,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1091,6 +1197,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1101,6 +1208,7 @@
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1111,6 +1219,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1121,6 +1230,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1131,6 +1241,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1141,6 +1252,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1151,6 +1263,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1161,6 +1274,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1171,6 +1285,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1181,6 +1296,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1191,6 +1307,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1201,6 +1318,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1211,6 +1329,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1221,6 +1340,7 @@
       "manual_only": true,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1231,6 +1351,7 @@
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1241,6 +1362,7 @@
       "manual_only": false,
       "kind": "color",
       "slot": "color",
+      "cued": false,
       "groups": [
         "pinspots"
       ],
@@ -1251,6 +1373,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1261,6 +1384,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1271,6 +1395,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1281,6 +1406,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1291,6 +1417,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1301,6 +1428,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1311,6 +1439,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1321,6 +1450,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1331,6 +1461,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1341,6 +1472,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1351,6 +1483,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1361,6 +1494,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1371,6 +1505,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1381,6 +1516,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1391,6 +1527,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1401,6 +1538,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1411,6 +1549,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1421,6 +1560,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1431,6 +1571,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1441,6 +1582,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1451,6 +1593,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1461,6 +1604,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1471,6 +1615,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1481,6 +1626,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1491,6 +1637,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1501,6 +1648,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1511,6 +1659,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1521,6 +1670,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1531,6 +1681,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1541,6 +1692,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1551,6 +1703,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1561,6 +1714,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1571,6 +1725,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1581,6 +1736,7 @@
       "manual_only": false,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1591,6 +1747,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1601,6 +1758,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1611,6 +1769,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1621,6 +1780,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1631,6 +1791,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1641,6 +1802,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1651,6 +1813,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1661,6 +1824,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1671,6 +1835,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1681,6 +1846,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1691,6 +1857,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1701,6 +1868,7 @@
       "manual_only": true,
       "kind": "intensity",
       "slot": "level",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1711,6 +1879,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1721,6 +1890,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1731,6 +1901,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1741,6 +1912,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1751,6 +1923,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1761,6 +1934,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1771,6 +1945,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1781,6 +1956,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1791,6 +1967,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -1801,6 +1978,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -1811,6 +1989,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1821,6 +2000,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1831,6 +2011,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1841,6 +2022,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1851,6 +2033,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -1861,6 +2044,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1871,6 +2055,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1881,6 +2066,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1891,6 +2077,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1901,6 +2088,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -1911,6 +2099,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -1921,6 +2110,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1931,6 +2121,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1941,6 +2132,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1951,6 +2143,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1961,6 +2154,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1971,6 +2165,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1981,6 +2176,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -1991,6 +2187,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2001,6 +2198,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -2011,6 +2209,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2021,6 +2220,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2031,6 +2231,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2041,6 +2242,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2051,6 +2253,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2061,6 +2264,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2071,6 +2275,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2081,6 +2286,7 @@
       "manual_only": true,
       "kind": "pose",
       "slot": "movement",
+      "cued": false,
       "groups": [
         "corner movers"
       ],
@@ -2091,6 +2297,7 @@
       "manual_only": false,
       "kind": "path",
       "slot": "movement",
+      "cued": true,
       "groups": [
         "corner movers"
       ],
@@ -2201,7 +2408,7 @@
         2971.0,
         13216.0
       ],
-      "beam_deg": 3.0,
+      "beam_deg": 8,
       "intensity": 0.9,
       "color": [
         1.0,
@@ -2237,7 +2444,7 @@
         2971.0,
         5072.0
       ],
-      "beam_deg": 3.0,
+      "beam_deg": 8,
       "intensity": 0.388,
       "color": [
         1.0,
@@ -2273,7 +2480,7 @@
         2971.0,
         5072.0
       ],
-      "beam_deg": 3.0,
+      "beam_deg": 8,
       "intensity": 0.0,
       "color": [
         1.0,
@@ -2309,7 +2516,7 @@
         2971.0,
         13216.0
       ],
-      "beam_deg": 3.0,
+      "beam_deg": 8,
       "intensity": 0.388,
       "color": [
         1.0,

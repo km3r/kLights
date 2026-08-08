@@ -53,12 +53,13 @@ export function ColorTab({ state, send }: {
       </Card>
 
       <Card title="Quick palette" right={
-        applied ? (
-          <button className="small"
-                  onClick={() => send({ type: "color", target, color: [1, 1, 1], clear: true })}>
-            Clear
-          </button>
-        ) : undefined
+        // Present always, disabled with nothing overridden. Appearing the
+        // instant a swatch is tapped, it made the heading taller and pushed the
+        // palette down — out from under the finger that had just tapped it.
+        <button className="small" disabled={!applied}
+                onClick={() => send({ type: "color", target, color: [1, 1, 1], clear: true })}>
+          Clear
+        </button>
       }>
         <div className="grid small">
           {state.palette.map((c, i) => (
