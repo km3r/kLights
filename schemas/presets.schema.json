@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cosmos-lights/schemas/presets.schema.json",
+  "title": "cosmos presets",
+  "description": "Named combinations of the three slots, plus the speed and master they were built at.",
+  "type": "object",
+  "properties": {
+    "presets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "movement": {
+            "type": "object"
+          },
+          "color": {
+            "type": "object"
+          },
+          "level": {
+            "type": "object"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0
+          },
+          "master": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

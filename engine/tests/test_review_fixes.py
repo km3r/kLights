@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine import geometry as geo
+from engine import rig
 from engine import state as statemod
 from engine.rig import load_rig
 from engine.runner import Runner
@@ -34,10 +35,23 @@ def check(label, ok, detail=""):
 
 
 def event_copy(tmp: str, **edits) -> Path:
-    """A throwaway event folder, optionally with edited JSON."""
+    """A throwaway event folder, optionally with edited JSON.
+
+    The venue is copied in as the event's own `venue.json` and the `venue` key
+    is dropped from the copied rig, so the temp event is self-contained however
+    the real one resolves its room. That also keeps this exercising the
+    per-event fallback, which is the path an event written before shared venues
+    existed still takes.
+    """
     d = Path(tmp)
-    for name in ("rig.json", "venue.json", "calibration.json"):
+    for name in ("rig.json", "calibration.json"):
         shutil.copy(EVENT / name, d / name)
+    shutil.copy(rig.venue_path(EVENT, json.loads(
+        (EVENT / "rig.json").read_text(encoding="utf-8"))), d / "venue.json")
+    rig_cfg = json.loads((d / "rig.json").read_text(encoding="utf-8"))
+    rig_cfg.pop("venue", None)
+    (d / "rig.json").write_text(json.dumps(rig_cfg, indent=2), encoding="utf-8")
+
     for name, mutate in edits.items():
         path = d / name
         data = json.loads(path.read_text(encoding="utf-8"))

@@ -36,6 +36,12 @@ jobs:
       - name: Run every suite
         run: python -m engine.tests
 
+      # schemas/ is generated from engine/config.py. Same argument as the
+      # bundle job: a generated artifact that is committed has to be proven
+      # to match its source, or it is just a stale file with authority.
+      - name: Schemas match engine/config.py
+        run: python shared/tools/gen_schemas.py
+
   ui:
     name: ui tests
     runs-on: ubuntu-latest

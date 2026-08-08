@@ -22,6 +22,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
 from engine.server import ShowController, ShowServer, load_presets
@@ -284,6 +285,18 @@ check("and applying it restores every slot at once",
 client.send({"type": "preset_delete", "name": "test preset"})
 after = client.wait_for(lambda s: not any(p["name"] == "test preset" for p in s["presets"]))
 check("and it can be deleted again", True)
+
+# save_presets rewrites the file in full, so every key that should outlive a
+# save has to be named in it. The first version did not name $schema, and the
+# first preset saved from the UI silently stripped the editor's completion out
+# of the file. Same trap as calibration.json, which is written the same way.
+presets_file = json.loads(
+    (REPO / "events" / "despacio" / "presets.json").read_text(encoding="utf-8"))
+check("saving presets keeps the file's $schema",
+      presets_file.get("$schema", "").endswith("presets.schema.json"),
+      f"{presets_file.get('$schema')!r}")
+check("saving presets keeps the file's explanatory comment",
+      "_comment" in presets_file)
 # The test writes into the real event directory; leave it as it was found.
 presets_path = REPO / "events" / "despacio" / "presets.json"
 if presets_path.exists() and not load_presets(presets_path.parent):
@@ -551,14 +564,23 @@ check("disabling the taper is announced in capitals",
 
 # Saving must keep the file's explanatory comments -- they carry the reasoning
 # for every number in it, and rewriting from the dataclass would discard them.
-venue_path = REPO / "events" / "despacio" / "venue.json"
+# Resolved, not assumed: the room may live in shared/venues/ and be shared with
+# another show, so this test edits whatever the engine actually loaded -- and
+# restores it in the `finally` below, which matters more now that the file is
+# not this event's private property.
+venue_path = rigmod.venue_path(REPO / "events" / "despacio", json.loads(
+    (REPO / "events" / "despacio" / "rig.json").read_text(encoding="utf-8")))
 original = venue_path.read_text(encoding="utf-8")
 try:
     client.send({"type": "taper", "enabled": True, "crowd_level": 0.4})
     client.send({"type": "venue", "crowd": {"head_band_min": 1450,
                                             "head_band_max": 2050}})
     client.send({"type": "venue_save"})
-    client.wait_for(lambda s: any("saved venue.json" in n for n in s["notices"]))
+    # The notice names the file actually written, which is the shared room when
+    # the event uses one -- the operator needs to know a save reaches beyond
+    # tonight's event folder.
+    client.wait_for(lambda s: any(f"saved {venue_path.name}" in n
+                                  for n in s["notices"]))
 
     saved = json.loads(venue_path.read_text(encoding="utf-8"))
     check("saved values round-trip",

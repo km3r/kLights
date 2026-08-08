@@ -10,10 +10,11 @@ Millimetres throughout, y up, origin at the front-left floor corner.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from . import config as configmod
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,10 @@ class Venue:
 
 
 def load_venue(path: Path) -> Venue:
-    cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+    # Validated before a single field is read, so a typo is one readable
+    # message naming the file and the key rather than a KeyError three modules
+    # deep. Everything below can then assume its fields exist and are numbers.
+    cfg = configmod.load(Path(path), configmod.VENUE)
     ball = cfg["ball"]
 
     crowd = None

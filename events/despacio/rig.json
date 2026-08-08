@@ -1,9 +1,10 @@
 {
+  "$schema": "../../schemas/rig.schema.json",
   "_comment": [
     "WHAT IS PLUGGED IN. Selects units from shared/inventory.json and gives each",
     "one an address, a position and a set of tags. It does not describe the",
-    "hardware (that is the .qxf), the room (venue.json), or what was measured on",
-    "the night (calibration.json).",
+    "hardware (that is the .qxf), the room ('venue' below names one in",
+    "shared/venues/), or what was measured on the night (calibration.json).",
     "",
     "Looks reference TAGS, never fixture ids or names. That is what lets a look",
     "built for these four heads run on a club rig with eight.",
@@ -39,6 +40,7 @@
   ],
 
   "name": "despacio",
+  "venue": "despacio-room",
   "mount_mode": "venue",
 
   "fixtures": [

@@ -1,4 +1,5 @@
 {
+  "$schema": "../schemas/inventory.schema.json",
   "_comment": [
     "Hardware we actually own. This is the durable asset — events come and go,",
     "the inventory carries forward. An event's rig selects units from here and",

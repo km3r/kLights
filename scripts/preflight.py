@@ -73,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         steps.append(Step("engine test suites",
                           [sys.executable, "-m", "engine.tests"]))
     steps += [
+        Step("schemas match config.py",
+             [sys.executable, "shared/tools/gen_schemas.py"]),
         Step("patch sheet validates",
              [sys.executable, "shared/tools/validate_patch.py",
               "--event", args.event]),

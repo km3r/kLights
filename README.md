@@ -33,23 +33,36 @@ lights/
 │   └── dist/                 Committed build, so a venue needs no Node
 ├── previz/                   Unreal previz: an Art-Net listener, never in the path
 ├── spike/                    Timing spike that settled the frame-clock question
+├── schemas/                  JSON Schema, generated from engine/config.py
+├── scripts/preflight.py      Everything that must be green before a venue
 ├── shared/                   Reusable across every event
 │   ├── fixtures/             .qxf fixture definitions, one per hardware model
+│   ├── venues/               Rooms. A venue outlives any one show
 │   ├── gdtf/                 Generated GDTF profiles for BlenderDMX
 │   ├── inventory.json        The units we actually own
 │   └── tools/                Art-Net utilities, library porter, GDTF builder,
-│                             patch validator, BlenderDMX helpers
+│                             patch validator, schema generator
 └── events/
     ├── cosmos26/             ARCHIVED — the Year-3 Cosmos rig
     └── despacio/             4 moving heads + 2 pinspots on a mirror ball
 ```
 
-**The organizing rule:** a file belongs to an event if it encodes *this room,
-this rig, or this night* — patch sheets, venue geometry, calibration, look
-libraries, workspaces, 3D scenes. It belongs in `shared/` if it describes
-*hardware we own* or *a thing we do to any show*, and in `engine/` if it is
-show logic that does not know which event it is running. Events come and go;
-the inventory, the tools and the engine carry forward.
+**The organizing rule:** a file belongs to an event if it encodes *this rig or
+this night* — patch, calibration, look library, workspace. It belongs in
+`shared/` if it describes *hardware we own*, *a room*, or *a thing we do to any
+show*, and in `engine/` if it is show logic that does not know which event it is
+running. Events come and go; the inventory, the rooms, the tools and the engine
+carry forward.
+
+A **room** is shared because it outlives any one show: `rig.json` names one with
+`"venue": "despacio-room"` and it resolves to `shared/venues/despacio-room.json`.
+An event with no `venue` key keeps its own `venue.json`, so a second night in the
+same room is a one-line change rather than a forked copy of the geometry the
+safety taper reads.
+
+Every config file is validated on load against a declared shape, and names a
+generated JSON Schema in `$schema`, so an editor offers completion and inline
+errors while you hand-edit at the venue.
 
 ## Events
 

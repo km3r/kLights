@@ -62,6 +62,19 @@ class LibraryEntry:
     # UI filters on, because a pinspot palette and a mover palette are two
     # different decisions and were sharing one list.
     groups: tuple[str, ...] = ()
+    # Which head each column of `offsets` / `steps` was authored for, in order.
+    #
+    # Without this those arrays are positional, so they bind to whatever head
+    # happens to sit at that index. Re-hang the rig with the heads in a
+    # different order, or add a fifth, and every look silently re-points --
+    # silently because each head still moves smoothly to a position that was
+    # authored, just not the one authored for it. Naming the heads makes the
+    # binding survive a re-patch, and makes a look that no longer fits say so.
+    #
+    # Optional, and absent from everything ported before it existed. When it is
+    # absent the arrays stay positional, which is what those looks were authored
+    # against and therefore still correct for them.
+    fixtures: Optional[tuple[str, ...]] = None
     offsets: Optional[list[list[float]]] = None
     steps: Optional[list[list[list[float]]]] = None
     # A CUED movement chase: per step, (fade ms, hold ms) from the source, and
@@ -138,6 +151,7 @@ def load_entries(path: Path) -> list[LibraryEntry]:
         out.append(LibraryEntry(
             name=raw["name"], kind=raw["kind"], tags=tuple(raw.get("tags", [])),
             groups=tuple(raw.get("groups", [])),
+            fixtures=(tuple(raw["fixtures"]) if raw.get("fixtures") else None),
             offsets=raw.get("offsets"), steps=raw.get("steps"),
             step_spans=raw.get("step_spans"), step_levels=raw.get("step_levels"),
             frames=raw.get("frames"), levels=raw.get("levels"),
@@ -152,21 +166,64 @@ def load_entries(path: Path) -> list[LibraryEntry]:
 
 # ------------------------------------------------------------------ layers --
 
-def pose_offsets(offsets: list[list[float]]):
-    """A held position: each head sits at its own stored offset.
+def column_for(fixtures: Optional[tuple[str, ...]], width: int):
+    """Which column of a per-head array a given rig head should read.
 
-    Indexed by head, so a rig with more heads than the library was authored for
-    wraps rather than failing. Wrapping is the least surprising thing an 8-head
-    club rig can do with a 4-head look -- the alternative is refusing to run it.
+    Returns `pick(ctx, head) -> int`.
+
+    Two behaviours, and which one applies is a property of the look:
+
+      * **No `fixtures`** -- positional, `head % width`. Every look ported from
+        QLC+ is this, and it is right for them: they were authored against a
+        rig whose head order is the order they were written down in. Wrapping
+        rather than failing is deliberate, so an 8-head club rig can run a
+        4-head look instead of refusing to.
+
+      * **With `fixtures`** -- by name. The head's own name is looked up in the
+        authored list, so re-ordering the patch, or inserting a head, moves the
+        offsets with the fixture instead of leaving them behind. A head the look
+        does not name falls back to positional, which is what lets a 4-head look
+        still fill an 8-head rig.
+
+    The resolution is cached per rig, because it is a name lookup on every head
+    on every frame otherwise, and the answer only changes when the patch does.
     """
+    if not fixtures:
+        def pick_positional(ctx, head: int) -> int:
+            return head % width
+        return pick_positional
+
+    index_of = {name: i for i, name in enumerate(fixtures)}
+    cache: dict[int, list[int]] = {}
+
+    def pick_named(ctx, head: int) -> int:
+        geometry = ctx.geometry
+        if geometry is None:
+            return head % width
+        key = id(geometry)
+        mapping = cache.get(key)
+        if mapping is None:
+            mapping = [index_of.get(h.name, i % width)
+                       for i, h in enumerate(geometry.heads)]
+            cache[key] = mapping
+        return mapping[head] if head < len(mapping) else head % width
+    return pick_named
+
+
+def pose_offsets(offsets: list[list[float]],
+                 fixtures: Optional[tuple[str, ...]] = None):
+    """A held position: each head sits at its own stored offset."""
+    pick = column_for(fixtures, len(offsets))
+
     def offset_for(ctx, head: int) -> tuple[float, float]:
-        pair = offsets[head % len(offsets)]
+        pair = offsets[pick(ctx, head)]
         return (pair[0], pair[1])
     return offset_for
 
 
 def path_offsets(steps: list[list[list[float]]], bars: float,
-                 easing=motion.ease_in_out):
+                 easing=motion.ease_in_out,
+                 fixtures: Optional[tuple[str, ...]] = None):
     """A route: per head, interpolate through that head's column of the steps.
 
     The transpose matters. The port stores steps as [step][head] because that is
@@ -176,14 +233,16 @@ def path_offsets(steps: list[list[list[float]]], bars: float,
     per_head = [motion.path([tuple(step[h % len(step)]) for step in steps],
                             easing=easing)
                 for h in range(len(steps[0]))]
+    pick = column_for(fixtures, len(per_head))
 
     def offset_for(ctx, head: int) -> tuple[float, float]:
-        return per_head[head % len(per_head)](motion.phase(ctx.motion_bar, bars))
+        return per_head[pick(ctx, head)](motion.phase(ctx.motion_bar, bars))
     return offset_for
 
 
 def cue_offsets(steps: list[list[list[float]]], spans: list[list[float]],
-                bars: float, easing=motion.ease_in_out):
+                bars: float, easing=motion.ease_in_out,
+                fixtures: Optional[tuple[str, ...]] = None):
     """A route whose steps keep their own travel and hold times.
 
     Same transpose as `path_offsets` -- the port stores [step][head] because
@@ -194,9 +253,10 @@ def cue_offsets(steps: list[list[list[float]]], spans: list[list[float]],
     per_head = [motion.cue_path([tuple(step[h % len(step)]) for step in steps],
                                 pairs, easing=easing)
                 for h in range(len(steps[0]))]
+    pick = column_for(fixtures, len(per_head))
 
     def offset_for(ctx, head: int) -> tuple[float, float]:
-        return per_head[head % len(per_head)](motion.phase(ctx.motion_bar, bars))
+        return per_head[pick(ctx, head)](motion.phase(ctx.motion_bar, bars))
     return offset_for
 
 
@@ -389,17 +449,19 @@ def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
         return
     if entry.offsets is not None:
         show.movement.append(statemod.move_layer(
-            pose_offsets(entry.offsets), tags=("movers",)))
+            pose_offsets(entry.offsets, entry.fixtures), tags=("movers",)))
     elif entry.is_cued:
         bars = entry.bars or DEFAULT_BARS
         show.movement.append(statemod.move_layer(
-            cue_offsets(entry.steps, entry.step_spans, bars), tags=("movers",)))
+            cue_offsets(entry.steps, entry.step_spans, bars,
+                        fixtures=entry.fixtures), tags=("movers",)))
         if entry.step_levels:
             show.movement.append(cue_level_layer(
                 entry.step_levels, entry.step_spans, bars, entry.groups))
     elif entry.steps is not None:
         show.movement.append(statemod.move_layer(
-            path_offsets(entry.steps, entry.bars or DEFAULT_BARS),
+            path_offsets(entry.steps, entry.bars or DEFAULT_BARS,
+                         fixtures=entry.fixtures),
             tags=("movers",)))
 
 

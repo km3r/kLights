@@ -1,4 +1,5 @@
 {
+  "$schema": "../../schemas/presets.schema.json",
   "_comment": [
     "Named combinations of the three slots -- movement, colour and",
     "level -- plus the speed and master they were built at.",

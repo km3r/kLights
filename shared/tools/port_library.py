@@ -105,6 +105,12 @@ class PortedLook:
     # with four entries for one routine; they stay reachable, but behind the
     # chase rather than beside it.
     step_of: Optional[str] = None
+    # Which head each column of `offsets` / `steps` belongs to, in the order the
+    # porter walked them (`rig.movers`). Those arrays are otherwise positional,
+    # so re-ordering the patch or adding a head would rebind every column to a
+    # different fixture -- silently, because each head still moves to a position
+    # that was authored, just not its own. See engine/library.column_for.
+    fixtures: Optional[list[str]] = None
     source: str = ""
     notes: list[str] = field(default_factory=list)
 
@@ -113,7 +119,7 @@ class PortedLook:
                      "groups": self.groups}
         if self.step_of:
             out["step_of"] = self.step_of
-        for key in ("offsets", "steps", "step_spans", "step_levels",
+        for key in ("fixtures", "offsets", "steps", "step_spans", "step_levels",
                     "frames", "levels", "strobe_steps",
                     "color", "colors", "whites", "bars", "intensity",
                     "intensities", "strobes"):
@@ -197,6 +203,16 @@ class Porter:
         return sorted(wanted)
 
     # -- decoding ---------------------------------------------------------
+
+    def mover_names(self) -> list[str]:
+        """The head order every per-head array in this port is built against.
+
+        One source for it, because `offsets_for` and the chaser porter both walk
+        `rig.movers` and the emitted `fixtures` list has to agree with them
+        exactly -- a `fixtures` list that disagrees with its own offsets is
+        worse than no list at all, since the engine would trust it.
+        """
+        return [f.name for f in self.rig.movers]
 
     def offsets_for(self, values_by_fixture: dict[int, dict[int, int]]
                     ) -> Optional[list[list[float]]]:
@@ -419,6 +435,7 @@ class Porter:
         look = PortedLook(name=name, kind=kind,
                           tags=["movers"] if offsets else [],
                           groups=self.groups_for(written),
+                          fixtures=self.mover_names() if offsets else None,
                           offsets=offsets, color=color, intensity=intensity,
                           intensities=intensities, strobes=strobes,
                           whites={k: v for k, v in whites.items() if v > 0} or None,
@@ -532,7 +549,8 @@ class Porter:
 
         return PortedLook(
             name=name, kind="path", tags=["movers"],
-            groups=self.groups_for(f.name for f in self.rig.movers), steps=steps,
+            groups=self.groups_for(f.name for f in self.rig.movers),
+            fixtures=self.mover_names(), steps=steps,
             step_spans=spans if cued else None,
             step_levels=levels if cued else None,
             bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",

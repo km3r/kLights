@@ -11,6 +11,43 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F13, config as a contract
+
+- **`engine/config.py`** — every config file is now validated on load against a
+  declared shape, reporting *every* problem at once with the file, the path
+  within it, what was found and what to do about it. A hand-edited file usually
+  has the same mistake in several places, and fixing them one restart at a time
+  is how a load-in runs late. Previously a typo was a `KeyError` three modules
+  deep and the spec lived only in the files' own `_comment` blocks.
+- **Atomic config writes.** `venue.json`, `calibration.json` and `presets.json`
+  are written from the running show; they used a plain `write_text`, which
+  truncates then writes, so a crash at the wrong instant left a zero-length
+  calibration and a show that would not start. Now written beside the target and
+  renamed, with one `.bak` kept. Verified by simulating a failure between write
+  and rename.
+- **`shared/venues/`** — a room outlives a show. `rig.json` names one with
+  `"venue": "despacio-room"`; an event with no `venue` key keeps its own
+  `venue.json`. despacio's room moved to `shared/venues/despacio-room.json`.
+  Note that saving the venue from the UI now edits the *shared* file, which is
+  the intent — a crowd zone measured tonight is a fact about the room.
+- **`schemas/`** — JSON Schema for all six formats, **generated** from
+  `engine/config.py` by `shared/tools/gen_schemas.py` rather than hand-written,
+  because two descriptions of one file agree only on the day they are written.
+  Each config names its schema in `$schema`, so VS Code gives completion and
+  inline validation with no extension. CI and preflight fail on drift.
+- **The inventory is load-bearing.** `Rig.warnings()` now checks the patch
+  against `shared/inventory.json`: a model that is not there, more units patched
+  than owned, or one the inventory marks `unverified`. Warnings, not errors —
+  when the two disagree the inventory is at least as likely to be the stale one.
+- **Looks can bind offsets by fixture name.** A look's per-head arrays were
+  positional, so re-ordering the patch or adding a head silently re-pointed
+  every look — silently, because each head still moved to a position that was
+  authored, just not its own. Entries may now carry `"fixtures": [names]`; the
+  porter emits it, and despacio's 206 looks were regenerated to include it
+  (a purely additive diff — 774 insertions, no deletions, with QLC+ parity and
+  the pose round-trip unchanged). Looks without it stay positional, which is
+  what they were authored against.
+
 ### Added — F12, the guards
 
 - **CI** (`.github/workflows/ci.yml`): the engine suites on Linux and Windows

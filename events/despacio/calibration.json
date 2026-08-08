@@ -1,4 +1,5 @@
 {
+  "$schema": "../../schemas/calibration.schema.json",
   "_comment": [
     "WHAT THIS RIG MEASURED IN THIS ROOM, ON THIS DAY. The only file of the three",
     "that is expected to change between the load-in and the doors, and again the",

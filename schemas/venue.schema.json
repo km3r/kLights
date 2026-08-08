@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cosmos-lights/schemas/venue.schema.json",
+  "title": "cosmos venue",
+  "description": "A room: its size, the mirror ball, the crowd zone, the canopy and truss, and the safety taper policy.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 1,
+      "description": "the room's width in MILLIMETRES, e.g. 18288 for 60 ft"
+    },
+    "depth": {
+      "type": "number",
+      "minimum": 1,
+      "description": "millimetres"
+    },
+    "height": {
+      "type": "number",
+      "minimum": 1,
+      "description": "millimetres"
+    },
+    "ball": {
+      "type": "object",
+      "description": "the mirror ball's centre, in millimetres from the front-left floor corner",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    "ball_radius": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 2000,
+      "description": "the ball's RADIUS in millimetres. This one is safety-relevant and errs the unsafe way when too big -- see docs/SAFETY.md"
+    },
+    "apex_height": {
+      "type": "number",
+      "minimum": 1
+    },
+    "elev_extreme_deg": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 90
+    },
+    "crowd_zone": {
+      "type": "object",
+      "properties": {
+        "min_x": {
+          "type": "number"
+        },
+        "max_x": {
+          "type": "number"
+        },
+        "min_z": {
+          "type": "number"
+        },
+        "max_z": {
+          "type": "number"
+        },
+        "head_band_min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "the bottom of the band the taper protects, in millimetres -- roughly seated-tall"
+        },
+        "head_band_max": {
+          "type": "number",
+          "minimum": 0,
+          "description": "the top of the band, in millimetres -- be generous, someone on shoulders is who gets hit"
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_z",
+        "max_z",
+        "head_band_min",
+        "head_band_max"
+      ]
+    },
+    "canopy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "center": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "z"
+          ]
+        }
+      },
+      "required": [
+        "height",
+        "radius"
+      ]
+    },
+    "truss": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "min_x": {
+          "type": "number"
+        },
+        "max_x": {
+          "type": "number"
+        },
+        "min_z": {
+          "type": "number"
+        },
+        "max_z": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bar": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_z",
+        "max_z",
+        "height"
+      ]
+    },
+    "taper": {
+      "type": "object",
+      "properties": {
+        "crowd_level": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "what a beam over the crowd is dimmed TO, 0-1. 0 is a hard guard and costs the floor sweeps"
+        },
+        "margin_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 90
+        },
+        "slew_per_second": {
+          "type": "number",
+          "minimum": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "width",
+    "depth",
+    "height",
+    "ball"
+  ],
+  "additionalProperties": true
+}

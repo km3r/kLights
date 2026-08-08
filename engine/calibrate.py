@@ -43,6 +43,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence
 
+from . import config as configmod
 from . import geometry as geo
 from .venue import Venue
 
@@ -384,7 +385,10 @@ def save_snapshot(event_dir: Path, calibration: dict,
         path = out / f"{stem}-{serial}.json"
         serial += 1
 
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    # No backup: the filename is already unique, so there is never an existing
+    # file to preserve, and a .bak beside every snapshot would double the
+    # directory for nothing.
+    configmod.write_json_atomic(path, payload, backup=False)
     return path
 
 

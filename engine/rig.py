@@ -38,6 +38,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import config as configmod
 from . import geometry as geo
 from .venue import Venue, load_venue
 
@@ -551,6 +552,12 @@ class Rig:
     fixtures: tuple[PatchedFixture, ...]
     geometry: Optional[geo.RigGeometry] = None
     venue: Optional[Venue] = None
+    # Where the venue was actually read from, which is no longer derivable from
+    # the event directory now that a room can live in shared/venues/. Anything
+    # that reads or writes the room -- the taper policy, the UI's venue form --
+    # has to use this rather than re-deriving a path and quietly editing the
+    # wrong file.
+    venue_file: Optional[Path] = None
 
     def by_tag(self, tag: str) -> tuple[PatchedFixture, ...]:
         return tuple(f for f in self.fixtures if tag in f.tags)
@@ -661,12 +668,63 @@ class Rig:
                     f"{f.mode!r} has no pan/tilt")
         return errors
 
+    def inventory_warnings(self, inventory: Optional[dict] = None) -> list[str]:
+        """Does the patch agree with the hardware we actually own?
+
+        `shared/inventory.json` called itself "the durable asset -- events come
+        and go, the inventory carries forward", and nothing read it. So a rig
+        could patch six of a fixture we own two of, or a model not in the
+        inventory at all, and the first symptom was a dark fixture at the venue.
+
+        Warnings rather than errors, deliberately. The inventory is a record of
+        what is in the road cases, maintained by a person; the patch is a
+        statement about what is plugged in right now. When they disagree the
+        inventory is at least as likely to be the stale one, and refusing to
+        start the show over a bookkeeping mismatch would be the wrong trade at
+        4pm. `status: unverified` is called out for the same reason -- the
+        inventory itself flags those as unconfirmed.
+        """
+        if inventory is None:
+            try:
+                inventory = configmod.load(REPO / "shared" / "inventory.json",
+                                           configmod.INVENTORY)
+            except configmod.ConfigError:
+                # No inventory, or an unreadable one, is not a reason to stop.
+                return []
+
+        owned = {(e["manufacturer"], e["model"]): e
+                 for e in inventory.get("fixtures", [])}
+        used: dict[tuple[str, str], list[str]] = {}
+        for f in self.fixtures:
+            key = (f.profile.manufacturer, f.profile.model)
+            used.setdefault(key, []).append(f.name)
+
+        out: list[str] = []
+        for (manufacturer, model), names in sorted(used.items()):
+            entry = owned.get((manufacturer, model))
+            if entry is None:
+                out.append(
+                    f"{manufacturer} {model}: patched {len(names)}x but not in "
+                    f"shared/inventory.json -- add it there, or fix the "
+                    f"manufacturer/model spelling in rig.json")
+                continue
+            if len(names) > entry.get("count", 0):
+                out.append(
+                    f"{manufacturer} {model}: rig patches {len(names)} but the "
+                    f"inventory says we own {entry.get('count', 0)} "
+                    f"({', '.join(names)})")
+            if entry.get("status") == "unverified":
+                out.append(
+                    f"{manufacturer} {model}: inventory marks this 'unverified' "
+                    f"-- confirm we still own it before relying on it")
+        return out
+
     def warnings(self) -> list[str]:
         """Things worth knowing that are not errors: channels the engine has no
         role for, and cells it will leave dark. Separate from validate() because
         a rig with these is still perfectly runnable -- it just is not doing
         everything the hardware can."""
-        out: list[str] = []
+        out: list[str] = list(self.inventory_warnings())
         for f in self.fixtures:
             dupes = f.profile.duplicate_roles(f.mode)
             for role, names in dupes.items():
@@ -694,6 +752,50 @@ class Rig:
 
 # ------------------------------------------------------------------ loading --
 
+VENUE_LIBRARY = REPO / "shared" / "venues"
+
+
+def venue_path(event_dir: Path, rig_cfg: dict) -> Path:
+    """Where this event's room description lives.
+
+    A venue outlives a show. The same room hosts a second night with a
+    different rig, a different library and a different set list, and the walls
+    do not move -- so keeping venue.json inside the event meant a second show in
+    the same room forked the file, and the two copies then drifted on exactly
+    the numbers the safety taper reads.
+
+    So `rig.json` may name a room in `shared/venues/` instead:
+
+        "venue": "despacio-room"
+
+    An event with no `venue` key keeps its own `venue.json`, which is what every
+    event written before this did. Falling back rather than migrating means this
+    change cannot break a checkout that has not been touched yet.
+    """
+    named = rig_cfg.get("venue")
+    if not named:
+        return event_dir / "venue.json"
+
+    # A path wins over a library name, so an event can point at a room that is
+    # not in the shared library yet without having to put it there first.
+    as_path = Path(named)
+    if as_path.suffix == ".json" and (event_dir / as_path).exists():
+        return event_dir / as_path
+    if as_path.is_absolute() and as_path.exists():
+        return as_path
+
+    candidate = VENUE_LIBRARY / f"{named}.json"
+    if not candidate.exists():
+        available = sorted(p.stem for p in VENUE_LIBRARY.glob("*.json")) \
+            if VENUE_LIBRARY.is_dir() else []
+        raise configmod.ConfigError(event_dir / "rig.json", [
+            f"venue {named!r} is not in {VENUE_LIBRARY}\n"
+            f"      fix: " + (f"did you mean one of {available}?" if available
+                              else f"create {candidate}, or drop the 'venue' key "
+                                   f"to use this event's own venue.json")])
+    return candidate
+
+
 def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
     """Load `rig.json` + `venue.json` + `calibration.json` from an event folder.
 
@@ -704,11 +806,12 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
     the one that gets re-measured after an overnight nudge (F5).
     """
     library = ProfileLibrary() if library is None else library
-    rig_cfg = json.loads((event_dir / "rig.json").read_text(encoding="utf-8"))
-    venue = load_venue(event_dir / "venue.json")
+    rig_cfg = configmod.load(event_dir / "rig.json", configmod.RIG)
+    venue_file = venue_path(event_dir, rig_cfg)
+    venue = load_venue(venue_file)
 
     cal_path = event_dir / "calibration.json"
-    cal_cfg = (json.loads(cal_path.read_text(encoding="utf-8"))
+    cal_cfg = (configmod.load(cal_path, configmod.CALIBRATION)
                if cal_path.exists() else {"heads": []})
 
     mount_mode = rig_cfg.get("mount_mode", "venue")
@@ -799,7 +902,8 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
         elev_extreme_deg=venue.elev_extreme_deg) if heads else None
 
     return Rig(name=rig_cfg.get("name", event_dir.name),
-               fixtures=tuple(fixtures), geometry=geometry, venue=venue)
+               fixtures=tuple(fixtures), geometry=geometry, venue=venue,
+               venue_file=venue_file)
 
 
 if __name__ == "__main__":

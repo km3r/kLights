@@ -44,6 +44,7 @@ from typing import Any, Callable, Optional
 from . import __version__
 from . import auto as autom
 from . import calibrate as calibmod
+from . import config as configmod
 from . import clock as clockmod
 from . import geometry as geo
 from . import library as libmod
@@ -106,8 +107,12 @@ class ShowController:
         # A taper policy saved from the UI has to survive a restart, or saving
         # it is theatre. venue.json is the right home: the policy is a property
         # of the room and the crowd in it, not of the rig.
+        # rig.venue_file, not event_dir/venue.json: the room may live in
+        # shared/venues/ and be shared with another show, and reading the taper
+        # from a path this class derives itself would silently pick up a stale
+        # per-event file that nothing else is using.
         taper_cfg = json.loads(
-            (self.event_dir / "venue.json").read_text(encoding="utf-8")
+            self.rig.venue_file.read_text(encoding="utf-8")
         ).get("taper", {})
         taper = safetymod.TaperConfig(
             crowd_level=float(taper_cfg.get("crowd_level", 0.5)),
@@ -608,10 +613,13 @@ class ShowController:
                 "fixture": head.name,
                 "ball_dmx": list(head.calibrated_ball_dmx) if head.calibrated_ball_dmx else None,
                 "pan_invert": head.pan_invert, "tilt_invert": head.tilt_invert}))
-        payload = {"measured": time.strftime("%Y-%m-%d"),
+        # Same trap as save_presets: this rewrites the file, so every key that
+        # should survive a solve has to be named here.
+        payload = {"$schema": "../../schemas/calibration.schema.json",
+                   "measured": time.strftime("%Y-%m-%d"),
                    "mount_mode": self.rig.geometry.mount_mode,
                    "source": "solved from the web UI", "heads": heads}
-        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        configmod.write_json_atomic(path, payload)
         calibmod.save_snapshot(self.event_dir, payload, note="after web solve")
         self.note(f"wrote {path.name}; restart the engine to load it")
 
@@ -700,8 +708,14 @@ class ShowController:
         it is -- the head band's reasoning, why the ball radius is an estimate.
         Rewriting it from the dataclass would throw all of that away, so this
         edits the parsed JSON in place and leaves every key it does not own.
+
+        Note where it writes: if the room came from `shared/venues/`, this edits
+        the SHARED file, and the next show in that room inherits the change.
+        That is the intent -- a crowd zone measured tonight is a fact about the
+        room, not about tonight -- but it is worth knowing before you drag the
+        canopy slider.
         """
-        path = self.event_dir / "venue.json"
+        path = self.rig.venue_file
         cfg = json.loads(path.read_text(encoding="utf-8"))
         venue = self.rig.venue
         if venue is None:
@@ -725,7 +739,7 @@ class ShowController:
                         "slew_per_second": taper.slew_per_second,
                         "enabled": taper.enabled}
 
-        path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        configmod.write_json_atomic(path, cfg)
         self.note(f"saved {path.name}")
 
     def _cmd_hello(self, m: dict, now: float) -> None:
@@ -859,17 +873,21 @@ def load_presets(event_dir: Path) -> list[dict]:
 
 
 def save_presets(event_dir: Path, presets: list[dict]) -> None:
-    (Path(event_dir) / "presets.json").write_text(
-        json.dumps({
-            "_comment": [
-                "Named combinations of the three slots -- movement, colour and",
-                "level -- plus the speed and master they were built at.",
-                "",
-                "Written by the UI. Safe to hand-edit; a preset naming a look",
-                "that no longer exists applies the rest and skips that slot.",
-            ],
-            "presets": presets,
-        }, indent=2) + "\n", encoding="utf-8")
+    configmod.write_json_atomic(Path(event_dir) / "presets.json", {
+        # Rewritten in full on every save, so anything not named here is lost --
+        # which is how the first version of this quietly stripped the $schema
+        # line the moment the UI saved a preset, taking the editor's completion
+        # with it.
+        "$schema": "../../schemas/presets.schema.json",
+        "_comment": [
+            "Named combinations of the three slots -- movement, colour and",
+            "level -- plus the speed and master they were built at.",
+            "",
+            "Written by the UI. Safe to hand-edit; a preset naming a look",
+            "that no longer exists applies the rest and skips that slot.",
+        ],
+        "presets": presets,
+    })
 
 
 def venue_summary(venue) -> dict:
