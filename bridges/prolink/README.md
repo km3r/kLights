@@ -102,10 +102,35 @@ Three things to get right, each of which fails quietly otherwise:
   out belongs to neither. Dropped packets show in the Sync row's rejected count;
   following the last deck that spoke would be invisible.
 
-Two caveats worth knowing before relying on it. Memory reading is tied to exact
-rekordbox builds — the supported list is specific 7.2.x versions, and a
-rekordbox update can break it until offsets are republished. And it is a
-licensed tool; the evaluation covers one version.
+#### What the licence actually gates — and why to pin rekordbox
+
+The **software is GPL-3.0** and entirely on GitHub. Nothing is held back in the
+code, and it can be forked and built from source freely.
+
+What is sold is `data/offsets`: a text file of base addresses and pointer chains
+into rekordbox's memory, one block per rekordbox build. The copy committed to
+the repo carries exactly one — **7.2.2**. A licence buys access to the update
+server, which is where blocks for 7.2.3 through 7.2.17 (and 6.8.5) live. It is a
+data subscription, not a feature gate.
+
+So the free path is real: **pin rekordbox to 7.2.2** and the committed offsets
+are all you need.
+
+Pin it anyway. A show laptop should not be auto-updating rekordbox the week of a
+gig, and here an update does not degrade the sync — it *ends* it, because the
+addresses stop meaning anything. Treat the rekordbox version like the rest of
+the show config: chosen deliberately, changed on purpose, verified with
+`bridge.py --fake --osc` before it matters.
+
+Buy the licence when a newer rekordbox is worth having. Forking to hunt offsets
+yourself is permitted by the GPL and is the wrong trade: it is reverse
+engineering pointer chains into a stripped release binary, and it has to be
+redone for **every** rekordbox update, forever.
+
+The other caveat: memory reading is inherently version-brittle, so whatever
+route is taken, the failure mode is "sync stops" rather than "sync drifts". The
+console's Sync row goes to NO SIGNAL and take-over is one tap — which is the
+same handling as any other bridge dying, and the reason that was built first.
 
 ### Rejected: the now-playing tools
 
