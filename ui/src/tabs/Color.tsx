@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Card, rgbCss } from "../components";
+import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState, RGB } from "../types";
 
@@ -20,14 +21,33 @@ export function ColorTab({ state, send }: {
 }) {
   const [target, setTarget] = useState<string>("all");
 
-  const targets = useMemo(() => {
+  // Groups and individual fixtures, kept APART. They used to be one flat row of
+  // buttons, which is linear in fixture count — fine for six, unusable for
+  // forty, and the review's finding #17. Groups are what anyone reaches for;
+  // one head at a time is the exception, so it goes behind a disclosure.
+  const groups = useMemo(() => {
     const tags = new Set<string>();
     state.fixtures.forEach((f) => f.tags.forEach((t) => tags.add(t)));
-    return ["all", ...Array.from(tags).sort(),
-            ...state.fixtures.map((f) => f.name)];
+    return ["all", ...Array.from(tags).sort()];
   }, [state.fixtures]);
 
   const applied = state.color_overrides[target];
+  // Opened by default when the current target IS a fixture, so a colour set on
+  // one head does not appear to have been forgotten after a reload.
+  const single = !groups.includes(target);
+
+  const swatch = (t: string) => (
+    <button key={t} className={target === t ? "on" : ""} onClick={() => setTarget(t)}>
+      {t}
+      {state.color_overrides[t] && (
+        <span className="chip" style={{
+          marginLeft: 4,
+          background: rgbCss(state.color_overrides[t]),
+          borderColor: "transparent",
+        }} />
+      )}
+    </button>
+  );
 
   return (
     <>
@@ -35,21 +55,15 @@ export function ColorTab({ state, send }: {
                   empty="Nothing loaded — colour comes from the palette." />
 
       <Card title="Applies to">
-        <div className="grid small">
-          {targets.map((t) => (
-            <button key={t} className={target === t ? "on" : ""}
-                    onClick={() => setTarget(t)}>
-              {t}
-              {state.color_overrides[t] && (
-                <span className="chip" style={{
-                  marginLeft: 4,
-                  background: rgbCss(state.color_overrides[t]),
-                  borderColor: "transparent",
-                }} />
-              )}
-            </button>
-          ))}
-        </div>
+        <div className="grid small">{groups.map(swatch)}</div>
+        <details open={single} style={{ marginTop: "0.5rem" }}>
+          <summary className="small muted">
+            One fixture at a time ({state.fixtures.length})
+          </summary>
+          <div className="grid small" style={{ marginTop: "0.4rem" }}>
+            {state.fixtures.map((f) => swatch(f.name))}
+          </div>
+        </details>
       </Card>
 
       <Card title="Quick palette" right={
@@ -89,24 +103,28 @@ export function ColorTab({ state, send }: {
 
       <Picker target={target} send={send} current={applied} />
 
-      <Card title="What the fixtures are actually doing">
-        <div className="grid two">
-          {state.fixtures.map((f) => (
-            <div key={f.id} className="fixture">
-              <div className="name">
-                <span className="grow">{f.name}</span>
-                <span className="chip" style={{
-                  background: rgbCss(f.color), borderColor: "transparent",
-                  minWidth: 22,
-                }} />
+      {/* A readout, not a control — it changes nothing, so Perform mode does
+          without it. The information is still one tap away in Design. */}
+      <DesignOnly>
+        <Card title="What the fixtures are actually doing">
+          <div className="grid two">
+            {state.fixtures.map((f) => (
+              <div key={f.id} className="fixture">
+                <div className="name">
+                  <span className="grow">{f.name}</span>
+                  <span className="chip" style={{
+                    background: rgbCss(f.color), borderColor: "transparent",
+                    minWidth: 22,
+                  }} />
+                </div>
+                <div className="small muted">
+                  {f.is_mover ? "colour wheel — snapped to nearest slot" : "RGBW"}
+                </div>
               </div>
-              <div className="small muted">
-                {f.is_mover ? "colour wheel — snapped to nearest slot" : "RGBW"}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+            ))}
+          </div>
+        </Card>
+      </DesignOnly>
     </>
   );
 }

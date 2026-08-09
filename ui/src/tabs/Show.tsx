@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, Toggle } from "../components";
-import type { Command, EngineState } from "../types";
+import { DesignOnly, useDesign } from "../mode";
+import type { Command, EngineState, Preset } from "../types";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -22,7 +23,39 @@ export function ShowTab({ state, send }: {
       <Presets state={state} send={send} />
       <Tempo state={state} send={send} />
       <Auto state={state} send={send} />
+      <Panic state={state} send={send} />
     </>
+  );
+}
+
+/**
+ * The bottom of the last tab, which is exactly where it belongs.
+ *
+ * It was on Setup until Perform mode arrived, and Perform hides Setup — a rig
+ * you cannot force to zero from the surface in your hand is not a thing to ship.
+ * Still nowhere near the master, and still not in the header: the whole reason
+ * it is not up there is that it should take a deliberate scroll to reach.
+ */
+function Panic({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  return (
+    <Card title="Panic">
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Forces zeros onto the wire and stops evaluating the show at all. It does
+        not need the show to be healthy or the engine to be keeping up, which is
+        what makes it different from Blackout.
+      </p>
+      <p className="small muted">
+        <b>Blackout</b> is the one you want mid-set: the show carries on
+        underneath, so letting go picks up where it has got to. Reach for Panic
+        when something has gone wrong, not when you want the room dark.
+      </p>
+      <button className={state.panicked ? "danger on" : "danger"}
+              style={{ width: "100%" }}
+              onClick={() => send(state.panicked
+                ? { type: "clear_panic" } : { type: "panic" })}>
+        {state.panicked ? "Release panic" : "Panic — force output to zero"}
+      </button>
+    </Card>
   );
 }
 
@@ -84,40 +117,166 @@ function Now({ state, send }: { state: EngineState; send: (c: Command) => void }
   );
 }
 
+const slotCount = (p: Preset) =>
+  [p.movement, p.color, p.level].reduce((n, m) => n + Object.keys(m ?? {}).length, 0);
+
 /**
- * Named combinations of all three slots.
+ * Named combinations of all three slots, on a grid of pads.
  *
  * The cost of making the slots independent is that a picture you liked takes
  * three taps to rebuild and is easy to lose. A preset is the answer: it stores
  * what each slot held, plus the speed and master it was built at.
+ *
+ * They used to be a flat uncapped grid, which is finding #17 of the review and
+ * the thing that makes a console worse the more you use it: presets accumulate,
+ * the grid grows, and nothing is where it was last week. So a page of EIGHT,
+ * with each preset at a FIXED position — the APC40 layout the show was run from
+ * for two years, where "the drop is bottom-right of bank 2" is muscle memory
+ * that already exists.
+ *
+ * The position is the whole point. Saving over a preset keeps its pad; adding
+ * and deleting neighbours does not shuffle it. That is what a paged grid buys
+ * over a list, and a list that merely paginated would buy nothing.
+ *
+ * There is deliberately no "recently used" or "favourites" section. Both were
+ * on the table and both are a SECOND place the same preset lives — which is the
+ * clutter this is trying to remove, wearing a helpful hat. A fixed pad is
+ * already the answer to "where is it".
  */
 function Presets({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const design = useDesign();
+  const { size, count } = state.preset_banks;
+  const [bank, setBank] = useState(1);
   const [name, setName] = useState("");
-  const save = () => {
-    if (!name.trim()) return;
-    send({ type: "preset_save", name: name.trim() });
+  const [target, setTarget] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [tag, setTag] = useState<string | null>(null);
+
+  // Edit is Design-only, so leaving Design has to put the card back in a state
+  // that makes sense — otherwise a half-finished move survives into Perform
+  // with nothing on screen explaining why a pad is highlighted.
+  useEffect(() => {
+    if (!design) { setEditing(false); setPicked(null); }
+  }, [design]);
+
+  const at = (cell: number) =>
+    state.presets.find((p) => p.bank === bank && p.cell === cell);
+  const tags = Array.from(new Set(state.presets.flatMap((p) => p.tags))).sort();
+  const matching = tag ? state.presets.filter((p) => p.tags.includes(tag)) : [];
+
+  const save = (cell?: number) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const where = cell ?? target;
+    send(where == null
+      ? { type: "preset_save", name: trimmed }
+      : { type: "preset_save", name: trimmed, bank, cell: where });
     setName("");
+    setTarget(null);
+  };
+
+  const tapped = (p: Preset | undefined, cell: number) => {
+    if (!editing) {
+      // An empty pad is a save target, not a dead button: tapping it and then
+      // typing is the fastest path from "I like this" to "it is stored", and
+      // the alternative was a preset landing wherever the engine had room.
+      if (p) send({ type: "preset_apply", name: p.name });
+      else setTarget(cell);
+      return;
+    }
+    if (picked) {
+      // Second tap completes a move. The engine swaps rather than refusing, so
+      // this reorders a bank without needing an empty pad to shuffle through.
+      if (picked !== p?.name) send({ type: "preset_move", name: picked, bank, cell });
+      setPicked(null);
+    } else if (p) {
+      setPicked(p.name);
+    }
   };
 
   return (
-    <Card title={`Presets — ${state.presets.length}`}>
-      {state.presets.length > 0 && (
-        <div className="grid tiles">
-          {state.presets.map((p) => (
-            <button key={p.name} onClick={() => send({ type: "preset_apply", name: p.name })}>
-              {p.name}
-              <div className="small muted">
-                {[p.movement, p.color, p.level]
-                  .reduce((n, m) => n + Object.keys(m ?? {}).length, 0)} slot(s)
-              </div>
+    <Card title={`Presets — ${state.presets.length}`} right={
+      <DesignOnly>
+        <button className={editing ? "small on" : "small"}
+                disabled={state.presets.length === 0}
+                onClick={() => { setEditing(!editing); setPicked(null); }}>
+          {editing ? "Done" : "Edit"}
+        </button>
+      </DesignOnly>
+    }>
+      {/* Only when there is more than one page. A bank selector over a single
+          bank is a control that explains a concept nobody has met yet. */}
+      {count > 1 && (
+        <div className="row tight" style={{ marginBottom: "0.5rem", flexWrap: "wrap" }}>
+          <span className="small muted" style={{ minWidth: "3.5em" }}>Bank</span>
+          {Array.from({ length: count }, (_, i) => i + 1).map((b) => (
+            <button key={b} className={b === bank ? "small on" : "small"}
+                    aria-label={`bank ${b}`}
+                    onClick={() => { setBank(b); setTarget(null); setPicked(null); }}>
+              {b}
             </button>
           ))}
         </div>
       )}
 
-      <div className="row" style={{ marginTop: state.presets.length ? "0.6rem" : 0 }}>
-        <input className="field" placeholder="name this picture…" value={name}
-               aria-label="preset name"
+      {tag ? (
+        <div className="grid tiles">
+          {matching.map((p) => (
+            <button key={p.name}
+                    onClick={() => send({ type: "preset_apply", name: p.name })}>
+              {p.name}
+              <div className="small muted mono">
+                {p.bank}.{p.cell + 1} · {slotCount(p)} slot(s)
+              </div>
+            </button>
+          ))}
+          {matching.length === 0 && (
+            <p className="small muted" style={{ margin: 0 }}>
+              Nothing tagged {tag}.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="grid tiles">
+          {Array.from({ length: size }, (_, cell) => {
+            const p = at(cell);
+            const isTarget = target === cell;
+            const isPicked = picked != null && p?.name === picked;
+            return (
+              <button key={cell}
+                      className={isPicked ? "on" : isTarget ? "on" : p ? "" : "ghost"}
+                      aria-label={p ? undefined : `empty pad ${bank}.${cell + 1}`}
+                      onClick={() => tapped(p, cell)}>
+                {p ? (
+                  <>
+                    {p.name}
+                    <div className="small muted">
+                      {slotCount(p)} slot(s)
+                      {p.tags.length > 0 && ` · ${p.tags.join(" ")}`}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="muted">+</span>
+                    <div className="small muted mono">{bank}.{cell + 1}</div>
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <PresetEditor state={state} send={send} picked={picked}
+                      onDeleted={() => setPicked(null)} />
+      )}
+
+      <div className="row" style={{ marginTop: "0.6rem" }}>
+        <input className="field" value={name} aria-label="preset name"
+               placeholder={target == null
+                 ? "name this picture…" : `name it — goes to ${bank}.${target + 1}`}
                onChange={(e) => setName(e.target.value)}
                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
                style={{
@@ -125,27 +284,77 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
                  background: "var(--panel-2)", border: "1px solid var(--line)",
                  borderRadius: 8,
                }} />
-        <button onClick={save} disabled={!name.trim()}>Save</button>
+        <button onClick={() => save()} disabled={!name.trim()}>Save</button>
       </div>
 
-      {state.presets.length > 0 && (
-        <details style={{ marginTop: "0.5rem" }}>
-          <summary className="small muted">Delete a preset</summary>
-          <div className="row" style={{ marginTop: "0.4rem" }}>
-            {state.presets.map((p) => (
-              <button key={p.name} className="small danger"
-                      onClick={() => send({ type: "preset_delete", name: p.name })}>
-                {p.name} ✕
-              </button>
-            ))}
-          </div>
-        </details>
+      {/* Absent until something is tagged, which keeps the cost of the feature
+          at zero for anyone not using it. Tags cross banks; a bank cannot,
+          because a bank is a place and a tag is a question. */}
+      {tags.length > 0 && (
+        <div className="row tight" style={{ marginTop: "0.5rem", flexWrap: "wrap" }}>
+          <span className="small muted" style={{ minWidth: "3.5em" }}>Tagged</span>
+          {tags.map((t) => (
+            <button key={t} className={t === tag ? "small on" : "small"}
+                    onClick={() => setTag(t === tag ? null : t)}>
+              {t}
+            </button>
+          ))}
+        </div>
       )}
+
       <p className="small muted" style={{ marginBottom: 0 }}>
-        Saves the move, colour and level that are up now, with the speed and
-        master. Stored with the event, so it survives a restart.
+        {editing
+          ? picked
+            ? <>Now tap where <b>{picked}</b> should go — landing on a full pad swaps the two.</>
+            : "Tap a preset to pick it up and move it, or use the buttons below to delete or tag it."
+          : <>Saves the move, colour and level that are up now, with the speed and
+             master. A pad keeps its preset: saving over one leaves it exactly
+             where it is.</>}
       </p>
     </Card>
+  );
+}
+
+/**
+ * Delete and tag, behind the Edit toggle rather than beside every pad.
+ *
+ * The old card listed every preset twice — once to recall, once to delete —
+ * which doubled the longest thing on the tab to make room for the rarest
+ * action. One editor for the pad you picked up costs nothing until you ask.
+ */
+function PresetEditor({ state, send, picked, onDeleted }: {
+  state: EngineState; send: (c: Command) => void;
+  picked: string | null; onDeleted: () => void;
+}) {
+  const preset = state.presets.find((p) => p.name === picked);
+  const [draft, setDraft] = useState("");
+  // Re-seeded whenever a different preset is picked up, and NOT while it is the
+  // same one: overwriting the box from the broadcast would delete what is being
+  // typed on every state frame, which at 10 a second is unusable.
+  useEffect(() => { setDraft(preset ? preset.tags.join(" ") : ""); }, [picked]);
+  if (!preset) return null;
+
+  return (
+    <div className="row" style={{ marginTop: "0.5rem", gap: "0.4rem" }}>
+      <input className="field" value={draft}
+             aria-label={`tags for ${preset.name}`}
+             placeholder="intro build drop ambient"
+             onChange={(e) => setDraft(e.target.value)}
+             onBlur={() => send({ type: "preset_tag", name: preset.name,
+                                  tags: draft.split(/\s+/).filter(Boolean) })}
+             style={{
+               flex: "1 1 8rem", minWidth: 0, padding: "0.55rem", minHeight: 44,
+               background: "var(--panel-2)", border: "1px solid var(--line)",
+               borderRadius: 8,
+             }} />
+      <button className="small danger"
+              onClick={() => {
+                send({ type: "preset_delete", name: preset.name });
+                onDeleted();
+              }}>
+        Delete {preset.name}
+      </button>
+    </div>
   );
 }
 

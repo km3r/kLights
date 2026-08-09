@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, Fader } from "../components";
+import { DesignOnly, useDesign } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
 
@@ -41,14 +42,37 @@ function Dimmers({ state, send }: { state: EngineState; send: (c: Command) => vo
     send({ type: "level", target: t, clear: true });
   };
 
-  const rows: { target: string; label: string; sub?: string }[] = [
-    ...state.groups.map((g) => ({ target: g, label: groupLabel(g) })),
-    ...state.fixtures.map((f) => ({
-      target: f.name, label: f.name,
-      sub: `now at ${Math.round((f.intensity ?? 0) * 100)}%`,
-    })),
-  ];
   const trimmed = Object.keys(state.level_overrides);
+  // One fader per fixture on top of one per group was unbounded — the review's
+  // finding #17, and the thing that makes a 40-head rig unusable on a phone.
+  // Groups are what a hand trim is normally for; individual heads stay reachable
+  // behind a disclosure, opened when any of them is actually trimmed so a stray
+  // trim can never hide.
+  const perFixture = state.fixtures.some((f) => state.level_overrides[f.name] != null);
+
+  const row = (target: string, label: string, sub?: string, small = false) => (
+    <div key={target} className="dimmer">
+      <div className={small ? "small" : ""}>
+        {label}
+        {sub && <span className="small muted"> · {sub}</span>}
+      </div>
+      <div className="dimmer-row">
+        <Fader value={level(target)} label={`${label} level`}
+               onInput={(v) => set(target, v)}
+               onCommit={() => commit(target)} />
+        {/* Hidden rather than absent: the row is a fixed height whether or
+            not this is showing, so nothing moves at the moment a trim
+            starts existing. Inline because the reserved space has to hold
+            in the tests too, where the stylesheet is not loaded. */}
+        <button className="small reset"
+                style={{ visibility: state.level_overrides[target] != null
+                           ? "visible" : "hidden" }}
+                onClick={() => clear(target)}>
+          reset
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <Card title="Dimmers" right={
@@ -60,30 +84,19 @@ function Dimmers({ state, send }: { state: EngineState; send: (c: Command) => vo
         Reset all
       </button>
     }>
-      {rows.map((r, i) => (
-        <div key={r.target} className="dimmer"
-             style={i === state.groups.length ? { marginTop: "0.6rem" } : undefined}>
-          <div className={i < state.groups.length ? "" : "small"}>
-            {r.label}
-            {r.sub && <span className="small muted"> · {r.sub}</span>}
-          </div>
-          <div className="dimmer-row">
-            <Fader value={level(r.target)} label={`${r.label} level`}
-                   onInput={(v) => set(r.target, v)}
-                   onCommit={() => commit(r.target)} />
-            {/* Hidden rather than absent: the row is a fixed height whether or
-                not this is showing, so nothing moves at the moment a trim
-                starts existing. Inline because the reserved space has to hold
-                in the tests too, where the stylesheet is not loaded. */}
-            <button className="small reset"
-                    style={{ visibility: state.level_overrides[r.target] != null
-                               ? "visible" : "hidden" }}
-                    onClick={() => clear(r.target)}>
-              reset
-            </button>
-          </div>
+      {state.groups.map((g) => row(g, groupLabel(g)))}
+
+      <details open={perFixture} style={{ margin: "0.6rem 0" }}>
+        <summary className="small muted">
+          One fixture at a time ({state.fixtures.length})
+        </summary>
+        <div style={{ marginTop: "0.4rem" }}>
+          {state.fixtures.map((f) => row(
+            f.name, f.name,
+            `now at ${Math.round((f.intensity ?? 0) * 100)}%`, true))}
         </div>
-      ))}
+      </details>
+
       <p className="small muted" style={{ marginBottom: 0 }}>
         A trim over whatever the pattern is doing, not a replacement for it —
         pattern × trim × master × safety, in that order. Reset a row to hand it
@@ -110,8 +123,6 @@ export function BrightTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
   const lit = state.fixtures.filter((f) => (f.intensity ?? 0) > 0.001);
-  const policy = state.strobe_policy;
-  const limited = policy.ceiling < 1 || policy.max_seconds > 0;
 
   return (
     <>
@@ -122,71 +133,92 @@ export function BrightTab({ state, send }: {
           epilepsy, which no aversion response protects anyone from — so the
           policy is stated where strobe is visible rather than left in a config
           file nobody opens. Read-only: it is a property of the room and the
-          crowd in it, set per venue, not a control to reach for mid-set. */}
-      <Card title="Strobe policy">
-        <p className="small muted" style={{ marginBottom: 0 }}>
-          {!policy.enabled ? (
-            "Blocked entirely — nothing can drive the shutter."
-          ) : limited ? (
-            <>
-              {policy.ceiling < 1 && (
-                <>Capped at <b>{Math.round(policy.ceiling * 100)}%</b> of each
-                  fixture&apos;s slow-to-fast band. </>
-              )}
-              {policy.max_seconds > 0 && (
-                <>Cut off after <b>{policy.max_seconds}s</b> continuous, then
-                  held open before it can restart. </>
-              )}
-              Not a frequency limit — the fixture profiles declare no Hz, so
-              this caps a band position and a duration instead.
-            </>
-          ) : (
-            <b>UNLIMITED — no ceiling and no duration cap. Photosensitive
-              epilepsy is a real risk; set a policy in the venue file.</b>
-          )}
-        </p>
-      </Card>
+          crowd in it, set per venue, not a control to reach for mid-set.
+
+          The one card Perform mode filters by CONTENT rather than by kind. A
+          policy that is set says "you are fine", which is noise on a phone at
+          1am; no policy at all is the case the card exists for, and that one
+          shows everywhere. Hiding the warning along with the reassurance would
+          be reading the rule instead of the reason. */}
+      <StrobePolicy state={state} />
 
       <Flash state={state} send={send} />
 
       <Dimmers state={state} send={send} />
 
-      <Card title="What each fixture is actually at">
-        <div className="grid two">
-          {state.fixtures.map((f) => {
-            const level = f.intensity ?? 0;
-            const taper = f.safety?.taper ?? 1;
-            return (
-              <div key={f.id} className="fixture">
-                <div className="name">
-                  <span className="grow">{f.name}</span>
-                  <span className="chip mono">{Math.round(level * 100)}%</span>
-                </div>
-                <div className="bar">
-                  <i style={{ width: `${Math.round(level * 100)}%` }}
-                     className={taper < 1 ? "taper" : ""} />
-                </div>
-                {taper < 1 && (
-                  <div className="small muted">
-                    safety taper is holding this at {Math.round(taper * 100)}%
+      {/* A readout. It changes nothing, so Perform does without it. */}
+      <DesignOnly>
+        <Card title="What each fixture is actually at">
+          <div className="grid two">
+            {state.fixtures.map((f) => {
+              const level = f.intensity ?? 0;
+              const taper = f.safety?.taper ?? 1;
+              return (
+                <div key={f.id} className="fixture">
+                  <div className="name">
+                    <span className="grow">{f.name}</span>
+                    <span className="chip mono">{Math.round(level * 100)}%</span>
                   </div>
-                )}
-                {f.strobe != null && f.strobe > 0 && (
-                  <div className="small" style={{ color: "var(--warn)" }}>
-                    strobing at {Math.round(f.strobe * 100)}% of its range
+                  <div className="bar">
+                    <i style={{ width: `${Math.round(level * 100)}%` }}
+                       className={taper < 1 ? "taper" : ""} />
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>
-          {lit.length} of {state.fixtures.length} lit. This is the final number
-          after the level pattern, the master and the safety taper have all been
-          applied — so it is what the fixture is really doing.
-        </p>
-      </Card>
+                  {taper < 1 && (
+                    <div className="small muted">
+                      safety taper is holding this at {Math.round(taper * 100)}%
+                    </div>
+                  )}
+                  {f.strobe != null && f.strobe > 0 && (
+                    <div className="small" style={{ color: "var(--warn)" }}>
+                      strobing at {Math.round(f.strobe * 100)}% of its range
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            {lit.length} of {state.fixtures.length} lit. This is the final number
+            after the level pattern, the master and the safety taper have all been
+            applied — so it is what the fixture is really doing.
+          </p>
+        </Card>
+      </DesignOnly>
     </>
+  );
+}
+
+function StrobePolicy({ state }: { state: EngineState }) {
+  const design = useDesign();
+  const policy = state.strobe_policy;
+  const limited = policy.ceiling < 1 || policy.max_seconds > 0;
+  // The reassuring cases are Design-only; "there is no limit at all" is not.
+  if (!design && (limited || !policy.enabled)) return null;
+
+  return (
+    <Card title="Strobe policy">
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        {!policy.enabled ? (
+          "Blocked entirely — nothing can drive the shutter."
+        ) : limited ? (
+          <>
+            {policy.ceiling < 1 && (
+              <>Capped at <b>{Math.round(policy.ceiling * 100)}%</b> of each
+                fixture&apos;s slow-to-fast band. </>
+            )}
+            {policy.max_seconds > 0 && (
+              <>Cut off after <b>{policy.max_seconds}s</b> continuous, then
+                held open before it can restart. </>
+            )}
+            Not a frequency limit — the fixture profiles declare no Hz, so
+            this caps a band position and a duration instead.
+          </>
+        ) : (
+          <b>UNLIMITED — no ceiling and no duration cap. Photosensitive
+            epilepsy is a real risk; set a policy in the venue file.</b>
+        )}
+      </p>
+    </Card>
   );
 }
 

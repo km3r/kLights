@@ -11,6 +11,54 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F15, preset banks and Perform mode
+
+The answer to "how do presets grow without the console getting worse", which is
+review finding #17 and the last substantial piece of F15.
+
+- **Presets sit on pages of eight**, with `bank` and `cell` in `presets.json`.
+  A pad is a *place*, not a sort order: saving over a preset keeps its pad, and
+  adding or deleting neighbours does not shuffle it. Eight because that is the
+  APC40 grid the despacio show ran on for two years — "the drop is bottom-right
+  of bank 2" is muscle memory that already exists.
+- Empty pads are drawn and are tappable: tapping one and typing a name saves
+  *there*, rather than wherever the engine had room.
+- `preset_move` swaps rather than refusing, so a bank reorders without needing
+  a spare pad to shuffle through. `preset_tag` sets cross-cutting labels
+  (`intro` / `build` / `drop` / …); the filter row is absent until something is
+  tagged, so it costs nothing to anyone not using it.
+- **Migration is automatic and non-destructive.** A `presets.json` written
+  before banks existed, or hand-edited into a collision, opens as a working
+  grid — first claim on a pad wins, everything else is rehomed. Saving is never
+  refused for want of space: the last bank grows.
+- No "recents" or "favourites" section, deliberately. Both are a *second* place
+  the same preset lives, which is the clutter this removes wearing a helpful
+  hat. A fixed pad is already the answer to "where is it".
+- **Perform / Design in the header.** Perform hides Setup and the read-only
+  diagnostics; Design is the full console. Defaults to Perform on a phone and
+  Design on a laptop, persists per device, and is always one tap from the other.
+  It is a preference about screen space, **not** a permission — `--token` and
+  the view/operate/configure tiers are what the engine enforces.
+- **Panic moved from Setup to the bottom of Show.** Perform hides Setup, and a
+  rig you cannot force to zero from the surface in your hand is not a rig anyone
+  should be running. Still nowhere near the master.
+- The strobe policy card is the one thing filtered by *content* rather than
+  kind: "you are capped" is reassurance and Perform drops it, "nothing is
+  capping this" is the reason the card exists and shows everywhere.
+- **The two unbounded lists are collapsed** (finding #17's other half): the
+  Color tab's "Applies to" grid and the Bright tab's dimmers are groups first,
+  with individual fixtures behind a disclosure that opens itself when one of
+  them is actually overridden.
+
+### Fixed
+
+- `engine/tests/dump_snapshot.py` hand-wrote its preset fixture and it had
+  drifted: it still carried `"movement": "Lazy Circle"` from before slots went
+  per fixture group, so every UI test rendered a preset shape the engine had not
+  produced in months. It is now built from the snapshot's own selection — the
+  exact failure that file's docstring exists to prevent, in the one part of it
+  that was not captured.
+
 ### Changed — safety framing corrected
 
 - **`docs/SAFETY.md` was written as though these were lasers.** They are 60 W

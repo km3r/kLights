@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO))
 from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
+from engine import server as servermod
 from engine.server import ShowController, ShowServer, load_presets
 
 failures: list[str] = []
@@ -307,6 +308,77 @@ check("saving presets keeps the file's $schema",
       f"{presets_file.get('$schema')!r}")
 check("saving presets keeps the file's explanatory comment",
       "_comment" in presets_file)
+
+# -- preset banks: a pad is a PLACE, and it does not move ---------------------
+#
+# The flat uncapped grid was finding #17 of the review: presets accumulate, the
+# grid grows, and nothing is where it was last week. Pages of eight with fixed
+# positions is what the APC40 taught -- "the drop is bottom-right of bank 2" is
+# muscle memory that already exists here.
+
+# The pure layout rules first, where every branch is reachable without a socket.
+check("a preset with no bank lands on the first free pad",
+      [(p["bank"], p["cell"]) for p in servermod.arrange_presets(
+          [{"name": "a"}, {"name": "b"}])] == [(1, 0), (1, 1)])
+check("one that names a pad keeps it, and is not shuffled by its neighbours",
+      [(p["name"], p["bank"], p["cell"]) for p in servermod.arrange_presets(
+          [{"name": "a"}, {"name": "pinned", "bank": 1, "cell": 0}])]
+      == [("pinned", 1, 0), ("a", 1, 1)])
+check("two presets claiming one pad: first claim wins, second is rehomed",
+      {p["name"]: p["cell"] for p in servermod.arrange_presets(
+          [{"name": "first", "bank": 1, "cell": 2},
+           {"name": "second", "bank": 1, "cell": 2}])}
+      == {"first": 2, "second": 0})
+# Being told "your banks are full" while building a show is not a thing a
+# console gets to do, so the last bank grows instead.
+nine = servermod.arrange_presets([{"name": f"p{i}"} for i in range(9)])
+check("a ninth preset opens a second bank rather than refusing",
+      (nine[-1]["bank"], nine[-1]["cell"]) == (2, 0),
+      f"{nine[-1]['bank']}.{nine[-1]['cell']}")
+check("garbage in the presets list is skipped, not crashed on",
+      [p["name"] for p in servermod.arrange_presets(
+          [{"name": "ok"}, {"nameless": True}, "not a dict", None])] == ["ok"])
+# `bank: true` is an int to isinstance and would sail through as bank 1.
+check("a boolean where a bank number should be is rehomed",
+      servermod.arrange_presets(
+          [{"name": "a", "bank": True, "cell": 0}])[0]["bank"] == 1)
+
+# Then the behaviour that actually matters at the desk: re-recording a preset
+# must not move it. A pad that wanders on every save is worse than no pad.
+client.send({"type": "preset_save", "name": "banked", "bank": 3, "cell": 5,
+             "tags": ["drop"]})
+after = client.wait_for(lambda s: any(p["name"] == "banked" for p in s["presets"]))
+banked = next(p for p in after["presets"] if p["name"] == "banked")
+check("a preset can be saved onto a named pad",
+      (banked["bank"], banked["cell"], banked["tags"]) == (3, 5, ["drop"]),
+      f"{banked['bank']}.{banked['cell']} {banked['tags']}")
+check("and the bank count grows to include it",
+      after["preset_banks"]["count"] >= 3, f"{after['preset_banks']}")
+
+client.send({"type": "master", "value": 0.42})
+client.send({"type": "preset_save", "name": "banked"})
+after = client.wait_for(
+    lambda s: any(p["name"] == "banked" and p.get("master") == 0.42
+                  for p in s["presets"]))
+banked = next(p for p in after["presets"] if p["name"] == "banked")
+check("re-recording it keeps its pad and its tags",
+      (banked["bank"], banked["cell"], banked["tags"]) == (3, 5, ["drop"]),
+      f"{banked['bank']}.{banked['cell']} {banked['tags']}")
+
+client.send({"type": "preset_move", "name": "banked", "bank": 1, "cell": 0})
+after = client.wait_for(
+    lambda s: next(p for p in s["presets"] if p["name"] == "banked")["bank"] == 1)
+moved = {p["name"]: (p["bank"], p["cell"]) for p in after["presets"]}
+check("moving onto an occupied pad SWAPS, so a bank can be reordered",
+      moved["banked"] == (1, 0) and moved.get("Phase a") == (3, 5),
+      f"{moved}")
+
+client.send({"type": "preset_delete", "name": "banked"})
+client.wait_for(lambda s: not any(p["name"] == "banked" for p in s["presets"]))
+client.send({"type": "preset_move", "name": "Phase a", "bank": 1, "cell": 0})
+client.wait_for(
+    lambda s: next(p for p in s["presets"] if p["name"] == "Phase a")["bank"] == 1)
+
 # The test writes into the real event directory; leave it as it was found.
 presets_path = REPO / "events" / "despacio" / "presets.json"
 if presets_path.exists() and not load_presets(presets_path.parent):

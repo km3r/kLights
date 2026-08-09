@@ -5,7 +5,12 @@
     "level -- plus the speed and master they were built at.",
     "",
     "Written by the UI. Safe to hand-edit; a preset naming a look",
-    "that no longer exists applies the rest and skips that slot."
+    "that no longer exists applies the rest and skips that slot.",
+    "",
+    "'bank' and 'cell' are a fixed position on a page of eight, not a",
+    "sort order -- a preset does not move when its neighbours change.",
+    "Two presets claiming one pad, or a preset with neither key, is",
+    "not an error: the engine rehomes them at load."
   ],
   "presets": [
     {
@@ -19,7 +24,10 @@
       },
       "level": {},
       "speed": 1.0,
-      "master": 0.9
+      "master": 0.9,
+      "bank": 1,
+      "cell": 0,
+      "tags": []
     }
   ]
 }

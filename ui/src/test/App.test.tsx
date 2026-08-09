@@ -245,6 +245,244 @@ describe("presets", () => {
   });
 });
 
+/**
+ * Banks — the answer to "how do presets grow without the console getting worse".
+ *
+ * The fixture holds three: two on bank 1 (cells 0 and 3, so there is a gap) and
+ * one on bank 2. That covers every case the grid has to render.
+ */
+describe("preset banks", () => {
+  const card = () =>
+    screen.getByText(/^Presets/).closest(".card")! as HTMLElement;
+
+  it("draws empty pads, so a preset keeps its position as neighbours change", () => {
+    mount();
+    // Eight pads on the page whatever is saved. A grid that only rendered its
+    // full cells would reflow on every save, which is the one thing a fixed
+    // position is for.
+    expect(within(card()).getAllByRole("button", { name: /^empty pad 1\./ }))
+      .toHaveLength(6);
+    // 'peak' is on cell 3, so pad 4 is taken and pads 2 and 3 are not.
+    expect(within(card()).queryByLabelText("empty pad 1.4")).toBeNull();
+    expect(within(card()).getByLabelText("empty pad 1.2")).toBeInTheDocument();
+  });
+
+  it("saves onto the pad you tapped, rather than wherever there is room", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(within(card()).getByLabelText("empty pad 1.6"));
+    await user.type(screen.getByLabelText("preset name"), "drop");
+    await user.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(socket.last()).toEqual({
+      type: "preset_save", name: "drop", bank: 1, cell: 5,
+    });
+  });
+
+  it("still saves without a pad chosen, and lets the engine place it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.type(screen.getByLabelText("preset name"), "drop");
+    await user.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+  });
+
+  it("turns the page to a second bank", async () => {
+    const user = userEvent.setup();
+    mount();
+    expect(within(card()).queryByRole("button", { name: /^landing/ })).toBeNull();
+    await user.click(within(card()).getByLabelText("bank 2"));
+    expect(within(card()).getByRole("button", { name: /^landing/ }))
+      .toBeInTheDocument();
+    expect(within(card()).queryByRole("button", { name: /^peak/ })).toBeNull();
+  });
+
+  it("hides the bank selector when there is only one bank", () => {
+    installMockSocket();
+    render(<App />);
+    const socket = currentSocket();
+    act(() => socket.open(stateWith((s) => {
+      s.presets = s.presets.filter((p) => p.bank === 1);
+      s.preset_banks = { size: 8, count: 1 };
+    })));
+    // A pager over a single page is a control that introduces a concept nobody
+    // has met yet.
+    expect(within(card()).queryByLabelText("bank 1")).toBeNull();
+  });
+
+  it("finds every drop across banks by its tag", async () => {
+    const user = userEvent.setup();
+    mount();
+    // 'landing' is on bank 2 and tagged ambient; the filter reaches it without
+    // turning the page, which is the thing a bank cannot do.
+    await user.click(within(card()).getByRole("button", { name: /^ambient$/ }));
+    expect(within(card()).getByRole("button", { name: /^landing/ }))
+      .toBeInTheDocument();
+    expect(within(card()).queryByRole("button", { name: /^peak/ })).toBeNull();
+  });
+
+  it("moves a preset onto another pad in two taps", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(within(card()).getByRole("button", { name: /^Edit$/ }));
+    await user.click(within(card()).getByRole("button", { name: /^peak/ }));
+    await user.click(within(card()).getByLabelText("empty pad 1.7"));
+    expect(socket.last()).toEqual({
+      type: "preset_move", name: "peak", bank: 1, cell: 6,
+    });
+  });
+
+  it("keeps delete behind Edit rather than listing every preset twice", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    // The old card listed every preset a second time purely to delete it,
+    // doubling the longest thing on the tab for the rarest action.
+    expect(within(card()).queryByRole("button", { name: /^Delete/ })).toBeNull();
+    await user.click(within(card()).getByRole("button", { name: /^Edit$/ }));
+    await user.click(within(card()).getByRole("button", { name: /^peak/ }));
+    await user.click(within(card()).getByRole("button", { name: /^Delete peak$/ }));
+    expect(socket.last()).toEqual({ type: "preset_delete", name: "peak" });
+  });
+
+  it("sends tags on blur, not on every keystroke", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(within(card()).getByRole("button", { name: /^Edit$/ }));
+    await user.click(within(card()).getByRole("button", { name: /^peak/ }));
+    const field = within(card()).getByLabelText("tags for peak");
+    expect(field).toHaveValue("drop build");
+    await user.clear(field);
+    await user.type(field, "drop peak");
+    expect(socket.last()).not.toMatchObject({ type: "preset_tag" });
+    await user.tab();
+    expect(socket.last()).toEqual({
+      type: "preset_tag", name: "peak", tags: ["drop", "peak"],
+    });
+  });
+});
+
+/**
+ * Perform vs Design — the answer to "how does the console stop growing".
+ *
+ * Every test above runs in Design, because jsdom reports a 1024px window with
+ * no coarse pointer, which is a laptop. These are the ones that pin the phone.
+ */
+describe("perform mode", () => {
+  function performing() {
+    localStorage.setItem("cosmos.mode", "perform");
+    return mount();
+  }
+
+  it("drops Setup from the tab bar, and keeps the four that make light", () => {
+    performing();
+    const bar = document.querySelector("nav.tabbar") as HTMLElement;
+    expect(within(bar).queryByRole("button", { name: /Setup/ })).toBeNull();
+    for (const t of [/Show/, /Color/, /Move/, /Bright/]) {
+      expect(within(bar).getByRole("button", { name: t })).toBeInTheDocument();
+    }
+  });
+
+  it("still reaches panic, which must never be behind a mode", () => {
+    performing();
+    // It moved off Setup for exactly this reason: Perform hides that tab, and a
+    // rig you cannot force to zero from the surface in your hand is not a rig
+    // anyone should be running.
+    expect(screen.getByRole("button", { name: /^Panic/ })).toBeInTheDocument();
+  });
+
+  it("hides the readouts that change nothing", async () => {
+    const user = userEvent.setup();
+    performing();
+    await goTo(user, /Bright/);
+    expect(screen.queryByText("What each fixture is actually at")).toBeNull();
+    // But the controls on the same tab are all still there.
+    expect(screen.getByText("Dimmers")).toBeInTheDocument();
+    expect(screen.getByText("Flash")).toBeInTheDocument();
+  });
+
+  it("shows the strobe warning anyway when there is no policy at all", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("cosmos.mode", "perform");
+    installMockSocket();
+    render(<App />);
+    const socket = currentSocket();
+    act(() => socket.open(stateWith((s) => {
+      s.strobe_policy = { enabled: true, ceiling: 1, max_seconds: 0 };
+    })));
+    await goTo(user, /Bright/);
+    // The card that says "you are capped" is reassurance and Perform drops it.
+    // The card that says "nothing is capping this" is the reason the card
+    // exists, and photosensitive epilepsy does not care what mode you are in.
+    expect(screen.getByText(/UNLIMITED/)).toBeInTheDocument();
+  });
+
+  it("hides the reassuring version of the same card", async () => {
+    const user = userEvent.setup();
+    performing();
+    await goTo(user, /Bright/);
+    expect(screen.queryByText("Strobe policy")).toBeNull();
+  });
+
+  it("is one tap from the full console, never a lock", async () => {
+    const user = userEvent.setup();
+    performing();
+    await user.click(screen.getByRole("button", { name: /^Perform$/ }));
+    const bar = document.querySelector("nav.tabbar") as HTMLElement;
+    expect(within(bar).getByRole("button", { name: /Setup/ })).toBeInTheDocument();
+    expect(localStorage.getItem("cosmos.mode")).toBe("design");
+  });
+
+  it("comes back to Show rather than a tab with no button", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Setup/);
+    expect(screen.getByText("Who you are")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Design$/ }));
+    expect(screen.queryByText("Who you are")).toBeNull();
+    expect(screen.getByText(/^Presets/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Finding #17: two lists that grew one 44px row per fixture, forever.
+ */
+describe("per-fixture lists", () => {
+  it("puts groups first and individual heads behind a disclosure", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Color/);
+    const applies = screen.getByText("Applies to").closest(".card")! as HTMLElement;
+    expect(within(applies).getByRole("button", { name: /^all$/ })).toBeInTheDocument();
+    // A <details> renders its contents in the DOM either way, so the assertion
+    // that means anything is whether it is OPEN — that is what decides how tall
+    // the card is on a phone with forty heads patched.
+    const disclosure = applies.querySelector("details")!;
+    expect(disclosure.open).toBe(false);
+    await user.click(within(applies).getByText(/One fixture at a time/));
+    expect(disclosure.open).toBe(true);
+    await user.click(within(applies).getByRole("button", { name: /^Moving Head #1/ }));
+    // Still the same command it always was — this is a layout change, not a
+    // behaviour one.
+    await user.click(screen.getByLabelText("palette 0"));
+    expect((currentSocket().last() as { target: string }).target)
+      .toBe("Moving Head #1");
+  });
+
+  it("opens the disclosure by itself when a fixture is trimmed", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Bright/);
+    const details = () => screen.getByText("Dimmers").closest(".card")!
+      .querySelector("details")!;
+    expect(details().open).toBe(false);
+    // A trim nobody can see is a fixture stuck dim with no explanation, so the
+    // one case the collapsed list must not hide is a trim inside it.
+    act(() => socket.push(stateWith((s) => {
+      s.level_overrides = { "Moving Head #2": 0.3 };
+    })));
+    expect(details().open).toBe(true);
+  });
+});
+
 describe("show tab", () => {
   it("offers to release a held look", async () => {
     const user = userEvent.setup();

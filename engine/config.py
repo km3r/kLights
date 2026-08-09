@@ -350,11 +350,30 @@ CALIBRATION = {
     })),
 }
 
+# Presets are laid out in pages of eight, and this is why eight: the APC40 grid
+# the show was run from for two years is 8 wide, so "the drop is bottom-right of
+# bank 2" is muscle memory that already exists. Any other number would be a new
+# thing to learn for no gain.
+BANK_SIZE = 8
+
 PRESETS = {
     "presets": Spec(list, each=Spec(dict, of={
         "name": Spec(str, required=True, non_empty=True),
         "movement": Spec(dict), "color": Spec(dict), "level": Spec(dict),
         "speed": Spec(Number, min=0), "master": Spec(Number, min=0, max=1),
+        # Where the preset sits on the grid. A FIXED position, not a sort
+        # order: the whole value of a bank is that a preset does not move when
+        # its neighbours are added or deleted. Optional here because a file
+        # written before banks existed is still valid -- the engine assigns
+        # positions to anything without one at load.
+        "bank": Spec(int, min=1, fix="which page of eight, counting from 1"),
+        "cell": Spec(int, min=0, max=BANK_SIZE - 1,
+                     fix=f"position within the bank, 0-{BANK_SIZE - 1}, "
+                         f"reading left to right"),
+        # Free-form, but `intro` / `build` / `drop` / `ambient` are the ones the
+        # UI's filter row suggests. Cross-cutting: a tag finds every drop in the
+        # show, which a bank cannot, because a bank is a place.
+        "tags": Spec(list, each=Spec(str)),
     })),
 }
 

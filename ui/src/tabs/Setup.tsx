@@ -221,26 +221,10 @@ export function SetupTab({ state, send, name, setName }: {
       <PatchSection state={state} send={send} />
 
       <RigSection state={state} />
-
-      <Card title="Panic">
-        <p className="small muted" style={{ marginTop: 0 }}>
-          Forces zeros onto the wire and stops evaluating the show at all. It
-          does not need the show to be healthy or the engine to be keeping up,
-          which is what makes it different from Blackout — and why it lives
-          here rather than under your thumb next to the master.
-        </p>
-        <p className="small muted">
-          <b>Blackout</b> is the one you want mid-set: the show carries on
-          underneath, so letting go picks up where it has got to. Reach for
-          Panic when something has gone wrong, not when you want the room dark.
-        </p>
-        <button className={state.panicked ? "danger on" : "danger"}
-                style={{ width: "100%" }}
-                onClick={() => send(state.panicked
-                  ? { type: "clear_panic" } : { type: "panic" })}>
-          {state.panicked ? "Release panic" : "Panic — force output to zero"}
-        </button>
-      </Card>
+      {/* Panic used to be the last card here. It moved to the bottom of Show
+          when Perform mode arrived: Perform hides this whole tab, and a rig you
+          cannot force to zero from the surface you are actually holding is the
+          one thing that must never be behind a mode. */}
     </>
   );
 }

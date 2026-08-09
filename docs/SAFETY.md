@@ -163,7 +163,8 @@ prints the live value at startup.
   taper stops covering the people who moved.
 - **Run `python scripts/preflight.py` before you leave**, and
   `events/despacio/preflight.py` at the venue.
-- **Know where Panic is.** Setup tab. It forces zeros onto the wire and does not
+- **Know where Panic is.** Bottom of the Show tab — reachable in Perform mode,
+  which hides Setup. It forces zeros onto the wire and does not
   need the show to be healthy — unlike Blackout, which takes the master to zero
   with the show still running underneath.
 

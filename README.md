@@ -88,9 +88,21 @@ safe way to try things with the rig plugged in.
 
 The UI is served from the committed `ui/dist/`, so a show laptop needs Python
 and a checkout and nothing else. Five tabs, all driven by the same WebSocket
-state: **Show** (presets, tempo, auto), **Color**, **Move**, **Bright**, and
-**Setup** — which also holds the rig, venue and calibration panels, plus Panic.
+state: **Show** (cues, presets, tempo, auto, panic), **Color**, **Move**,
+**Bright**, and **Setup** — the rig, venue, calibration and patch panels.
 Master and Blackout live in the header, on every tab.
+
+The header also carries **Perform / Design**. Perform hides Setup and the
+read-only diagnostics, leaving only what drives the show; Design is the full
+console. It defaults to Perform on a phone and Design on a laptop, remembers
+itself per device, and is always one tap from the other — it is a preference
+about screen space, not a permission. Access is what `--token` decides.
+
+Presets are pages of **eight pads**, the APC40 layout the despacio show ran on
+for two years. A preset holds a fixed pad: saving over one leaves it where it
+is, and adding or deleting neighbours does not shuffle it. Tags (`intro`,
+`build`, `drop`, …) cut across banks for the times you want every drop rather
+than a particular pad.
 
 Smoke-test the frame path without the UI:
 

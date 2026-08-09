@@ -31,6 +31,23 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "bank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "which page of eight, counting from 1"
+          },
+          "cell": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7,
+            "description": "position within the bank, 0-7, reading left to right"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

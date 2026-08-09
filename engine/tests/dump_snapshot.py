@@ -21,6 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import server as servermod
 from engine.server import ShowController
 
 OUT = REPO / "ui" / "src" / "__fixtures__" / "despacio.json"
@@ -74,13 +75,30 @@ def main() -> int:
     snapshot["stats"] = {"fps": 40.0, "frames": 1000, "drops": 0,
                          "eval_errors": 0, "worst_error_ms": 0.31}
     snapshot["rev"] = 7
-    # A couple of presets, so the Show tab's recall path renders in tests.
-    snapshot["presets"] = [
-        {"name": "opener", "movement": "Lazy Circle", "color": "MH Red",
-         "level": None, "speed": 1.0, "master": 0.9},
-        {"name": "peak", "movement": "Grand Sweep", "color": "MH White",
-         "level": "Spotlight", "speed": 2.0, "master": 1.0},
-    ]
+    # Presets, so the Show tab's bank grid renders in tests. Built from the
+    # snapshot's OWN selection rather than typed out, because the hand-written
+    # version of this had drifted: it still carried `"movement": "Lazy Circle"`
+    # from before slots went per fixture group, so every UI test rendered a
+    # preset shape the engine had not produced in months -- the exact failure
+    # this file exists to prevent, in the one part that was not captured.
+    #
+    # Deliberately NOT saved through the controller: that would rewrite the real
+    # events/despacio/presets.json, and a test fixture generator must not edit
+    # the show. `arrange_presets` is the same function load_presets runs, so the
+    # bank layout is still the engine's, not this file's.
+    live = snapshot["selection"]
+    slots = {s: dict(live[s]) for s in ("movement", "color", "level")}
+    snapshot["presets"] = servermod.arrange_presets([
+        # Bank 1 with a gap in it, and a second bank: between them these cover
+        # every branch of the grid -- occupied pad, empty pad, page turn.
+        {"name": "opener", **slots, "level": {}, "speed": 1.0, "master": 0.9,
+         "bank": 1, "cell": 0, "tags": ["intro"]},
+        {"name": "peak", **slots, "speed": 2.0, "master": 1.0,
+         "bank": 1, "cell": 3, "tags": ["drop", "build"]},
+        {"name": "landing", **slots, "color": {}, "speed": 0.5, "master": 0.6,
+         "bank": 2, "cell": 0, "tags": ["ambient"]},
+    ])
+    snapshot["preset_banks"] = {"size": servermod.BANK_SIZE, "count": 2}
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")

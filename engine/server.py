@@ -543,18 +543,71 @@ class ShowController:
         and level independent you can build a picture in three taps, and then
         have no way to get back to it. Saved to the event so it survives a
         restart -- a preset that lives in memory is a preset you rebuild.
+
+        Saving over an existing name KEEPS ITS CELL. Re-recording a preset is
+        the most common thing anyone does with one, and having it jump to the
+        end of the grid every time would destroy the only thing a fixed cell is
+        for.
         """
         name = str(m["name"]).strip()[:40]
         if not name:
             raise ValueError("a preset needs a name")
+        previous = next((p for p in self.presets if p["name"] == name), None)
         self.presets = [p for p in self.presets if p["name"] != name]
+        where = _cell_request(m)
+        if where is None and previous is not None:
+            where = (previous["bank"], previous["cell"])
+        if where is None:
+            where = free_cell(self.presets)
+        elif any(p["bank"] == where[0] and p["cell"] == where[1]
+                 for p in self.presets):
+            raise ValueError(f"bank {where[0]} cell {where[1]} is already taken")
+        tags = m.get("tags")
         self.presets.append({
             "name": name, **self.selection,
             "speed": round(self.clock.speed, 3),
             "master": round(self.master, 3),
+            "bank": where[0], "cell": where[1],
+            "tags": [str(t) for t in tags] if tags is not None
+                    else list(previous.get("tags", [])) if previous else [],
         })
+        self.presets.sort(key=_at)
         save_presets(self.event_dir, self.presets)
-        self.note(f"saved preset {name!r}")
+        self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}")
+
+    def _cmd_preset_move(self, m: dict, now: float) -> None:
+        """Put a preset on a different pad, SWAPPING with whatever is there.
+
+        Swap rather than refuse, because the thing anyone actually wants from
+        this is to reorder a bank, and refusing on collision would mean shuffling
+        via an empty cell to get two presets to trade places.
+        """
+        name = m["name"]
+        preset = next((p for p in self.presets if p["name"] == name), None)
+        if preset is None:
+            raise KeyError(f"no preset named {name!r}")
+        where = _cell_request(m)
+        if where is None:
+            raise ValueError("preset_move needs a bank and a cell")
+        occupant = next((p for p in self.presets
+                         if p["bank"] == where[0] and p["cell"] == where[1]), None)
+        if occupant is preset:
+            return
+        if occupant is not None:
+            occupant["bank"], occupant["cell"] = preset["bank"], preset["cell"]
+        preset["bank"], preset["cell"] = where
+        self.presets.sort(key=_at)
+        save_presets(self.event_dir, self.presets)
+        self.note(f"moved preset {name!r} to {where[0]}.{where[1] + 1}")
+
+    def _cmd_preset_tag(self, m: dict, now: float) -> None:
+        name = m["name"]
+        preset = next((p for p in self.presets if p["name"] == name), None)
+        if preset is None:
+            raise KeyError(f"no preset named {name!r}")
+        preset["tags"] = [str(t).strip()[:24] for t in m.get("tags", [])
+                          if str(t).strip()]
+        save_presets(self.event_dir, self.presets)
 
     def _cmd_preset_apply(self, m: dict, now: float) -> None:
         name = m["name"]
@@ -1310,6 +1363,14 @@ class ShowController:
                       for l in self.setlist.looks],
             "selection": self.selection,
             "presets": self.presets,
+            # How many pages the grid needs. Sent rather than derived, so the UI
+            # and the engine cannot disagree about how many banks exist -- and
+            # always at least one, because a bank selector that vanishes when
+            # the last preset is deleted takes the "save here" pads with it.
+            "preset_banks": {
+                "size": BANK_SIZE,
+                "count": max((p["bank"] for p in self.presets), default=1),
+            },
             # The fixture types the UI filters by, biggest group first. Sent
             # rather than derived in the UI so both agree on what a group is.
             "groups": list(self.rig.tags()),
@@ -1339,16 +1400,89 @@ class ShowController:
         }
 
 
+BANK_SIZE = configmod.BANK_SIZE
+
+
+def _at(preset: dict) -> tuple[int, int]:
+    return (preset["bank"], preset["cell"])
+
+
+def _cell_request(m: dict) -> Optional[tuple[int, int]]:
+    """The (bank, cell) a command asked for, or None if it did not ask."""
+    if m.get("bank") is None and m.get("cell") is None:
+        return None
+    bank, cell = int(m.get("bank", 1)), int(m.get("cell", 0))
+    if bank < 1:
+        raise ValueError("banks count from 1")
+    if not 0 <= cell < BANK_SIZE:
+        raise ValueError(f"a bank holds {BANK_SIZE}; cell must be "
+                         f"0-{BANK_SIZE - 1}")
+    return (bank, cell)
+
+
+def free_cell(presets: list[dict]) -> tuple[int, int]:
+    """The first empty pad, scanning banks upward.
+
+    Never returns a cell that is taken, and never runs out: the last bank grows
+    a new one rather than refusing the save. Being told "your preset banks are
+    full" while building a show is not a thing a console should ever do.
+    """
+    taken = {_at(p) for p in presets}
+    bank = 1
+    while True:
+        for cell in range(BANK_SIZE):
+            if (bank, cell) not in taken:
+                return (bank, cell)
+        bank += 1
+
+
+def arrange_presets(presets: list[dict]) -> list[dict]:
+    """Give every preset a real pad, keeping the ones that already have one.
+
+    Runs on load, so a presets.json written before banks existed -- or one
+    hand-edited into a collision -- opens as a working grid instead of an error.
+    A preset with no home is placed rather than dropped: it is somebody's saved
+    picture, and the worst honest outcome is that it is not where they expected.
+    """
+    out: list[dict] = []
+    placed: list[dict] = []
+    homeless: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    for p in presets:
+        if not isinstance(p, dict) or not p.get("name"):
+            continue
+        p.setdefault("tags", [])
+        bank, cell = p.get("bank"), p.get("cell")
+        ok = (isinstance(bank, int) and not isinstance(bank, bool) and bank >= 1
+              and isinstance(cell, int) and not isinstance(cell, bool)
+              and 0 <= cell < BANK_SIZE and (bank, cell) not in seen)
+        if ok:
+            seen.add((bank, cell))
+            placed.append(p)
+        else:
+            # Includes the collision case: first claim of a pad wins, the
+            # second is rehomed. Order in the file decides, which is at least
+            # something a person can look at and predict.
+            homeless.append(p)
+    out.extend(placed)
+    for p in homeless:
+        p["bank"], p["cell"] = free_cell(out)
+        out.append(p)
+    out.sort(key=_at)
+    return out
+
+
 def load_presets(event_dir: Path) -> list[dict]:
     path = Path(event_dir) / "presets.json"
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text(encoding="utf-8")).get("presets", [])
+        raw = json.loads(path.read_text(encoding="utf-8")).get("presets", [])
     except (json.JSONDecodeError, OSError):
         # A corrupt presets file must not stop the show starting. Presets are a
         # convenience; the rig is not.
         return []
+    return arrange_presets(raw if isinstance(raw, list) else [])
 
 
 def save_presets(event_dir: Path, presets: list[dict]) -> None:
@@ -1364,6 +1498,11 @@ def save_presets(event_dir: Path, presets: list[dict]) -> None:
             "",
             "Written by the UI. Safe to hand-edit; a preset naming a look",
             "that no longer exists applies the rest and skips that slot.",
+            "",
+            "'bank' and 'cell' are a fixed position on a page of eight, not a",
+            "sort order -- a preset does not move when its neighbours change.",
+            "Two presets claiming one pad, or a preset with neither key, is",
+            "not an error: the engine rehomes them at load.",
         ],
         "presets": presets,
     })

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useEngine, useWakeLock } from "./useEngine";
+import { ModeProvider, useMode } from "./mode";
 import { Banner, BeatDots, Fader } from "./components";
 import { ShowTab } from "./tabs/Show";
 import { ColorTab } from "./tabs/Color";
@@ -17,35 +18,49 @@ import type { Command, EngineState, Tier } from "./types";
 // Unicode -- so it alone rendered as a full-colour bitmap that ignored the
 // active/inactive tint and sat at a different weight from its neighbours. The
 // filled circle is what the old console used for the same tab.
+// `setup` is Design-only. It is the one tab with nothing on it that makes
+// light — and the one tab that can leave the rig unable to run.
 const TABS = [
   { id: "show", label: "Show", glyph: "★" },
   { id: "color", label: "Color", glyph: "●" },
   { id: "move", label: "Move", glyph: "↔" },
   { id: "bright", label: "Bright", glyph: "☀" },
-  { id: "setup", label: "Setup", glyph: "⚙" },
+  { id: "setup", label: "Setup", glyph: "⚙", design: true },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 export default function App() {
   const { state, status, send, name, setName, tier } = useEngine();
+  const [mode, setMode] = useMode();
   const [tab, setTab] = useState<TabId>("show");
   // Local only while a finger is down; see Fader's comment.
   const [masterDrag, setMasterDrag] = useState<number | null>(null);
 
   useWakeLock(true);
 
+  const tabs = TABS.filter((t) => mode === "design" || !("design" in t));
+
   // Keep the tab in the URL hash so a reload, or a phone waking up, comes back
   // where it was rather than to the front page mid-set.
   useEffect(() => {
     const fromHash = location.hash.slice(1) as TabId;
-    if (TABS.some((t) => t.id === fromHash)) setTab(fromHash);
+    // Checked against the tabs THIS mode has, not against all of them: a phone
+    // that was last on Setup and reopens in Perform would otherwise restore a
+    // tab with no button in the bar and no way back to it.
+    if (tabs.some((t) => t.id === fromHash)) setTab(fromHash);
   }, []);
   useEffect(() => { location.hash = tab; }, [tab]);
+  // Dropping to Perform while standing on Setup would otherwise leave the tab
+  // rendered with no way back to it in the bar.
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === tab)) setTab("show");
+  }, [mode]);
 
   const master = masterDrag ?? state?.master ?? 0;
 
   return (
+    <ModeProvider value={mode}>
     <div className="app">
       <header className="header">
         <div className="header-row">
@@ -55,6 +70,16 @@ export default function App() {
             {state && <> · <span className="mono">{state.clock.effective_bpm.toFixed(1)}</span> bpm</>}
           </span>
           {state && <BeatDots beatInBar={state.clock.beat_in_bar} />}
+          {/* Always one tap from the other mode, and never a lock: someone who
+              needs the patch editor mid-set needs it now, not after finding a
+              setting. */}
+          <button className="small"
+                  title={mode === "perform"
+                    ? "Showing only what drives the show. Tap for the full console."
+                    : "The full console. Tap to hide setup and diagnostics."}
+                  onClick={() => setMode(mode === "perform" ? "design" : "perform")}>
+            {mode === "perform" ? "Perform" : "Design"}
+          </button>
         </div>
 
         <div className="header-row">
@@ -100,7 +125,7 @@ export default function App() {
       </main>
 
       <nav className="tabbar">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.id} className={tab === t.id ? "on" : ""}
                   onClick={() => setTab(t.id)}>
             <span className="glyph">{t.glyph}</span>
@@ -109,6 +134,7 @@ export default function App() {
         ))}
       </nav>
     </div>
+    </ModeProvider>
   );
 }
 

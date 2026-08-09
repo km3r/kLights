@@ -152,6 +152,16 @@ export interface Preset extends Selection {
   name: string;
   speed?: number;
   master?: number;
+  /** Where it sits on the grid: a page counting from 1, and a position within
+   *  that page. A FIXED place, not a sort order — the whole point of a bank is
+   *  that a preset stays where you put it when its neighbours change. The
+   *  engine assigns these at load, so they are always present here. */
+  bank: number;
+  cell: number;
+  /** Cross-cutting labels — `intro` / `build` / `drop` / `ambient` are the ones
+   *  the filter row offers. A tag finds every drop in the show; a bank cannot,
+   *  because a bank is a place. */
+  tags: string[];
 }
 
 /** One fixture definition the engine can resolve, with its modes and their
@@ -199,6 +209,9 @@ export interface EngineState {
   /** What is loaded into each of the three independent slots. */
   selection: Selection;
   presets: Preset[];
+  /** The shape of the preset grid. `count` is at least 1 even with nothing
+   *  saved, so the empty pads you save onto never disappear. */
+  preset_banks: { size: number; count: number };
   /** Fixture groups in the rig, biggest first — the pill filters. */
   groups: string[];
   palette: RGB[];
@@ -228,9 +241,12 @@ export type Command =
   | { type: "hello"; name: string }
   | { type: "select_look"; name: string; hold?: boolean; slot?: Slot }
   | { type: "clear_slot"; slot: Slot; group?: string }
-  | { type: "preset_save"; name: string }
+  | { type: "preset_save"; name: string; bank?: number; cell?: number;
+      tags?: string[] }
   | { type: "preset_apply"; name: string }
   | { type: "preset_delete"; name: string }
+  | { type: "preset_move"; name: string; bank: number; cell: number }
+  | { type: "preset_tag"; name: string; tags: string[] }
   | { type: "release" }
   | { type: "next_look" }
   | { type: "master"; value: number }
@@ -285,3 +301,7 @@ export type ConnectionStatus = "connecting" | "open" | "closed";
 /** What this client may do, decided by the engine from the URL's token.
  *  `view` can watch but every command it sends is refused. */
 export type Tier = "view" | "operate" | "configure";
+
+/** How much of the console to show. A local preference, not a permission —
+ *  `Tier` is what the engine enforces, this is only what is on screen. */
+export type Mode = "perform" | "design";

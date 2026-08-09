@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card } from "../components";
+import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
 
@@ -41,6 +42,10 @@ export function MoveTab({ state, send }: {
 
       <Shape state={state} send={send} />
 
+      {/* Where every head is pointing and what the taper is doing about it —
+          a readout, so Perform mode does without it. The banner that fires when
+          a head is JOGGING is app-wide and is not part of this. */}
+      <DesignOnly>
       <Card title="Heads">
         <div className="grid two">
           {movers.map((f) => {
@@ -81,6 +86,7 @@ export function MoveTab({ state, send }: {
           })}
         </div>
       </Card>
+      </DesignOnly>
     </>
   );
 }

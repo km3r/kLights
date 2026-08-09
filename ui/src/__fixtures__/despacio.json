@@ -2465,21 +2465,63 @@
   "presets": [
     {
       "name": "opener",
-      "movement": "Lazy Circle",
-      "color": "MH Red",
-      "level": null,
+      "movement": {
+        "corner movers": "Lazy Circle"
+      },
+      "color": {
+        "corner movers": "MH Red"
+      },
+      "level": {},
       "speed": 1.0,
-      "master": 0.9
+      "master": 0.9,
+      "bank": 1,
+      "cell": 0,
+      "tags": [
+        "intro"
+      ]
     },
     {
       "name": "peak",
-      "movement": "Grand Sweep",
-      "color": "MH White",
-      "level": "Spotlight",
+      "movement": {
+        "corner movers": "Lazy Circle"
+      },
+      "color": {
+        "corner movers": "MH Red"
+      },
+      "level": {
+        "corner movers": "Spotlight"
+      },
       "speed": 2.0,
-      "master": 1.0
+      "master": 1.0,
+      "bank": 1,
+      "cell": 3,
+      "tags": [
+        "drop",
+        "build"
+      ]
+    },
+    {
+      "name": "landing",
+      "movement": {
+        "corner movers": "Lazy Circle"
+      },
+      "color": {},
+      "level": {
+        "corner movers": "Spotlight"
+      },
+      "speed": 0.5,
+      "master": 0.6,
+      "bank": 2,
+      "cell": 0,
+      "tags": [
+        "ambient"
+      ]
     }
   ],
+  "preset_banks": {
+    "size": 8,
+    "count": 2
+  },
   "groups": [
     "corner movers",
     "pinspots"
