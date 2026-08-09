@@ -36,10 +36,14 @@ the only record of them until a roadmap doc lands.
   a sixth tab, following Rig and Venue, which were tabs once and became sections
   here because they are all one job. Locked by default: every other control on
   that surface is recoverable by pressing it again, and a re-addressed rig is a
-  walk around the room with a torch. Nothing takes effect until the engine
-  restarts, and a standing banner says so until it does — the engine resolves
-  profiles, channel offsets and head indices once at startup, so a saved patch
-  and a running rig genuinely disagree in that window.
+  walk around the room with a torch.
+- **A patch edit applies without restarting.** `patch_apply` swaps the whole rig
+  at a frame boundary — the same place every command already lands, so no frame
+  is ever built from two rigs. The new rig is loaded and validated *before*
+  anything is adopted, so a typo or a missing `.qxf` costs a red notice and the
+  old rig keeps running; a bad edit must never take down a live show. Taper
+  memory is seeded dark rather than cleared, which makes the safety slew limiter
+  double as the reload crossfade instead of needing one of its own.
 - **Access tiers** — `view` / `operate` / `configure`, checked at the single
   point a command enters the show. A token is generated per run and printed
   inside the URL so it survives being a QR code; `--no-token` and `--bind`

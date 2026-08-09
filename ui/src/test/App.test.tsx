@@ -681,6 +681,15 @@ describe("patch", () => {
     const socket = mount();
     act(() => socket.push(stateWith((s) => { s.pending_patch = true; })));
     await openSetup(user);
-    expect(screen.getByText(/saved but NOT running/i)).toBeTruthy();
+    expect(screen.getByText(/still running the rig it last loaded/i)).toBeTruthy();
+  });
+
+  it("applies a pending patch without a restart", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => { s.pending_patch = true; })));
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Apply now/i }));
+    expect(socket.last()).toEqual({ type: "patch_apply" });
   });
 });

@@ -110,7 +110,7 @@ TIER: dict[str, str] = {
     "patch_add": "configure", "patch_remove": "configure",
     "patch_address": "configure", "patch_tags": "configure",
     "patch_position": "configure", "patch_autopatch": "configure",
-    "patch_save": "configure",
+    "patch_apply": "configure",
     # everything not listed is `operate` -- see apply()
 }
 
@@ -875,8 +875,82 @@ class ShowController:
             self.note(f"patch: {warning}")
         patchmod.write_rig(str(self.event_dir), result.config)
         self.pending_patch = True
-        self.note("patch saved to rig.json -- RESTART THE ENGINE to apply it. "
-                  "The running show is still using the rig it loaded at startup")
+        self.note("patch saved to rig.json -- not live yet. Apply it to load it "
+                  "into the running show")
+
+    def _cmd_patch_apply(self, m: dict, now: float) -> None:
+        self.reload_rig()
+
+    def reload_rig(self) -> bool:
+        """Adopt the rig currently on disk, without restarting the show.
+
+        Runs on the output thread at a frame boundary, like every other command,
+        which is the whole reason this is possible: nothing is halfway through
+        evaluating a frame, so the swap cannot produce one built from two
+        different rigs.
+
+        **The old rig keeps running if the new one is bad.** Loading and
+        validating happen before anything is adopted, so a typo in rig.json --
+        or a fixture whose .qxf has gone missing -- costs a red notice rather
+        than the show. That ordering is the only thing here that must not be
+        rearranged.
+
+        Three pieces of derived state have to go with it:
+
+          * `latest_states` is keyed by fixture id, and an id can now mean a
+            different fixture.
+          * `_taper_prev` likewise -- and it is seeded to 0 rather than cleared,
+            so intensity ramps up under the safety slew limiter instead of
+            snapping to whatever the new geometry computes. The limiter that
+            exists to stop a beam flashing as it crosses the crowd turns out to
+            be exactly the right crossfade for a rig swap, which is why there is
+            no separate fade here.
+          * The composed Show, since layers resolve fixtures through the rig.
+
+        What it deliberately does NOT do is re-point anything by itself. A pose
+        is an offset from a head's calibrated ball aim, so if the reload changed
+        which heads exist, every look moves -- correctly, but visibly. The
+        caller is told when that is the case.
+        """
+        try:
+            new_rig = rigmod.load_rig(self.event_dir, self.profiles)
+        except (configmod.ConfigError, FileNotFoundError, ValueError) as exc:
+            self.note(f"reload refused, still running the old rig: {exc}")
+            return False
+        errors = new_rig.validate()
+        if errors:
+            self.note("reload refused, still running the old rig: "
+                      + "; ".join(errors[:3]))
+            return False
+
+        old_heads = tuple(h.name for h in self.rig.geometry.heads) \
+            if self.rig.geometry else ()
+        new_heads = tuple(h.name for h in new_rig.geometry.heads) \
+            if new_rig.geometry else ()
+
+        self.rig = new_rig
+        self.ctx.rig = new_rig
+        self.ctx.venue = new_rig.venue
+        self.latest_states = {}
+        # Seeded dark, not cleared: an empty dict means "no previous value", and
+        # apply_safety then skips the rate limit and adopts the computed taper
+        # instantly. Starting at 0 makes the limiter fade it in.
+        self.ctx._taper_prev = {f.fid: 0.0 for f in new_rig.fixtures}
+        self._recompose()
+        self.pending_patch = False
+
+        if old_heads != new_heads:
+            self.note(f"rig reloaded, and the moving heads CHANGED "
+                      f"({len(old_heads)} -> {len(new_heads)}). Every pose is an "
+                      f"offset from a head's calibrated ball aim, so check the "
+                      f"calibration before trusting one: "
+                      f"python -m engine.calibrate drift")
+        else:
+            self.note(f"rig reloaded live -- {len(new_rig.fixtures)} fixtures, "
+                      f"no restart needed")
+        for warning in new_rig.warnings():
+            self.note(f"rig: {warning}")
+        return True
 
     def _cmd_patch_add(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.add_fixture(

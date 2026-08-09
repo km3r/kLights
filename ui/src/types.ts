@@ -249,7 +249,8 @@ export type Command =
   | { type: "patch_tags"; name: string; tags: string[] }
   | { type: "patch_position"; name: string;
       position: { x: number; y: number; z: number } }
-  | { type: "patch_autopatch"; start?: number; universe?: number };
+  | { type: "patch_autopatch"; start?: number; universe?: number }
+  | { type: "patch_apply" };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

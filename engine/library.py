@@ -194,17 +194,24 @@ def column_for(fixtures: Optional[tuple[str, ...]], width: int):
         return pick_positional
 
     index_of = {name: i for i, name in enumerate(fixtures)}
-    cache: dict[int, list[int]] = {}
+    # Keyed by the head NAMES, not by id(geometry). CPython reuses an id once
+    # the object behind it is collected, so a rig reload -- which frees the old
+    # geometry and builds a new one -- can land the replacement at the same
+    # address and get the previous rig's mapping back. Harmless while there is
+    # exactly one geometry per process, which is why it survived review; a
+    # silently mis-pointed show the moment reloading exists. The names are what
+    # the mapping actually depends on, so they are the honest key.
+    cache: dict[tuple[str, ...], list[int]] = {}
 
     def pick_named(ctx, head: int) -> int:
         geometry = ctx.geometry
         if geometry is None:
             return head % width
-        key = id(geometry)
+        key = tuple(h.name for h in geometry.heads)
         mapping = cache.get(key)
         if mapping is None:
-            mapping = [index_of.get(h.name, i % width)
-                       for i, h in enumerate(geometry.heads)]
+            mapping = [index_of.get(name, i % width)
+                       for i, name in enumerate(key)]
             cache[key] = mapping
         return mapping[head] if head < len(mapping) else head % width
     return pick_named

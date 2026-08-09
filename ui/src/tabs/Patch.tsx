@@ -37,8 +37,13 @@ export function PatchSection({ state, send }: {
     }>
       {state.pending_patch && (
         <Banner kind="warn">
-          A patch edit is saved but NOT running — the show is still using the rig
-          it loaded at startup. Restart the engine to apply it.
+          Saved to <code>rig.json</code>, but the show is still running the rig
+          it last loaded. Applying swaps it in at a frame boundary; if the new
+          one does not load, the current one keeps running.
+          <button className="small" style={{ marginLeft: "auto" }}
+                  onClick={() => send({ type: "patch_apply" })}>
+            Apply now
+          </button>
         </Banner>
       )}
 

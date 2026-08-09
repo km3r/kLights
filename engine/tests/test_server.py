@@ -12,9 +12,11 @@ Run: python engine/tests/test_server.py
 import base64
 import json
 import os
+import shutil
 import socket
 import struct
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -783,6 +785,82 @@ try:
 finally:
     open_server.stop()
     open_ctl.stop()
+
+# -- 14. reloading the rig without restarting ---------------------------------
+#
+# A patch edit used to mean "saved, now restart". The engine resolves profiles,
+# channel offsets and head indices once at startup, but commands drain at frame
+# boundaries, so there is a safe moment to swap the whole rig -- and `render`
+# rebuilds a full frame from the baseline every tick, so re-addressing does not
+# leave the old channels stuck at their last value.
+print("\n14. live rig reload")
+with tempfile.TemporaryDirectory() as tmp:
+    ev = Path(tmp) / "ev"
+    ev.mkdir()
+    for name in ("rig.json", "calibration.json"):
+        shutil.copy(REPO / "events" / "despacio" / name, ev / name)
+
+    live = ShowController(ev)
+    live.start()
+    try:
+        before = len(live.rig.fixtures)
+
+        # A patch edit through the same path the UI uses.
+        live.apply({"type": "patch_add", "name": "Par 1",
+                    "manufacturer": "UKing", "model": "Par 36 Custom",
+                    "mode": "5 Channel", "tags": ["pars"]}, None)
+        check("an edit is saved but not yet live",
+              live.pending_patch and len(live.rig.fixtures) == before,
+              f"pending={live.pending_patch} fixtures={len(live.rig.fixtures)}")
+
+        live.apply({"type": "patch_apply"}, None)
+        check("applying it swaps the rig in place",
+              len(live.rig.fixtures) == before + 1, f"{len(live.rig.fixtures)}")
+        check("and clears the pending flag", not live.pending_patch)
+        check("the context sees the new rig too",
+              live.ctx.rig is live.rig and len(live.ctx.rig.fixtures) == before + 1)
+        check("intensity is seeded dark so the safety slew fades it in, "
+              "rather than snapping",
+              set(live.ctx._taper_prev.values()) == {0.0},
+              f"{sorted(set(live.ctx._taper_prev.values()))}")
+
+        # The frame path has to survive the swap: a reload that renders a broken
+        # frame is worse than one that refuses.
+        frame = live.runner.render_once()
+        check("and the next frame still renders",
+              frame and all(len(f) == 512 for f in frame.values()),
+              f"{[len(f) for f in frame.values()]}")
+
+        # THE one that matters. A bad edit must cost a notice, not the show.
+        healthy = len(live.rig.fixtures)
+        (ev / "rig.json").write_text('{"fixtures": [{"id": 0, "name": "X",'
+                                     ' "manufacturer": "Nope", "model": "Nope",'
+                                     ' "mode": "1", "address": 1}]}',
+                                     encoding="utf-8")
+        live.apply({"type": "patch_apply"}, None)
+        check("a rig that cannot load is REFUSED, and the old one keeps running",
+              len(live.rig.fixtures) == healthy, f"{len(live.rig.fixtures)}")
+        check("with a notice saying so",
+              any("still running the old rig" in n for n in live.notices),
+              f"{live.notices[-1:]}")
+        frame = live.runner.render_once()
+        check("and the show is still rendering after the refusal",
+              frame and all(len(f) == 512 for f in frame.values()))
+
+        # Broken in a different way: loads fine, fails validation.
+        (ev / "rig.json").write_text(json.dumps({
+            "name": "clash", "venue": "despacio-room", "mount_mode": "venue",
+            "fixtures": [
+                {"id": 0, "name": "A", "manufacturer": "UKing",
+                 "model": "Par 36 Custom", "mode": "5 Channel", "address": 1},
+                {"id": 1, "name": "B", "manufacturer": "UKing",
+                 "model": "Par 36 Custom", "mode": "5 Channel", "address": 3},
+            ]}), encoding="utf-8")
+        live.apply({"type": "patch_apply"}, None)
+        check("an overlapping patch is refused too",
+              len(live.rig.fixtures) == healthy, f"{len(live.rig.fixtures)}")
+    finally:
+        live.stop()
 
 print()
 if failures:
