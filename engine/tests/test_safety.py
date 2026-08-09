@@ -281,6 +281,49 @@ check("and a centre offset genuinely re-aims the rig",
                                      landings(1.0, (0.0, -60.0)))) > 50,
       f"{landings(1.0, (0.0, -60.0))[:2]}")
 
+# -- the strobe policy --------------------------------------------------------
+#
+# Strobe is the one genuine medical risk on this rig -- photosensitive epilepsy
+# -- and until now nothing limited it. It cannot be limited in Hz, because the
+# profile declares "Strobe slow to fast" with no frequency at either end, so
+# what is enforced is a band ceiling and a continuous duration.
+print("\n9. the strobe policy")
+
+def strobing(policy, seconds, fps=40.0, ask=1.0):
+    """Drive one fixture asking for `ask` strobe continuously, return per-frame."""
+    ctx = statemod.EvalContext(rig=rig_all, venue=rig_all.venue,
+                               strobe_policy=policy)
+    out = []
+    for k in range(int(seconds * fps)):
+        ctx.time = k / fps
+        show = statemod.Show()
+        show.fx.append(libmod.strobe_layer({f.name: ask for f in rig_all.fixtures}))
+        states = statemod.evaluate(ctx, show)
+        out.append(states[rig_all.fixtures[0].fid].strobe)
+    return out
+
+default = strobing(safety.StrobeConfig(), 2.0)
+check("the default policy changes nothing",
+      all(abs(v - 1.0) < 1e-9 for v in default), f"{default[:3]}")
+
+capped = strobing(safety.StrobeConfig(ceiling=0.4), 1.0)
+check("a ceiling caps how far up the band anything can drive the shutter",
+      max(capped) <= 0.4 + 1e-9, f"max={max(capped)}")
+
+off = strobing(safety.StrobeConfig(enabled=False), 1.0)
+check("disabling it blocks the shutter entirely", max(off) == 0.0, f"{max(off)}")
+
+# The one that matters: sustained flashing is what the guidance is about.
+limited = strobing(safety.StrobeConfig(max_seconds=1.0), 3.0)
+lit = sum(1 for v in limited if v > 0)
+check("a duration limit cuts a sustained strobe off",
+      0 < lit < len(limited), f"{lit}/{len(limited)} frames strobing")
+check("and cuts it off at about the limit, not later",
+      abs(lit / 40.0 - 1.0) < 0.15, f"ran for {lit / 40.0:.2f}s, limit 1.0s")
+check("and it stays off rather than resuming as a duty cycle",
+      all(v == 0 for v in limited[lit + 2:]),
+      f"{sum(1 for v in limited[lit + 2:] if v > 0)} frames resumed")
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

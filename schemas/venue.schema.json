@@ -163,6 +163,30 @@
         "height"
       ]
     },
+    "strobe": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "false blocks the shutter entirely"
+        },
+        "ceiling": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "how far up the fixture's own slow-to-fast band anything may drive the shutter. Not Hz -- the profile declares no frequency. See docs/SAFETY.md"
+        },
+        "max_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "longest continuous strobe before the shutter is forced open. 0 disables the limit"
+        },
+        "recover_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "taper": {
       "type": "object",
       "properties": {

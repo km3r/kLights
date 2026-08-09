@@ -174,6 +174,10 @@ export interface EngineState {
   /** Live shape controls over whatever movement look is up. Identity is
    *  size 1, spread 0, centre [0, 0]. */
   macro: { size: number; spread: number; center: [number, number] };
+  /** What the rig is allowed to do with the shutter. `ceiling` is a position in
+   *  the fixture's own slow-to-fast band, NOT a frequency — the profile
+   *  declares no Hz. See docs/SAFETY.md. */
+  strobe_policy: { enabled: boolean; ceiling: number; max_seconds: number };
   event: string;
   taper: TaperState;
   clock: ClockState;

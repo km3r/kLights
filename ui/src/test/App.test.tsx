@@ -746,3 +746,36 @@ describe("shape macros", () => {
     expect(screen.getByText(/-30° up\/down/)).toBeTruthy();
   });
 });
+
+describe("strobe policy", () => {
+  it("states the limits where strobe is visible", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Bright/);
+    expect(screen.getByText(/75%/)).toBeTruthy();
+    expect(screen.getByText(/8s/)).toBeTruthy();
+    // The honesty that matters: this is not a frequency limit, and saying it is
+    // would be inventing rigour the fixture profiles cannot support.
+    expect(screen.getByText(/Not a frequency limit/i)).toBeTruthy();
+  });
+
+  it("says so loudly when nothing is limiting it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.strobe_policy = { enabled: true, ceiling: 1, max_seconds: 0 };
+    })));
+    await goTo(user, /Bright/);
+    expect(screen.getByText(/UNLIMITED/)).toBeTruthy();
+  });
+
+  it("reports a fully blocked shutter", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.strobe_policy = { enabled: false, ceiling: 1, max_seconds: 0 };
+    })));
+    await goTo(user, /Bright/);
+    expect(screen.getByText(/Blocked entirely/i)).toBeTruthy();
+  });
+});

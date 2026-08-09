@@ -110,11 +110,42 @@ export function BrightTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
   const lit = state.fixtures.filter((f) => (f.intensity ?? 0) > 0.001);
+  const policy = state.strobe_policy;
+  const limited = policy.ceiling < 1 || policy.max_seconds > 0;
 
   return (
     <>
       <LookPicker state={state} send={send} slot="level" title="Bright pattern"
                   empty="Nothing loaded — every fixture is at its full level." />
+
+      {/* Strobe is the one genuine medical risk on this rig — photosensitive
+          epilepsy, which no aversion response protects anyone from — so the
+          policy is stated where strobe is visible rather than left in a config
+          file nobody opens. Read-only: it is a property of the room and the
+          crowd in it, set per venue, not a control to reach for mid-set. */}
+      <Card title="Strobe policy">
+        <p className="small muted" style={{ marginBottom: 0 }}>
+          {!policy.enabled ? (
+            "Blocked entirely — nothing can drive the shutter."
+          ) : limited ? (
+            <>
+              {policy.ceiling < 1 && (
+                <>Capped at <b>{Math.round(policy.ceiling * 100)}%</b> of each
+                  fixture&apos;s slow-to-fast band. </>
+              )}
+              {policy.max_seconds > 0 && (
+                <>Cut off after <b>{policy.max_seconds}s</b> continuous, then
+                  held open before it can restart. </>
+              )}
+              Not a frequency limit — the fixture profiles declare no Hz, so
+              this caps a band position and a duration instead.
+            </>
+          ) : (
+            <b>UNLIMITED — no ceiling and no duration cap. Photosensitive
+              epilepsy is a real risk; set a policy in the venue file.</b>
+          )}
+        </p>
+      </Card>
 
       <Dimmers state={state} send={send} />
 

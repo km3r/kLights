@@ -125,5 +125,37 @@
     "center": { "x": 9144, "z": 9144 }
   },
 
-  "elev_extreme_deg": 90
+  "elev_extreme_deg": 90,
+
+  "_strobe_comment": [
+    "Photosensitive epilepsy is the one genuine medical risk on this rig, and",
+    "unlike dazzle from a beam there is no aversion response to fall back on.",
+    "See docs/SAFETY.md.",
+    "",
+    "NOT a frequency limit. The MJ-OS-018's profile declares its shutter as",
+    "'Strobe slow to fast' with no Hz at either end, so the engine drives a",
+    "normalised position within that band and genuinely does not know what rate",
+    "a given value produces. A number in Hz here would be invented to look",
+    "rigorous.",
+    "",
+    "'ceiling' caps how far up that band anything may drive the shutter. Faster",
+    "is further up the band on every fixture that has one, so this is an honest",
+    "proxy for 'not the fast end' without knowing the mapping.",
+    "",
+    "'max_seconds' caps CONTINUOUS strobe, which is what the guidance is",
+    "actually about -- a one-bar hit is a very different thing from ninety",
+    "seconds of it -- and it holds whatever the rate turns out to be. The",
+    "shutter must then stay open for 'recover_seconds' before another burst is",
+    "allowed, so the cutoff is a stop rather than a duty cycle.",
+    "",
+    "Set conservatively as a starting point. These are NOT measured, and the",
+    "right way to raise them is knowingly, not by discovering they are in the",
+    "way mid-set."
+  ],
+  "strobe": {
+    "enabled": true,
+    "ceiling": 0.75,
+    "max_seconds": 8.0,
+    "recover_seconds": 2.0
+  }
 }

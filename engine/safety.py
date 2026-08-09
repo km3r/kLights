@@ -89,6 +89,45 @@ class TaperConfig:
 
 
 @dataclass(frozen=True)
+class StrobeConfig:
+    """What the rig is allowed to do with the shutter.
+
+    Strobe is the one genuine medical risk on this rig -- photosensitive
+    epilepsy, provoked in roughly the 3-30 Hz range and worst around 15-20 Hz.
+    Unlike dazzle from a beam there is no aversion response to fall back on, and
+    the person affected gets no warning.
+
+    **This deliberately does NOT limit a frequency**, because the frequency is
+    not knowable from here. The MJ-OS-018's profile declares its shutter as
+    "Strobe slow to fast" with no Hz at either end, so the engine drives a
+    normalised 0..1 position within that band and genuinely does not know what
+    rate any given value produces. A limit expressed in Hz would be a number
+    invented to look rigorous.
+
+    Two things that ARE well founded without knowing the rate:
+
+    `ceiling` caps how far up the band anything may drive the shutter. Faster is
+    further up the band on every fixture that has one, so this is an honest
+    proxy for "not the fast end" even without the mapping.
+
+    `max_seconds` caps how long the shutter may strobe CONTINUOUSLY before it is
+    forced open. Sustained flashing is what the guidance is actually about -- a
+    one-bar hit is a very different thing from ninety seconds of it -- and this
+    holds whatever the rate turns out to be. 0 disables the limit.
+
+    Off by default in the sense that the defaults change nothing: a rig that
+    never sets these behaves exactly as it did. Set them per venue.
+    """
+    enabled: bool = True
+    ceiling: float = 1.0
+    max_seconds: float = 0.0
+    # How long the shutter must stay open before another burst is allowed. Only
+    # meaningful with max_seconds, and it exists so the cutoff is a cutoff
+    # rather than a duty cycle that resumes the instant it expires.
+    recover_seconds: float = 2.0
+
+
+@dataclass(frozen=True)
 class Clearance:
     """Why a given aim got the intensity it did. Every field is here so the F4
     design-time report can explain a taper rather than just assert one."""

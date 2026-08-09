@@ -25,7 +25,19 @@ the only record of them until a roadmap doc lands.
   in the software limits, since strobe is reachable from ported looks and from
   auto mode's energy axis with no rate cap — and **lasers**, which are
   unmodelled and regulated.
-- A strobe rate limit is now the highest-value safety item outstanding.
+- **A strobe policy now exists**, enforced in the same unconditional post-stack
+  position as the taper so no look or auto axis can outrank it. Deliberately
+  *not* a frequency limit: the fixture profiles declare "strobe slow to fast"
+  with no Hz at either end, so a number in Hz would be invented to look
+  rigorous. What is enforced instead is a **ceiling** on how far up each
+  fixture's own band anything may drive the shutter (faster is further up), and
+  a **maximum continuous duration** — which is what the guidance is actually
+  about and which holds whatever the rate turns out to be. After a cutoff the
+  shutter must stay open for `recover_seconds`, so it is a stop rather than a
+  duty cycle. Defaults change nothing; despacio is set to 75% / 8s as a
+  conservative, explicitly unmeasured starting point.
+- The policy is printed at startup and shown on the Bright tab, including a
+  loud UNLIMITED when nothing is limiting it.
 - Same correction applied to `engine/safety.py`, the README, the Rig panel and
   the test commentary, so the codebase does not carry two framings.
 

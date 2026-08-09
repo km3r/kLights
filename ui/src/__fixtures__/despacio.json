@@ -3,6 +3,11 @@
   "rev": 7,
   "version": "0.1.0",
   "pending_patch": false,
+  "strobe_policy": {
+    "enabled": true,
+    "ceiling": 0.75,
+    "max_seconds": 8.0
+  },
   "macro": {
     "size": 1.0,
     "spread": 0.0,

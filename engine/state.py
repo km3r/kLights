@@ -98,6 +98,8 @@ class EvalContext:
     auto_intensity: float = 1.0
     strobe: bool = False
     taper: safetymod.TaperConfig = field(default_factory=safetymod.TaperConfig)
+    strobe_policy: safetymod.StrobeConfig = field(
+        default_factory=safetymod.StrobeConfig)
 
     # Live shape controls over whatever movement look is up.
     #
@@ -126,6 +128,13 @@ class EvalContext:
     # would make it untestable as a pure function of geometry.
     _taper_prev: dict[int, float] = field(default_factory=dict, repr=False)
     _taper_time: float = field(default=0.0, repr=False)
+    # How long each fixture's shutter has been strobing continuously, and how
+    # long it has been open since being cut off. Same argument as the taper's
+    # slew memory: the limit is inherently temporal, and making the policy
+    # stateful would make it untestable as a pure function.
+    _strobe_since: dict[int, float] = field(default_factory=dict, repr=False)
+    _strobe_rest: dict[int, float] = field(default_factory=dict, repr=False)
+    _strobe_time: float = field(default=0.0, repr=False)
 
     @property
     def geometry(self) -> Optional[geo.RigGeometry]:
@@ -447,12 +456,57 @@ class Show:
                 *self.overrides, master_layer(self.master)]
 
 
+def apply_strobe_policy(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
+    """The last word on the shutter, for the same reason apply_safety is.
+
+    Not a layer, so a look cannot reorder itself in front of it. Strobe reaches
+    the rig from ported looks AND from auto mode's energy axis, so a policy that
+    any of those could outrank would only be a policy for the paths that
+    happened to respect it.
+
+    See StrobeConfig for why this caps a band position and a duration rather
+    than a frequency: the frequency is not knowable from the profile.
+    """
+    policy = ctx.strobe_policy
+    dt = max(0.0, min(1.0, ctx.time - ctx._strobe_time))
+    ctx._strobe_time = ctx.time
+
+    for f in ctx.rig.fixtures:
+        state = out[f.fid]
+        if state.strobe <= 0:
+            # Open. Accumulate rest, and forget the burst once rested enough.
+            rest = ctx._strobe_rest.get(f.fid, 0.0) + dt
+            ctx._strobe_rest[f.fid] = rest
+            if rest >= policy.recover_seconds:
+                ctx._strobe_since[f.fid] = 0.0
+            continue
+
+        if not policy.enabled:
+            state.strobe = 0.0
+            continue
+
+        state.strobe = min(state.strobe, policy.ceiling)
+
+        if policy.max_seconds > 0:
+            elapsed = ctx._strobe_since.get(f.fid, 0.0)
+            if elapsed >= policy.max_seconds:
+                # Cut off. Rest accrues from here; the burst only clears once
+                # recover_seconds of open shutter have passed, so this is a stop
+                # rather than a duty cycle.
+                state.strobe = 0.0
+                ctx._strobe_rest[f.fid] = ctx._strobe_rest.get(f.fid, 0.0) + dt
+                continue
+            ctx._strobe_since[f.fid] = elapsed + dt
+        ctx._strobe_rest[f.fid] = 0.0
+
+
 def evaluate(ctx: EvalContext, show: Show) -> dict[int, FixtureState]:
     """One frame of parameters. Safety runs after the stack, unconditionally."""
     states = {f.fid: FixtureState() for f in ctx.rig.fixtures}
     for layer in show.stack():
         layer(ctx, states)
     apply_safety(ctx, states)
+    apply_strobe_policy(ctx, states)
     return states
 
 

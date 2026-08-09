@@ -277,6 +277,17 @@ VENUE = {
         "height": Spec(Number, required=True, min=0),
         "bar": Spec(Number, min=0),
     }),
+    "strobe": Spec(dict, of={
+        "enabled": Spec(bool, fix="false blocks the shutter entirely"),
+        "ceiling": Spec(Number, min=0, max=1,
+                        fix="how far up the fixture's own slow-to-fast band "
+                            "anything may drive the shutter. Not Hz -- the "
+                            "profile declares no frequency. See docs/SAFETY.md"),
+        "max_seconds": Spec(Number, min=0,
+                            fix="longest continuous strobe before the shutter "
+                                "is forced open. 0 disables the limit"),
+        "recover_seconds": Spec(Number, min=0),
+    }),
     "taper": Spec(dict, of={
         "crowd_level": Spec(Number, min=0, max=1,
                             fix="what a beam over the crowd is dimmed TO, 0-1. "

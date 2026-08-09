@@ -231,8 +231,21 @@ class ShowController:
             slew_per_second=float(taper_cfg.get("slew_per_second", 2.0)),
             enabled=bool(taper_cfg.get("enabled", True)))
 
+        # Strobe is the one genuine medical risk here (photosensitive
+        # epilepsy) and nothing used to limit it. Policy lives beside the taper
+        # because it is the same kind of thing: a property of the room and the
+        # crowd in it, not of the rig.
+        strobe_cfg = json.loads(
+            self.rig.venue_file.read_text(encoding="utf-8")).get("strobe", {})
+        strobe_policy = safetymod.StrobeConfig(
+            enabled=bool(strobe_cfg.get("enabled", True)),
+            ceiling=float(strobe_cfg.get("ceiling", 1.0)),
+            max_seconds=float(strobe_cfg.get("max_seconds", 0.0)),
+            recover_seconds=float(strobe_cfg.get("recover_seconds", 2.0)))
+
         self.ctx = statemod.EvalContext(rig=self.rig, venue=self.rig.venue,
-                                        taper=taper)
+                                        taper=taper,
+                                        strobe_policy=strobe_policy)
         self.clock = clockmod.MasterClock(bpm=bpm, now=0.0)
         # The ported library if the event has one, otherwise a small scaffold.
         # Falling back rather than failing means a brand-new event runs before
@@ -1113,6 +1126,11 @@ class ShowController:
             # rig disagree, so it gets a standing banner rather than a notice
             # that scrolls away.
             "pending_patch": self.pending_patch,
+            "strobe_policy": {
+                "enabled": self.ctx.strobe_policy.enabled,
+                "ceiling": self.ctx.strobe_policy.ceiling,
+                "max_seconds": self.ctx.strobe_policy.max_seconds,
+            },
             "macro": {"size": round(self.ctx.move_size, 3),
                       "spread": round(self.ctx.move_spread, 3),
                       "center": [round(self.ctx.move_center[0], 2),
@@ -1616,6 +1634,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"safety  taper on, crowd level {taper.crowd_level:.0%}"
               f"{' -- beams over the crowd go dark' if taper.crowd_level == 0 else ''}"
               f"  (docs/SAFETY.md)")
+    # Strobe is the one genuine medical risk here and it is easy to forget the
+    # policy exists, so it is printed whether or not it is doing anything.
+    strobe = controller.ctx.strobe_policy
+    if not strobe.enabled:
+        print("strobe  blocked entirely")
+    elif strobe.max_seconds > 0 or strobe.ceiling < 1.0:
+        parts = []
+        if strobe.ceiling < 1.0:
+            parts.append(f"capped at {strobe.ceiling:.0%} of the band")
+        if strobe.max_seconds > 0:
+            parts.append(f"cut off after {strobe.max_seconds:g}s continuous")
+        print(f"strobe  {', '.join(parts)}")
+    else:
+        print("strobe  UNLIMITED -- no ceiling, no duration cap "
+              "(docs/SAFETY.md)")
     print(f"timing  {', '.join(controller.runner.applied_timing)}")
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     if token is None:
