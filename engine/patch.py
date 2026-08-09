@@ -587,3 +587,173 @@ def held_by(event: str) -> Optional[str]:
         return path.read_text(encoding="utf-8").strip() or "an engine"
     except OSError:
         return "an engine"
+
+
+# ---------------------------------------------------------------------- cli --
+
+def _report(result: Result, event: str, write: bool, quiet: bool = False) -> int:
+    """Print an edit's outcome and persist it only if asked.
+
+    Dry run by default. Re-addressing a rig is a physical job -- every unit has
+    to be re-dialled to match -- so the tool that does it should show you the
+    change before it is a fact, not after.
+    """
+    for problem in result.errors:
+        print(f"  ERROR  {problem}")
+    for warning in result.warnings:
+        print(f"  note   {warning}")
+    if not result.ok:
+        print("\nnothing written.")
+        return 1
+    if not write:
+        if not quiet:
+            print("\ndry run -- pass --write to save this.")
+        return 0
+    holder = held_by(event)
+    if holder is not None:
+        print(f"\nrefusing to write: {holder} is running against this event.\n"
+              f"  The engine reads its config once at startup, so an edit now "
+              f"would leave the file saying one thing and the rig doing "
+              f"another. Stop the show first, or edit a copy.")
+        return 1
+    path = write_rig(event, result.config)
+    print(f"\nwrote {path}")
+    return 0
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m engine.patch",
+        description="Inspect and edit an event's rig. Dry run unless --write.")
+    parser.add_argument("--event", default="despacio")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("describe", help="what is patched, as the engine sees it")
+    sub.add_parser("profiles", help="fixture definitions available to patch")
+    sub.add_parser("venues", help="rooms an event can point at")
+
+    def editable(name, help):
+        p = sub.add_parser(name, help=help)
+        p.add_argument("--write", action="store_true", help="save the change")
+        return p
+
+    p = editable("add", "patch one more unit")
+    p.add_argument("--name", required=True)
+    p.add_argument("--manufacturer", required=True)
+    p.add_argument("--model", required=True)
+    p.add_argument("--mode", required=True)
+    p.add_argument("--address", type=int, help="default: the first gap that fits")
+    p.add_argument("--universe", type=int, default=0)
+    p.add_argument("--tags", default="", help="comma separated")
+    p.add_argument("--position", help="x,y,z in millimetres")
+
+    p = editable("remove", "unpatch a unit")
+    p.add_argument("--name", required=True)
+
+    p = editable("address", "move a unit to another address")
+    p.add_argument("--name", required=True)
+    p.add_argument("--address", type=int, required=True)
+    p.add_argument("--universe", type=int)
+
+    p = editable("tags", "replace a unit's tags")
+    p.add_argument("--name", required=True)
+    p.add_argument("--tags", required=True, help="comma separated")
+
+    p = editable("position", "move a unit in the room")
+    p.add_argument("--name", required=True)
+    p.add_argument("--position", required=True, help="x,y,z in millimetres")
+
+    p = editable("autopatch", "re-address everything end to end, no gaps")
+    p.add_argument("--start", type=int, default=1)
+    p.add_argument("--universe", type=int)
+
+    p = editable("venue", "point this event at a room in shared/venues/")
+    p.add_argument("--name", required=True)
+
+    p = sub.add_parser("import", help="copy a .qxf into shared/fixtures/")
+    p.add_argument("path")
+
+    p = editable("new", "scaffold a new event")
+    p.add_argument("--name", required=True)
+    p.add_argument("--venue", required=True)
+
+    args = parser.parse_args(argv)
+    tags = [t.strip() for t in getattr(args, "tags", "").split(",") if t.strip()]
+
+    def xyz(value):
+        parts = [float(v) for v in value.split(",")]
+        if len(parts) != 3:
+            raise SystemExit("--position takes x,y,z in millimetres")
+        return dict(zip("xyz", parts))
+
+    if args.cmd == "describe":
+        info = describe(args.event)
+        print(f"{info['name']}  room={info['venue']}")
+        for f in info["fixtures"]:
+            head = "" if f["head"] is None else f"  head {f['head']}"
+            print(f"  {f['name']:<18} u{f['universe']} "
+                  f"ch {f['address']}-{f['last_address']:<4} "
+                  f"{f['manufacturer']} {f['model']} ({f['mode']}){head}")
+        for e in info["errors"]:
+            print(f"  ERROR  {e}")
+        for w in info["warnings"]:
+            print(f"  note   {w}")
+        return 1 if info["errors"] else 0
+
+    if args.cmd == "profiles":
+        for p_ in list_profiles():
+            modes = ", ".join(f"{n} ({c}ch)" for n, c in p_["modes"].items())
+            print(f"  {p_['manufacturer']:<10} {p_['model']:<28} {modes}")
+        return 0
+
+    if args.cmd == "venues":
+        for v in list_venues():
+            print(f"  {v['name']:<20} {v['title']}  "
+                  f"{v['width'] / 1000:.1f} x {v['depth'] / 1000:.1f} m")
+        return 0
+
+    if args.cmd == "import":
+        result = import_profile(Path(args.path))
+        for e in result.errors:
+            print(f"  ERROR  {e}")
+        for w in result.warnings:
+            print(f"  note   {w}")
+        return 0 if result.ok else 1
+
+    if args.cmd == "new":
+        result = new_event(args.name, args.venue)
+        if result.ok and args.write:
+            (EVENTS / args.name).mkdir(parents=True, exist_ok=True)
+        return _report(result, args.name, args.write)
+
+    cfg = load_rig_config(args.event)
+    lib = library()
+    if args.cmd == "add":
+        result = add_fixture(cfg, name=args.name, manufacturer=args.manufacturer,
+                             model=args.model, mode=args.mode,
+                             address=args.address, universe=args.universe,
+                             tags=tags,
+                             position=xyz(args.position) if args.position else None,
+                             lib=lib)
+    elif args.cmd == "remove":
+        result = remove_fixture(cfg, args.name, lib=lib)
+    elif args.cmd == "address":
+        result = set_address(cfg, args.name, args.address, args.universe, lib=lib)
+    elif args.cmd == "tags":
+        result = set_tags(cfg, args.name, tags, lib=lib)
+    elif args.cmd == "position":
+        pos = xyz(args.position)
+        result = set_position(cfg, args.name, pos["x"], pos["y"], pos["z"], lib=lib)
+    elif args.cmd == "autopatch":
+        result = autopatch(cfg, universe=args.universe, start=args.start, lib=lib)
+    elif args.cmd == "venue":
+        result = set_venue(cfg, args.name, lib=lib)
+    else:
+        parser.error(f"unhandled command {args.cmd}")
+    return _report(result, args.event, args.write)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

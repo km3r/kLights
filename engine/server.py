@@ -51,6 +51,7 @@ from . import clock as clockmod
 from . import geometry as geo
 from . import library as libmod
 from . import motion
+from . import patch as patchmod
 from . import rig as rigmod
 from . import safety as safetymod
 from . import state as statemod
@@ -319,11 +320,27 @@ class ShowController:
     # -- lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
+        # A marker so the editing tools know not to rewrite this event's config
+        # underneath a running show. Nothing is corrupted if they do -- the
+        # engine read its config at startup and will not read it again -- but
+        # the file then says one thing while the rig does another, and nothing
+        # on screen explains why. Best-effort: a read-only checkout is a
+        # perfectly good reason to run a show, and not a reason to refuse.
+        try:
+            patchmod.lock_path(str(self.event_dir)).write_text(
+                f"engine {__version__} since "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+        except OSError:
+            pass
         self.runner.start()
 
     def stop(self) -> None:
         self.runner.stop()
         self.output.close()
+        try:
+            patchmod.lock_path(str(self.event_dir)).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # -- the frame hooks ---------------------------------------------------
 

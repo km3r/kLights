@@ -101,6 +101,32 @@ Point [`shared/tools/artnet_listener.py`](shared/tools/artnet_listener.py) at
 it to see the frames, or `--no-taper` to see what the safety taper is holding
 back.
 
+## Editing the rig
+
+Three surfaces, one set of rules — `engine/patch.py` decides what a legal patch
+is, so the answer cannot differ between them.
+
+```bash
+python -m engine.patch describe
+python -m engine.patch add --name "Par 1" --manufacturer UKing \
+    --model "Par 36 Custom" --mode "5 Channel" --tags pars --write
+```
+
+Everything is a dry run until `--write`, and a write is refused while an engine
+is running against that event — it reads its config once at startup, so an edit
+mid-show leaves the file and the rig disagreeing with nothing on screen to say
+so. `profiles`, `venues`, `remove`, `address`, `tags`, `position`, `autopatch`,
+`venue`, `import` and `new` round it out; `--help` on any of them.
+
+The same operations are available to Claude over MCP, registered in `.mcp.json`:
+
+```bash
+python mcp/cosmos_mcp.py
+```
+
+It speaks JSON-RPC over stdio in pure standard library — no SDK, so the
+zero-dependency rule survives. Editing tools take `write`, defaulting to false.
+
 ## At the venue
 
 Re-aim after the heads get nudged overnight — three captures per head solve

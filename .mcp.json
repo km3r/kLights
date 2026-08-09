@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cosmos": {
+      "command": "python",
+      "args": ["mcp/cosmos_mcp.py"],
+      "env": {}
+    }
+  }
+}

@@ -11,6 +11,49 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F14, editing the rig
+
+- **`engine/patch.py`** — one set of rules for what a legal patch is, shared by
+  every surface that edits one. Pure functions over config dicts; nothing in it
+  writes a file, so a caller can preview a change, refuse one, or diff it first.
+  Errors reject (channel clash, duplicate name, unknown mode); warnings apply
+  and inform (over-inventory, a removed mover shifting head order, an emptied
+  tag group silently disabling looks).
+- **`python -m engine.patch`** — describe, profiles, venues, add, remove,
+  address, tags, position, autopatch, venue, import, new. Dry run until
+  `--write`.
+- **`mcp/cosmos_mcp.py`** — the same operations over MCP, so the rig can be
+  described in conversation. JSON-RPC over stdio in pure standard library, no
+  SDK. Registered in `.mcp.json`. Covered by `engine/tests/test_mcp.py`, which
+  drives it through a real pipe rather than importing it, because the transport
+  is where a stdio server actually breaks.
+- **Writes refuse while a show is running.** The engine writes
+  `events/<name>/.engine.lock` at startup; the CLI and MCP server check it. The
+  engine reads its config once, so an edit mid-show leaves the file and the rig
+  disagreeing with nothing on screen to explain it.
+- **Access tiers** — `view` / `operate` / `configure`, checked at the single
+  point a command enters the show. A token is generated per run and printed
+  inside the URL so it survives being a QR code; `--no-token` and `--bind`
+  restore or narrow the old behaviour. Cross-origin WebSocket handshakes are
+  refused. The UI carries the token through and shows a VIEW ONLY banner.
+
+### Fixed — F14
+
+- **One stuck client could freeze the console for everyone.** `send_all` called
+  a blocking `sendall` from the single broadcast thread, so a phone that locked
+  its screen filled its TCP window and stalled every other client — at a venue,
+  indistinguishable from the engine hanging. Now a bounded queue per client
+  drained by that client's own thread, so the broadcast thread cannot block; a
+  client three snapshots behind is dropped and reconnects.
+- **The drop path had the same bug.** Dropping a stuck client called
+  `WebSocket.close`, which sends a courtesy close frame with a blocking
+  `sendall` — to the socket whose buffer was already full. The close frame now
+  has a deadline and the socket is torn down underneath it regardless.
+- **Preflight's bundle check asked the wrong question**, failing on a correct
+  bundle that was staged but not committed. It now compares the directory on
+  disk against a rebuild, which is what actually gets served. CI still asks
+  whether the committed bundle matches the committed source.
+
 ### Added — F13, config as a contract
 
 - **`engine/config.py`** — every config file is now validated on load against a
