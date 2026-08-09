@@ -182,7 +182,9 @@ def build_scene(event_dir: Path) -> SceneSpec:
     rig = rigmod.load_rig(Path(event_dir))
     venue = rig.venue
     if venue is None:
-        raise ValueError(f"{event_dir}: no venue.json, so there is no room to build")
+        raise ValueError(f"{event_dir}: no venue, so there is no room to build "
+                         f"-- point rig.json at one in shared/venues/, or give "
+                         f"the event its own venue.json")
 
     warnings: list[str] = list(rig.validate())
     unplaced: list[str] = []
@@ -225,7 +227,14 @@ def build_scene(event_dir: Path) -> SceneSpec:
         for name in wheel:
             cd = f.profile.channels[name]
             if cd.role == rigmod.COLOR_WHEEL:
-                slots = [[c.lo, c.hi, *c.rgb] for c in cd.color_slots]
+                # [lo, hi, r, g, b, r1, g1, b1, r2, g2, b2]: the slot's single
+                # averaged colour, then the two halves actually in the aperture.
+                # A wheel's in-between positions are split, not blended, so the
+                # pair is the only honest way to draw one; the two halves repeat
+                # the average for an ordinary single-colour slot.
+                slots = [[c.lo, c.hi, *c.rgb, *(c.pair[0] if c.pair else c.rgb),
+                          *(c.pair[1] if c.pair else c.rgb)]
+                         for c in cd.color_slots]
                 break
 
         fixtures.append(FixtureSpec(

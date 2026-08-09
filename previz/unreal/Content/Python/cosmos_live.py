@@ -37,6 +37,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from engine import rig as rigmod                    # noqa: E402
+from engine import servo as servomod                # noqa: E402
 from previz import mirrorball as mb                 # noqa: E402
 from previz import scene as previz_scene            # noqa: E402
 
@@ -177,6 +178,27 @@ def _decode_universe(sub_uni, net):
 # per-instance visibility flag, so "not shown" is "scaled to nothing".
 PARKED = unreal.Transform(unreal.Vector(0.0, 0.0, 0.0), unreal.Rotator(0, 0, 0),
                           unreal.Vector(0.0, 0.0, 0.0))
+
+
+def split_plane(direction):
+    """A unit normal perpendicular to `direction`, pointing UP.
+
+    The plane through the beam's axis separating its top half from its bottom
+    half, which is what a colour wheel sitting between two segments actually
+    produces: half the aperture is one colour and half is the next.
+
+    World up projected off the beam axis and renormalised, so it stays the TOP
+    half however the head is aimed. A beam pointing straight up or down has no
+    top half; +X is picked there, arbitrarily but stably, because any plane
+    through a vertical axis is as good as any other and a wobbling choice would
+    make the split spin as the head swung through vertical.
+    """
+    dx, dy, dz = direction.x, direction.y, direction.z
+    ux, uy, uz = -dx * dz, -dy * dz, 1.0 - dz * dz     # up - d*(d.up), d.up = dz
+    length = math.sqrt(ux * ux + uy * uy + uz * uz)
+    if length < 1e-6:
+        return (1.0, 0.0, 0.0)
+    return (ux / length, uy / length, uz / length)
 
 
 def surviving(distance_cm):
@@ -324,6 +346,13 @@ class Live:
 
         self.throw = self._max_throw()
 
+        # The yokes. DMX is a command, not a position: a real head needs the
+        # better part of a second to cross the room, and a previz that drew the
+        # command showed every routine change as a teleport -- which hid both
+        # the lit sweep a change actually drags across the room, and the whole
+        # point of a dark move, whose travel time IS the effect.
+        self.servos = servomod.Rack()
+
         # The mirror ball, as facet normals plus a rotation that advances with
         # wall-clock time. One shared set for the whole frame: there is one ball,
         # and computing it per head would let four heads disagree about where
@@ -392,6 +421,9 @@ class Live:
         # everything below this line does the same job for both and three
         # parallel sets of dicts is three chances for them to disagree.
         self.lights = self._find_tagged(world, "unit:")
+        # The other half of the aperture, on fixtures with a split colour
+        # wheel. Absent for everything else -- see build_level._has_split_slot.
+        self.lights2 = self._find_tagged(world, "unit2:")
         self.beams = self._find_tagged(world, "beam:")
         self.glows = self._find_tagged(world, "glow:")
         # One dynamic material instance per beam, made once per binding.
@@ -646,7 +678,39 @@ class Live:
         # change"). White is an honest stand-in for "some colour, changing".
         return (1.0, 1.0, 1.0)
 
-    def _aim_beam(self, fixture, light, beam, material, glow, level, color):
+    @staticmethod
+    def _split_for(fixture, frame):
+        """The two colours in the aperture, or None if this slot is one colour.
+
+        A colour wheel is a disc of segments and its in-between positions put
+        half of one and half of the next in front of the lens, so the beam
+        leaves two-toned across its width rather than blended. The MingJie wheel
+        declares seven of these and the show uses them, and previz drew every
+        one as a single muddy average until 2026-08-08.
+
+        The pair comes from `engine.rig`, resolved out of the profile's own
+        single-colour slots -- see `_resolve_split_slots`. A mixing fixture has
+        no wheel and therefore never splits.
+        """
+        idx = fixture.index_of(rigmod.COLOR_WHEEL)
+        if idx is None:
+            return None
+        raw = frame[idx]
+        for name in fixture.profile.modes[fixture.mode]:
+            channel = fixture.profile.channels[name]
+            if channel.role != rigmod.COLOR_WHEEL:
+                continue
+            for slot in channel.color_slots:
+                if slot.lo <= raw <= slot.hi:
+                    if slot.pair is None:
+                        return None
+                    return tuple(tuple(c / 255.0 for c in half)
+                                 for half in slot.pair)
+            break
+        return None
+
+    def _aim_beam(self, fixture, light, beam, material, glow, level, color,
+                  split=None):
         """Stretch and aim one fixture's shaft along the beam it is emitting.
 
         The cone mesh runs from local Z -50 to +50 with its apex at +Z, so
@@ -700,8 +764,21 @@ class Live:
         self._ball_glow(glow, level * (1.0 - clear), color, full_lumens(fixture))
 
         if material is not None:
+            # A split slot puts half of one wheel segment and half of the next
+            # in the aperture, so the beam leaves two-toned across its width.
+            # `ColorB` equals `Color` when it is not split, which makes the
+            # material's blend a no-op and costs one parameter write.
+            # `SplitNormal` points UP and the material lerps Color -> ColorB as
+            # the dot product with it rises, so ColorB is the TOP half. The
+            # first-named colour of a slot ("Green + Blue") goes on top, which
+            # is the convention the show describes them by.
+            top, bottom = split if split else (color, color)
             material.set_vector_parameter_value(
-                "Color", unreal.LinearColor(*color, 1.0))
+                "Color", unreal.LinearColor(*bottom, 1.0))
+            material.set_vector_parameter_value(
+                "ColorB", unreal.LinearColor(*top, 1.0))
+            material.set_vector_parameter_value(
+                "SplitNormal", unreal.LinearColor(*split_plane(direction), 0.0))
             # Where this shaft starts and how far it gets, so the material can
             # fade it along its length. Written every frame because both move:
             # the lens follows the head, and the throw is re-traced.
@@ -719,14 +796,59 @@ class Live:
                 "Brightness", level * BEAM_GAIN * shaft
                 * self.beam_share.get(unit_key(fixture), 1.0))
 
-    @staticmethod
-    def _light_up(light, level, color, lumens):
-        """Set one fixture's actual light to its level and colour."""
+    def _light_up(self, key, light, level, color, lumens, split=None,
+                  beam_deg=3.0):
+        """Set one fixture's actual light to its level and colour.
+
+        A split wheel position needs TWO lights and this is why: an Unreal spot
+        light has one colour, and its volumetric fog is what makes a beam read
+        as a beam at all. Splitting only the shaft mesh left the fog a single
+        average and the beam still looked one colour, which is exactly what was
+        reported.
+
+        So the two halves of the aperture become two lights at half intensity,
+        tipped a quarter of the cone apart in ELEVATION -- which is up and down
+        in the room, since the previz's rotator carries elevation as pitch. They
+        overlap down the middle, as the real halves do. The primary keeps the
+        bottom colour so a fixture with no second light still looks sane.
+        """
         spot = light.spot_light_component
-        spot.set_visibility(level > 0.0, False)
-        if level > 0.0:
-            spot.set_intensity(lumens * level)
-            spot.set_light_color(unreal.LinearColor(*color, 1.0))
+        second = self.lights2.get(key)
+        lit = level > 0.0
+
+        if split is None or second is None:
+            spot.set_visibility(lit, False)
+            if lit:
+                spot.set_intensity(lumens * level)
+                spot.set_light_color(unreal.LinearColor(*color, 1.0))
+            if second is not None:
+                second.spot_light_component.set_visibility(False, False)
+            return
+
+        top, bottom = split
+        other = second.spot_light_component
+        spot.set_visibility(lit, False)
+        other.set_visibility(lit, False)
+        if not lit:
+            return
+
+        # Half the output each, because each half-aperture passes half the beam.
+        half = lumens * level * 0.5
+        spot.set_intensity(half)
+        other.set_intensity(half)
+        spot.set_light_color(unreal.LinearColor(*bottom, 1.0))
+        other.set_light_color(unreal.LinearColor(*top, 1.0))
+
+        # Tip them apart. `light` has already been aimed this frame, so its
+        # rotation is the true aim to work from; next frame re-aims it from the
+        # DMX again, so nothing accumulates.
+        aim = light.get_actor_rotation()
+        tilt = beam_deg / 4.0
+        second.set_actor_location(light.get_actor_location(), False, False)
+        second.set_actor_rotation(
+            unreal.Rotator(aim.roll, aim.pitch + tilt, aim.yaw), False)
+        light.set_actor_rotation(
+            unreal.Rotator(aim.roll, aim.pitch - tilt, aim.yaw), False)
 
     @staticmethod
     def _ball_glow(glow, caught, color, lumens):
@@ -746,17 +868,18 @@ class Live:
         point.set_intensity(lumens * BALL_GLOW_FRACTION * caught)
         point.set_light_color(unreal.LinearColor(*color, 1.0))
 
-    def _drive(self, key, fixture, light, level, color, spun, ray):
+    def _drive(self, key, fixture, light, level, color, spun, ray, split=None):
         """Everything one fixture puts into the room this frame.
 
         The same four steps for a mover and for a pinspot. The only difference
         between them is upstream: a mover's aim is decoded from DMX through the
         show's calibration, and a pinspot's is where its bracket points.
         """
-        self._light_up(light, level, color, full_lumens(fixture))
+        self._light_up(key, light, level, color, full_lumens(fixture),
+                       split, fixture.output_beam_deg)
         self._aim_beam(fixture, light, self.beams.get(key),
                        self.beam_materials.get(key), self.glows.get(key),
-                       level, color)
+                       level, color, split)
         self._place_reflections(key, fixture, ray, level, color, spun)
 
     def _place_reflections(self, key, fixture, ray, level, color, spun):
@@ -893,9 +1016,37 @@ class Live:
             tint = unreal.LinearColor(*color, 1.0)
             for name, gain in (("dots", DOT_GAIN), ("rays", RAY_GAIN)):
                 materials[name].set_vector_parameter_value("Color", tint)
+                # The rays share the beam material, which blends toward `ColorB`
+                # for a split beam. Both ends the same here, so the blend is a
+                # no-op -- and the ball's spray of a split beam is drawn in the
+                # slot's AVERAGED colour, deliberately. Each facet really does
+                # reflect whichever half struck it, but every reflection of one
+                # fixture shares a single material instance (that sharing is
+                # what makes a couple of hundred of them affordable), so drawing
+                # them individually would need per-instance colour and a
+                # per-instance write. Left as a known simplification rather than
+                # a silent one -- the shaft carries the split, the spray averages
+                # it, and a mirror ball's spray really is a mix of both halves.
+                if name == "rays":
+                    materials[name].set_vector_parameter_value("ColorB", tint)
                 materials[name].set_scalar_parameter_value(
                     "Brightness", level * gain * share)
             self.dot_look[key] = look
+
+    def settle(self):
+        """Finish every move now, and redraw. For stills.
+
+        A SceneCapture runs no slate ticks, so a caller that writes a frame and
+        photographs it immediately would catch four heads that had not started
+        moving yet -- and with a mechanical model in the path, "not yet" is now
+        a whole second wide rather than a rounding error. Two ticks: the first
+        so the yokes hear the command, the second so everything hanging off
+        their position (shafts, ball reflections, the glow) is redrawn from
+        where they ended up.
+        """
+        self.tick(0.0)
+        self.servos.settle()
+        self.tick(0.0)
 
     def tick(self, delta):
         started = time.perf_counter()
@@ -932,9 +1083,15 @@ class Live:
                         return 0
                     return (frame[hi] << 8) | (0 if lo is None else frame[lo])
 
-                aim = geometry.decode(fixture.head,
-                                      word(rigmod.PAN, rigmod.PAN_FINE),
-                                      word(rigmod.TILT, rigmod.TILT_FINE))
+                # Where the console says to be, then where the yoke has got to.
+                # Decoding the SERVO's position rather than the command is what
+                # makes a move take time; the decode itself is unchanged, so
+                # previz and show still share one geometry.
+                pan, tilt = self.servos.of(
+                    key, fixture, geometry.heads[fixture.head]).follow(
+                    word(rigmod.PAN, rigmod.PAN_FINE),
+                    word(rigmod.TILT, rigmod.TILT_FINE), delta)
+                aim = geometry.decode(fixture.head, pan, tilt)
                 light.set_actor_rotation(
                     unreal.Rotator(0.0, aim.elev_deg,
                                    geometry.world_bearing(fixture.head, aim)),
@@ -944,7 +1101,8 @@ class Live:
                 level = 1.0 if dim_idx is None else frame[dim_idx] / 255.0
                 color = self._color_for(fixture, frame)
                 self._drive(key, fixture, light, level, color, spun,
-                            geometry.ray(fixture.head, aim))
+                            geometry.ray(fixture.head, aim),
+                            self._split_for(fixture, frame))
 
             for fixture in self.statics:
                 key = unit_key(fixture)
@@ -1036,13 +1194,25 @@ def status():
         print(f"[cosmos] WARNING: the reflection pool ran out on "
               f"{state.dots_truncated} frame(s) -- cosmos_live and build_level "
               f"disagree about the facet count, so re-run go.py to rebuild")
+    moving = [k for k, s in state.servos.servos.items()
+              if s.target is not None and not s.arrived(*s.target)]
+    print(f"[cosmos] yokes: {servomod.DEFAULT_PAN_DEG_PER_S:.0f} deg/s pan, "
+          f"{servomod.DEFAULT_TILT_DEG_PER_S:.0f} deg/s tilt (ASSUMED -- see "
+          f"engine/servo.py), "
+          + (f"in flight: {', '.join(sorted(moving))}" if moving
+             else "every head is where it was told to be"))
     for fixture in state.rig.movers:
         frame = state.frames[fixture.universe]
         pan = fixture.index_of(rigmod.PAN)
         tilt = fixture.index_of(rigmod.TILT)
         dim = fixture.index_of(rigmod.DIMMER)
+        # Commanded, then where the yoke has actually got to -- printed as the
+        # same coarse byte so the two are comparable at a glance.
+        servo = state.servos.servos.get(unit_key(fixture))
+        at = ("" if servo is None or servo.pan is None else
+              f"  (at {int(servo.pan) >> 8:>3},{int(servo.tilt) >> 8:>3})")
         print(f"    {fixture.name:<16} pan={frame[pan]:>3} tilt={frame[tilt]:>3} "
-              f"dim={0 if dim is None else frame[dim]:>3}")
+              f"dim={0 if dim is None else frame[dim]:>3}{at}")
     for fixture in state.statics:
         frame = state.frames[fixture.universe]
         rgb = Live._color_for(fixture, frame)

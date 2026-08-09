@@ -107,9 +107,29 @@ def _actors_labelled(labels):
             if a.get_actor_label() in wanted]
 
 
+def _settle_driver():
+    """Let any running driver finish its moves before the shutter opens.
+
+    The heads model a real yoke now, so they lag the DMX by up to a second. A
+    still is asking what a look LOOKS like, not what it looks like partway
+    into the travel -- and without this the answer would depend on how long
+    ago the frame was written, which is exactly the kind of irreproducibility
+    a scripted snapshot exists to remove. A live previz is unaffected: it goes
+    straight back to following on the next editor tick.
+    """
+    try:
+        import cosmos_live_state
+    except ImportError:
+        return
+    state = getattr(cosmos_live_state, "current", None)
+    if state is not None:
+        state.settle()
+
+
 def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
              passes=24):
     view = VIEWS[name]
+    _settle_driver()
     location, target = view["location"], view["target"]
     editor = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
     world = editor.get_editor_world()

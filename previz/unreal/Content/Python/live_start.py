@@ -19,7 +19,8 @@ import cosmos_live
 
 cosmos_live.stop()
 
-for name in ("engine.geometry", "engine.venue", "engine.rig", "previz.scene"):
+for name in ("engine.config", "engine.geometry", "engine.venue", "engine.rig",
+             "engine.servo", "previz.scene"):
     if name in sys.modules:
         importlib.reload(sys.modules[name])
 importlib.reload(cosmos_live)

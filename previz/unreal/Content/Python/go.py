@@ -21,8 +21,12 @@ import cosmos_live
 # Reload both, so editing either one and re-running actually takes effect --
 # the editor caches imported modules for its whole session.
 cosmos_live.stop()
-for name in ("engine.geometry", "engine.venue", "engine.rig",
-             "previz.scene", "previz.mirrorball"):
+# engine.config first: engine.venue and engine.rig both import it, and reloading
+# a module without reloading what it imported leaves the old objects in place --
+# so a change to a config schema would not take effect until the editor was
+# restarted, which is exactly the thing this list exists to avoid.
+for name in ("engine.config", "engine.geometry", "engine.venue", "engine.rig",
+             "engine.servo", "previz.scene", "previz.mirrorball"):
     if name in sys.modules:
         importlib.reload(sys.modules[name])
 importlib.reload(build_level)

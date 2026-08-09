@@ -269,6 +269,59 @@ which is the failure that looks like cheating. It is a *fraction* rather than a
 flat lumen count so that a 48 lm pinspot cannot wash the room the way a 1300 lm
 beam can.
 
+## The heads take time to get there
+
+DMX is a *command*, not a position. A real yoke needs the better part of a
+second to cross the room, and until 2026-08-08 the previz drew the command:
+change routine and the beams were simply somewhere else on the next frame.
+
+That hid the two things a previz is best placed to show. One is what a routine
+change actually costs — four lit beams dragged across every face in the room on
+the way to the new pose, which is the thing you either accept or hide behind a
+blackout. The other is every **dark move**, whose travel time *is* the effect;
+with a teleporting previz, Teleport and an ordinary lit sweep render identically.
+
+`engine.servo` rate-limits each head toward the commanded position and
+`cosmos_live` decodes where the yoke has *got to* rather than where it was told
+to be. The decode itself is untouched, so previz and show still share one
+geometry.
+
+- **The limit is applied in raw channel space**, not to bearing and elevation.
+  That is what the motors turn, it is the only frame in which the two axes have
+  independent speeds, and it means the model needs to know nothing about the
+  mount — which matters here, where the heads are bolted sideways and Pan
+  carries elevation. Both axes run at once, so a diagonal finishes when the
+  slower one arrives.
+- **The speeds are assumed**, and they are the number here worth being
+  suspicious of: 216 °/s pan and 180 °/s tilt, the usual published figures for
+  this class of 60 W beam. No `.qxf` can declare a slew rate and nobody has
+  timed ours. `rig.json` overrides per unit with `pan_speed_deg_s` /
+  `tilt_speed_deg_s`, the same lever `lumens` and `beam_deg` have.
+- **Acceleration is deliberately not modelled.** A real yoke ramps up and
+  brakes, so this arrives slightly early on a long move; correcting it would
+  mean inventing a second unmeasured number to fix an error smaller than the one
+  already in the first.
+- **Stills settle first.** `snapshot.py` finishes every move before the shutter
+  opens, because a still asks what a look *looks like*, not what it looks like
+  partway through the travel — otherwise the answer would depend on how long ago
+  the frame was written. A live previz is unaffected; it resumes following on
+  the next tick. Anything else that writes a frame and photographs it should
+  call `state.settle()`, which replaces the old advice to call `tick(0.0)`:
+  with a mechanical model in the path, a zero-length tick no longer moves
+  anything.
+- `status()` prints each head as `pan=<told> (at <achieved>)` and names any head
+  still in flight.
+
+**What this immediately exposed.** The Dark Moves were authored against the real
+rig's timing, and at the reference tempo two of them do not allow enough travel
+for the widest hop: Teleport's swing out to the walls is 180° of bearing, which
+needs about 1.0 s and is given 774 ms, and Freeze Frame's is given 871 ms. The
+dimmer returns on a head still swinging, so the last fifth of the "teleport" is
+a short lit sweep. `engine.servo.cue_margins` computes this for any chase at any
+tempo and `engine/tests/test_library.py` prints the table. It gets worse as the
+tempo goes up: everything is on a bar count now, so a faster show shortens every
+travel while the heads stay exactly as fast as they were.
+
 ## Beams lose light as they travel
 
 A shaft of constant brightness is the one thing haze cannot produce: the same
@@ -516,6 +569,48 @@ picture (total spray goes as count × gain). And the overshoot lands on the far
 wall as a bright annulus with the ball's shadow punched through the middle —
 that is not an artefact, it is the shadow work in `SHADOW_RESOLUTION_SCALE`
 finally having something to show.
+
+## Split ("duo") colour-wheel positions
+
+A colour wheel is a disc of coloured segments, and the positions **between** two
+of them put half of one and half of the next in front of the lens. The beam
+comes out two-toned across its width — green above, blue below — not blended.
+The MingJie wheel declares seven of these (values 80–139, "Cyan + Pink" through
+"Yellow + Red"), which is half the colours it has.
+
+Previz drew every one of them as a single muddy average until 2026-08-08. Three
+things had to change, and the third is the one that actually mattered:
+
+1. **`engine.rig` now resolves the pair.** The `.qxf` records a split slot as
+   one approximate tint (`#80ff80` for "Green + Blue"), which is fine for the
+   engine's nearest-slot colour matching and useless for drawing one.
+   `_resolve_split_slots` reads the label and looks the two names up among *that
+   same channel's* single-colour slots, so "Green + Blue" resolves to the exact
+   `#00ff00` and `#0000ff` the profile already declares. No colour-name table,
+   no guessing; an unresolvable name simply leaves `Capability.pair` None and
+   the slot behaves as before. QLC+'s own `Res2` attribute is honoured first.
+2. **The shaft mesh splits.** `M_PrevizBeam` lerps `Color` → `ColorB` across a
+   world-space plane through the beam's own axis, handed over as `SplitNormal`.
+   World-space and not the mesh's UVs, for the same reason the taper measures
+   from `Origin`: the shaft is a stretched cone whose local frame twists with
+   its aim, so a local split would roll as the head moved.
+3. **The fixture gets a second spot light** — and this is the part without which
+   the other two are invisible. An Unreal spot light has exactly one colour, and
+   its volumetric fog is what makes a beam read as a beam at all. Splitting only
+   the mesh left the fog a single average and the beam still looked one colour.
+   So a split fixture carries two lights at half intensity each, tipped a
+   quarter of the cone apart in elevation, one per half of the aperture. They
+   overlap down the middle as the real halves do. Built only where the profile
+   has split slots (`_has_split_slot`), because a shadow-casting spot light is
+   not free.
+
+**The ball's spray is drawn in the averaged colour**, deliberately. Each facet
+really does reflect whichever half struck it, but every reflection of one
+fixture shares a single material instance — that sharing is what makes a couple
+of hundred of them affordable — so per-facet colour would need per-instance data
+and a per-instance write. A mirror ball's spray genuinely is a mix of both
+halves, so this reads acceptably; the *renderer's* own specular off the ball
+tiles does show both, since that comes from the two real lights.
 
 ## The ball you see and the ball light bounces off are two sets
 

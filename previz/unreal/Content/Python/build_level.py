@@ -48,6 +48,14 @@ DOT_MATERIAL = "M_PrevizDot"
 # 1.8 keeps a bright core with the fade in the outer third.
 DOT_SHOULDER = 1.8
 
+# How abruptly a split beam changes colour across its width, per Unreal cm.
+# The two halves of the aperture meet at a hard mechanical edge, so this is
+# deliberately steep -- large enough that the transition is a couple of
+# centimetres wide and therefore antialiases rather than stair-steps, small
+# enough that it is not a jagged line. It is NOT a soft blend: a wheel sitting
+# between two segments throws two colours, it does not mix them.
+SPLIT_SHARPNESS = 0.4
+
 # The basic shapes are 100 cm across at scale 1, so a scale is a size in metres.
 SHAPE_SIZE = 100.0
 # Mirror tiles cover 92% of their share of the ball, so the dark core shows
@@ -253,7 +261,8 @@ def _soft_edge(material, lib, output, exponent):
     return softened
 
 
-def make_emissive_material(name, round_off, taper=False, soft_edge=0.0):
+def make_emissive_material(name, round_off, taper=False, soft_edge=0.0,
+                           split=False):
     """An additive, unlit, `Color * Brightness` material.
 
     `round_off` multiplies by `1 - Fresnel`, which peaks where the surface faces
@@ -317,9 +326,101 @@ def make_emissive_material(name, round_off, taper=False, soft_edge=0.0):
     brightness.set_editor_property("parameter_name", "Brightness")
     brightness.set_editor_property("default_value", 1.0)
 
+    # Where this shaft starts, and how far the pixel being shaded is from it.
+    # Both the taper and the split want that, so it is built once: `Origin` is
+    # the lens for a head's shaft and the ball for the mirror-ball spray.
+    origin = xyz = here = offset_xyz = None
+    if taper or split:
+        origin = lib.create_material_expression(
+            material, unreal.MaterialExpressionVectorParameter, -1900, 500)
+        origin.set_editor_property("parameter_name", "Origin")
+        origin.set_editor_property("default_value", unreal.LinearColor(0, 0, 0, 0))
+        # A VectorParameter is a float4 and everything downstream wants a
+        # float3, so the alpha has to be masked off rather than left to
+        # broadcast.
+        xyz = lib.create_material_expression(
+            material, unreal.MaterialExpressionComponentMask, -1700, 500)
+        for channel, on in (("r", True), ("g", True), ("b", True), ("a", False)):
+            xyz.set_editor_property(channel, on)
+        lib.connect_material_expressions(origin, "", xyz, "")
+
+        here = lib.create_material_expression(
+            material, unreal.MaterialExpressionWorldPosition, -1900, 650)
+        offset_xyz = lib.create_material_expression(
+            material, unreal.MaterialExpressionSubtract, -1500, 600)
+        lib.connect_material_expressions(here, "", offset_xyz, "A")
+        lib.connect_material_expressions(xyz, "", offset_xyz, "B")
+
+    shade = color
+    if split:
+        # A colour wheel's in-between positions put half of one segment and half
+        # of the next in front of the lens, so the beam leaves TWO-TONED, split
+        # down its middle -- not blended. Seven of the MingJie wheel's fourteen
+        # slots are these, and previz drew every one of them as a single muddy
+        # average, which is the whole reason this exists.
+        #
+        # Split by a world-space PLANE through the beam's own axis rather than by
+        # the mesh's local UVs, for the same reason the taper is measured from
+        # `Origin`: the shaft is a stretched cone whose local frame twists with
+        # its aim, so a local split would roll as the head moved. The driver
+        # hands over the plane's normal -- perpendicular to the beam and lying in
+        # the vertical plane -- so "top half" stays the top half wherever the
+        # head points.
+        color_b = lib.create_material_expression(
+            material, unreal.MaterialExpressionVectorParameter, -700, -250)
+        color_b.set_editor_property("parameter_name", "ColorB")
+        color_b.set_editor_property("default_value", unreal.LinearColor(1, 1, 1, 1))
+
+        normal = lib.create_material_expression(
+            material, unreal.MaterialExpressionVectorParameter, -1500, -450)
+        normal.set_editor_property("parameter_name", "SplitNormal")
+        # Zero by default: the dot product is then 0 everywhere, the alpha sits
+        # at 0.5, and a fixture that is not split reads ColorB == Color anyway.
+        normal.set_editor_property("default_value", unreal.LinearColor(0, 0, 0, 0))
+        normal_xyz = lib.create_material_expression(
+            material, unreal.MaterialExpressionComponentMask, -1300, -450)
+        for channel, on in (("r", True), ("g", True), ("b", True), ("a", False)):
+            normal_xyz.set_editor_property(channel, on)
+        lib.connect_material_expressions(normal, "", normal_xyz, "")
+
+        side = lib.create_material_expression(
+            material, unreal.MaterialExpressionDotProduct, -1100, -350)
+        lib.connect_material_expressions(offset_xyz, "", side, "A")
+        lib.connect_material_expressions(normal_xyz, "", side, "B")
+
+        # Scale before biasing to 0.5, so the transition spans a couple of
+        # centimetres and antialiases instead of stair-stepping. Sharp on
+        # purpose: this is a hard mechanical edge in the aperture, not a fade.
+        sharp = lib.create_material_expression(
+            material, unreal.MaterialExpressionMultiply, -900, -300)
+        lib.connect_material_expressions(side, "", sharp, "A")
+        gain = lib.create_material_expression(
+            material, unreal.MaterialExpressionConstant, -1100, -200)
+        gain.set_editor_property("r", SPLIT_SHARPNESS)
+        lib.connect_material_expressions(gain, "", sharp, "B")
+
+        biased = lib.create_material_expression(
+            material, unreal.MaterialExpressionAdd, -750, -300)
+        lib.connect_material_expressions(sharp, "", biased, "A")
+        half = lib.create_material_expression(
+            material, unreal.MaterialExpressionConstant, -900, -180)
+        half.set_editor_property("r", 0.5)
+        lib.connect_material_expressions(half, "", biased, "B")
+
+        alpha = lib.create_material_expression(
+            material, unreal.MaterialExpressionSaturate, -600, -300)
+        lib.connect_material_expressions(biased, "", alpha, "")
+
+        mixed = lib.create_material_expression(
+            material, unreal.MaterialExpressionLinearInterpolate, -450, -150)
+        lib.connect_material_expressions(color, "", mixed, "A")
+        lib.connect_material_expressions(color_b, "", mixed, "B")
+        lib.connect_material_expressions(alpha, "", mixed, "Alpha")
+        shade = mixed
+
     tinted = lib.create_material_expression(
         material, unreal.MaterialExpressionMultiply, -300, 0)
-    lib.connect_material_expressions(color, "", tinted, "A")
+    lib.connect_material_expressions(shade, "", tinted, "A")
     lib.connect_material_expressions(brightness, "", tinted, "B")
     output = tinted
 
@@ -338,20 +439,6 @@ def make_emissive_material(name, round_off, taper=False, soft_edge=0.0):
         output = shaped
 
     if taper:
-        origin = lib.create_material_expression(
-            material, unreal.MaterialExpressionVectorParameter, -1100, 500)
-        origin.set_editor_property("parameter_name", "Origin")
-        origin.set_editor_property("default_value", unreal.LinearColor(0, 0, 0, 0))
-        # A VectorParameter is a float4 and Distance wants a float3, so the
-        # alpha has to be masked off rather than left to broadcast.
-        xyz = lib.create_material_expression(
-            material, unreal.MaterialExpressionComponentMask, -900, 500)
-        for channel, on in (("r", True), ("g", True), ("b", True), ("a", False)):
-            xyz.set_editor_property(channel, on)
-        lib.connect_material_expressions(origin, "", xyz, "")
-
-        here = lib.create_material_expression(
-            material, unreal.MaterialExpressionWorldPosition, -1100, 650)
         travelled = lib.create_material_expression(
             material, unreal.MaterialExpressionDistance, -700, 550)
         lib.connect_material_expressions(here, "", travelled, "A")
@@ -409,7 +496,8 @@ def make_emissive_material(name, round_off, taper=False, soft_edge=0.0):
 
 
 def make_beam_material():
-    return make_emissive_material(BEAM_MATERIAL, round_off=True, taper=True)
+    return make_emissive_material(BEAM_MATERIAL, round_off=True, taper=True,
+                                 split=True)
 
 
 def make_dot_material():
@@ -835,6 +923,57 @@ def build_atmosphere(spec):
     sky.light_component.set_editor_property("volumetric_scattering_intensity", 0.0)
 
 
+def _configure_spot(spot, fixture, spec):
+    """Every property one previz spot light needs.
+
+    Factored out because a fixture with a split colour wheel gets TWO of
+    them -- see the note in `build_fixtures` -- and two lights configured
+    from two copies of this list is two lights that quietly diverge.
+    """
+    half_angle = max(0.5, fixture["beam_deg"] / 2.0)
+    spot.set_editor_property("outer_cone_angle", half_angle)
+    # A hard-edged beam: these are cheap fixed-lens beams with no frost, and
+    # a soft edge would flatter them into looking like proper profiles.
+    spot.set_editor_property("inner_cone_angle", half_angle * 0.85)
+    spot.set_editor_property("intensity_units", unreal.LightUnits.LUMENS)
+    spot.set_editor_property("intensity", fixture["lumens"])   # .qxf Bulb
+    spot.set_editor_property("attenuation_radius", spec["max_throw"] * 1.2)
+    spot.set_editor_property("source_radius", 2.0)
+    # The atmosphere the beam hangs in. With the froxel grid at 2 px and the
+    # slice range confined to the room, the fog resolves the beam well
+    # enough to be worth having again -- it was only useless at the stock
+    # grid. Kept below the beam mesh's own brightness so the mesh stays the
+    # crisp core and this reads as the glow around it: the mesh alone looks
+    # like a decal floating in a vacuum, and the fog alone is too soft to
+    # judge where a 3-degree beam is actually pointing.
+    spot.set_editor_property("volumetric_scattering_intensity", 2.5)
+    spot.set_editor_property("cast_shadows", True)
+    # Without this the beam MESH stops dead on the mirror ball and the fog
+    # around it sails straight through, so the beam reads as passing
+    # through the ball -- which is exactly the occlusion the safety taper
+    # is counting on. It is off by default on a spawned SpotLight, and it
+    # is not implied by cast_shadows.
+    spot.set_editor_property("cast_volumetric_shadow", True)
+    # And without THIS the ball does not shadow the beam onto surfaces at
+    # all, however the two flags above are set. See SHADOW_RESOLUTION_SCALE.
+    spot.set_editor_property("shadow_resolution_scale", SHADOW_RESOLUTION_SCALE)
+    # Dark until the engine says otherwise. A previz that starts bright
+    # cannot be told apart from one that is not receiving DMX at all.
+    spot.set_editor_property("visible", False)
+
+
+def _has_split_slot(fixture):
+    """Does this fixture's colour wheel have any two-colour position?
+
+    `previz.scene` emits each slot as [lo, hi, r,g,b, r1,g1,b1, r2,g2,b2] -- the
+    averaged colour, then the two halves. They differ only on a split.
+    """
+    for slot in fixture.get("color_slots") or ():
+        if len(slot) >= 11 and slot[5:8] != slot[8:11]:
+            return True
+    return False
+
+
 def build_fixtures(spec):
     """One spot light per placed fixture, at its calibrated rest aim.
 
@@ -844,6 +983,7 @@ def build_fixtures(spec):
     land on the ball here, the show will not either.
     """
     body = make_material("M_PrevizFixture", (0.05, 0.05, 0.05, 1.0), roughness=0.4)
+    split_lights = 0
     beam_material = make_beam_material()
     dot_material = make_dot_material()
     placed = static = 0
@@ -878,37 +1018,7 @@ def build_fixtures(spec):
         light.tags = [TAG, f"unit:{key}", f"fid:{fixture['fid']}"]
         light.root_component.set_mobility(unreal.ComponentMobility.MOVABLE)
 
-        spot = light.spot_light_component
-        half_angle = max(0.5, fixture["beam_deg"] / 2.0)
-        spot.set_editor_property("outer_cone_angle", half_angle)
-        # A hard-edged beam: these are cheap fixed-lens beams with no frost, and
-        # a soft edge would flatter them into looking like proper profiles.
-        spot.set_editor_property("inner_cone_angle", half_angle * 0.85)
-        spot.set_editor_property("intensity_units", unreal.LightUnits.LUMENS)
-        spot.set_editor_property("intensity", fixture["lumens"])   # .qxf Bulb
-        spot.set_editor_property("attenuation_radius", spec["max_throw"] * 1.2)
-        spot.set_editor_property("source_radius", 2.0)
-        # The atmosphere the beam hangs in. With the froxel grid at 2 px and the
-        # slice range confined to the room, the fog resolves the beam well
-        # enough to be worth having again -- it was only useless at the stock
-        # grid. Kept below the beam mesh's own brightness so the mesh stays the
-        # crisp core and this reads as the glow around it: the mesh alone looks
-        # like a decal floating in a vacuum, and the fog alone is too soft to
-        # judge where a 3-degree beam is actually pointing.
-        spot.set_editor_property("volumetric_scattering_intensity", 2.5)
-        spot.set_editor_property("cast_shadows", True)
-        # Without this the beam MESH stops dead on the mirror ball and the fog
-        # around it sails straight through, so the beam reads as passing
-        # through the ball -- which is exactly the occlusion the safety taper
-        # is counting on. It is off by default on a spawned SpotLight, and it
-        # is not implied by cast_shadows.
-        spot.set_editor_property("cast_volumetric_shadow", True)
-        # And without THIS the ball does not shadow the beam onto surfaces at
-        # all, however the two flags above are set. See SHADOW_RESOLUTION_SCALE.
-        spot.set_editor_property("shadow_resolution_scale", SHADOW_RESOLUTION_SCALE)
-        # Dark until the engine says otherwise. A previz that starts bright
-        # cannot be told apart from one that is not receiving DMX at all.
-        spot.set_editor_property("visible", False)
+        _configure_spot(light.spot_light_component, fixture, spec)
 
         # What the ball does with this head's beam, as actual light. A mirror
         # ball takes a beam and sprays it over the whole room, and that spray is
@@ -944,6 +1054,29 @@ def build_fixtures(spec):
         point.set_editor_property("volumetric_scattering_intensity",
                                   BALL_GLOW_SCATTER)
         point.set_editor_property("visible", False)
+
+        # A SECOND spot light, for fixtures whose colour wheel has split slots.
+        #
+        # A wheel position between two segments throws half the aperture in one
+        # colour and half in the next, and an Unreal spot light has exactly one
+        # colour -- so the shaft mesh could be split all it liked while the
+        # volumetric fog around it, which is what actually makes a beam read as
+        # a beam, stayed a single average. That is what "duo colours are not
+        # working" looked like.
+        #
+        # Two lights at half intensity, tipped a quarter of the cone apart in
+        # elevation, is the model: each carries one half of the aperture, they
+        # overlap down the middle the way the real halves do, and the fog picks
+        # up both colours. Only built where the profile actually has split
+        # slots, because a shadow-casting spot light is not free.
+        if _has_split_slot(fixture):
+            second = actors.spawn_actor_from_class(
+                unreal.SpotLight, vec(fixture["location"]), rotation)
+            second.set_actor_label(f"{label}_Half2")
+            second.tags = [TAG, f"unit2:{key}"]
+            second.root_component.set_mobility(unreal.ComponentMobility.MOVABLE)
+            _configure_spot(second.spot_light_component, fixture, spec)
+            split_lights += 1
 
         body_actor = spawn_shape("cube", f"{label}_Body", fixture["location"],
                                  (0.18, 0.2, 0.28), body)
@@ -995,7 +1128,7 @@ def build_fixtures(spec):
         placed += 1
         static += 0 if steerable else 1
 
-    return placed, static
+    return placed, static, split_lights
 
 
 # -------------------------------------------------------------------- main ---
@@ -1057,7 +1190,7 @@ def main(event="despacio", restart_hint=True):
     bars = build_truss(spec)
     build_canopy(spec)
     build_crowd_zone(spec)
-    placed, static = build_fixtures(spec)
+    placed, static, split_lights = build_fixtures(spec)
 
     levels.save_current_level()
 
@@ -1066,6 +1199,9 @@ def main(event="despacio", restart_hint=True):
         f"x{room['height']:.0f} cm, {placed} fixture(s) placed "
         f"({placed - static} steerable, {static} fixed), "
         f"mount mode {spec['mount_mode']!r}")
+    if split_lights:
+        log(f"  {split_lights} fixture(s) have a split colour wheel and carry a "
+            f"second spot light for the other half of the aperture")
     if bars:
         truss = spec["truss"]
         log(f"  truss: {bars} bar(s) of {truss['bar']:.0f} cm at "
