@@ -34,11 +34,18 @@ be challenged. Three things follow, and all three are deliberate:
 
 JSON is what our own sidecar sends and what anything hand-written should send.
 
-OSC is what **beat-link-trigger** emits, and beat-link-trigger is the reference
-implementation of this protocol with phrase triggers already built in. Speaking
-OSC here is what turns "point it at this port" into the entire integration --
-the alternative was writing a shim whose only job was to re-encode a message we
-were perfectly capable of reading. It is ~40 lines and no dependency.
+OSC is what both of the tools worth using emit, and speaking it here is what
+turns "point it at this port" into the entire integration for each:
+
+  * **beat-link-trigger** for CDJs -- the reference implementation of Pro DJ
+    Link, with phrase triggers already built in;
+  * **rkbx_link** for rekordbox and a DDJ controller, which is USB and never
+    speaks Pro DJ Link at all. It reads transport position and beatgrid out of
+    rekordbox's memory and the phrase structure out of its analysis files.
+
+Two tools, two very different mechanisms, one wire format. The alternative was
+writing a shim per tool whose only job was to re-encode a message we were
+perfectly capable of reading.
 """
 
 from __future__ import annotations
@@ -56,16 +63,37 @@ from typing import Any, Callable, Optional
 FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
           "phrase_ends_in", "source", "deck", "track")
 
-# OSC address suffix -> field. Addresses are matched on their LAST component so
-# a bridge can namespace however it likes -- beat-link-trigger's default is
-# /beat-link/<thing>, but people rename these and a rigid full-path match would
-# make that a silent failure rather than a configuration choice.
+# OSC address suffix -> field, matched LONGEST FIRST.
+#
+# Two components, not one. The first version of this matched only the last
+# component so a bridge could namespace freely -- and rkbx_link, the tool that
+# makes the rekordbox path work at all, sends `/master/bpm/current` AND
+# `/master/phrase/current`. Both end in "current", so last-component matching
+# would have read a phrase label as a tempo. Suffix matching keeps the
+# rename-friendly behaviour for flat senders and gets the nested ones right.
 OSC_FIELDS = {
+    # rkbx_link -- rekordbox, read out of its memory. `/[deck]/...`
+    "bpm/current": "bpm",
+    "phrase/current": "phrase_label",
+    "phrase/countin": "phrase_ends_in",
+    "track/title": "track",
+    # beat-link-trigger and anything hand-rolled, which are flat
     "bpm": "bpm", "tempo": "bpm",
     "beat": "beat_in_bar", "beat-within-bar": "beat_in_bar",
     "phrase": "phrase_label", "phrase-label": "phrase_label",
     "deck": "deck", "track": "track",
 }
+
+# Address components that name a deck. `master` is rkbx_link's "whichever deck
+# is currently master", which is the only one this should ever follow: a rig
+# taking `/1/bpm` and `/2/bpm` from a DJ mid-blend has two decks fighting over
+# one clock, and the resulting tempo belongs to neither of them.
+#
+# A NUMERIC first component is dropped rather than accepted, so pointing a
+# per-deck sender at this port degrades to "ignores everything" -- which is
+# visible in the rejected count -- instead of "follows whichever deck spoke
+# last", which is invisible and sounds like the engine is broken.
+OSC_MASTER = "master"
 
 
 def parse_osc(data: bytes) -> Optional[dict]:
@@ -105,10 +133,58 @@ def parse_osc(data: bytes) -> Optional[dict]:
     except (ValueError, struct.error, UnicodeDecodeError):
         return None
 
-    field = OSC_FIELDS.get(address.rsplit("/", 1)[-1].lower())
-    if field is None or not args:
+    return osc_fields(address, args[0]) if args else None
+
+
+def osc_fields(address: str, value: Any) -> Optional[dict]:
+    """One OSC address and its first argument, as clock fields.
+
+    Split out from the decoding so the address rules can be tested against a
+    literal address string -- which is how they are written down in the tools'
+    own documentation, and the form anyone debugging a bridge will be holding.
+    """
+    parts = [p for p in address.lower().strip("/").split("/") if p]
+    if not parts:
         return None
-    return {field: args[0]}
+    # Drop a leading deck component. `master` is the one to follow; a number is
+    # a specific deck and following it would let two decks fight over the clock.
+    if parts[0].isdigit():
+        return None
+    if parts[0] == OSC_MASTER:
+        parts = parts[1:]
+
+    # `/beat/subdiv/<n>` is a 0..1 ramp that loops every n beats -- rkbx_link's
+    # bar phase, and the most useful thing it sends. Scaling it back up to beats
+    # is what makes it the `beat_in_bar` the clock's align_bar wants; taking the
+    # raw 0..1 would put every downbeat correction inside the first beat.
+    if len(parts) >= 3 and parts[-3:-1] == ["beat", "subdiv"]:
+        try:
+            divisor = float(parts[-1])
+        except ValueError:
+            return None
+        if divisor <= 0:
+            return None
+        return {"beat_in_bar": float(value) * divisor}
+
+    for span in (2, 1):
+        if len(parts) >= span:
+            field = OSC_FIELDS.get("/".join(parts[-span:]))
+            if field is not None:
+                break
+    else:
+        return None
+    if field is None:
+        return None
+
+    out: dict = {field: value}
+    # A source that STATES the phrase is, by definition, measuring it. OSC has
+    # no way to send the flag separately, so without this the rekordbox path
+    # would report phrase labels while `phrase_measured` stayed false forever --
+    # and auto look changes would quietly keep landing on bars, which is the
+    # exact degradation this whole milestone exists to end.
+    if field == "phrase_label":
+        out["phrase_measured"] = True
+    return out
 
 
 def parse(data: bytes) -> Optional[dict]:

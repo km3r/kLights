@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import struct
 import sys
 import time
 from pathlib import Path
@@ -41,11 +42,52 @@ FAKE_PHRASES = [
 ]
 
 
+def osc_message(address: str, value) -> bytes:
+    """One OSC message. Encoded here rather than imported from the engine so the
+    bridge stays a genuinely separate program -- if this file and the engine
+    ever disagree about the wire format, that is a bug worth catching."""
+    def pad(raw: bytes) -> bytes:
+        return raw + b"\0" * (4 - len(raw) % 4)
+    if isinstance(value, str):
+        return pad(address.encode()) + pad(b",s") + pad(value.encode())
+    return pad(address.encode()) + pad(b",f") + struct.pack(">f", float(value))
+
+
+def as_osc(fields: dict) -> list[bytes]:
+    """A field set as the OSC rkbx_link would have sent for it.
+
+    So `--fake --osc` exercises the engine's OSC decoder, the deck filter and
+    the subdiv conversion -- the parts that only the rekordbox path uses, and
+    that would otherwise go untested until someone had a DDJ, rekordbox and a
+    licensed copy of rkbx_link in one room.
+    """
+    out = []
+    if "bpm" in fields:
+        out.append(osc_message("/master/bpm/current", fields["bpm"]))
+    if "beat_in_bar" in fields:
+        # rkbx_link sends a 0..1 ramp looping every n beats, not a beat number.
+        out.append(osc_message("/master/beat/subdiv/4",
+                               float(fields["beat_in_bar"]) / 4.0))
+    if "phrase_label" in fields:
+        out.append(osc_message("/master/phrase/current", fields["phrase_label"]))
+    if "phrase_ends_in" in fields:
+        out.append(osc_message("/master/phrase/countin",
+                               fields["phrase_ends_in"]))
+    if "track" in fields:
+        out.append(osc_message("/master/track/title", fields["track"]))
+    return out
+
+
 def emit(sock: socket.socket, host: str, port: int, fields: dict,
-         verbose: bool) -> None:
-    sock.sendto(json.dumps(fields).encode("utf-8"), (host, port))
+         verbose: bool, use_osc: bool = False) -> None:
+    if use_osc:
+        for message in as_osc(fields):
+            sock.sendto(message, (host, port))
+    else:
+        sock.sendto(json.dumps(fields).encode("utf-8"), (host, port))
     if verbose:
-        print("  ->", json.dumps(fields), flush=True)
+        print(f"  -> {'osc  ' if use_osc else ''}{json.dumps(fields)}",
+              flush=True)
 
 
 def fake(bpm: float, beats_per_bar: int = 4) -> Iterator[tuple[float, dict]]:
@@ -107,11 +149,12 @@ def replay(path: Path) -> Iterator[tuple[float, dict]]:
 
 
 def run(source: Iterator[tuple[float, dict]], host: str, port: int,
-        verbose: bool, limit: Optional[int] = None) -> int:
+        verbose: bool, limit: Optional[int] = None,
+        use_osc: bool = False) -> int:
     sent = 0
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         for dt, fields in source:
-            emit(sock, host, port, fields, verbose)
+            emit(sock, host, port, fields, verbose, use_osc)
             sent += 1
             if limit is not None and sent >= limit:
                 return sent
@@ -136,6 +179,9 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--beats", type=int, metavar="N",
                         help="stop after N packets. For tests and for checking "
                              "a venue's network without leaving a feed running")
+    parser.add_argument("--osc", action="store_true",
+                        help="send rkbx_link-shaped OSC instead of JSON, to "
+                             "exercise the rekordbox path's decoder")
     parser.add_argument("-q", "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -167,7 +213,8 @@ def main(argv: Optional[list] = None) -> int:
 
     print(f"{what}\n  -> {args.host}:{args.port}  (Ctrl-C to stop)")
     try:
-        sent = run(source, args.host, args.port, not args.quiet, args.beats)
+        sent = run(source, args.host, args.port, not args.quiet, args.beats,
+                   use_osc=args.osc)
     except KeyboardInterrupt:
         print("\nstopped.")
         return 0

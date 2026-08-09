@@ -175,9 +175,9 @@ check("a float tempo decodes",
       syncmod.parse(osc("/beat-link/bpm", "f", 128.0)) == {"bpm": 128.0})
 check("an int beat-within-bar decodes",
       syncmod.parse(osc("/beat-link/beat", "i", 3)) == {"beat_in_bar": 3.0})
-check("a string phrase decodes",
+check("a string phrase decodes, and claims phrase is measured with it",
       syncmod.parse(osc("/beat-link/phrase", "s", "Chorus"))
-      == {"phrase_label": "Chorus"})
+      == {"phrase_label": "Chorus", "phrase_measured": True})
 # Matched on the last path component, so renaming the namespace in
 # beat-link-trigger is a configuration choice rather than a silent failure.
 check("a renamed namespace still matches",
@@ -185,6 +185,52 @@ check("a renamed namespace still matches",
       == {"bpm": 124.0})
 check("an address we do not model is ignored",
       syncmod.parse(osc("/beat-link/hotcue", "i", 2)) is None)
+
+# rkbx_link -- the rekordbox path, and the DDJ path, since a DDJ-1000 is USB and
+# never speaks Pro DJ Link. Its addresses are NESTED, which broke the first
+# version of this: `/master/bpm/current` and `/master/phrase/current` both end
+# in "current", so matching the last component alone read a phrase as a tempo.
+print("\n5b. rkbx_link address shapes")
+check("a nested bpm decodes",
+      syncmod.parse(osc("/master/bpm/current", "f", 128.0)) == {"bpm": 128.0})
+check("and a phrase sharing its last component does NOT become a bpm",
+      syncmod.parse(osc("/master/phrase/current", "s", "Drop"))
+      == {"phrase_label": "Drop", "phrase_measured": True},
+      "this is the collision that would have shipped")
+check("a phrase count-in becomes the countdown",
+      syncmod.osc_fields("/master/phrase/countin", 12.0)
+      == {"phrase_ends_in": 12.0})
+check("the track title comes through",
+      syncmod.osc_fields("/master/track/title", "Cosmic Slop")
+      == {"track": "Cosmic Slop"})
+
+# A source that STATES the phrase is measuring it. OSC cannot send the flag
+# separately, and without inferring it the rekordbox path would report phrases
+# while auto look changes quietly kept landing on bars.
+check("a phrase label implies phrase is measured",
+      syncmod.osc_fields("/master/phrase/current", "Build")["phrase_measured"]
+      is True)
+
+# beat/subdiv is a 0..1 ramp looping every n beats -- the bar phase, and the
+# most useful thing rkbx_link sends. Taking the raw 0..1 would squeeze every
+# downbeat correction into the first beat of the bar.
+check("beat/subdiv scales back up to beats",
+      syncmod.osc_fields("/master/beat/subdiv/4", 0.5) == {"beat_in_bar": 2.0})
+check("and a divisor of zero is refused rather than dividing the bar by nothing",
+      syncmod.osc_fields("/master/beat/subdiv/0", 0.5) is None)
+
+# The deck rule. Following per-deck addresses means two decks fighting over one
+# clock mid-blend, and the resulting tempo belongs to neither.
+check("only the master deck is followed",
+      syncmod.osc_fields("/1/bpm/current", 128.0) is None
+      and syncmod.osc_fields("/2/bpm/current", 174.0) is None,
+      "a numeric deck is dropped")
+check("but master itself drives",
+      syncmod.osc_fields("/master/bpm/current", 128.0) == {"bpm": 128.0})
+# Dropping them shows up as rejected packets, which is visible; following the
+# last deck that spoke would be invisible and sound like a broken engine.
+check("and beat-link-trigger's flat namespace still works alongside it",
+      syncmod.osc_fields("/beat-link/bpm", 124.0) == {"bpm": 124.0})
 check("a truncated OSC message is None, not an exception",
       syncmod.parse(b"/beat-link/bpm\0\0,f\0\0\x43") is None)
 check("an OSC type we do not model is refused rather than misread",
@@ -328,6 +374,31 @@ check("and a corrupt line is skipped rather than ending the replay",
 check("--live refuses honestly instead of half-working",
       bridgemod.main(["--live"]) == 2)
 capture.unlink()
+
+# --osc: the same feed shaped as rkbx_link, which is the only way the rekordbox
+# path's decoder gets exercised without a DDJ, rekordbox and a licensed copy of
+# rkbx_link in one room.
+osc_got: list[dict] = []
+osc_sink = syncmod.SyncListener(on_sync=osc_got.append, port=0,
+                                bind="127.0.0.1")
+osc_sink.start()
+bridgemod.run(bridgemod.fake(240.0), "127.0.0.1",
+              osc_sink.sock.getsockname()[1], verbose=False, limit=5,
+              use_osc=True)
+deadline = time.time() + 3
+while len(osc_got) < 5 and time.time() < deadline:
+    time.sleep(0.02)
+merged: dict = {}
+for f in osc_got:
+    merged.update(f)
+check("the fake bridge's OSC round-trips through the engine's decoder",
+      merged.get("bpm") == 240.0 and "beat_in_bar" in merged
+      and merged.get("phrase_label") == "Intro"
+      and merged.get("phrase_measured") is True,
+      f"{merged}")
+check("and nothing it sent was unreadable", osc_sink.rejected == 0,
+      f"{osc_sink.status()}")
+osc_sink.stop()
 
 
 print()

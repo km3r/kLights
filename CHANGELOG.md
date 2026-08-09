@@ -19,10 +19,29 @@ and rekordbox's own phrase labels are a *read*; anything inferred from a room
 mic would be worse data, obtained harder.
 
 - **`engine/sync.py`** — a `sync` command and an opt-in UDP port
-  (`--sync-port`), speaking **JSON or OSC**. OSC because beat-link-trigger is
-  the reference implementation of this protocol and already has phrase triggers:
-  the engine reading its wire format directly is what turns route 1 into "point
-  it at this port" rather than a shim. ~40 lines, no dependency.
+  (`--sync-port`), speaking **JSON or OSC**. OSC because both tools worth using
+  emit it, so pointing either at the port is the whole integration.
+- **Both rigs, by different mechanisms.** CDJs via **beat-link-trigger** over
+  Pro DJ Link; a **DDJ-1000 via rkbx_link**, which reads rekordbox's memory —
+  a DDJ is USB and never speaks Pro DJ Link, so the network route does not
+  exist for it. The decoder handles both address shapes.
+- OSC addresses are matched on a **two-component suffix**, not the last
+  component. rkbx_link sends `/master/bpm/current` *and*
+  `/master/phrase/current`; last-component matching read a phrase label as a
+  tempo. Found by reading rkbx_link's actual spec rather than assuming a shape.
+- `beat/subdiv/<n>` — rkbx_link's 0–1 ramp looping every *n* beats — is scaled
+  back up to beats, which is what `align_bar` needs. Taking the raw 0–1 would
+  squeeze every downbeat correction into the first beat of the bar.
+- **Numeric decks are ignored; only `master` drives.** `/1/bpm` and `/2/bpm`
+  during a blend are two decks fighting over one clock, and the tempo that
+  comes out belongs to neither. Dropped packets show in the rejected count,
+  where following the last deck that spoke would be invisible.
+- A phrase label over OSC implies `phrase_measured`. OSC cannot send the flag
+  separately, and without this the rekordbox path would report phrases while
+  auto look changes quietly kept landing on bars.
+- `bridge.py --fake --osc` sends the feed shaped as rkbx_link, so the rekordbox
+  decoder is exercised without a DDJ, rekordbox and a licensed rkbx_link in one
+  room.
 - **`MasterClock.align_bar`** — the safe way for a per-beat source to keep the
   grid honest. Corrects to the nearest equivalent beat, so phase never moves
   more than half a bar however wrong the grid was; passing absolute `beat` every

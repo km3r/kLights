@@ -107,12 +107,18 @@ from a tapped downbeat:
 python -m engine.server --sync-port 9000
 ```
 
-**No analysis happens here.** Pro DJ Link has been reverse-engineered thoroughly
-enough that beat position and rekordbox's own phrase labels are a *read*, not a
-derivation — so everything that knows what a CDJ is lives in a sidecar under
-[`bridges/`](bridges/prolink/README.md), in its own environment, and the engine
-stays stdlib-only. Its whole side of this is a `sync` command and a UDP port
-that speaks JSON or OSC.
+**No analysis happens here.** Beat position and rekordbox's own phrase labels
+are a *read*, not a derivation — so everything that knows what a CDJ is lives in
+a sidecar under [`bridges/`](bridges/prolink/README.md), in its own environment,
+and the engine stays stdlib-only. Its whole side of this is a `sync` command and
+a UDP port that speaks JSON or OSC.
+
+**Both rigs are supported, by different tools:** CDJs via
+[beat-link-trigger](https://github.com/Deep-Symmetry/beat-link-trigger) over Pro
+DJ Link, and a DDJ-1000 via [rkbx_link](https://github.com/grufkork/rkbx_link),
+which reads rekordbox's memory — a DDJ is USB and never speaks Pro DJ Link at
+all. Both emit OSC, and the engine's decoder is written against both address
+shapes, so it has one seam and no idea which is on the other end.
 
 Provable with no hardware at all:
 
