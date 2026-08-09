@@ -78,6 +78,10 @@ export interface FixtureState {
   aim?: { bearing: number; elevation: number };
   lands_on?: string;
   throw_mm?: number;
+  /** Where the beam actually lands, [x, y, z] in mm. Sent rather than derived:
+   *  `aim.bearing` is the servo's delta from its mount facing, and the mount
+   *  facing lives in the calibration the UI does not have. */
+  lands_at?: [number, number, number];
   jogging?: boolean;
   captures?: number;
 }

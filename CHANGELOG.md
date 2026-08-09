@@ -11,6 +11,43 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F17a, the plan view
+
+The previz that will actually get used. Unreal renders a beautiful room and
+needs a GPU, a 90 GB engine install and a second machine; every number this
+needs is already in the snapshot the phone in your hand receives ten times a
+second.
+
+- **The room from above, on the Move tab, in both modes.** Room, crowd zone,
+  canopy, mirror ball, every fixture, and every lit beam drawn to where it
+  actually lands at the width it actually spreads to (`throw × tan(half-angle)`).
+- SVG rather than canvas: six fixtures at ten frames a second do not need an
+  imperative draw loop, and an SVG plan is made of elements a test can assert
+  on, where a canvas is one opaque bitmap.
+- The engine now publishes `lands_at`, the landing POINT. The UI cannot derive
+  it — `aim.bearing` is the servo's delta from its mount facing, and the mount
+  facing lives in the calibration.
+- Beams the safety taper is holding are ringed in amber. A beam at 50% because
+  someone pulled it down and a beam at 50% because it is over a head are
+  different facts, and opacity alone cannot tell them apart.
+- The legend states how many fixtures have **no** position and are therefore not
+  drawn. Silent omission is the dangerous failure: a plan missing two fixtures
+  still looks like a complete plan.
+
+### Fixed
+
+- **Static fixtures reported no position at all.** The snapshot filled
+  `position` from the geometry head list, which only movers are in — so both
+  despacio pinspots were invisible to anything downstream. Now taken from the
+  patch when there is no geometry.
+- **The UI bundle was served with no cache headers.** Browsers apply their own
+  heuristic to `index.html`, so a phone that had the console open before an
+  engine update kept asking for a hashed asset the rebuild had deleted — and got
+  `index.html` back as JavaScript, which is a blank console. `index.html` is now
+  `no-cache` and hashed assets are `immutable`; a missing asset is a 404 with a
+  reason rather than an SPA fallback. Found by watching the browser serve a
+  stale bundle while checking the plan view.
+
 ### Added — F15, per-slot rate
 
 The last thing the three slots did not have independently, and the reason it

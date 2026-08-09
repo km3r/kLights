@@ -98,6 +98,13 @@ console. It defaults to Perform on a phone and Design on a laptop, remembers
 itself per device, and is always one tap from the other — it is a preference
 about screen space, not a permission. Access is what `--token` decides.
 
+The Move tab opens with a **plan view**: the room from above, with every lit
+beam drawn to where it actually lands at the width it actually spreads to. It
+needs no GPU and nothing installed — every number in it is already in the
+snapshot — so it is the previz that works on the show laptop at a venue. Beams
+the safety taper is holding are ringed in amber, and the legend says how many
+fixtures have no position and are therefore not drawn.
+
 Movement, colour and level are three independent slots, and each has its own
 **Rate** on its own tab — so a colour chase can crawl under a move running flat
 out. That is separate from **Speed** on the Show tab, which is the clock and

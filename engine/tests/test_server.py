@@ -601,6 +601,40 @@ except Exception:
     traversal_blocked = True
 check("path traversal cannot escape the bundle directory", traversal_blocked)
 
+# Caching, and the two halves are opposites on purpose. Found the hard way: with
+# no headers at all a browser applies its own heuristic to index.html, so a
+# phone that had the console open before an engine update keeps asking for an
+# asset the rebuild deleted -- and gets index.html back as JavaScript, which is
+# a white screen. `version` in the snapshot detects that; these headers are what
+# stop it happening.
+with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
+    index_cache = resp.headers.get("Cache-Control", "")
+check("index.html is revalidated every load", "no-cache" in index_cache,
+      f"{index_cache!r}")
+
+asset = next(iter((REPO / "ui" / "dist" / "assets").glob("*.js")), None)
+if asset is None:
+    check("a hashed asset is cached hard", False, "no bundle built")
+else:
+    with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/assets/{asset.name}", timeout=5) as resp:
+        asset_cache = resp.headers.get("Cache-Control", "")
+    # Safe precisely because the name is a content hash: that file can never
+    # mean something different.
+    check("a hashed asset is cached hard", "immutable" in asset_cache,
+          f"{asset_cache!r}")
+
+try:
+    urllib.request.urlopen(
+        f"http://127.0.0.1:{port}/assets/index-GONE12345.js", timeout=5)
+    check("a missing asset is a 404, not the app", False, "it served something")
+except urllib.error.HTTPError as exc:
+    # Serving index.html here hands the browser HTML where it asked for
+    # JavaScript. It refuses to execute it, and the operator gets a blank
+    # console and an obscure error instead of an obvious one.
+    check("a missing asset is a 404, not the app", exc.code == 404,
+          f"{exc.code} {exc.reason}")
+
 
 # -- venue and taper editing --------------------------------------------------
 print("\n9. venue and taper, edited live")

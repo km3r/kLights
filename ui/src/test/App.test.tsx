@@ -620,9 +620,11 @@ describe("move tab", () => {
     })));
     await goTo(user, /Move/);
 
-    // Scoped to this head's card: with the real library loaded, several heads
-    // legitimately share a taper reason, so a page-wide query is ambiguous.
-    const card = screen.getByText("Moving Head #2").closest(".fixture")!;
+    // Scoped to this head's card, inside the Heads card: several heads
+    // legitimately share a taper reason, and every fixture's name now also
+    // appears in the plan view's SVG <title> tooltips at the top of the tab.
+    const heads = screen.getByText("Heads").closest(".card")! as HTMLElement;
+    const card = within(heads).getByText("Moving Head #2").closest(".fixture")!;
     const scoped = within(card as HTMLElement);
     expect(scoped.getByText(/beam core is in the crowd head band/i))
       .toBeInTheDocument();
@@ -929,6 +931,127 @@ describe("patch", () => {
     await openSetup(user);
     await user.click(screen.getByRole("button", { name: /Apply now/i }));
     expect(socket.last()).toEqual({ type: "patch_apply" });
+  });
+});
+
+/**
+ * The plan view — the previz that runs on the show laptop.
+ *
+ * Assertions are on the geometry, not on "it rendered": a plan that draws a
+ * beam in the wrong place is worse than one that draws nothing, because it is
+ * believable.
+ */
+describe("plan view", () => {
+  const plan = async (user: ReturnType<typeof userEvent.setup>) => {
+    await goTo(user, /Move/);
+    return screen.getByLabelText("plan view of the room") as unknown as SVGSVGElement;
+  };
+
+  it("frames the whole room, whatever size it is", async () => {
+    const user = userEvent.setup();
+    mount();
+    const svg = await plan(user);
+    const box = svg.getAttribute("viewBox")!.split(" ").map(Number);
+    const v = despacioState.venue;
+    // Origin negative and extent bigger than the room: the margin is what stops
+    // a fixture on the wall being drawn half outside the picture.
+    expect(box[0]).toBeLessThan(0);
+    expect(box[2]).toBeGreaterThan(v.width!);
+    expect(box[3]).toBeGreaterThan(v.depth!);
+  });
+
+  it("draws each lit beam from its fixture to where it actually lands", async () => {
+    const user = userEvent.setup();
+    mount();
+    const svg = await plan(user);
+    // Whichever head is lit at the phase the fixture was captured at — naming
+    // one hardcodes where the Spotlight chase happened to be that second, and
+    // three of the four movers are legitimately dark in it.
+    const mh = despacioState.fixtures.find(
+      (f) => f.lands_at && (f.intensity ?? 0) > 0.001);
+    if (!mh) throw new Error("the fixture has no lit beam to check");
+    const beam = Array.from(svg.querySelectorAll("line")).find((l) =>
+      Number(l.getAttribute("x1")) === mh.position![0]
+      && Number(l.getAttribute("y1")) === mh.position![2]);
+    if (!beam) throw new Error(`no beam drawn for ${mh.name}`);
+    // x/z of the landing point, not x/y: this is a plan, and height is the
+    // axis it cannot show.
+    expect(Number(beam.getAttribute("x2"))).toBe(mh.lands_at![0]);
+    expect(Number(beam.getAttribute("y2"))).toBe(mh.lands_at![2]);
+  });
+
+  it("draws a dark fixture without a beam", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.forEach((f) => { f.intensity = 0; });
+    })));
+    const svg = await plan(user);
+    expect(svg.querySelectorAll("line")).toHaveLength(0);
+    // The fixtures are still there — a dark rig is not an empty room.
+    expect(svg.querySelectorAll("circle").length).toBeGreaterThan(0);
+  });
+
+  it("says how many fixtures it is NOT showing", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.slice(0, 2).forEach((f) => { delete f.position; });
+    })));
+    await plan(user);
+    // The dangerous failure is silent omission: a plan missing two fixtures
+    // still looks like a complete plan.
+    expect(screen.getByText(/2 fixture\(s\) have no position/i))
+      .toBeInTheDocument();
+  });
+
+  it("rings a tapered beam rather than only dimming it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.forEach((f) => {
+        if (f.safety) f.safety = { taper: 0.5, reason: "over the crowd" };
+      });
+    })));
+    await plan(user);
+    // A beam at 50% because the operator pulled it down and a beam at 50%
+    // because it is over someone's head are different facts, and opacity alone
+    // cannot tell them apart.
+    expect(screen.getByText(/ringed in amber/i)).toBeInTheDocument();
+  });
+
+  it("names each landing surface in TEXT, because a phone has no hover", async () => {
+    const user = userEvent.setup();
+    // Perform mode, which is where this matters: the Heads card that also
+    // reports landings is Design-only, and the SVG <title> tooltips need a
+    // pointer that a phone does not have.
+    localStorage.setItem("cosmos.mode", "perform");
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      const mh = s.fixtures.find((f) => f.name === "Moving Head #1")!;
+      mh.intensity = 0.9;
+      mh.lands_on = "ceiling";
+      mh.lands_at = [4000, 6900, 4000];
+    })));
+    await goTo(user, /Move/);
+    // Scoped to the landing list, not the card: every fixture's name is also in
+    // an SVG <title> above it, which is exactly the thing being replaced here.
+    const list = document.querySelector(".plan-landings") as HTMLElement;
+    // Wall and ceiling are the same dashed line from above, and they are the
+    // two worth telling apart — one of them is at head height.
+    const row = within(list).getByText(/Moving Head #1/).closest("div")!;
+    expect(row.textContent).toContain("ceiling");
+  });
+
+  it("explains itself instead of drawing a room it has no size for", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.venue = { name: "somewhere new" };
+    })));
+    await goTo(user, /Move/);
+    expect(screen.queryByLabelText("plan view of the room")).toBeNull();
+    expect(screen.getByText(/No room dimensions/i)).toBeInTheDocument();
   });
 });
 

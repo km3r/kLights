@@ -2619,6 +2619,11 @@
       },
       "lands_on": "canopy",
       "throw_mm": 5889,
+      "lands_at": [
+        9068,
+        4600,
+        9367
+      ],
       "jogging": true,
       "captures": 1
     },
@@ -2655,6 +2660,11 @@
       },
       "lands_on": "wall",
       "throw_mm": 14744,
+      "lands_at": [
+        6785,
+        1797,
+        18288
+      ],
       "jogging": false,
       "captures": 0
     },
@@ -2691,6 +2701,11 @@
       },
       "lands_on": "floor",
       "throw_mm": 8446,
+      "lands_at": [
+        10451,
+        0,
+        10867
+      ],
       "jogging": false,
       "captures": 0
     },
@@ -2727,6 +2742,11 @@
       },
       "lands_on": "wall",
       "throw_mm": 14698,
+      "lands_at": [
+        18288,
+        2980,
+        6785
+      ],
       "jogging": false,
       "captures": 0
     },
@@ -2740,6 +2760,11 @@
       "universe": 0,
       "address": 45,
       "is_mover": false,
+      "position": [
+        9144.0,
+        2971.0,
+        5072.0
+      ],
       "intensity": 0.9,
       "color": [
         1.0,
@@ -2759,6 +2784,11 @@
       "universe": 0,
       "address": 51,
       "is_mover": false,
+      "position": [
+        9144.0,
+        2971.0,
+        13216.0
+      ],
       "intensity": 0.9,
       "color": [
         1.0,

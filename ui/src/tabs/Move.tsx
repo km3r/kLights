@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, RateCard } from "../components";
 import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
+import { PlanView } from "../Plan";
 import type { Command, EngineState } from "../types";
 
 /**
@@ -19,6 +20,11 @@ export function MoveTab({ state, send }: {
 
   return (
     <>
+      {/* First thing on the tab, and in both modes. "Where is that beam going"
+          is the question this whole tab exists to answer, and until now the
+          only answer was a list of bearings in degrees. */}
+      <PlanView state={state} />
+
       <LookPicker state={state} send={send} slot="movement" title="Route"
                   empty="Nothing loaded — the heads are holding still." />
 

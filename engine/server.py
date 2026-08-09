@@ -1322,14 +1322,24 @@ class ShowController:
                 "head": f.head, "universe": f.universe, "address": f.address,
                 "is_mover": f.is_mover,
             }
-            # Head position, so the UI can work out capture targets itself --
-            # the adjacent corners are 90 degrees either side of the ball from a
+            # Position, so the UI can work out capture targets itself -- the
+            # adjacent corners are 90 degrees either side of the ball from a
             # head in a corner, which is the spread the solver needs and which
             # the obvious targets do not give.
+            #
+            # Taken from the PATCH for anything without geometry, which is what
+            # puts the pinspots on the plan view. Filling this from the head
+            # list alone meant every static fixture reported no position at all
+            # -- and a plan of the room that silently omits a third of the rig
+            # is worse than no plan, because it looks complete.
             if f.head is not None and g is not None:
                 h = g.heads[f.head]
                 entry["position"] = [h.x, h.height, h.z]
                 entry["beam_deg"] = h.beam_angle_deg
+            elif f.position is not None:
+                entry["position"] = list(f.position)
+                if f.beam_deg is not None:
+                    entry["beam_deg"] = f.beam_deg
 
             if st is not None:
                 entry["intensity"] = round(st.intensity, 3)
@@ -1350,6 +1360,14 @@ class ShowController:
                     if land is not None:
                         entry["lands_on"] = land.surface
                         entry["throw_mm"] = round(land.distance)
+                        # The point itself, not just how far away it is. The
+                        # plan view needs somewhere to draw the beam TO, and it
+                        # cannot work that out from the aim: `bearing` here is
+                        # the servo's own delta from its mount facing, and the
+                        # mount facing lives in the calibration. Publishing the
+                        # answer the engine already computed beats shipping the
+                        # calibration to every phone so each can redo the maths.
+                        entry["lands_at"] = [round(v) for v in land.point]
                 entry["jogging"] = f.name in self.jog
                 entry["captures"] = len(self.captures.get(f.name, []))
             fixtures.append(entry)
@@ -1837,6 +1855,17 @@ class ShowServer:
                     self.send_error(403)
                     return
                 if not target.is_file():
+                    # A missing ASSET is a real 404, not a client route. The
+                    # bundle's asset names are content-hashed, so a request for
+                    # one that is not there means a client is holding a stale
+                    # index.html -- and answering it with index.html hands the
+                    # browser HTML where it asked for JavaScript, which it
+                    # refuses to execute. That is a white screen with an
+                    # obscure console error; a 404 is a white screen with an
+                    # obvious one, and the reload below stops both.
+                    if path.startswith("/assets/"):
+                        self.send_error(404, "stale bundle -- reload the page")
+                        return
                     # A single-page app owns its own routing, so an unknown path
                     # is a client route, not a 404 -- unless the bundle is
                     # missing entirely, which deserves a real explanation.
@@ -1850,6 +1879,24 @@ class ShowServer:
                 self.send_header("Content-Type",
                                  MIME.get(target.suffix, "application/octet-stream"))
                 self.send_header("Content-Length", str(len(body)))
+                # Caching, and the two halves are opposites on purpose.
+                #
+                # Assets are content-hashed by the build, so a given name can
+                # never change contents: cache them for a year and a phone
+                # coming back to the console loads instantly off local storage.
+                #
+                # index.html is the one file whose contents change under a
+                # fixed name, and it is the file that names which asset to
+                # fetch. With no header at all a browser applies its own
+                # heuristic and can hold it for hours -- so a phone that had the
+                # console open before an engine update keeps asking for an asset
+                # the rebuild deleted. `version` in the snapshot exists to
+                # DETECT that; this is what stops it happening.
+                if path.startswith("/assets/"):
+                    self.send_header("Cache-Control",
+                                     "public, max-age=31536000, immutable")
+                else:
+                    self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(body)
 
