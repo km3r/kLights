@@ -1,5 +1,5 @@
 """
-Beam-aware intensity taper: the eye-safety fix.
+Beam-aware intensity taper: keeping beams off people's faces.
 
 Two things went wrong on the night. Beams swept through the crowd at head
 height, and specific static poses were aimed too low. Those are the same bug:
@@ -12,7 +12,11 @@ cannot cover the transit between them, and transit is where most of the damage
 happened. Here a move that passes through the danger band dims on the way in and
 comes back up on the way out, without anyone having authored that.
 
-**The goal is "not blinding", not "never lands on anyone"** (decided 2026-08-06).
+**The goal is "not dazzling", not "never lands on anyone"** (decided
+2026-08-06). These are 60 W LED beams, not lasers: a beam in the eye is
+dazzling and unpleasant rather than injurious, and the aversion response is
+what actually protects anyone. So this is a comfort and quality feature --
+part of the design, not a device anything should be relying on.
 Beams are expected to cross the crowd; they are expected to be gentle about it.
 So intensity is tapered *to* `TaperConfig.crowd_level` rather than to zero. Set
 that to 0.0 and this becomes a hard guard again -- at the cost of every
@@ -55,15 +59,18 @@ class TaperConfig:
 
     `crowd_level` is what a beam whose core is over people is dimmed **to**, not
     a floor to be nudged off zero. The goal chosen for this rig (2026-08-06) is
-    "not blinding", not "never lands on anyone": beams are expected to cross the
+    "not dazzling", not "never lands on anyone": beams are expected to cross the
     crowd, they are just expected to be gentle about it. So the taper
     interpolates between `crowd_level` and full rather than between zero and
     full.
 
-    Be clear about what that buys and what it does not. At 0.5 a beam aimed
-    directly into someone's eye still emits at half power, so this is a glare
-    and comfort guard, not a hard optical-safety guarantee. Set it to 0.0 to get
-    the guarantee back, at the cost of the floor-sweep pose family.
+    Be clear about what that buys. At 0.5 a beam over the crowd is halved,
+    which is still bright enough to dazzle at close range -- this manages
+    discomfort, it does not eliminate it. Set it to 0.0 for beams that go dark
+    over people, at the cost of the whole floor-sweep pose family.
+
+    The genuine medical risk on this rig is photosensitive epilepsy from STROBE,
+    which nothing here limits. See docs/SAFETY.md.
 
     `margin_deg` is the angular width of the soft edge -- about two beam widths
     on the MJ-OS-018, so a head crossing it at a typical sweep rate takes a

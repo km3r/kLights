@@ -43,7 +43,7 @@ def check(label, ok, detail=""):
 # -- 1. a beam aimed into the crowd is held down to crowd_level ---------------
 #
 # Aimed at the middle of the room at eye level. Nothing subtle: this is the
-# static-pose-too-low case from the night. The goal is "not blinding" rather
+# static-pose-too-low case from the night. The goal is "not dazzling" rather
 # than "off", so the assertion is that it lands exactly on crowd_level -- not
 # above it (no guard) and not below it (the pose family dies).
 print(f"\n1. beam aimed into the crowd at head height (expect {CROWD:.2f})")

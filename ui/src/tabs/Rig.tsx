@@ -63,8 +63,8 @@ export function RigSection({ state }: { state: EngineState }) {
           <p className="small muted">
             Crowd head band {v.crowd.head_band_min / 1000}–
             {v.crowd.head_band_max / 1000} m. A beam whose core crosses it over
-            the crowd is dimmed rather than cut — the goal is not blinding, not
-            never landing on anyone.
+            the crowd is dimmed rather than cut — the goal is not dazzling,
+            not never landing on anyone.
           </p>
         )}
         {v.canopy && (

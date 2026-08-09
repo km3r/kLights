@@ -11,6 +11,24 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Changed — safety framing corrected
+
+- **`docs/SAFETY.md` was written as though these were lasers.** They are 60 W
+  LED beam heads: a beam in the eye is dazzling and unpleasant, not injurious,
+  and the aversion response is what actually protects anyone. The taper is a
+  **comfort and quality feature**, not a protective device, and the document now
+  says so throughout.
+- That overstatement was not harmless. A safety page that cries wolf gets
+  discounted wholesale, taking the two items that *are* a different category
+  with it. Those are now the headline rather than a footnote:
+  **photosensitive epilepsy from strobe** — a genuine medical risk that nothing
+  in the software limits, since strobe is reachable from ported looks and from
+  auto mode's energy axis with no rate cap — and **lasers**, which are
+  unmodelled and regulated.
+- A strobe rate limit is now the highest-value safety item outstanding.
+- Same correction applied to `engine/safety.py`, the README, the Rig panel and
+  the test commentary, so the codebase does not carry two framings.
+
 ### Added — F15, shape macros
 
 - **Four live controls over whatever movement look is up**: size, spread, and a
@@ -201,7 +219,7 @@ The engine, built to replace the QLC+ workspace that ran the despacio show.
 |---|---|
 | **F2** | Timing spike: Python can hold the DMX clock, given `sys.setswitchinterval(0.0005)` and Windows `timeBeginPeriod(1)`. External load is harmless; in-process GIL contention is the killer. |
 | **F3** | Engine geometry and rig model — 16-bit positions, three mount profiles, `.qxf` profiles parsed for channel roles rather than addresses. |
-| **F4** | Layered state, the beam-aware safety taper, Art-Net output, the 40 fps frame clock. The taper dims *to* a crowd level rather than to zero — "not blinding", not "never lands on anyone". |
+| **F4** | Layered state, the beam-aware safety taper, Art-Net output, the 40 fps frame clock. The taper dims *to* a crowd level rather than to zero — "not dazzling", not "never lands on anyone". |
 | **F5** | Fast re-aim: a multi-point solver recovering position, offsets and invert flags together, plus drift detection and calibration snapshots. |
 | **F6** | Musical timing — beats, bars, phrases, tap tempo, and motion continuous across every tempo change. |
 | **F7** | Auto mode: four independently toggleable axes (timing, look changes, palette, energy). |

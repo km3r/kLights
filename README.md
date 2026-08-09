@@ -9,15 +9,16 @@ dimensions, and dims beams that get near people — per frame, from the current
 aim. A web UI drives it from a phone; Unreal renders it in 3D by listening to
 the same Art-Net the rig sees.
 
-> **Read [`docs/SAFETY.md`](docs/SAFETY.md) before pointing this at a rig.** The
-> beam taper is a glare and comfort guard, not an optical-safety guarantee, and
-> three of its inputs are still estimates rather than measurements.
+> See [`docs/SAFETY.md`](docs/SAFETY.md) for what the beam taper manages — it is
+> a comfort feature for LED beams, not a protective device — and for the two
+> things on this rig that are a different category: **strobe** (nothing limits
+> the rate, and photosensitive epilepsy is a real risk) and **lasers**.
 
 ```
 lights/
 ├── docs/                     Generic pipeline documentation
 │   ├── pipeline.md           Art-Net, the engine, previz, legacy QLC+ setup
-│   └── SAFETY.md             What the beam taper guards, and what it does not
+│   └── SAFETY.md             What the beam taper manages, and the two real risks
 ├── engine/                   The show engine (stdlib only, no dependencies)
 │   ├── geometry.py           Where a head is, where it points, what DMX aims it
 │   ├── rig.py venue.py       What is patched; the room it is patched into
@@ -246,6 +247,6 @@ each expensive or impossible — see
 
 ## Licence
 
-[Apache-2.0](LICENSE). Note the warranty disclaimer in particular: this software
-aims light at people and its safety model is documented, deliberately limited,
-and unvalidated against any standard. See [`docs/SAFETY.md`](docs/SAFETY.md).
+[Apache-2.0](LICENSE). Note the warranty disclaimer: this software aims light at
+people, and its comfort model is documented, deliberately limited and
+unvalidated. See [`docs/SAFETY.md`](docs/SAFETY.md).

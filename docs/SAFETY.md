@@ -1,29 +1,39 @@
-# Safety: what the beam taper does, and what it does not
+# What the beam taper is for, and what it is not
 
-This rig points 60 W beams at a room with people in it. One part of the software
-exists specifically to make that less dangerous — the **beam-aware intensity
-taper** in [`engine/safety.py`](../engine/safety.py). This page states plainly
-what it covers, what it does not, and which of its inputs are guesses.
+This rig is six LED fixtures: four 60 W beam moving heads and two RGBW pinspots.
+One part of the software exists to manage how they behave over an audience — the
+**beam-aware intensity taper** in [`engine/safety.py`](../engine/safety.py).
 
-Read it before running a show, and again before letting anyone else run one.
-
----
-
-## The one-sentence version
-
-The taper knows where every moving head's beam **lands**, per frame, and dims a
-beam whose cone enters the crowd's head band — **to half power, not to off**.
-
-It is a **glare and comfort guard**. It is **not** an optical-safety guarantee,
-and it has never been validated against any photobiological standard.
+This page is deliberately specific about what that buys, because the honest
+answer changes what you should worry about.
 
 ---
 
-## What it does
+## Start here: what these fixtures actually do to a person
+
+A 60 W LED beam in the eye at room distance is **dazzling and unpleasant**. You
+get glare, an afterimage, a moment of not being able to see, and — if it keeps
+happening — a genuinely worse night. What you do not get is injury. The aversion
+response (blink, flinch, look away) is doing the real work, and it is adequate
+for this class of fixture.
+
+So the taper is a **comfort and quality feature**, not a protective device. It
+exists because a beam parked in the front row's faces for two bars is bad
+lighting, and because a slow sweep through head height is worse than a fast one.
+Treat it as part of the design, not as a guard you are relying on.
+
+**Two things on this rig are a different category, and neither is handled by the
+taper. They are the reason this page exists at all — see
+[The two real ones](#the-two-real-ones).**
+
+---
+
+## What the taper does
 
 Evaluated every frame from the aim the fixture is *actually* being sent, after
 the entire layer stack, in `state.evaluate()`. Nothing a look does can outrank
-it — `apply_safety` is deliberately not a layer, so it cannot be reordered.
+it — `apply_safety` is deliberately not a layer, so it cannot be reordered, and
+the F15 shape macros were checked against exactly this.
 
 The geometry, in order (`safety.clearance`):
 
@@ -35,125 +45,137 @@ The geometry, in order (`safety.clearance`):
    plane, against the beam's own radius at that range. Inside → taper.
 
 The property that matters is **per frame from the current aim**. A scene-based
-console can at best vet its stored poses; it structurally cannot cover the
-transit between them, and transit is where most of the damage happened on the
-night this was written for. Here a move that passes through the danger band dims
-on the way in and comes back up on the way out, with nobody having authored it.
+console can at best vet its stored poses; it cannot cover the transit between
+them, and transit is most of where the discomfort came from. Here a move that
+passes through the crowd dims on the way in and comes back up on the way out,
+with nobody having authored it.
 
 Movement is rate-limited in both directions (`slew_per_second`, default 2.0) so
-the change reads as a dip rather than a flicker.
+the change reads as a dip rather than a flicker. That limiter also doubles as
+the crossfade when the rig is reloaded live.
 
 ---
 
-## What it does NOT do
+## What it does not cover
 
-Every item here is a real gap, not a hypothetical one.
+Not alarming, just true — and worth knowing when you are wondering why something
+did or did not dim.
 
 | Gap | Detail |
 |---|---|
-| **It does not turn beams off** | `crowd_level` defaults to **0.5**. A beam aimed directly into someone's eye still emits at **half power**. This was a deliberate choice (2026-08-06): the goal is "not blinding", not "never lands on anyone", because every floor-sweep pose necessarily crosses eye height on the way down. |
-| **It does not protect anyone outside the crowd box** | The crowd is modelled as one axis-aligned footprint × a head band. Someone at the bar, in a doorway, on the stage, or standing outside `crowd_zone` is invisible to it. |
-| **It does not taper fixtures that cannot aim** | `state.py:282` skips any fixture with no geometry head. The pinspots are hand-aimed and **entirely the operator's responsibility**. |
-| **It does not model mirror-ball reflections as hazards** | The ball *occludes* (which reduces dimming), but the hundreds of small beams it throws back into the room are not modelled at all. |
-| **It does not model any other reflective surface** | No mirrors, glass, glossy walls, or wet floors. |
-| **It has no radiometry** | No irradiance, no exposure time, no IEC 62471 / EN 62471 assessment. The test is purely geometric: does the cone enter a box. |
-| **It has no photosensitivity guard** | There is no frequency limit on strobe. Strobe is reachable through ported looks and through auto mode's energy axis, and nothing caps its rate. |
-| **`jog` bypasses it completely** | By design — you cannot calibrate a head through a guard that dims it. The UI raises a red banner while any head is jogging. Until F14 lands, **anyone on the venue network can send `jog`.** |
-| **It assumes the config is true** | Every number below is taken on faith. A wrong fixture position or a wrong room size produces a confident, wrong answer. |
+| It dims rather than cuts | `crowd_level` defaults to **0.5**. A beam over the crowd is halved, not extinguished. Deliberate: the goal is "not dazzling", not "never lands on anyone", because every floor-sweep pose crosses head height on the way down. |
+| Only the crowd box | One axis-aligned footprint × a head band. Someone at the bar, in a doorway or on a riser is invisible to it. |
+| Not the pinspots | `state.py:282` skips any fixture with no geometry head. The pinspots are hand-aimed and entirely yours. |
+| Not mirror-ball reflections | The ball *occludes* (which reduces dimming), but the hundreds of small beams it throws back are not modelled. They are also far dimmer than the source, which is why this has never mattered. |
+| No other reflective surface | No mirrors, glass, glossy walls, wet floors. |
+| Purely geometric | No irradiance, no exposure time, no photobiological assessment. The test is "does the cone enter a box". For this class of fixture that is the right level of model. |
+| `jog` bypasses it | By design — you cannot calibrate a head through a guard that dims it. The UI raises a red banner while any head is jogging, and jog now requires `configure` access. |
+| It trusts the config | A wrong fixture position or room size produces a confident, wrong answer. |
 
 ---
 
-## The three inputs that are guesses
+## The two real ones
 
-These are the taper's most load-bearing numbers and **none of them has been
-measured**. Each is flagged in its own file; they are collected here so the list
-exists in one place.
+### 1. Strobe and photosensitive epilepsy
 
-### 1. `beam_deg: 8` — `events/despacio/rig.json`
+**This is the genuine medical risk on this rig, and nothing in the software
+limits it.** Strobe is reachable through ported looks and through auto mode's
+energy axis, and there is no cap on rate.
+
+Photosensitive epilepsy is typically provoked in the 3–30 Hz range, worst around
+15–20 Hz. Unlike dazzle, this is not something an aversion response protects
+anyone from, and the person affected has no warning.
+
+Practical position until a rate limit exists (it is on the roadmap, and it is
+the highest-value safety item left):
+
+- Keep sustained strobe short and infrequent.
+- Avoid the 15–20 Hz region for anything more than a hit.
+- If you run strobe at all, say so at the door. That is the actual mitigation.
+
+### 2. Lasers
+
+`shared/inventory.json` lists a Chauvet Scorpion Dual RGB and a derby laser.
+**Nothing in this repo models, guards or restricts laser output**, and lasers
+are a genuinely different hazard class from every LED fixture here — audience
+scanning is prohibited or licensed in most jurisdictions. Check your local
+rules; this software will not help you.
+
+---
+
+## The three estimated inputs
+
+These are the taper's most load-bearing numbers and none has been measured. They
+matter for whether the taper *behaves as designed*, not because someone gets
+hurt if they are wrong.
+
+### `beam_deg: 8` — `events/despacio/rig.json`
 
 > "the .qxf profile claims 3 degrees and these read visibly wider than that in
 > the room, so they are set to 8 — STATED 2026-08-08, not measured."
 
-Sets the beam's half-width at range, i.e. how wide a swathe counts as dangerous.
+Sets the beam's half-width at range, i.e. how wide a swathe counts as being over
+the crowd. Too small and the taper under-dims; too large and it over-dims and
+you lose looks. The current 8 widens the profile's 3, so it errs toward dimming.
 
-- **Direction of error:** too small → the taper under-protects (thinks the beam
-  is narrower than it is). Too large → over-dims. The current 8 is a widening of
-  the profile's 3, so it errs *toward* protecting.
-- **To retire it:** project one head onto a wall at a measured distance, measure
-  the bright core's diameter, `2 * atan(radius / distance)`. Ten minutes with a
-  tape measure.
+**To measure:** project one head onto a wall at a known distance, measure the
+bright core's diameter, `2 * atan(radius / distance)`. Ten minutes.
 
-### 2. `ball_radius: 300` — `events/despacio/venue.json`
+### `ball_radius: 300` — `shared/venues/despacio-room.json`
 
 > "errs toward NOT dimming — a bigger ball here means the taper believes more
 > beams are blocked than really are."
 
-- **Direction of error: this one errs the unsafe way.** Overstating the ball
-  makes the taper believe beams are occluded that are not, and it will not dim
-  them. This is the most important of the three.
-- **To retire it:** measure the ball. One minute.
+Of the three this is the one that errs toward doing nothing: overstate the ball
+and the taper thinks beams are occluded that are not. **To measure:** measure
+the ball. One minute.
 
-### 3. `head_band_min/max: 1400–2000` — `events/despacio/venue.json`
+### `head_band_min/max: 1400–2000` — the venue file
 
-> "roughly seated-tall to standing-tall. It is a judgement call, not a
-> measurement, and it is deliberately generous at the top — someone on someone's
-> shoulders is exactly who gets hit."
-
-- **Direction of error:** a band too narrow misses people. Deliberately generous
-  at the top for exactly that reason.
-- **To retire it:** it is a policy choice, not a measurable. Revisit it if the
-  room gets a stage, a riser, or a bar people stand on.
+A policy choice rather than a measurable — roughly seated-tall to standing-tall,
+deliberately generous at the top because someone on shoulders is who gets hit.
+Revisit if the room gains a stage, a riser, or a bar people stand on.
 
 ---
 
 ## The `crowd_level` dial
 
-In `venue.json` under `taper`, live-editable from the Setup tab.
+In the venue file under `taper`, live-editable from the Setup tab.
 
 | Value | Behaviour | Cost |
 |---|---|---|
-| `0.5` (default) | Beams over the crowd are held to half power. | A beam in an eye is still half power. |
-| `0.0` | Hard guard — beams over the crowd go dark. | Kills every floor-sweep pose; a head aiming at the dancefloor crosses eye height on the way down and will blink out. |
-| `1.0` | No taper. | None of this applies. Don't. |
+| `0.5` (default) | Beams over the crowd are halved. | Still bright enough to dazzle at close range. |
+| `0.0` | Beams over the crowd go dark. | Kills every floor-sweep pose — a head aiming at the dancefloor blinks out on the way down. |
+| `1.0` | No taper at all. | None of this applies. |
 
-**If you are running for a crowd you do not know, or anyone has been drinking
-near the front, set it to 0.0 and lose the floor sweeps.**
-
-`enabled: false` disables the taper entirely. The UI raises a notice when it is
-off; the server prints the live value at startup.
+`enabled: false` disables it entirely; the UI raises a notice and the server
+prints the live value at startup.
 
 ---
 
-## Operator responsibilities the software cannot take
+## Things the software genuinely cannot do for you
 
-- **Aim the pinspots by hand, above head height.** Nothing checks them.
-- **Re-run calibration after any re-hang.** Every look's position is an offset
-  from each head's calibrated ball aim. A moved head with a stale calibration
-  points somewhere nobody authored. `python -m engine.calibrate drift` checks.
-- **Keep the crowd box honest.** If the crowd spreads past the footprint in
-  `venue.json`, the taper stops covering the people who moved.
-- **Run `events/despacio/preflight.py` before doors.** Exit 0 means the venue
-  checks pass.
-- **Know where Panic is.** Setup tab. It forces zeros onto the wire from the
-  output thread and does not need the show to be healthy — unlike Blackout,
-  which takes the master to zero with the show still running underneath.
-
----
-
-## Lasers
-
-`shared/inventory.json` lists a Chauvet Scorpion Dual RGB and a derby laser.
-**Nothing in this repo models, guards, or restricts laser output.** Lasers are
-regulated differently from lamps in most jurisdictions and audience-scanning is
-prohibited or licensed in many of them. Check your local rules; this software
-will not help you.
+- **Aim the pinspots above head height by hand.** Nothing checks them.
+- **Re-calibrate after any re-hang.** Every look's position is an offset from a
+  head's calibrated ball aim, so a moved head with a stale calibration points
+  somewhere nobody authored. `python -m engine.calibrate drift` checks.
+- **Keep the crowd box honest.** If the crowd spreads past the footprint, the
+  taper stops covering the people who moved.
+- **Run `python scripts/preflight.py` before you leave**, and
+  `events/despacio/preflight.py` at the venue.
+- **Know where Panic is.** Setup tab. It forces zeros onto the wire and does not
+  need the show to be healthy — unlike Blackout, which takes the master to zero
+  with the show still running underneath.
 
 ---
 
 ## Status
 
-The taper has unit coverage in [`engine/tests/test_safety.py`](../engine/tests/test_safety.py)
-— beams held to `crowd_level` in the crowd, ball occlusion, outside the
-footprint, above the band, and a sweep tapering rather than flashing. That
-proves the code implements the model. **It does not prove the model is right,
-and nobody has validated it against a standard or an instrument.**
+The taper has unit coverage in
+[`engine/tests/test_safety.py`](../engine/tests/test_safety.py) — beams held to
+`crowd_level` in the crowd, ball occlusion, outside the footprint, above the
+band, a sweep tapering rather than flashing, and every shape macro still passing
+through it. That proves the code implements the model. It does not prove the
+model is right, and nobody has validated it against an instrument — which for a
+comfort feature is a reasonable place to be, and for the strobe gap above is
+not.
