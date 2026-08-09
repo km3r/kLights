@@ -32,10 +32,12 @@ from __future__ import annotations
 
 import json
 import queue
+import secrets
 import socket
 import threading
 import time
 import traceback
+from urllib.parse import parse_qs, urlparse
 from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -62,6 +64,12 @@ UI_DIST = REPO / "ui" / "dist"
 
 BROADCAST_HZ = 10.0
 
+# How many snapshots a client may fall behind before it is dropped. Three is a
+# third of a second at BROADCAST_HZ: long enough to ride out a garbage collection
+# or a wifi hiccup, short enough that a client which has genuinely gone away is
+# gone before anyone reaches for the master and wonders why nothing moved.
+QUEUE_DEPTH = 3
+
 # A solve fitting worse than this is not written over a working calibration.
 # Comfortably above the 0.67 deg worst case the solver hits on clean captures,
 # and well below the tens of degrees a mistaken capture produces.
@@ -70,6 +78,104 @@ MAX_WRITE_RESIDUAL_DEG = 5.0
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
         ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml",
         ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
+
+
+# --------------------------------------------------------------- access ----
+
+# Three tiers, because "anyone on the venue wifi can do anything" stopped being
+# acceptable once the patch became editable from the UI. The threat here is not
+# an attacker -- it is the guest who opens the URL you showed someone, starts
+# pressing, and re-addresses the rig between sets.
+#
+#   view       read the state. The default for a client that arrives with no
+#              token, so showing someone the console stays a one-tap thing.
+#   operate    run the show: looks, colour, tempo, master, blackout, panic.
+#   configure  change what survives the night, or bypass a guard: jog (which
+#              disables the safety taper for that head), writing a calibration,
+#              editing the room, editing the patch.
+#
+# PANIC is deliberately `operate`, not `configure`. It is the one command whose
+# cost of being unavailable to the wrong person exceeds the cost of being
+# available to them -- everything it does is undone by pressing it again.
+TIERS = ("view", "operate", "configure")
+
+TIER: dict[str, str] = {
+    "hello": "view",
+    # configure: persists past tonight, or steps around a safety guard
+    "jog": "configure", "jog_clear": "configure",
+    "capture": "configure", "capture_clear": "configure", "solve": "configure",
+    "drift": "configure", "venue": "configure", "venue_save": "configure",
+    "taper": "configure",
+    "patch_add": "configure", "patch_remove": "configure",
+    "patch_address": "configure", "patch_tags": "configure",
+    "patch_position": "configure", "patch_autopatch": "configure",
+    "patch_save": "configure",
+    # everything not listed is `operate` -- see apply()
+}
+
+
+class Connection:
+    """One socket, with the thread that owns writing to it.
+
+    The write side is a queue and a thread rather than a direct call, so the
+    broadcast loop can hand off a payload without ever waiting on a client --
+    see `ShowServer.send_all` for why that matters.
+    """
+
+    def __init__(self, ws: WebSocket):
+        self.ws = ws
+        self.lock = threading.Lock()
+        self.queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=QUEUE_DEPTH)
+        self.thread = threading.Thread(target=self._pump, daemon=True)
+        self.thread.start()
+
+    def _pump(self) -> None:
+        while True:
+            payload = self.queue.get()
+            if payload is None:                     # close sentinel
+                return
+            try:
+                # Same per-connection lock as before: a broadcast and a command
+                # acknowledgement interleaving on one socket would splice two
+                # frames together and corrupt both.
+                with self.lock:
+                    self.ws.send(payload)
+            except (WebSocketClosed, WebSocketError, OSError):
+                return
+
+    def close(self) -> None:
+        """Tear the connection down without ever blocking the caller.
+
+        The subtle part: `WebSocket.close` sends a courtesy close frame with a
+        blocking `sendall`, and the client most likely to be dropped is the one
+        whose buffer is already full -- so the polite goodbye blocks on exactly
+        the socket that caused the drop, and `drop()` re-freezes the broadcast
+        thread it was called from to prevent that freeze. The queue fixed the
+        send path and left this one, which the test then found.
+
+        So the close frame gets a deadline, and failing that the socket is torn
+        down underneath it. A browser that misses the frame just sees the TCP
+        close and reconnects on the backoff it already implements.
+        """
+        try:
+            self.queue.put_nowait(None)
+        except queue.Full:
+            pass                    # the pump is stuck; the shutdown below ends it
+        try:
+            self.ws.sock.settimeout(0.2)
+            self.ws.close()
+        except (OSError, WebSocketClosed, WebSocketError):
+            pass
+        # Unconditional, because `ws.close()` may have given up on a half-sent
+        # close frame and left the socket open with the pump still parked in it.
+        try:
+            self.ws.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.ws.sock.close()
+        except OSError:
+            pass
 
 
 # ------------------------------------------------------------------ clients --
@@ -82,9 +188,13 @@ class Client:
     connected_at: float = 0.0
     last_action: str = ""
     last_action_at: float = 0.0
+    tier: str = "configure"
+
+    def may(self, need: str) -> bool:
+        return TIERS.index(self.tier) >= TIERS.index(need)
 
     def public(self, now: float) -> dict:
-        return {"id": self.id, "name": self.name,
+        return {"id": self.id, "name": self.name, "tier": self.tier,
                 "connected_for": round(now - self.connected_at, 1),
                 "last_action": self.last_action,
                 "last_action_ago": (round(now - self.last_action_at, 1)
@@ -268,6 +378,15 @@ class ShowController:
         handler = getattr(self, f"_cmd_{kind}", None)
         if handler is None:
             raise ValueError(f"unknown command {kind!r}")
+        # A client with no token may watch but not touch. Checked here rather
+        # than at the socket, so there is exactly one place a command can enter
+        # the show and exactly one place that decides whether it may.
+        need = TIER.get(kind, "operate")
+        if client is not None and not client.may(need):
+            raise ValueError(
+                f"{kind!r} needs {need} access and this client has "
+                f"{client.tier}. Open the URL the engine printed, including "
+                f"its ?token=, or restart with --no-token")
         handler(message, now)
         self.rev += 1
         if client is not None and kind != "hello":
@@ -973,11 +1092,17 @@ class ShowServer:
     """HTTP for the UI bundle, WebSocket for everything live."""
 
     def __init__(self, controller: ShowController, port: int = 8765,
-                 ui_dir: Path = UI_DIST):
+                 ui_dir: Path = UI_DIST, token: Optional[str] = None,
+                 bind: str = "0.0.0.0"):
         self.controller = controller
         self.port = port
         self.ui_dir = Path(ui_dir)
-        self.sockets: dict[str, tuple[WebSocket, threading.Lock]] = {}
+        # None means no access control at all: every client arrives as
+        # `configure`, which is what this was before tokens existed and is still
+        # the right answer on a laptop with no network.
+        self.token = token
+        self.bind = bind
+        self.sockets: dict[str, Connection] = {}
         self._next_id = 0
         self._id_lock = threading.Lock()
         self._stop = threading.Event()
@@ -1012,37 +1137,59 @@ class ShowServer:
             self._stop.wait(max(0.0, period - elapsed))
 
     def send_all(self, payload: str) -> None:
-        for cid, (ws, lock) in list(self.sockets.items()):
+        """Hand the payload to each client's own sender. Never blocks.
+
+        This used to call `ws.send` inline, which is a blocking `sendall` on a
+        socket with no timeout, from the single broadcast thread. One client
+        that stopped reading -- a phone that locked its screen, or walked out of
+        wifi range -- filled its TCP window, the send blocked, and the console
+        froze for everyone else. At a venue that reads as the engine hanging,
+        and the cause is nowhere near the symptom. Found by leaving three idle
+        clients connected in a test.
+
+        A timeout on the socket cannot fix it: a receive timeout can land
+        halfway through a frame, and the header is already consumed by then, so
+        the read stream is unrecoverable. `select` for writability cannot fix it
+        either -- it reports ready when a single byte of buffer is free, and a
+        30 kB snapshot then blocks partway anyway.
+
+        So the broadcast thread is made structurally incapable of blocking: a
+        bounded queue per client, drained by that client's own thread. Full
+        queue means the client is behind by `QUEUE_DEPTH` snapshots and is not
+        coming back, so it is dropped and its browser reconnects on the backoff
+        it already implements.
+        """
+        for cid, conn in list(self.sockets.items()):
             try:
-                # Per-connection lock: a broadcast and a command acknowledgement
-                # interleaving on one socket would splice two frames together
-                # and corrupt both.
-                with lock:
-                    ws.send(payload)
-            except (WebSocketClosed, WebSocketError, OSError):
+                conn.queue.put_nowait(payload)
+            except queue.Full:
+                who = self.controller.clients.get(cid)
+                self.controller.note(
+                    f"dropped {who.name if who else cid}: {QUEUE_DEPTH} "
+                    f"snapshots behind and not reading")
                 self.drop(cid)
 
     def drop(self, cid: str) -> None:
-        entry = self.sockets.pop(cid, None)
+        conn = self.sockets.pop(cid, None)
         self.controller.clients.pop(cid, None)
-        if entry is not None:
-            try:
-                entry[0].close()
-            except OSError:
-                pass
+        if conn is not None:
+            conn.close()
 
     # -- one connection ----------------------------------------------------
 
-    def serve_websocket(self, sock: socket.socket, key: str) -> None:
+    def serve_websocket(self, sock: socket.socket, key: str,
+                        tier: str = "configure") -> None:
         ws = WebSocket(sock)
         cid = self.new_client_id()
-        lock = threading.Lock()
-        client = Client(id=cid, connected_at=time.time())
-        self.sockets[cid] = (ws, lock)
+        conn = Connection(ws)
+        lock = conn.lock
+        client = Client(id=cid, connected_at=time.time(), tier=tier)
+        self.sockets[cid] = conn
         self.controller.clients[cid] = client
         try:
             with lock:
-                ws.send(json.dumps({"type": "welcome", "id": cid}))
+                ws.send(json.dumps({"type": "welcome", "id": cid,
+                                    "tier": tier}))
                 ws.send(json.dumps(self.controller.snapshot()))
             while not self._stop.is_set():
                 text = ws.receive()
@@ -1088,12 +1235,39 @@ class ShowServer:
                 except (OSError, ValueError, AttributeError):
                     pass
 
+            def cross_origin(self) -> bool:
+                """A browser page on another site opening a socket to us.
+
+                Browsers send Origin on a WebSocket handshake and do NOT apply
+                the same-origin policy to it, so without this any page the
+                operator happens to have open could drive the rig. A missing
+                Origin is not a browser at all -- the tests' own client, a
+                script -- and is left alone, since the token is what guards
+                those.
+                """
+                origin = self.headers.get("Origin")
+                if not origin:
+                    return False
+                host = self.headers.get("Host", "")
+                return origin.split("//", 1)[-1].rstrip("/") != host
+
             def do_GET(self):
                 if self.headers.get("Upgrade", "").lower() == "websocket":
                     key = self.headers.get("Sec-WebSocket-Key")
                     if not key:
                         self.send_error(400, "missing Sec-WebSocket-Key")
                         return
+                    if self.cross_origin():
+                        self.send_error(403, "cross-origin websocket refused")
+                        return
+                    # The token rides in the query string because that is what
+                    # survives being turned into a QR code and scanned by a
+                    # phone -- there is no login form to put it in, and there
+                    # should not be one at a load-in.
+                    query = parse_qs(urlparse(self.path).query)
+                    supplied = (query.get("token") or [""])[0]
+                    tier = ("configure" if server.token is None
+                            or supplied == server.token else "view")
                     from .websocket import handshake_response
                     self.wfile.write(handshake_response(key))
                     self.wfile.flush()
@@ -1102,7 +1276,7 @@ class ShowServer:
                     # is now speaking a different protocol; `finish` above deals
                     # with the teardown finding it already closed.
                     self.close_connection = True
-                    server.serve_websocket(self.connection, key)
+                    server.serve_websocket(self.connection, key, tier=tier)
                     return
                 self.serve_static()
 
@@ -1143,7 +1317,7 @@ class ShowServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-        self.httpd = ThreadingHTTPServer(("0.0.0.0", self.port), Handler)
+        self.httpd = ThreadingHTTPServer((self.bind, self.port), Handler)
         self.httpd.daemon_threads = True
         threading.Thread(target=self.httpd.serve_forever, name="http",
                          daemon=True).start()
@@ -1207,11 +1381,26 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--fps", type=float, default=40.0)
     parser.add_argument("--bpm", type=float, default=124.0)
     parser.add_argument("--ui", type=Path, default=UI_DIST)
+    parser.add_argument("--bind", default="0.0.0.0",
+                        help="interface to listen on (127.0.0.1 for this "
+                             "machine only)")
+    parser.add_argument("--token",
+                        help="require this token for control. Default: a fresh "
+                             "one each run, printed in the URL below")
+    parser.add_argument("--no-token", action="store_true",
+                        help="no access control -- every client may do anything")
     args = parser.parse_args(argv)
+
+    # A token by default, because the alternative default is that anyone who can
+    # reach the port can re-address the rig. Regenerated every run: there is
+    # nothing to remember, and a link shared last week stops working, which is
+    # the correct behaviour for a link that grants control of a lighting rig.
+    token = None if args.no_token else (args.token or secrets.token_urlsafe(6))
 
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
                                 bpm=args.bpm)
-    server = ShowServer(controller, port=args.port, ui_dir=args.ui)
+    server = ShowServer(controller, port=args.port, ui_dir=args.ui,
+                        token=token, bind=args.bind)
 
     controller.start()
     server.start()
@@ -1231,8 +1420,15 @@ def main(argv: Optional[list[str]] = None) -> int:
               f"  (docs/SAFETY.md)")
     print(f"timing  {', '.join(controller.runner.applied_timing)}")
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
+    if token is None:
+        print("access  OPEN -- anyone who can reach this port has full control")
+    else:
+        print(f"access  token {token} required to control; without it, view only")
+    # The token goes in the URL because the single most common load-in failure
+    # is typing something wrong into a phone, and a URL can be a QR code.
+    suffix = "" if token is None else f"?token={token}"
     for url in local_addresses(args.port):
-        print(f"open    {url}")
+        print(f"open    {url}{suffix}")
     print("\nCtrl-C to stop.")
 
     try:

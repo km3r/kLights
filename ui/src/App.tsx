@@ -6,7 +6,7 @@ import { ColorTab } from "./tabs/Color";
 import { MoveTab } from "./tabs/Move";
 import { BrightTab } from "./tabs/Bright";
 import { SetupTab } from "./tabs/Setup";
-import type { Command, EngineState } from "./types";
+import type { Command, EngineState, Tier } from "./types";
 
 // One tab per thing you can independently change, plus Show for what applies
 // across all of them and Setup for the room and the rig. Venue and Rig used to
@@ -28,7 +28,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function App() {
-  const { state, status, send, name, setName } = useEngine();
+  const { state, status, send, name, setName, tier } = useEngine();
   const [tab, setTab] = useState<TabId>("show");
   // Local only while a finger is down; see Fader's comment.
   const [masterDrag, setMasterDrag] = useState<number | null>(null);
@@ -80,7 +80,7 @@ export default function App() {
               a one-tap release whenever it IS engaged. */}
         </div>
 
-        <Banners state={state} status={status} send={send} />
+        <Banners state={state} status={status} send={send} tier={tier} />
       </header>
 
       <main className="main">
@@ -121,10 +121,23 @@ export default function App() {
  * silently disables the safety taper, which is the one state nobody should be
  * in without knowing.
  */
-function Banners({ state, status, send }: {
+function Banners({ state, status, send, tier }: {
   state: EngineState | null; status: string; send: (c: Command) => void;
+  tier: Tier;
 }) {
   const banners = [];
+
+  // Say it up front. Without this, a client that arrived without the token gets
+  // a console that looks completely normal and quietly ignores every press —
+  // which is the exact failure the tiers exist to prevent, relocated.
+  if (tier === "view") {
+    banners.push(
+      <Banner key="tier" kind="warn">
+        VIEW ONLY — you can watch, but nothing you press will reach the rig.
+        Open the full link the engine printed (the one ending in
+        <code> ?token=…</code>) to take control.
+      </Banner>);
+  }
 
   if (status !== "open") {
     banners.push(

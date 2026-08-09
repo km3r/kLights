@@ -41,15 +41,23 @@ def check(label, ok, detail=""):
 class Client:
     """Minimal WebSocket client, written separately from the server's framing."""
 
-    def __init__(self, port: int, name: str = "test"):
+    def __init__(self, port: int, name: str = "test", path: str = "/",
+                 origin: str = ""):
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
         self.sock.settimeout(5)
         self.buf = b""
         key = base64.b64encode(os.urandom(16)).decode()
-        self.sock.sendall(
-            f"GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
-            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
-            f"Sec-WebSocket-Version: 13\r\n\r\n".encode())
+        lines = [
+            f"GET {path} HTTP/1.1",
+            "Host: localhost",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            f"Sec-WebSocket-Key: {key}",
+            "Sec-WebSocket-Version: 13",
+        ]
+        if origin:
+            lines.append(f"Origin: {origin}")
+        self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
         header = self._read_until(b"\r\n\r\n")
         self.status = header.split(b"\r\n")[0].decode()
         self.accept = wsmod.accept_key(key)
@@ -652,6 +660,129 @@ check("submit stamps the command with engine time, off the frame grid",
 client.close()
 server.stop()
 controller.stop()
+
+
+# -- 12. access tiers ---------------------------------------------------------
+#
+# The rig became editable from the UI in F14, so "anyone on the venue wifi can
+# do anything" stopped being an acceptable default. The threat is not an
+# attacker; it is the guest who opens the URL you showed someone and starts
+# pressing things between sets.
+print("\n12. access tiers")
+guarded = ShowController(REPO / "events" / "despacio")
+guarded_server = ShowServer(guarded, port=8788, token="secret123")
+guarded.start()
+guarded_server.start()
+time.sleep(0.3)
+try:
+    # One client at a time, and closed before the next. Three left connected and
+    # unread is what surfaced the broadcast stall fixed in send_all -- worth
+    # knowing, but not what this section is testing.
+    def tier_of(path):
+        c = Client(8788, path=path)
+        return c, c.recv().get("tier")
+
+    good, tier = tier_of("/ws?token=secret123")
+    check("the right token grants configure", tier == "configure", f"{tier}")
+    good.recv()
+    good.send({"type": "master", "value": 0.25})
+    good.wait_for(lambda s: abs(s["master"] - 0.25) < 1e-6)
+    check("and it can drive the show", True)
+    good.close()
+
+    wrong, wrong_tier = tier_of("/ws?token=nope")
+    check("a wrong token means view only", wrong_tier == "view", f"{wrong_tier}")
+    wrong.close()
+
+    anon, anon_tier = tier_of("/ws")
+    check("no token means view only", anon_tier == "view", f"{anon_tier}")
+
+    # A view client's commands must be REFUSED and said so, not silently
+    # dropped: the failure mode being guarded against is controls that quietly
+    # stop having an effect.
+    anon.recv()
+    anon.send({"type": "master", "value": 0.9})
+    state = anon.wait_for(lambda s: any("needs operate" in n for n in s["notices"]))
+    check("a view client cannot move the master",
+          abs(state["master"] - 0.25) < 1e-6, f"master={state['master']}")
+    check("and is told why, rather than ignored", True)
+
+    anon.send({"type": "jog", "fixture": "Moving Head #1", "pan": 5, "tilt": 0})
+    anon.wait_for(lambda s: any("needs configure" in n for n in s["notices"]))
+    check("a view client cannot jog (which bypasses the safety taper)", True)
+    anon.close()
+
+    # Browsers send Origin on a WebSocket handshake and do not apply the
+    # same-origin policy to it, so without this check any page the operator has
+    # open could drive the rig.
+    hostile = socket.create_connection(("127.0.0.1", 8788), timeout=5)
+    key = base64.b64encode(os.urandom(16)).decode()
+    hostile.sendall(("\r\n".join([
+        "GET /ws HTTP/1.1", "Host: localhost", "Upgrade: websocket",
+        "Connection: Upgrade", f"Sec-WebSocket-Key: {key}",
+        "Sec-WebSocket-Version: 13", "Origin: http://evil.example",
+    ]) + "\r\n\r\n").encode())
+    reply = hostile.recv(200).decode(errors="replace")
+    check("a cross-origin handshake is refused", "403" in reply.split("\r\n")[0],
+          reply.split("\r\n")[0])
+    hostile.close()
+
+    # The stall this section accidentally found. One client that stops reading
+    # used to block ws.send on the single broadcast thread, freezing the console
+    # for everyone else -- at a venue that reads as the engine hanging, and the
+    # cause (a phone that locked its screen) is nowhere near the symptom.
+    # The idle client has to be genuinely backed up for this to test anything:
+    # one 30 kB snapshot fits in a TCP window, so it takes a couple of seconds
+    # of unread broadcasts before a send would actually have blocked. Without
+    # the wait this check passes whether or not the bug is present, which is the
+    # kind of test that is worse than none.
+    idle = Client(8788, path="/ws")
+    idle.recv()                        # welcome, then never read again
+    idle.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
+    time.sleep(2.5)                    # ~25 unread snapshots
+
+    live = Client(8788, path="/ws?token=secret123")
+    live.recv()
+    started = time.time()
+    live.send({"type": "master", "value": 0.55})
+    seen = live.wait_for(lambda s: abs(s["master"] - 0.55) < 1e-6)
+    elapsed = time.time() - started
+    check("a stuck client does not stall the broadcast for a live one",
+          elapsed < 2.0, f"{elapsed:.2f}s to see a change land")
+    check("and the stuck one was dropped, with a reason",
+          any("stalls the broadcast" in n for n in seen["notices"])
+          or len(seen["presence"]) <= 1,
+          f"presence={len(seen['presence'])}, notices={seen['notices'][-1:]}")
+    idle.close()
+    live.close()
+finally:
+    guarded_server.stop()
+    guarded.stop()
+
+
+# -- 13. with no token, everything is permitted -------------------------------
+#
+# The default is a token, but a laptop with no network is a real case and it
+# must not need a query string to work.
+print("\n13. --no-token")
+open_ctl = ShowController(REPO / "events" / "despacio")
+open_server = ShowServer(open_ctl, port=8787, token=None)
+open_ctl.start()
+open_server.start()
+time.sleep(0.3)
+try:
+    c = Client(8787, path="/ws")
+    welcome = c.recv()
+    check("with no token configured, a bare client gets configure",
+          welcome.get("tier") == "configure", f"{welcome.get('tier')}")
+    c.recv()
+    c.send({"type": "master", "value": 0.4})
+    c.wait_for(lambda s: abs(s["master"] - 0.4) < 1e-6)
+    check("and can drive the show", True)
+    c.close()
+finally:
+    open_server.stop()
+    open_ctl.stop()
 
 print()
 if failures:

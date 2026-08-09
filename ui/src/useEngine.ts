@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Command, ConnectionStatus, EngineState } from "./types";
+import type { Command, ConnectionStatus, EngineState, Tier } from "./types";
 
 /**
  * The connection to the engine.
@@ -18,9 +18,28 @@ import type { Command, ConnectionStatus, EngineState } from "./types";
 const RECONNECT_MIN = 400;
 const RECONNECT_MAX = 4000;
 
+/**
+ * The token rides in the page URL and has to be handed on to the socket, since
+ * that is where the engine decides whether this client may do anything.
+ *
+ * Kept in sessionStorage as well, because the first thing a phone does with a
+ * scanned URL is navigate, and any tap that drops the query string would
+ * otherwise silently demote a working console to read-only mid-set — with no
+ * error, just controls that stop having an effect.
+ */
+function token(): string {
+  const fromUrl = new URLSearchParams(location.search).get("token");
+  if (fromUrl) {
+    sessionStorage.setItem("cosmos.token", fromUrl);
+    return fromUrl;
+  }
+  return sessionStorage.getItem("cosmos.token") ?? "";
+}
+
 function socketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws`;
+  const t = token();
+  return `${proto}//${location.host}/ws${t ? `?token=${encodeURIComponent(t)}` : ""}`;
 }
 
 function clientName(): string {
@@ -37,6 +56,11 @@ function clientName(): string {
 export function useEngine() {
   const [state, setState] = useState<EngineState | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  // What this client is allowed to do, from the welcome frame. Assume the most
+  // permissive until told otherwise: the engine is the one that enforces this,
+  // and starting pessimistic would grey out a working console for the moment
+  // before the frame arrives.
+  const [tier, setTier] = useState<Tier>("configure");
   const [name, setNameState] = useState<string>(clientName);
   const socket = useRef<WebSocket | null>(null);
   const backoff = useRef(RECONNECT_MIN);
@@ -61,6 +85,7 @@ export function useEngine() {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") setState(msg as EngineState);
+        else if (msg.type === "welcome" && msg.tier) setTier(msg.tier as Tier);
       };
       ws.onclose = () => {
         setStatus("closed");
@@ -95,7 +120,7 @@ export function useEngine() {
     }
   }, []);
 
-  return { state, status, send, name, setName };
+  return { state, status, send, name, setName, tier };
 }
 
 /**

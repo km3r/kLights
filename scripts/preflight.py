@@ -18,6 +18,7 @@ does that, and it has to happen at the venue with the lamps on.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -51,17 +52,30 @@ def bundle_matches_source() -> tuple[bool, str]:
     if not (REPO / "ui" / "node_modules").is_dir():
         return True, ("skipped -- ui/node_modules absent. Run `cd ui && npm ci` "
                       "to enable this check on a machine that builds the UI")
+    # Compare the bundle on disk against a rebuild, NOT against HEAD. What gets
+    # served at the venue is the directory, so "is the directory current" is the
+    # question; git status also reports staged-but-uncommitted, which made this
+    # fail for a bundle that was perfectly correct. CI asks the other question --
+    # does the COMMITTED bundle match the committed source -- and that is the
+    # right one there, where a fresh clone is what runs.
+    def fingerprint() -> dict:
+        dist = REPO / "ui" / "dist"
+        return {p.relative_to(dist).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted(dist.rglob("*")) if p.is_file()}
+
+    before = fingerprint()
     build = subprocess.run(["npm", "run", "build"], cwd=REPO / "ui",
                            capture_output=True, text=True, shell=True)
     if build.returncode != 0:
         return False, (build.stderr or build.stdout or "").strip()[-400:]
-    status = subprocess.run(["git", "status", "--porcelain", "ui/dist"],
-                            cwd=REPO, capture_output=True, text=True)
-    if status.stdout.strip():
-        return False, ("ui/dist differs from a fresh build. Commit it as one set:\n"
-                       "    cd ui && npm run build && cd .. && git add -A ui/dist\n"
-                       + status.stdout.rstrip())
-    return True, "committed bundle matches a fresh build"
+    after = fingerprint()
+    if before != after:
+        changed = sorted(set(before) ^ set(after)) or \
+            [k for k in after if before.get(k) != after[k]]
+        return False, ("ui/dist was stale -- a rebuild changed it. It is correct "
+                       "now; commit it as one set:\n"
+                       "    git add -A ui/dist\n  " + "\n  ".join(changed))
+    return True, "the bundle on disk matches a fresh build"
 
 
 def main(argv: list[str] | None = None) -> int:

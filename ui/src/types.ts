@@ -230,3 +230,7 @@ export type Command =
   | { type: "venue_save" };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
+
+/** What this client may do, decided by the engine from the URL's token.
+ *  `view` can watch but every command it sends is refused. */
+export type Tier = "view" | "operate" | "configure";
