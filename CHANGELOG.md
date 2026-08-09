@@ -11,6 +11,44 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F15, per-slot rate
+
+The last thing the three slots did not have independently, and the reason it
+waited for a pass of its own rather than being bolted onto the macros.
+
+- **Three motion phases instead of one**, in `state.SlotPhases`. Each slot's
+  layers read that slot's phase, so a colour chase at 0.5× under a move at 2×
+  is now something the engine can express at all. The old console needed a
+  separately stored chase per combination, which is a large part of how it
+  accumulated 206 looks.
+- Each phase is integrated as `rate × d(bar)`, **never** computed as
+  `rate × bar`. The naive form jumps by `(new − old) × bars_so_far` the instant
+  a rate changes — at bar 40 a move from 1.0 to 1.5 snaps every running move
+  forward twenty bars. That hazard is what made this a milestone rather than a
+  knob, and it is guarded per slot in `test_auto`.
+- Rate 0 is a **hold**, not a speed: it parks a slot on its current frame while
+  the others keep running. Negative rates are refused, and the reason is the
+  cued chases — those travel dark and light on arrival, so running one backwards
+  means holding first and travelling second, which reads as broken rather than
+  reversed. Reverse needs its own thinking about `cue_path`, not a sign flip.
+- **A cued chase keeps its own dimmer on the movement phase**, deliberately.
+  Its darkness is part of the routine, not a level look, and letting the level
+  rate move it would light the head before it had finished travelling.
+- Slot rates multiply auto mode's energy rate rather than replacing it, and the
+  `timing` axis still freezes every slot at once.
+- `rate` command, `auto.slot_rates` in the snapshot, and stored in **presets
+  and cues** — stored only when something is off 1×, because a preset that
+  always wrote 1× would silently undo a rate set after it was saved.
+- **The Move tab's Speed card is now its Rate card.** It had been a second copy
+  of the Show tab's global Speed — two controls doing one thing in two places,
+  and actively confusing next to a rate that also makes the move faster. Speed
+  stays on Show, beside the tempo it belongs to.
+
+### Fixed
+
+- `engine/tests/dump_snapshot.py`'s hand-written preset fixture had drifted (see
+  below); the same regeneration now covers `slot_rates`.
+
 ### Added — F15, preset banks and Perform mode
 
 The answer to "how do presets grow without the console getting worse", which is

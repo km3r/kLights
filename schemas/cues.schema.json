@@ -49,6 +49,10 @@
           "macro": {
             "type": "object"
           },
+          "rates": {
+            "type": "object",
+            "description": "per-slot chase rates, e.g. {\"color\": 0.5, \"movement\": 2}"
+          },
           "notes": {
             "type": "string"
           }

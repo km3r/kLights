@@ -219,7 +219,10 @@ def engine_frames(rig: rigmod.Rig, entry: Optional[libmod.LibraryEntry],
     """
     ctx = statemod.EvalContext(rig=rig, venue=rig.venue,
                                taper=safetymod.TaperConfig(enabled=taper))
-    ctx.motion_bar = motion_bar
+    # Every slot to the same phase. The parity question is "what does this look
+    # emit at phase p", and p is one number -- per-slot rate is a performance
+    # control, not something a round-trip against a static workspace can model.
+    ctx.set_phase(motion_bar)
     show = (libmod.build_look(entry).make(PALETTE) if entry is not None
             else libmod.compose(None, [], [], PALETTE))
     return statemod.frame(ctx, show)

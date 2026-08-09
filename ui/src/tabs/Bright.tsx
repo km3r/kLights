@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Fader } from "../components";
+import { Card, Fader, RateCard } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
@@ -128,6 +128,15 @@ export function BrightTab({ state, send }: {
     <>
       <LookPicker state={state} send={send} slot="level" title="Bright pattern"
                   empty="Nothing loaded — every fixture is at its full level." />
+
+      <RateCard state={state} send={send} slot="level" hint={
+        <>
+          How fast a level chase steps, independently of the move and the
+          colour. A dark move keeps its <b>own</b> timing whatever this says —
+          its dimmer is part of the routine, not a level look, and letting this
+          desync the two would make the head light before it had arrived.
+        </>
+      } />
 
       {/* Strobe is the one genuine medical risk on this rig — photosensitive
           epilepsy, which no aversion response protects anyone from — so the

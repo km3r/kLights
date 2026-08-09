@@ -465,7 +465,7 @@ time.sleep(0.2)
 
 
 def head_level_at(bar: float) -> float:
-    controller.ctx.motion_bar = bar
+    controller.ctx.set_phase(bar)
     show = controller.director._show
     controller._attach_overrides(show)
     states = statemod.evaluate(controller.ctx, show)
@@ -785,6 +785,74 @@ controller.apply({"type": "flash_clear"}, None)
 check("flash_clear releases everything", controller.flashing == set(),
       f"{controller.flashing}")
 controller.apply({"type": "level", "target": "corner movers", "clear": True}, None)
+
+
+# -- 11c. per-slot rate, end to end -------------------------------------------
+#
+# The three slots were independent everywhere except in time: one shared motion
+# phase meant a colour chase and a move could not run at different speeds, which
+# is a large part of why the old library needed a stored chase per combination.
+print("\n11c. per-slot rate")
+phases = controller.director.phases
+phases.reset()
+controller.apply({"type": "rate", "slot": "color", "value": 0.25}, None)
+check("the command reaches the phases", phases.rate["color"] == 0.25,
+      f"{phases.rate}")
+
+# Real frames from the running output thread, not hand-called sync_clock: the
+# phases advance on the musical delta between frames, and calling sync_clock in
+# a loop at one instant is forty frames of zero elapsed time.
+start = dict(phases.bars)
+time.sleep(0.6)
+after = {slot: phases.bars[slot] - start[slot] for slot in start}
+check("colour falls behind movement while the show runs",
+      after["movement"] > 0 and after["color"] < after["movement"] / 2,
+      f"movement {after['movement']:.3f} vs colour {after['color']:.3f} bars")
+check("and the context the layers read agrees with it",
+      (controller.ctx.motion_bar, controller.ctx.color_bar,
+       controller.ctx.level_bar)
+      == (phases.bars["movement"], phases.bars["color"], phases.bars["level"]))
+check("and a frame still renders", len(controller.runner.render_once()) > 0)
+
+# A stored rate is part of the picture, like speed and master already were.
+client.send({"type": "preset_save", "name": "rated"})
+after_save = client.wait_for(
+    lambda s: any(p["name"] == "rated" for p in s["presets"]))
+saved = next(p for p in after_save["presets"] if p["name"] == "rated")
+check("a preset saves the slot rates it was built at",
+      saved.get("rates", {}).get("color") == 0.25, f"{saved.get('rates')}")
+
+controller.apply({"type": "rate", "reset": True}, None)
+check("reset puts them back", not phases.changed, f"{phases.rate}")
+client.send({"type": "preset_apply", "name": "rated"})
+client.wait_for(lambda s: s["auto"]["slot_rates"]["color"] == 0.25)
+check("and applying the preset restores them", phases.rate["color"] == 0.25)
+
+# Absent has to mean "leave alone". A preset that always wrote 1x would
+# silently undo a rate set after it was saved, which is the same trap the cue
+# macros document.
+controller.apply({"type": "rate", "reset": True}, None)
+controller.apply({"type": "rate", "slot": "level", "value": 2.0}, None)
+client.send({"type": "preset_save", "name": "unrated"})
+client.wait_for(lambda s: any(p["name"] == "unrated" for p in s["presets"]))
+controller.apply({"type": "rate", "reset": True}, None)
+client.send({"type": "preset_save", "name": "unrated"})     # re-record at 1x
+client.wait_for(lambda s: not any(
+    "rates" in p for p in s["presets"] if p["name"] == "unrated"))
+controller.apply({"type": "rate", "slot": "movement", "value": 3.0}, None)
+controller.apply({"type": "preset_apply", "name": "unrated"}, None)
+check("a preset saved with nothing dialled in leaves rates alone",
+      phases.rate["movement"] == 3.0, f"{phases.rate}")
+
+try:
+    controller.apply({"type": "rate", "slot": "color", "value": -2}, None)
+    check("a bad rate is refused at the command", False, "it was accepted")
+except ValueError as exc:
+    check("a bad rate is refused at the command", True, str(exc)[:60])
+
+phases.reset()
+for name in ("rated", "unrated"):
+    controller.apply({"type": "preset_delete", "name": name}, None)
 
 
 client.close()

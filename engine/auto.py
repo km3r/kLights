@@ -273,11 +273,10 @@ class AutoDirector:
         self.energy = 0.0
         self.rate = 1.0
         self.strobe = False
-        # Motion phase, integrated separately from musical position -- see
-        # `motion_bar`. Starts wherever the music is so the first frame is not a
-        # jump from zero.
-        self.motion_bar = 0.0
-        self._last_bar: Optional[float] = None
+        # Motion phase per slot, integrated separately from musical position --
+        # see `statemod.SlotPhases`. Starts wherever the music is so the first
+        # frame is not a jump from zero.
+        self.phases = statemod.SlotPhases()
 
         self._show: Optional[statemod.Show] = None
         self._change_mark: Optional[float] = None
@@ -323,11 +322,8 @@ class AutoDirector:
                ) -> statemod.Show:
         changed = self._show is None
 
-        # Motion phase. Integrated as rate * d(bar) rather than computed as
-        # rate * bar, because the latter jumps every time the rate changes: at
-        # bar 40 a rate going 1.0 -> 1.5 would move the motion phase by 20 bars
-        # in one frame and snap every running move. Same reasoning as the
-        # clock's re-anchoring, and the same failure if it is skipped.
+        # Motion phase, integrated rather than computed -- see `SlotPhases` for
+        # why that distinction is the whole point.
         #
         # The `timing` axis is what gates this. Off means movement stops
         # following the clock and every move freezes where it stands -- which is
@@ -335,14 +331,12 @@ class AutoDirector:
         # Musical position keeps advancing regardless, so anything landing ON
         # the music is unaffected and turning timing back on resumes from where
         # the rig froze rather than snapping to where it would have been.
-        if self._last_bar is None:
-            self.motion_bar = position.bar
-        elif self.config.timing:
-            delta = position.bar - self._last_bar
-            if delta < 0:                      # a phase nudge ran time backwards
-                delta = 0.0
-            self.motion_bar += delta * self.rate
-        self._last_bar = position.bar
+        #
+        # `common=self.rate` is LAST FRAME'S energy rate, because the rate is
+        # recomputed below. Deliberate: this frame's delta happened at the rate
+        # that was in force while it elapsed.
+        self.phases.advance(position.bar, running=self.config.timing,
+                            common=self.rate)
 
         if self.config.energy:
             self.energy = max(0.0, min(1.0, self.energy_source.level(position)))
@@ -399,15 +393,30 @@ class AutoDirector:
 
     # -- context -----------------------------------------------------------
 
+    @property
+    def motion_bar(self) -> float:
+        """The movement slot's phase.
+
+        Kept as a name on the director because it is what movement has always
+        read and what the timing and rate-jump guards assert against; the other
+        two slots are reached through `phases`.
+        """
+        return self.phases.bars["movement"]
+
+    @motion_bar.setter
+    def motion_bar(self, value: float) -> None:
+        self.phases.bars["movement"] = value
+
     def apply(self, ctx: statemod.EvalContext) -> None:
         """Publish the director's continuous outputs onto the context.
 
-        Movement reads `motion_bar`; anything that must stay locked to the music
-        -- look changes, boundary-aligned hits -- reads `bar`. Keeping them
-        separate is the same split as tempo versus speed on the clock: one is
-        what the music is doing, the other is what the lights are doing about it.
+        Each slot's layers read that slot's phase; anything that must stay
+        locked to the music -- look changes, boundary-aligned hits -- reads
+        `bar`. Keeping them separate is the same split as tempo versus speed on
+        the clock: one is what the music is doing, the other is what the lights
+        are doing about it.
         """
-        ctx.motion_bar = self.motion_bar
+        self.phases.apply(ctx)
         ctx.energy = self.energy
         ctx.energy_rate = self.rate
         ctx.strobe = self.strobe
@@ -424,6 +433,10 @@ class AutoDirector:
             "color": self.palette.current(),
             "energy": round(self.energy, 3),
             "rate": round(self.rate, 3),
+            # Per-slot rates, which MULTIPLY the energy rate above rather than
+            # replacing it. Reported here because the UI has to be able to say
+            # that a colour chase is crawling on purpose.
+            "slot_rates": self.phases.status(),
             "strobe": self.strobe,
             "changes": self.changes,
             "palette_changes": self.palette_changes,

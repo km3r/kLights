@@ -400,6 +400,10 @@ function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void
         <button onClick={() => send({ type: "nudge_phase", beats: 0.25 })}>nudge →</button>
       </div>
 
+      {/* The WHOLE show, which is why it lives here beside the tempo and no
+          longer on Move as well. Each slot has its own Rate on its own tab;
+          this one moves musical time itself, so cue holds and auto boundaries
+          come with it. */}
       <div className="row" style={{ marginTop: "0.5rem" }}>
         <span className="small muted" style={{ minWidth: "3.5em" }}>Speed</span>
         {[0.25, 0.5, 1, 2, 4].map((s) => (
@@ -410,6 +414,10 @@ function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void
           </button>
         ))}
       </div>
+      <p className="small muted" style={{ margin: "0.4rem 0 0" }}>
+        Speed moves the whole show, cue holds included. To run one slot faster
+        than the others, use Rate on its own tab.
+      </p>
       <p className="small muted" style={{ marginBottom: 0 }}>
         Bar <span className="mono">{state.clock.bar.toFixed(2)}</span>,
         phrase <span className="mono">{state.clock.phrase.toFixed(2)}</span>

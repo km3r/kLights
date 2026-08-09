@@ -167,7 +167,10 @@ for entry in entries:
     bars = entry.bars or 8.0
     for index, values_by_fixture in enumerate(originals[:len(entry.frames or [])]):
         # Land the phase in the middle of this frame's slot.
-        ctx.motion_bar = bars * (index + 0.5) / len(entry.frames)
+        # set_phase, not motion_bar: colour chases read the COLOUR slot's
+        # phase now, and a test that moved only the movement phase would
+        # sample frame 0 of every chase forever and pass on nothing.
+        ctx.set_phase(bars * (index + 0.5) / len(entry.frames))
         rendered = statemod.frame(ctx, look)
         for fixture in rig.fixtures:
             original = values_by_fixture.get(fixture.fid)
@@ -183,7 +186,7 @@ for entry in entries:
                     step_bad.append(f"{entry.name}[{index}]/{fixture.name}/{role}: "
                                     f"{got} vs {original[off]}")
                 step_compared += 1
-ctx.motion_bar = 0.0
+ctx.set_phase(0.0)
 
 check("each step of a colour chase renders its own step's bytes", not step_bad,
       f"{step_compared} channels across {len([e for e in entries if e.kind == 'color_path'])} chases"
@@ -220,7 +223,7 @@ class FakeCtx:
 ctx = FakeCtx()
 values = []
 for k in range(400):
-    ctx.motion_bar = (sample.bars or 8.0) * k / 400
+    ctx.motion_bar = (sample.bars or 8.0) * k / 400   # movement only: FakeCtx
     values.append(offset_fn(ctx, 0))
 biggest = max(abs(a[0] - b[0]) + abs(a[1] - b[1])
               for a, b in zip(values, values[1:]))
@@ -283,7 +286,7 @@ def sample(entry, fraction):
     """Every fixture's intensity and every head's aim at a point in the cycle."""
     show = libmod.compose(entry)
     ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
-    ctx.motion_bar = (entry.bars or 8.0) * fraction
+    ctx.set_phase((entry.bars or 8.0) * fraction)
     states = {f.fid: statemod.FixtureState() for f in rig.fixtures}
     for layer in show.stack():                    # no safety: this is the look
         layer(ctx, states)
@@ -397,7 +400,7 @@ setlist, _ = libmod.load_setlist(EVENT / "looks.json")
 check("set list built", len(setlist.looks) == len(entries))
 
 ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
-ctx.motion_bar = 3.7
+ctx.set_phase(3.7)
 built = 0
 broke: list[str] = []
 for look in setlist.looks:
@@ -431,6 +434,87 @@ check("and the same names in the same order",
       [l.name for l in again] == [e.name for e in entries])
 check("snap_bars picks the nearest musical length",
       snap_bars(3.9) == 4 and snap_bars(0.3) == 0.25 and snap_bars(30) == 32)
+
+
+# -- 7. each slot's layers read THEIR OWN phase -------------------------------
+#
+# The check above deliberately puts every slot at the same phase, because "what
+# does this look emit at phase p" is a one-number question. That makes it blind
+# to a colour layer reading the movement phase -- so this is the test that
+# actually pins the split down, by making the two phases disagree and asserting
+# which one each layer followed.
+print("\n7. per-slot phase")
+
+
+def color_at(entry, color_bar, motion_bar):
+    show = libmod.compose(None, [entry], [])
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    ctx.motion_bar, ctx.color_bar, ctx.level_bar = motion_bar, color_bar, 0.0
+    states = {f.fid: statemod.FixtureState() for f in rig.fixtures}
+    for layer in show.stack():
+        layer(ctx, states)
+    return {f.name: states[f.fid].color for f in rig.fixtures}
+
+
+chase = next(e for e in entries if e.kind == "color_path" and e.frames
+             and len(e.frames) > 1)
+bars = chase.bars or 8.0
+# Two phases that land in different frames of the same chase.
+first = bars * 0.5 / len(chase.frames)
+second = bars * 1.5 / len(chase.frames)
+check(f"{chase.name!r} has distinguishable frames",
+      color_at(chase, first, first) != color_at(chase, second, second))
+check("a colour chase follows the COLOUR phase, not the movement one",
+      color_at(chase, second, first) == color_at(chase, second, second),
+      "moving motion_bar under a fixed color_bar changed the colour")
+check("and moving the movement phase alone leaves the colour where it was",
+      color_at(chase, first, second) == color_at(chase, first, first))
+
+
+def level_at(entry, level_bar, motion_bar):
+    show = libmod.compose(None, [], [entry])
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    ctx.motion_bar, ctx.color_bar, ctx.level_bar = motion_bar, 0.0, level_bar
+    states = {f.fid: statemod.FixtureState() for f in rig.fixtures}
+    for layer in show.stack():
+        layer(ctx, states)
+    return {f.name: round(states[f.fid].intensity, 6) for f in rig.fixtures}
+
+
+dim = next(e for e in entries if e.kind == "level_path" and e.levels
+           and len(e.levels) > 1)
+lbars = dim.bars or 8.0
+lfirst = lbars * 0.5 / len(dim.levels)
+lsecond = lbars * 1.5 / len(dim.levels)
+check(f"{dim.name!r} has distinguishable steps",
+      level_at(dim, lfirst, lfirst) != level_at(dim, lsecond, lsecond))
+check("a level chase follows the LEVEL phase",
+      level_at(dim, lsecond, lfirst) == level_at(dim, lsecond, lsecond))
+
+# The exception, and it is deliberate: a cued chase carries its own dimmer as
+# part of the MOVEMENT slot. Letting the level rate move it would light the head
+# before it had finished travelling, which is the one thing those routines exist
+# not to do.
+cued = next((e for e in entries if e.is_cued and e.step_levels), None)
+if cued is None:
+    check("a cued chase exists to check", False, "none in the library")
+else:
+    def cued_level(level_bar, motion_bar):
+        show = libmod.compose(cued, [], [])
+        ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+        ctx.motion_bar, ctx.color_bar, ctx.level_bar = motion_bar, 0.0, level_bar
+        states = {f.fid: statemod.FixtureState() for f in rig.fixtures}
+        for layer in show.stack():
+            layer(ctx, states)
+        return {f.name: round(states[f.fid].intensity, 6) for f in rig.fixtures}
+
+    cbars = cued.bars or 8.0
+    check(f"{cued.name!r} keeps its own dimmer on the MOVEMENT phase",
+          cued_level(cbars * 0.6, cbars * 0.1)
+          == cued_level(0.0, cbars * 0.1)
+          and cued_level(0.0, cbars * 0.1) != cued_level(0.0, cbars * 0.6),
+          "a dark move must not be desynced from its own travel by the "
+          "level rate")
 
 
 print()

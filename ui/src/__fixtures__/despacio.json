@@ -168,6 +168,11 @@
     ],
     "energy": 0.0,
     "rate": 1.0,
+    "slot_rates": {
+      "movement": 1.0,
+      "color": 1.0,
+      "level": 1.0
+    },
     "strobe": false,
     "changes": 0,
     "palette_changes": 0,

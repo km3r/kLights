@@ -567,6 +567,12 @@ class ShowController:
             "name": name, **self.selection,
             "speed": round(self.clock.speed, 3),
             "master": round(self.master, 3),
+            # Stored only when something has been dialled off 1x. A preset that
+            # carried `{1, 1, 1}` would silently RESET rates the operator set
+            # after saving it, which is the same trap as a cue that always
+            # restores a macro -- absent has to mean "leave it alone".
+            **({"rates": self.director.phases.status()}
+               if self.director.phases.changed else {}),
             "bank": where[0], "cell": where[1],
             "tags": [str(t) for t in tags] if tags is not None
                     else list(previous.get("tags", [])) if previous else [],
@@ -632,6 +638,8 @@ class ShowController:
             missing.append(movement)
         if missing:
             self.note(f"preset {name!r}: {', '.join(missing)} no longer exist(s)")
+        if preset.get("rates"):
+            self.apply_rates(preset["rates"])
         if preset.get("speed"):
             self.clock.set_speed(float(preset["speed"]), now)
         if preset.get("master") is not None:
@@ -1049,6 +1057,8 @@ class ShowController:
             self.master = max(0.0, min(1.0, cue.master))
         if cue.macro is not None:
             self._cmd_macro(dict(cue.macro), 0.0)
+        if cue.rates is not None:
+            self.apply_rates(cue.rates)
 
         self._recompose(fade_beats=cue.fade)
         self.note(f"cue {self.cues.index + 1}/{len(self.cues.cues)}: "
@@ -1109,6 +1119,41 @@ class ShowController:
             self.ctx.move_size = 1.0
             self.ctx.move_spread = 0.0
             self.ctx.move_center = (0.0, 0.0)
+
+    def _cmd_rate(self, m: dict, now: float) -> None:
+        """How fast one slot's chase runs, relative to everything else.
+
+        Distinct from `speed`, which is the CLOCK: speed changes what the music
+        is doing as far as the whole show is concerned, including cue holds and
+        auto boundaries. A rate changes only how fast one slot's phase
+        advances, so a colour chase at 0.5x under a move at 2x is a thing that
+        can now be said. The old console needed a separately stored chase for
+        every combination, which is a large part of why it accumulated 206
+        looks.
+
+        Safe by construction for the same reason the macros are: this moves a
+        phase, and every layer downstream -- including the unconditional safety
+        pass -- runs exactly as it did.
+        """
+        if m.get("reset"):
+            self.director.phases.reset()
+            self.note("slot rates back to 1x")
+            return
+        slot = str(m["slot"])
+        self.director.phases.set_rate(slot, float(m["value"]))
+
+    def apply_rates(self, rates: dict) -> None:
+        """Restore stored slot rates, skipping any the engine does not know.
+
+        Same rule as a preset naming a look that has been re-ported away: a
+        stored rate for a slot this build has never heard of is a note, not a
+        refusal. Half a recall beats an error message mid-set.
+        """
+        for slot, value in rates.items():
+            try:
+                self.director.phases.set_rate(str(slot), float(value))
+            except (ValueError, TypeError) as exc:
+                self.note(f"rate {slot!r}: {exc}")
 
     def _cmd_patch_apply(self, m: dict, now: float) -> None:
         self.reload_rig()

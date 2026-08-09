@@ -98,6 +98,12 @@ console. It defaults to Perform on a phone and Design on a laptop, remembers
 itself per device, and is always one tap from the other — it is a preference
 about screen space, not a permission. Access is what `--token` decides.
 
+Movement, colour and level are three independent slots, and each has its own
+**Rate** on its own tab — so a colour chase can crawl under a move running flat
+out. That is separate from **Speed** on the Show tab, which is the clock and
+moves the whole show including cue holds. A rate of 0 is a hold: it parks that
+slot on its current frame while everything else keeps running.
+
 Presets are pages of **eight pads**, the APC40 layout the despacio show ran on
 for two years. A preset holds a fixed pad: saving over one leaves it where it
 is, and adding or deleting neighbours does not shuffle it. Tags (`intro`,

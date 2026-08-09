@@ -361,6 +361,11 @@ PRESETS = {
         "name": Spec(str, required=True, non_empty=True),
         "movement": Spec(dict), "color": Spec(dict), "level": Spec(dict),
         "speed": Spec(Number, min=0), "master": Spec(Number, min=0, max=1),
+        # Per-slot chase rates. Absent means "leave whatever is dialled in
+        # alone" -- a preset that always restored 1x would silently undo a rate
+        # set after it was saved.
+        "rates": Spec(dict, fix="per-slot chase rates, e.g. "
+                                "{\"color\": 0.5, \"movement\": 2}"),
         # Where the preset sits on the grid. A FIXED position, not a sort
         # order: the whole value of a bank is that a preset does not move when
         # its neighbours are added or deleted. Optional here because a file

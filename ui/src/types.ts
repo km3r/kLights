@@ -44,6 +44,10 @@ export interface AutoState {
   axes: AutoAxes;
   /** How often each timed axis fires, in phrases. */
   intervals: { looks: number; palette: number };
+  /** How fast each slot's chase runs, relative to everything else. MULTIPLIES
+   *  `rate` above rather than replacing it, so auto's energy response still
+   *  drives the lot. 1 is identity; 0 freezes that slot where it stands. */
+  slot_rates: Record<Slot, number>;
 }
 
 export interface SafetyState {
@@ -152,6 +156,10 @@ export interface Preset extends Selection {
   name: string;
   speed?: number;
   master?: number;
+  /** Slot rates it was built at. Absent means "leave whatever is dialled in
+   *  alone" — a preset that always wrote 1× would silently undo a rate set
+   *  after it was saved. */
+  rates?: Partial<Record<Slot, number>>;
   /** Where it sits on the grid: a page counting from 1, and a position within
    *  that page. A FIXED place, not a sort order — the whole point of a bank is
    *  that a preset stays where you put it when its neighbours change. The
@@ -294,7 +302,11 @@ export type Command =
   | { type: "flash"; target: string; on?: boolean }
   | { type: "flash_clear" }
   | { type: "macro"; size?: number; spread?: number;
-      center?: [number, number]; reset?: boolean };
+      center?: [number, number]; reset?: boolean }
+  /** How fast ONE slot's chase runs. Distinct from `speed`, which is the clock
+   *  and moves the whole show including cue holds and auto boundaries. */
+  | { type: "rate"; slot: Slot; value: number }
+  | { type: "rate"; reset: true };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

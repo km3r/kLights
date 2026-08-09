@@ -51,6 +51,10 @@ class Cue:
     # size or spread. Absent means "leave whatever is dialled in alone", so a
     # cue list does not fight an operator mid-set.
     macro: Optional[dict] = None
+    # Per-slot chase rates, same rule as `macro`: absent leaves whatever is
+    # dialled in alone. A cue that wants the colours crawling while the movers
+    # run flat out says so here rather than needing a look stored at that rate.
+    rates: Optional[dict] = None
     speed: Optional[float] = None
     master: Optional[float] = None
     notes: str = ""
@@ -153,6 +157,8 @@ CUES_SCHEMA = {
         "speed": configmod.Spec(configmod.Number, min=0),
         "master": configmod.Spec(configmod.Number, min=0, max=1),
         "macro": configmod.Spec(dict),
+        "rates": configmod.Spec(dict,
+            fix="per-slot chase rates, e.g. {\"color\": 0.5, \"movement\": 2}"),
         "notes": configmod.Spec(str),
     })),
 }
@@ -167,6 +173,7 @@ def load(path: Path) -> CueList:
                 fade=float(c.get("fade", 8.0)),
                 hold=float(c.get("hold", 0.0)),
                 macro=c.get("macro"),
+                rates=c.get("rates"),
                 speed=(None if c.get("speed") is None else float(c["speed"])),
                 master=(None if c.get("master") is None else float(c["master"])),
                 notes=c.get("notes", ""))

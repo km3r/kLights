@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card } from "../components";
+import { Card, RateCard } from "../components";
 import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
@@ -22,23 +22,19 @@ export function MoveTab({ state, send }: {
       <LookPicker state={state} send={send} slot="movement" title="Route"
                   empty="Nothing loaded — the heads are holding still." />
 
-      <Card title="Speed">
-        <div className="row">
-          {[0.25, 0.5, 1, 2, 4].map((s) => (
-            <button key={s} style={{ flex: 1 }}
-                    className={Math.abs(state.clock.speed - s) < 0.01 ? "on" : ""}
-                    onClick={() => send({ type: "speed", value: s })}>
-              {s}×
-            </button>
-          ))}
-        </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>
-          Slowing a move down makes it <b>smoother</b>, not steppier — the route
-          is a path sampled at the current phase, so a longer cycle just gets
-          more frames. Changing speed re-anchors the timeline first, so nothing
-          jumps.
-        </p>
-      </Card>
+      {/* This card used to be a second copy of the Show tab's global Speed,
+          which was two controls doing one thing in two places. It is the
+          MOVEMENT slot's own rate now: Speed is still on Show, where the tempo
+          it belongs to lives. */}
+      <RateCard state={state} send={send} slot="movement" hint={
+        <>
+          How fast the route runs, and <b>only</b> the route — the colours and
+          levels keep their own. Slowing a move makes it <b>smoother</b>, not
+          steppier: the route is a path sampled at the current phase, so a
+          longer cycle just gets more frames. Changing it moves the phase on
+          from where it is rather than recomputing it, so nothing jumps.
+        </>
+      } />
 
       <Shape state={state} send={send} />
 

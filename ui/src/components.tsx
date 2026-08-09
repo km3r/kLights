@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { RGB } from "./types";
+import type { Command, EngineState, RGB, Slot } from "./types";
 
 export function rgbCss(c: RGB | undefined, fallback = "#333"): string {
   if (!c) return fallback;
@@ -69,6 +69,56 @@ export function Fader({ value, onInput, onCommit, label, format }: {
         {format ? format(value) : `${Math.round(value * 100)}%`}
       </span>
     </div>
+  );
+}
+
+const RATES = [0, 0.25, 0.5, 1, 2, 4];
+
+/**
+ * How fast one slot's chase runs. One card, three tabs — Move, Color, Bright.
+ *
+ * NOT the same as Speed, which is the clock: speed changes what the music is
+ * doing as far as the whole show is concerned, including cue holds and auto
+ * boundaries, and it is on the Show tab beside the tempo it belongs to. A rate
+ * moves only this slot's phase, which is why a colour chase at 0.5× under a
+ * move at 2× is now something that can be said at all. The old console needed a
+ * separately stored chase per combination, and that is a large part of how it
+ * accumulated 206 looks.
+ *
+ * Each rate lives on the tab that owns the slot rather than in one panel of
+ * three faders, because the question "how fast should the colours run" is one
+ * you ask while looking at the colours.
+ */
+export function RateCard({ state, send, slot, hint }: {
+  state: EngineState; send: (c: Command) => void; slot: Slot; hint: ReactNode;
+}) {
+  const rate = state.auto.slot_rates[slot] ?? 1;
+  return (
+    <Card title="Rate" right={
+      // Named for what it resets. There is a bare "Reset" on the Shape card one
+      // section down the same tab, and two controls whose accessible name is
+      // the identical word are ambiguous to anyone not reading the layout.
+      <button className="small" disabled={rate === 1}
+              aria-label={`reset ${slot} rate`}
+              onClick={() => send({ type: "rate", slot, value: 1 })}>
+        Reset
+      </button>
+    }>
+      <div className="row">
+        {RATES.map((r) => (
+          <button key={r} style={{ flex: 1 }}
+                  className={Math.abs(rate - r) < 0.01 ? "on" : ""}
+                  aria-label={`${slot} rate ${r}`}
+                  onClick={() => send({ type: "rate", slot, value: r })}>
+            {/* 0 is a hold, not a speed, and calling it "0x" reads as a
+                mistake. It parks this slot on its current frame while
+                everything else keeps running, which is a real thing to want. */}
+            {r === 0 ? "hold" : `${r}×`}
+          </button>
+        ))}
+      </div>
+      <p className="small muted" style={{ marginBottom: 0 }}>{hint}</p>
+    </Card>
   );
 }
 

@@ -227,9 +227,13 @@ class Runner:
                 self._fade_t = max(0.0, min(1.0, elapsed / self._fade_beats))
 
         if self.director is None:
-            # No auto mode: movement phase IS musical position, so a look reads
-            # the same whether or not a director is attached.
-            self.ctx.motion_bar = position.bar
+            # No auto mode: every slot's phase IS musical position, so a look
+            # reads the same whether or not a director is attached. Per-slot
+            # rate lives on the director because that is what owns the timing
+            # gate and the energy rate it multiplies -- and the only entry point
+            # that runs without one is the demo, which has no console to set a
+            # rate from anyway.
+            self.ctx.set_phase(position.bar)
         else:
             self.set_show(self.director.update(position,
                                                self.clock.phrase_measured))

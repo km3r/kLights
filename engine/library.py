@@ -309,6 +309,12 @@ def cue_level_layer(step_levels: list[dict[str, float]],
     pairs = [(float(f), float(h)) for f, h in spans]
 
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        # motion_bar even though this writes intensity, because it is the
+        # MOVEMENT slot's dimmer: it has to stay in lockstep with the
+        # `cue_offsets` layer beside it or the head lights while it is still
+        # travelling. Reading level_bar here would let the level rate desync a
+        # routine from its own dimmer, which is the one thing that would make a
+        # cued chase look broken.
         p = motion.phase(ctx.motion_bar, bars)
         for fixture in ctx.rig.fixtures:
             if not (scope & set(fixture.tags)):
@@ -327,7 +333,10 @@ def color_frames_layer(frames: list[dict[str, list[float]]], bars: float):
     colder than authored.
     """
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
-        index = int(motion.phase(ctx.motion_bar, bars) * len(frames)) % len(frames)
+        # color_bar, not motion_bar: this is the colour slot, and the whole
+        # point of per-slot rate is that a colour chase can crawl under a move
+        # that is running flat out.
+        index = int(motion.phase(ctx.color_bar, bars) * len(frames)) % len(frames)
         for fixture in ctx.rig.fixtures:
             rgb = frames[index].get(fixture.name)
             if rgb is not None:
@@ -415,7 +424,9 @@ def level_frames_layer(levels: list[dict[str, float]],
     empty: dict[str, float] = {}
 
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
-        index = int(motion.phase(ctx.motion_bar, bars) * len(levels)) % len(levels)
+        # level_bar: this is the level slot's own phase, so a dim chase can be
+        # slowed without touching the move it is dimming.
+        index = int(motion.phase(ctx.level_bar, bars) * len(levels)) % len(levels)
         frame = levels[index]
         strobe = (strobes or [empty] * len(levels))[index]
         for fixture in ctx.rig.fixtures:

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Card, rgbCss } from "../components";
+import { Card, RateCard, rgbCss } from "../components";
 import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState, RGB } from "../types";
@@ -53,6 +53,15 @@ export function ColorTab({ state, send }: {
     <>
       <LookPicker state={state} send={send} slot="color" title="Colour look"
                   empty="Nothing loaded — colour comes from the palette." />
+
+      <RateCard state={state} send={send} slot="color" hint={
+        <>
+          How fast a colour chase steps, independently of the move underneath
+          it. A slow colour drift under a fast sweep is the combination the old
+          library needed a separately stored chase for. Only affects stepped
+          colour looks — a held colour has nothing to step.
+        </>
+      } />
 
       <Card title="Applies to">
         <div className="grid small">{groups.map(swatch)}</div>

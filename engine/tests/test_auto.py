@@ -348,6 +348,88 @@ check("turning it back on resumes rather than snapping forward",
       f"{gclock.position(t).bar:.2f})")
 
 
+# -- per-slot rate ------------------------------------------------------------
+#
+# Three phases instead of one, so a colour chase can crawl under a move running
+# flat out. The hazard is the same one the single phase already had, and it is
+# why this waited for its own pass rather than being bolted on: a phase computed
+# as rate * bar jumps by (new - old) * bars_so_far the instant a rate changes,
+# and the longer the show has been running the bigger the jump.
+print("\nper-slot rate")
+slots = autom.AutoDirector(_looks("A"), autom.AutoConfig(timing=True))
+slots.phases.set_rate("color", 0.5)
+slots.phases.set_rate("level", 0.0)
+# One frame first, because the very first update BASELINES every phase to
+# wherever the music already is -- that is what stops a look starting with a
+# jump from zero. Measuring from there is what actually isolates the rate.
+t = spin(slots, FPS, 0.0)
+base = dict(slots.phases.bars)
+check("every slot starts from the same place",
+      len(set(base.values())) == 1, f"{base}")
+t = spin(slots, 20.0, t)
+moved = {slot: slots.phases.bars[slot] - base[slot] for slot in base}
+check("movement runs at 1x", abs(moved["movement"] - 10.0) < 0.2,
+      f"{moved['movement']:.2f} bars over 10 bars of music")
+check("colour runs at half of it",
+      abs(moved["color"] - moved["movement"] / 2) < 1e-9,
+      f"colour {moved['color']:.3f} vs movement {moved['movement']:.3f}")
+check("a rate of 0 freezes that slot alone", moved["level"] == 0.0,
+      f"level {moved['level']:.3f}")
+
+# THE hazard, per slot this time.
+snap = dict(slots.phases.bars)
+slots.phases.set_rate("color", 3.0)
+t = spin(slots, FPS, t)
+jump = slots.phases.bars["color"] - snap["color"]
+check("changing a slot rate does not jump that slot", jump < 0.05,
+      f"moved {jump:.5f} bars at bar {moved['movement']:.1f} "
+      f"(naive rate*bar would move ~{moved['movement'] * 2.5 / 2:.0f})")
+check("and does not disturb the others",
+      abs(slots.phases.bars["movement"] - snap["movement"]) < 0.05
+      and slots.phases.bars["level"] == snap["level"])
+
+# The timing gate is above all of them: it is "the lights stop following the
+# music", not "the movement slot stops".
+slots.config.timing = False
+held = dict(slots.phases.bars)
+t = spin(slots, 10.0, t)
+check("the timing axis freezes every slot, not just movement",
+      slots.phases.bars == held, f"{slots.phases.bars} vs {held}")
+slots.config.timing = True
+
+# Energy rate multiplies rather than being replaced -- auto mode still drives
+# everything, and a slot rate is the operator saying "that one, relatively".
+energetic = fresh(energy=True, timing=True)
+energetic.energy_source = autom.ManualEnergy(1.0)
+energetic.phases.set_rate("color", 2.0)
+run_bars(energetic, 8.0)
+check("energy rate and slot rate compound",
+      abs(energetic.phases.bars["color"]
+          - energetic.phases.bars["movement"] * 2) < 1e-9,
+      f"colour {energetic.phases.bars['color']:.3f} vs movement "
+      f"{energetic.phases.bars['movement']:.3f} at rate "
+      f"{energetic.rate}")
+check("and the energy rate really was in play", energetic.rate > 1.0,
+      f"{energetic.rate}")
+
+for bad, why in ((-1.0, "negative"), (99.0, "absurd")):
+    try:
+        slots.phases.set_rate("movement", bad)
+        check(f"a {why} rate is refused", False, "it was accepted")
+    except ValueError as exc:
+        check(f"a {why} rate is refused", True, str(exc)[:60])
+try:
+    slots.phases.set_rate("colour", 1.0)         # the British spelling
+    check("an unknown slot is refused", False, "it was accepted")
+except ValueError as exc:
+    check("an unknown slot is refused", "colour" in str(exc), str(exc)[:70])
+
+slots.phases.reset()
+check("reset puts every slot back to 1x",
+      set(slots.phases.rate.values()) == {1.0} and not slots.phases.changed,
+      f"{slots.phases.rate}")
+
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

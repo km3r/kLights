@@ -111,9 +111,9 @@ describe("header", () => {
     const user = userEvent.setup();
     const socket = mount();
     act(() => socket.push(stateWith((s) => { s.panicked = true; })));
-    // The panic BUTTON now lives on Setup -- it is not something to have under
-    // a thumb next to the master -- but releasing must stay one tap from
-    // anywhere, so the banner carries it.
+    // The panic BUTTON lives at the bottom of Show -- it is not something to
+    // have under a thumb next to the master -- but releasing must stay one tap
+    // from anywhere, so the banner carries it.
     await user.click(screen.getByRole("button", { name: /^release$/i }));
     expect(socket.last()).toEqual({ type: "clear_panic" });
   });
@@ -932,17 +932,90 @@ describe("patch", () => {
   });
 });
 
+/**
+ * Per-slot rate — the last thing the three slots did not have independently.
+ */
+describe("slot rate", () => {
+  const rateCard = () =>
+    screen.getByText("Rate").closest(".card")! as HTMLElement;
+
+  it("sends a rate for the slot whose tab it is on", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Color/);
+    await user.click(within(rateCard()).getByLabelText("color rate 0.5"));
+    expect(socket.last()).toEqual({ type: "rate", slot: "color", value: 0.5 });
+    await goTo(user, /Bright/);
+    await user.click(within(rateCard()).getByLabelText("level rate 2"));
+    expect(socket.last()).toEqual({ type: "rate", slot: "level", value: 2 });
+  });
+
+  it("calls a rate of zero a hold, because that is what it is", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Move/);
+    // Queried by aria-label, because that is where the accessible name comes
+    // from; the VISIBLE text is what this test is actually about, so it is
+    // asserted rather than searched for.
+    const hold = within(rateCard()).getByLabelText("movement rate 0");
+    expect(hold).toHaveTextContent("hold");
+    await user.click(hold);
+    expect(socket.last()).toEqual({ type: "rate", slot: "movement", value: 0 });
+  });
+
+  it("renders the engine's rate rather than remembering its own", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.auto.slot_rates = { movement: 1, color: 0.25, level: 1 };
+    })));
+    await goTo(user, /Color/);
+    expect(within(rateCard()).getByLabelText("color rate 0.25"))
+      .toHaveClass("on");
+    expect(within(rateCard()).getByLabelText("color rate 1")).not.toHaveClass("on");
+  });
+
+  it("resets one slot without touching the others", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.auto.slot_rates = { movement: 1, color: 0.25, level: 1 };
+    })));
+    await goTo(user, /Color/);
+    await user.click(screen.getByLabelText("reset color rate"));
+    expect(socket.last()).toEqual({ type: "rate", slot: "color", value: 1 });
+  });
+
+  it("stops duplicating the global Speed on the Move tab", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Move/);
+    // Move used to carry its own copy of the Show tab's Speed row: two controls
+    // doing one thing in two places, and now genuinely confusing beside a Rate
+    // that also makes the move faster. Speed is a clock control and stays with
+    // the tempo.
+    expect(screen.queryByText("Speed")).toBeNull();
+    await goTo(user, /Show/);
+    expect(screen.getByText("Speed")).toBeInTheDocument();
+  });
+});
+
 describe("shape macros", () => {
   const openMove = async (user: ReturnType<typeof userEvent.setup>) =>
     goTo(user, /Move/);
+  const shapeCard = () =>
+    screen.getByText("Shape").closest(".card")! as HTMLElement;
 
   it("shows the identity values when nothing is dialled in", async () => {
     const user = userEvent.setup();
     mount();
     await openMove(user);
     expect(screen.getByText("1.00×")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Reset/i })).toHaveProperty(
-      "disabled", true);
+    // Scoped to the Shape card. There is a Rate card on this tab with its own
+    // Reset, and an unscoped query for a word that common is ambiguous the
+    // moment the tab grows a second one.
+    expect(within(shapeCard()).getByRole("button", { name: /Reset/i }))
+      .toHaveProperty("disabled", true);
   });
 
   it("sends size live while dragging, not on release", async () => {
@@ -965,7 +1038,7 @@ describe("shape macros", () => {
       s.macro = { size: 1.8, spread: 0.25, center: [0, -40] };
     })));
     await openMove(user);
-    const reset = screen.getByRole("button", { name: /Reset/i });
+    const reset = within(shapeCard()).getByRole("button", { name: /Reset/i });
     expect(reset).toHaveProperty("disabled", false);
     await user.click(reset);
     expect(socket.last()).toEqual({ type: "macro", reset: true });

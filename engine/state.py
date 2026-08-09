@@ -84,11 +84,23 @@ class EvalContext:
     phrase: float = 0.0
     bpm: float = 0.0
 
-    # Movement phase, integrated separately from `bar` so auto mode can vary
-    # movement rate without moving musical position. Movement reads this;
-    # anything that must land ON the music -- look changes, boundary hits --
-    # reads `bar`. Same split as tempo versus speed on the clock.
+    # Motion phase, ONE PER SLOT, integrated separately from `bar` so a slot's
+    # rate can vary without moving musical position. A layer reads the phase of
+    # the slot it was composed into; anything that must land ON the music --
+    # look changes, cue holds, boundary hits -- reads `bar`. Same split as tempo
+    # versus speed on the clock.
+    #
+    # Three instead of one because the slots are independent everywhere else and
+    # were not here: a colour chase at half speed under a move at double is a
+    # combination the old console needed a separate stored chase for, and with a
+    # single shared phase the engine could not express it either.
+    #
+    # `motion_bar` keeps its name rather than becoming `movement_bar`. It is
+    # what movement has always read, and renaming it would touch every ported
+    # look, the parity sweep and the previz decoder to say nothing new.
     motion_bar: float = 0.0
+    color_bar: float = 0.0
+    level_bar: float = 0.0
 
     # Auto mode's continuous outputs. Defaults are the identity, so a show that
     # ignores auto mode behaves identically whether or not a director is
@@ -139,6 +151,91 @@ class EvalContext:
     @property
     def geometry(self) -> Optional[geo.RigGeometry]:
         return self.rig.geometry
+
+    def set_phase(self, bars: float) -> None:
+        """Put every slot at the same phase.
+
+        What a test, a parity sweep or a previz decoder wants: they ask "what
+        does this look do at phase p", and p is one number. Per-slot rate is a
+        performance control, not something a round-trip check should have to
+        model.
+        """
+        self.motion_bar = self.color_bar = self.level_bar = bars
+
+
+SLOTS = ("movement", "color", "level")
+
+
+class SlotPhases:
+    """The three motion phases, and the rate each one runs at.
+
+    Integrated as `rate * d(bar)`, never computed as `rate * bar`. That is the
+    whole reason this is a class and not two multiplications: the naive form
+    jumps every time a rate changes, and it jumps by more the longer the show
+    has been running. At bar 40 a rate going 1.0 -> 1.5 moves the phase 20 bars
+    in a single frame and snaps every move on stage. Same reasoning as the
+    clock's re-anchoring, and the same failure if it is skipped.
+
+    Rates are per slot and MULTIPLY the common rate rather than replacing it, so
+    auto mode's energy response still drives everything and a slot rate is the
+    operator saying "that one, relatively faster".
+    """
+
+    def __init__(self) -> None:
+        self.bars: dict[str, float] = {s: 0.0 for s in SLOTS}
+        self.rate: dict[str, float] = {s: 1.0 for s in SLOTS}
+        self._last: Optional[float] = None
+
+    def set_rate(self, slot: str, value: float) -> None:
+        if slot not in self.rate:
+            raise ValueError(f"no slot {slot!r} -- one of {', '.join(SLOTS)}")
+        # 0 freezes that slot, which is a real thing to want: a colour chase
+        # parked on its current frame under a move that keeps running.
+        #
+        # Negative is NOT allowed, and the reason is the cued chases. Those
+        # travel dark and light on arrival, so running one backwards means
+        # holding first and travelling second -- which reads as a broken
+        # routine rather than a reversed one. Reverse is a real feature and it
+        # needs its own thinking about `cue_path`, not a sign flip here.
+        if not 0.0 <= value <= 8.0:
+            raise ValueError(f"rate must be 0-8, not {value}")
+        self.rate[slot] = float(value)
+
+    def reset(self) -> None:
+        for slot in SLOTS:
+            self.rate[slot] = 1.0
+
+    @property
+    def changed(self) -> bool:
+        return any(r != 1.0 for r in self.rate.values())
+
+    def advance(self, bar: float, *, running: bool = True,
+                common: float = 1.0) -> None:
+        """Move every phase on by this frame's musical delta.
+
+        `running` false freezes every phase where it stands while musical
+        position keeps advancing underneath -- so turning it back on resumes
+        rather than snapping forward to where the move would have been. That is
+        the auto `timing` axis, and it is why `_last` is updated either way.
+        """
+        if self._last is None:
+            for slot in SLOTS:
+                self.bars[slot] = bar
+        elif running:
+            delta = bar - self._last
+            if delta < 0:                     # a phase nudge ran time backwards
+                delta = 0.0
+            for slot in SLOTS:
+                self.bars[slot] += delta * common * self.rate[slot]
+        self._last = bar
+
+    def apply(self, ctx: "EvalContext") -> None:
+        ctx.motion_bar = self.bars["movement"]
+        ctx.color_bar = self.bars["color"]
+        ctx.level_bar = self.bars["level"]
+
+    def status(self) -> dict[str, float]:
+        return {slot: round(self.rate[slot], 3) for slot in SLOTS}
 
 
 Layer = Callable[[EvalContext, dict[int, FixtureState]], None]
