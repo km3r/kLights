@@ -310,6 +310,26 @@ describe("preset banks", () => {
     expect(within(card()).queryByLabelText("bank 1")).toBeNull();
   });
 
+  it("does not strand you on a bank that stopped existing", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(within(card()).getByLabelText("bank 2"));
+    expect(within(card()).getByRole("button", { name: /^landing/ }))
+      .toBeInTheDocument();
+
+    // Delete the last preset on bank 2 and the engine drops to one bank. The
+    // selector only renders when there is more than one — so an unclamped bank
+    // left the operator on an empty page with no control that goes back and
+    // every preset unreachable short of reloading the console.
+    act(() => socket.push(stateWith((s) => {
+      s.presets = s.presets.filter((p) => p.bank === 1);
+      s.preset_banks = { size: 8, count: 1 };
+    })));
+    expect(within(card()).getByRole("button", { name: /^opener/ }))
+      .toBeInTheDocument();
+    expect(within(card()).queryByLabelText("empty pad 2.1")).toBeNull();
+  });
+
   it("finds every drop across banks by its tag", async () => {
     const user = userEvent.setup();
     mount();
@@ -1069,6 +1089,28 @@ describe("plan view", () => {
     expect(svg.querySelectorAll("line")).toHaveLength(0);
     // The fixtures are still there — a dark rig is not an empty room.
     expect(svg.querySelectorAll("circle").length).toBeGreaterThan(0);
+  });
+
+  it("clips a wash's footprint instead of painting over the room", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      const f = s.fixtures.find((x) => x.lands_at && (x.intensity ?? 0) > 0.001)!;
+      // 120 degrees is legal, and is what half the fixtures in a club are.
+      // Unclamped, `throw x tan(60°)` puts a disc wider than the room on top of
+      // everything else in the drawing.
+      f.beam_deg = 120;
+      f.throw_mm = 12000;
+    })));
+    const svg = await plan(user);
+    const room = Math.min(despacioState.venue.width!, despacioState.venue.depth!);
+    const radii = Array.from(svg.querySelectorAll("circle"))
+      .map((c) => Number(c.getAttribute("r")));
+    expect(Math.max(...radii)).toBeLessThan(room * 0.4);
+    // And it says so IN THE LIST rather than only in a tooltip, for the same
+    // reason the landing surface is written out there: a phone has no hover.
+    const list = document.querySelector(".plan-landings") as HTMLElement;
+    expect(within(list).getByText(/drawn clipped/)).toBeInTheDocument();
   });
 
   it("says how many fixtures it is NOT showing", async () => {

@@ -576,17 +576,21 @@ class ShowController:
         if not name:
             raise ValueError("a preset needs a name")
         previous = next((p for p in self.presets if p["name"] == name), None)
-        self.presets = [p for p in self.presets if p["name"] != name]
+        others = [p for p in self.presets if p["name"] != name]
         where = _cell_request(m)
         if where is None and previous is not None:
             where = (previous["bank"], previous["cell"])
         if where is None:
-            where = free_cell(self.presets)
+            where = free_cell(others)
         elif any(p["bank"] == where[0] and p["cell"] == where[1]
-                 for p in self.presets):
+                 for p in others):
             raise ValueError(f"bank {where[0]} cell {where[1]} is already taken")
         tags = m.get("tags")
-        self.presets.append({
+        # Built whole and rebound once. Appending to the live list and then
+        # sorting it in place is what let the broadcast thread serialise an
+        # EMPTY preset list -- CPython empties a list for the duration of
+        # `sort()`, so a console mid-save could show "Presets - 0".
+        self.presets = sorted(others + [{
             "name": name, **self.selection,
             "speed": round(self.clock.speed, 3),
             "master": round(self.master, 3),
@@ -599,8 +603,7 @@ class ShowController:
             "bank": where[0], "cell": where[1],
             "tags": [str(t) for t in tags] if tags is not None
                     else list(previous.get("tags", [])) if previous else [],
-        })
-        self.presets.sort(key=_at)
+        }], key=_at)
         save_presets(self.event_dir, self.presets)
         self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}")
 
@@ -622,10 +625,16 @@ class ShowController:
                          if p["bank"] == where[0] and p["cell"] == where[1]), None)
         if occupant is preset:
             return
-        if occupant is not None:
-            occupant["bank"], occupant["cell"] = preset["bank"], preset["cell"]
-        preset["bank"], preset["cell"] = where
-        self.presets.sort(key=_at)
+        # Replaced, not edited in place: the snapshot thread walks these dicts
+        # while this runs, and editing two of them in sequence would let it
+        # serialise a moment where both claim the same pad.
+        moved = {**preset, "bank": where[0], "cell": where[1]}
+        swapped = (None if occupant is None
+                   else {**occupant, "bank": preset["bank"],
+                         "cell": preset["cell"]})
+        self.presets = sorted(
+            [moved if p is preset else swapped if p is occupant else p
+             for p in self.presets], key=_at)
         save_presets(self.event_dir, self.presets)
         self.note(f"moved preset {name!r} to {where[0]}.{where[1] + 1}")
 
@@ -634,8 +643,9 @@ class ShowController:
         preset = next((p for p in self.presets if p["name"] == name), None)
         if preset is None:
             raise KeyError(f"no preset named {name!r}")
-        preset["tags"] = [str(t).strip()[:24] for t in m.get("tags", [])
-                          if str(t).strip()]
+        tags = [str(t).strip()[:24] for t in m.get("tags", []) if str(t).strip()]
+        self.presets = [{**p, "tags": tags} if p is preset else p
+                        for p in self.presets]
         save_presets(self.event_dir, self.presets)
 
     def _cmd_preset_apply(self, m: dict, now: float) -> None:
@@ -793,10 +803,16 @@ class ShowController:
         could not.
         """
         target = m.get("target", "all")
+        # Rebound, not mutated. `snapshot()` runs on the broadcast thread and
+        # reads this set while commands run on the output thread; a set that
+        # changes size mid-iteration raises, and the broadcast that was building
+        # the frame is lost. Rebinding is atomic, so a reader sees the set
+        # before or the set after and never one being edited. Same reasoning
+        # everywhere else this file hands a live container to the snapshot.
         if m.get("on", True):
-            self.flashing.add(target)
+            self.flashing = self.flashing | {target}
         else:
-            self.flashing.discard(target)
+            self.flashing = self.flashing - {target}
         self._rebuild_overrides()
 
     def _cmd_flash_clear(self, m: dict, now: float) -> None:
@@ -806,7 +822,7 @@ class ShowController:
         mid-press, never sends the release -- and a flash stuck on is a group
         stuck at full. The UI sends this on reconnect for that reason.
         """
-        self.flashing.clear()
+        self.flashing = set()
         self._rebuild_overrides()
 
     def _rebuild_overrides(self) -> None:
@@ -1282,6 +1298,7 @@ class ShowController:
         # apply_safety then skips the rate limit and adopts the computed taper
         # instantly. Starting at 0 makes the limiter fade it in.
         self.ctx._taper_prev = {f.fid: 0.0 for f in new_rig.fixtures}
+        self._prune_targets()
         self._recompose()
         self.pending_patch = False
 
@@ -1297,6 +1314,41 @@ class ShowController:
         for warning in new_rig.warnings():
             self.note(f"rig: {warning}")
         return True
+
+    def _prune_targets(self) -> None:
+        """Drop operator state naming something the rig no longer has.
+
+        Everything cleared alongside the rig swap is keyed by fixture ID. This
+        is the other half: trims, colours, flashes, jogs and captures are keyed
+        by NAME, and a patch edit can rename or delete the thing they name.
+        Left alone they are invisible -- a trim with no row to reset it, and a
+        `jog` entry that would silently re-bypass the safety taper if a fixture
+        with that name ever came back.
+
+        A target is NOT just a fixture name: `all`, and every tag, are equally
+        valid and are how a group gets dimmed. Pruning on fixture names alone
+        would throw away the group overrides, which is the common case and
+        would look exactly like the console forgetting what it was doing.
+        """
+        names = {f.name for f in self.rig.fixtures}
+        valid = {"all", *self.rig.tags()} | names
+        targeted = set(self.color_overrides) | set(self.level_overrides) | self.flashing
+        per_fixture = set(self.jog) | set(self.captures)
+        dropped = sorted((targeted - valid) | (per_fixture - names))
+        if not dropped:
+            return
+        self.color_overrides = {k: v for k, v in self.color_overrides.items()
+                                if k in valid}
+        self.level_overrides = {k: v for k, v in self.level_overrides.items()
+                                if k in valid}
+        self.flashing = self.flashing & valid
+        self.jog = {k: v for k, v in self.jog.items() if k in names}
+        self.captures = {k: v for k, v in self.captures.items() if k in names}
+        # "targets", not "fixtures": removing the last fixture carrying a tag
+        # takes the tag with it, so a group trim can be dropped here too, and
+        # saying "fixture" would send someone looking for a fixture by that name.
+        self.note("dropped settings for targets the rig no longer has: "
+                  + ", ".join(dropped[:6]))
 
     def _cmd_patch_add(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.add_fixture(

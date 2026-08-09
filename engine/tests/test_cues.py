@@ -116,12 +116,33 @@ try:
 
     # A fade must actually be in progress after a faded take, and NOT after a
     # cut -- otherwise "fade" is a number in a file that nothing reads.
-    controller.apply({"type": "cue", "index": 0}, None)
-    controller.runner.sync_clock()
-    check("a faded cue starts a crossfade", controller.runner.fading)
-    drop = next(i for i, c in enumerate(controller.cues.cues) if c.name == "Drop")
-    controller.apply({"type": "cue", "index": drop}, None)
-    check("a fade-0 cue cuts instead", not controller.runner.fading)
+    #
+    # `runner.fade_beats` is forced NON-ZERO first, and that is the whole point
+    # of this block rather than an incidental setup line. It defaults to 0, so
+    # `fade_beats or self.fade_beats` -- the bug this guards, where a cue asking
+    # for a cut is treated as a cue that did not ask -- computed the same answer
+    # as the correct `is None` test and the check passed for the wrong reason.
+    # Verified by reintroducing the bug: with the default in place, all sixteen
+    # suites stayed green.
+    controller.runner.fade_beats = 16.0
+    try:
+        controller.apply({"type": "cue", "index": 0}, None)
+        controller.runner.sync_clock()
+        check("a faded cue starts a crossfade", controller.runner.fading)
+        drop = next(i for i, c in enumerate(controller.cues.cues)
+                    if c.name == "Drop")
+        controller.apply({"type": "cue", "index": drop}, None)
+        check("a fade-0 cue cuts, even with a default fade configured",
+              not controller.runner.fading,
+              f"default is {controller.runner.fade_beats:g} beats")
+        # And the other half of the same distinction: no fade ASKED FOR still
+        # picks up the default, so `is None` is not just "always cut".
+        controller.runner.set_show(libmod.compose(None, [], []), fade_beats=None)
+        controller.runner.sync_clock()
+        check("while a take that names no fade uses the default",
+              controller.runner.fading)
+    finally:
+        controller.runner.fade_beats = 0.0
 
     controller.apply({"type": "cue_reset"}, None)
     check("reset rewinds to before the first cue",

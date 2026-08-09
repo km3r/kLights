@@ -309,6 +309,42 @@ check("saving presets keeps the file's $schema",
 check("saving presets keeps the file's explanatory comment",
       "_comment" in presets_file)
 
+# -- the snapshot must never see a container mid-edit --------------------------
+#
+# `snapshot()` runs on the BROADCAST thread; commands run on the output thread;
+# there is no lock between them. So anything the snapshot reads has to be
+# replaced wholesale rather than edited in place -- rebinding is atomic, and a
+# reader then sees the state before or the state after and never one being
+# changed underneath it.
+#
+# This was not theoretical. `presets.sort()` in place is what made it real:
+# CPython empties a list for the duration of a sort, so a console mid-save could
+# broadcast "Presets - 0" and an empty grid. Asserting the identity of the
+# container is the deterministic way to test a race that is otherwise a
+# microsecond wide.
+held_presets = controller.presets
+held_flashing = controller.flashing
+controller.apply({"type": "preset_save", "name": "rebind check"}, None)
+check("saving a preset rebinds the list rather than sorting it in place",
+      controller.presets is not held_presets
+      and not any(p["name"] == "rebind check" for p in held_presets),
+      f"{len(held_presets)} -> {len(controller.presets)}")
+controller.apply({"type": "preset_move", "name": "rebind check",
+                  "bank": 4, "cell": 7}, None)
+check("and so does moving one", controller.presets is not held_presets)
+controller.apply({"type": "preset_tag", "name": "rebind check",
+                  "tags": ["x"]}, None)
+check("and tagging one -- the dict is replaced, not edited",
+      all(p.get("tags") != ["x"] for p in held_presets))
+controller.apply({"type": "preset_delete", "name": "rebind check"}, None)
+
+controller.apply({"type": "flash", "target": "all"}, None)
+check("flashing rebinds too -- a set that changes size mid-iteration raises, "
+      "and takes the whole broadcast with it",
+      controller.flashing is not held_flashing and not held_flashing)
+controller.apply({"type": "flash_clear"}, None)
+
+
 # -- preset banks: a pad is a PLACE, and it does not move ---------------------
 #
 # The flat uncapped grid was finding #17 of the review: presets accumulate, the
@@ -1053,6 +1089,37 @@ with tempfile.TemporaryDirectory() as tmp:
               "rather than snapping",
               set(live.ctx._taper_prev.values()) == {0.0},
               f"{sorted(set(live.ctx._taper_prev.values()))}")
+
+        # Everything the reload clears is keyed by fixture ID. Trims, colours,
+        # flashes, jogs and captures are keyed by NAME, and a patch edit can
+        # delete the thing they name -- leaving a trim with no row to reset it
+        # and a jog entry that would re-bypass the safety taper if that name
+        # ever came back.
+        live.apply({"type": "level", "target": "Par 1", "value": 0.3}, None)
+        live.apply({"type": "level", "target": "corner movers", "value": 0.6}, None)
+        live.apply({"type": "flash", "target": "corner movers"}, None)
+        live.apply({"type": "flash", "target": "pars"}, None)
+        live.apply({"type": "patch_remove", "name": "Par 1"}, None)
+        live.apply({"type": "patch_apply"}, None)
+        check("a reload drops settings for a fixture that no longer exists",
+              "Par 1" not in live.level_overrides, f"{live.level_overrides}")
+        # The half that would be easy to get wrong: a target is not only a
+        # fixture name. `all` and every tag are equally valid, and pruning on
+        # fixture names alone would throw away the group trims -- the common
+        # case, and it would look exactly like the console forgetting itself.
+        check("but a GROUP trim survives, because a group is a valid target too",
+              abs(live.level_overrides.get("corner movers", 0) - 0.6) < 1e-9,
+              f"{live.level_overrides}")
+        # Removing the last fixture carrying a tag takes the TAG with it, so
+        # `pars` stops being a target at all while `corner movers` does not.
+        check("a flash on a group that survives is kept, one on a group that "
+              "went with its last fixture is not",
+              live.flashing == {"corner movers"}, f"{live.flashing}")
+        check("with a notice, so it is not silent",
+              any("no longer has" in n for n in live.notices),
+              f"{live.notices[-2:]}")
+        live.apply({"type": "level", "clear": True, "target": "corner movers"}, None)
+        live.apply({"type": "flash_clear"}, None)
 
         # The frame path has to survive the swap: a reload that renders a broken
         # frame is worse than one that refuses.

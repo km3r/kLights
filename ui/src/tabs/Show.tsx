@@ -147,7 +147,14 @@ const slotCount = (p: Preset) =>
 function Presets({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const design = useDesign();
   const { size, count } = state.preset_banks;
-  const [bank, setBank] = useState(1);
+  // CLAMPED to what exists, every render. Deleting the last preset on the
+  // highest bank drops `count`, and the bank selector only renders when there
+  // is more than one bank — so an unclamped `bank` left the operator looking at
+  // an empty page with no control that goes back, and every preset they had
+  // unreachable without reloading the console. Derived rather than corrected in
+  // an effect, so there is not even one frame showing the empty page.
+  const [rawBank, setBank] = useState(1);
+  const bank = Math.min(Math.max(rawBank, 1), count);
   const [name, setName] = useState("");
   const [target, setTarget] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);

@@ -27,6 +27,22 @@ import type { EngineState, FixtureState } from "./types";
 const DOT_MM = 260;
 const MARGIN_MM = 900;
 
+/**
+ * How much of the room one beam's footprint may cover before the drawing stops
+ * being useful, as a fraction of the room's shorter side.
+ *
+ * `throw × tan(beam/2)` is the honest radius and it is unbounded: a 120° wash —
+ * legal, and what half the fixtures in a club are — lands a disc wider than the
+ * room, and the schema's own maximum of 180° produces an effectively infinite
+ * one. Past this point the disc has stopped saying "the beam covers here" and
+ * started saying nothing at all while painting over everything that does.
+ *
+ * Capped rather than hidden: a wide fixture IS lighting a large area, and
+ * dropping it would under-report the rig. The cap is marked so it does not read
+ * as a measurement.
+ */
+const MAX_SPOT = 0.28;
+
 /** Landing markers, by what the beam hit. Height is invisible in plan, so the
  *  thing a beam lands ON has to be said some other way. */
 const SURFACE: Record<string, { label: string; dash?: string }> = {
@@ -91,7 +107,10 @@ export function PlanView({ state }: { state: EngineState }) {
         )}
 
         {/* Beams under the fixtures, so a dot is never hidden by its own beam. */}
-        {placed.map((f) => <Beam key={`beam-${f.id}`} f={f} />)}
+        {placed.map((f) => (
+          <Beam key={`beam-${f.id}`} f={f}
+                cap={Math.min(v.width!, v.depth!) * MAX_SPOT} />
+        ))}
         {placed.map((f) => <Dot key={`dot-${f.id}`} f={f} />)}
 
         {ball && (
@@ -105,7 +124,8 @@ export function PlanView({ state }: { state: EngineState }) {
         )}
       </svg>
 
-      <Legend state={state} placed={placed} />
+      <Legend state={state} placed={placed}
+              cap={Math.min(v.width!, v.depth!) * MAX_SPOT} />
     </Card>
   );
 }
@@ -122,7 +142,7 @@ export function PlanView({ state }: { state: EngineState }) {
  * is correct rather than a bug: from above, an aerial beam IS a short line. The
  * landing label is what tells you it went to the canopy.
  */
-function Beam({ f }: { f: FixtureState }) {
+function Beam({ f, cap }: { f: FixtureState; cap: number }) {
   const from = f.position!;
   const to = f.lands_at;
   const lit = f.intensity ?? 0;
@@ -136,27 +156,34 @@ function Beam({ f }: { f: FixtureState }) {
   // beam rather than of the projection, so it is the honest radius to draw.
   const spread = (f.throw_mm ?? 0)
     * Math.tan(((f.beam_deg ?? 8) / 2) * Math.PI / 180);
+  const radius = Math.min(Math.max(spread, 120), cap);
+  const capped = spread > cap;
 
   return (
     <g opacity={Math.max(0.18, lit)}>
       <line x1={from[0]} y1={from[2]} x2={to[0]} y2={to[2]}
             stroke={color} strokeWidth={70} strokeLinecap="round"
             strokeDasharray={surface.dash} />
-      <circle cx={to[0]} cy={to[2]} r={Math.max(spread, 120)}
-              fill={color} fillOpacity={0.28}
+      {/* Drawn hollow once capped: a filled disc at the cap looks like a
+          measured footprint, and this one is "at least this big". */}
+      <circle cx={to[0]} cy={to[2]} r={radius}
+              fill={color} fillOpacity={capped ? 0.10 : 0.28}
+              strokeDasharray={capped ? "400 300" : undefined}
               stroke={color} strokeWidth={40} strokeOpacity={0.7} />
       {/* The taper is the one thing here that is not simply geometry, so it
           gets a mark of its own rather than being inferred from a dimmer
           beam — a beam at 50% because the operator pulled it down and a beam
           at 50% because it is over someone's head are different facts. */}
       {taper < 1 && (
-        <circle cx={to[0]} cy={to[2]} r={Math.max(spread, 120) + 180}
+        <circle cx={to[0]} cy={to[2]} r={radius + 180}
                 fill="none" stroke="var(--warn)" strokeWidth={50}
                 strokeDasharray="200 160" />
       )}
       <title>
         {f.name} → {surface.label}
         {f.throw_mm != null && ` at ${(f.throw_mm / 1000).toFixed(1)} m`}
+        {capped && ` · spreads ${(spread * 2 / 1000).toFixed(1)} m wide, `
+                 + `drawn clipped`}
         {taper < 1 && ` · taper holding it at ${Math.round(taper * 100)}%`}
       </title>
     </g>
@@ -184,9 +211,11 @@ function Dot({ f }: { f: FixtureState }) {
  * quietly omits an unpositioned fixture looks complete, and someone would
  * reasonably conclude the rig is doing nothing over there.
  */
-function Legend({ state, placed }: {
-  state: EngineState; placed: FixtureState[];
+function Legend({ state, placed, cap }: {
+  state: EngineState; placed: FixtureState[]; cap: number;
 }) {
+  const clipped = (f: FixtureState) =>
+    (f.throw_mm ?? 0) * Math.tan(((f.beam_deg ?? 8) / 2) * Math.PI / 180) > cap;
   const missing = state.fixtures.length - placed.length;
   const landing = placed.filter((f) => f.lands_at && (f.intensity ?? 0) > 0.001);
   const tapered = landing.filter((f) => (f.safety?.taper ?? 1) < 1);
@@ -213,6 +242,10 @@ function Legend({ state, placed }: {
                 {f.throw_mm != null && (
                   <span className="muted mono"> {(f.throw_mm / 1000).toFixed(1)}m</span>
                 )}
+                {/* In the list, not only in the SVG tooltip — a phone has no
+                    hover, which is the same reason the landing surface is
+                    written out here. */}
+                {clipped(f) && <span className="muted"> · wide, drawn clipped</span>}
                 {taper < 1 && (
                   <span style={{ color: "var(--warn)" }}>
                     {" "}· held at {Math.round(taper * 100)}%
