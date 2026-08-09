@@ -171,6 +171,9 @@ export interface EngineState {
   pending_patch: boolean;
   /** Fixture definitions available to patch, from shared/fixtures/. */
   profiles: ProfileInfo[];
+  /** Live shape controls over whatever movement look is up. Identity is
+   *  size 1, spread 0, centre [0, 0]. */
+  macro: { size: number; spread: number; center: [number, number] };
   event: string;
   taper: TaperState;
   clock: ClockState;
@@ -250,7 +253,9 @@ export type Command =
   | { type: "patch_position"; name: string;
       position: { x: number; y: number; z: number } }
   | { type: "patch_autopatch"; start?: number; universe?: number }
-  | { type: "patch_apply" };
+  | { type: "patch_apply" }
+  | { type: "macro"; size?: number; spread?: number;
+      center?: [number, number]; reset?: boolean };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

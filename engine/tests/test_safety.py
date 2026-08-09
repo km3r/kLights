@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO))
 
 from engine import geometry as geo
 from engine import safety
+from engine import rig as rigmod
 from engine.rig import load_rig
 
 rig = load_rig(REPO / "events" / "despacio")
@@ -230,6 +231,55 @@ for i in range(len(g.heads)):
 check("apex poses land on the rigged canopy", canopy_hits == len(g.heads),
       f"{canopy_hits}/{len(g.heads)} heads")
 
+
+# -- macros must not be able to outrank the taper -----------------------------
+#
+# F15 gave the operator live control over how far a movement look travels and
+# where it is centred. Those multiply the offsets a look asks for, so the
+# obvious worry is that a big enough size aims a beam somewhere no stored look
+# could have. It cannot: `evaluate` runs apply_safety after the entire stack,
+# unconditionally, so a macro can only change WHICH aim the taper is asked
+# about -- never whether it is asked.
+print("\n8. macros cannot outrank the safety taper")
+import engine.library as libmod                                    # noqa: E402
+
+rig_all = rigmod.load_rig(REPO / "events" / "despacio")
+entry = next(e for e in libmod.load_entries(
+    REPO / "events" / "despacio" / "looks.json") if e.offsets)
+
+worst = 0.0
+for size in (0.0, 1.0, 2.0, 3.0):
+    for centre in ((0.0, 0.0), (0.0, -60.0), (90.0, -40.0)):
+        ctx = statemod.EvalContext(rig=rig_all, venue=rig_all.venue,
+                                   taper=safety.TaperConfig())
+        ctx.move_size, ctx.move_center = size, centre
+        show = libmod.compose(entry)
+        states = statemod.evaluate(ctx, show)
+        for f in rig_all.fixtures:
+            st = states[f.fid]
+            if st.safety is None or f.head is None:
+                continue
+            # Every fixture with an aim got a taper decision, and the intensity
+            # it ends up with never exceeds what that decision allowed.
+            worst = max(worst, st.intensity - st.safety.taper - 1e-9)
+
+check("every macro setting still goes through the taper",
+      worst <= 0.0, f"worst intensity over its own taper: {worst:.6f}")
+
+# And the aggressive settings really do move the beams, or the check above is
+# passing for the boring reason.
+def landings(size, centre):
+    ctx = statemod.EvalContext(rig=rig_all, venue=rig_all.venue,
+                               taper=safety.TaperConfig())
+    ctx.move_size, ctx.move_center = size, centre
+    states = statemod.evaluate(ctx, libmod.compose(entry))
+    return [states[f.fid].aim.elev_deg for f in rig_all.fixtures
+            if states[f.fid].aim is not None]
+
+check("and a centre offset genuinely re-aims the rig",
+      max(abs(a - b) for a, b in zip(landings(1.0, (0.0, 0.0)),
+                                     landings(1.0, (0.0, -60.0)))) > 50,
+      f"{landings(1.0, (0.0, -60.0))[:2]}")
 
 print()
 if failures:

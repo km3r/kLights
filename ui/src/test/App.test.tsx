@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
@@ -691,5 +691,58 @@ describe("patch", () => {
     await openSetup(user);
     await user.click(screen.getByRole("button", { name: /Apply now/i }));
     expect(socket.last()).toEqual({ type: "patch_apply" });
+  });
+});
+
+describe("shape macros", () => {
+  const openMove = async (user: ReturnType<typeof userEvent.setup>) =>
+    goTo(user, /Move/);
+
+  it("shows the identity values when nothing is dialled in", async () => {
+    const user = userEvent.setup();
+    mount();
+    await openMove(user);
+    expect(screen.getByText("1.00×")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Reset/i })).toHaveProperty(
+      "disabled", true);
+  });
+
+  it("sends size live while dragging, not on release", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await openMove(user);
+    const size = screen.getByLabelText("Size") as HTMLInputElement;
+    // fireEvent.change, not a hand-dispatched input event: React keeps its own
+    // value tracker and ignores a native event whose value it did not set.
+    // These are performance controls — watching the rig respond is how you find
+    // the value you want — so this must fire during the drag, not on release.
+    fireEvent.change(size, { target: { value: "2" } });
+    expect(socket.last()).toEqual({ type: "macro", size: 2 });
+  });
+
+  it("offers a reset once anything is off identity", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.macro = { size: 1.8, spread: 0.25, center: [0, -40] };
+    })));
+    await openMove(user);
+    const reset = screen.getByRole("button", { name: /Reset/i });
+    expect(reset).toHaveProperty("disabled", false);
+    await user.click(reset);
+    expect(socket.last()).toEqual({ type: "macro", reset: true });
+  });
+
+  it("renders the engine's values rather than its own", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.macro = { size: 0.5, spread: 1, center: [90, -30] };
+    })));
+    await openMove(user);
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("0.5");
+    expect((screen.getByLabelText("Spread") as HTMLInputElement).value).toBe("1");
+    expect(screen.getByText(/90° round/)).toBeTruthy();
+    expect(screen.getByText(/-30° up\/down/)).toBeTruthy();
   });
 });

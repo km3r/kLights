@@ -878,6 +878,31 @@ class ShowController:
         self.note("patch saved to rig.json -- not live yet. Apply it to load it "
                   "into the running show")
 
+    def _cmd_macro(self, m: dict, now: float) -> None:
+        """Live shape controls over whatever movement look is up.
+
+        Set on the context rather than recomposing, so they survive an auto look
+        change -- and so they cost nothing per frame beyond the multiply.
+
+        Ranges are clamped, not because a bigger number breaks anything, but
+        because a size of 40 aims every head at the floor in a straight line and
+        an operator who typed it meant 4. The safety taper still runs after the
+        whole stack regardless, so no macro value can put a beam anywhere the
+        taper would not have allowed a stored look to put it.
+        """
+        if "size" in m:
+            self.ctx.move_size = max(0.0, min(3.0, float(m["size"])))
+        if "spread" in m:
+            self.ctx.move_spread = max(-1.0, min(1.0, float(m["spread"])))
+        if "center" in m:
+            c = m["center"]
+            self.ctx.move_center = (max(-180.0, min(180.0, float(c[0]))),
+                                    max(-90.0, min(90.0, float(c[1]))))
+        if m.get("reset"):
+            self.ctx.move_size = 1.0
+            self.ctx.move_spread = 0.0
+            self.ctx.move_center = (0.0, 0.0)
+
     def _cmd_patch_apply(self, m: dict, now: float) -> None:
         self.reload_rig()
 
@@ -1088,6 +1113,10 @@ class ShowController:
             # rig disagree, so it gets a standing banner rather than a notice
             # that scrolls away.
             "pending_patch": self.pending_patch,
+            "macro": {"size": round(self.ctx.move_size, 3),
+                      "spread": round(self.ctx.move_spread, 3),
+                      "center": [round(self.ctx.move_center[0], 2),
+                                 round(self.ctx.move_center[1], 2)]},
             "profiles": patchmod.list_profiles(self.profiles),
             "event": self.rig.name,
             "clock": {"bpm": round(self.clock.bpm, 2),

@@ -241,9 +241,17 @@ def path_offsets(steps: list[list[list[float]]], bars: float,
                             easing=easing)
                 for h in range(len(steps[0]))]
     pick = column_for(fixtures, len(per_head))
+    count = len(per_head)
 
     def offset_for(ctx, head: int) -> tuple[float, float]:
-        return per_head[pick(ctx, head)](motion.phase(ctx.motion_bar, bars))
+        column = pick(ctx, head)
+        # SPREAD lags each head along its own route. `motion.phase` takes its
+        # offset in cycles already, so spreading n heads evenly is spread * i/n
+        # regardless of how many bars the cycle is -- the idiom every multi-head
+        # move in the old library re-derived by hand for each chase length.
+        # 0 is unison, which is what every ported look was authored as.
+        return per_head[column](motion.phase(
+            ctx.motion_bar, bars, offset=ctx.move_spread * column / count))
     return offset_for
 
 
@@ -261,9 +269,16 @@ def cue_offsets(steps: list[list[list[float]]], spans: list[list[float]],
                                 pairs, easing=easing)
                 for h in range(len(steps[0]))]
     pick = column_for(fixtures, len(per_head))
+    count = len(per_head)
 
     def offset_for(ctx, head: int) -> tuple[float, float]:
-        return per_head[pick(ctx, head)](motion.phase(ctx.motion_bar, bars))
+        column = pick(ctx, head)
+        # Spread applies here too, but note what it does to a CUED chase: these
+        # travel dark and light on arrival, so spreading them staggers the
+        # arrivals rather than smearing a continuous move. That is a real
+        # effect and not a bug, but it is a different one.
+        return per_head[column](motion.phase(
+            ctx.motion_bar, bars, offset=ctx.move_spread * column / count))
     return offset_for
 
 

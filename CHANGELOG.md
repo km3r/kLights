@@ -11,6 +11,28 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F15, shape macros
+
+- **Four live controls over whatever movement look is up**: size, spread, and a
+  two-axis centre. The ported library holds 103 poses and 26 paths because QLC+
+  stored DMX values and had no parameters, so every variation of a move had to
+  be its own scene. These are the variations that actually recurred — "Ball
+  Wave" with the centre dropped 40° *is* the look that used to need a separate
+  "Floor Wave" entry.
+- They live on `EvalContext`, not in the composed look, so they survive an auto
+  look change the same way `energy` does, and cost nothing per frame beyond a
+  multiply.
+- Size scales about zero, and zero is each head's own calibrated ball aim — so
+  it scales about the look's own centre, per head, with no extra geometry.
+  Applied in `move_layer`, the single point every movement offset passes
+  through, rather than in each of the three offset builders.
+- Spread reuses `motion.phase`'s existing cycle-relative offset, so spreading n
+  heads evenly is `spread * i/n` regardless of the cycle length.
+- **No macro can outrank the safety taper**, and there is now a test that says
+  so across the extremes of every macro: `evaluate` runs `apply_safety` after
+  the entire stack, so a macro can only change *which* aim the taper is asked
+  about, never whether it is asked. QLC+ parity is unchanged at identity.
+
 ### Added — F14, editing the rig
 
 - **`engine/patch.py`** — one set of rules for what a legal patch is, shared by

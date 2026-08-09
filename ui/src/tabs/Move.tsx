@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card } from "../components";
 import { LookPicker } from "../LookPicker";
 import type { Command, EngineState } from "../types";
@@ -37,6 +38,8 @@ export function MoveTab({ state, send }: {
           jumps.
         </p>
       </Card>
+
+      <Shape state={state} send={send} />
 
       <Card title="Heads">
         <div className="grid two">
@@ -79,5 +82,78 @@ export function MoveTab({ state, send }: {
         </div>
       </Card>
     </>
+  );
+}
+
+/**
+ * Shape: the four knobs that make one route cover what a shelf of stored chases
+ * used to.
+ *
+ * The old library holds 103 poses and 26 paths because QLC+ stored DMX values
+ * and had no parameters, so every variation of a move had to be its own scene.
+ * These are the variations that actually recurred: how far it travels, whether
+ * the heads do it together, and where the whole thing sits. "Ball Wave" with the
+ * centre dropped 40° IS the look that used to be a separate "Floor Wave" entry.
+ *
+ * They apply to whatever route is up and survive an auto look change, because
+ * they live on the engine's context rather than in the composed look.
+ */
+function Shape({ state, send }: {
+  state: EngineState; send: (c: Command) => void;
+}) {
+  const macro = state.macro;
+  const [drag, setDrag] = useState<Partial<Record<string, number>>>({});
+  const value = (key: "size" | "spread" | "bearing" | "elev") => {
+    if (drag[key] !== undefined) return drag[key]!;
+    if (key === "size") return macro.size;
+    if (key === "spread") return macro.spread;
+    return key === "bearing" ? macro.center[0] : macro.center[1];
+  };
+
+  const changed = macro.size !== 1 || macro.spread !== 0
+    || macro.center[0] !== 0 || macro.center[1] !== 0;
+
+  const row = (key: "size" | "spread" | "bearing" | "elev",
+               label: string, min: number, max: number, step: number,
+               fmt: (v: number) => string, hint: string) => (
+    <div style={{ marginBottom: "0.6rem" }}>
+      <div className="row tight">
+        <label className="small grow" htmlFor={`macro-${key}`}>{label}</label>
+        <span className="small muted mono">{fmt(value(key))}</span>
+      </div>
+      <input id={`macro-${key}`} type="range" style={{ width: "100%" }}
+             min={min} max={max} step={step} value={value(key)}
+             aria-label={label}
+             onChange={(e) => {
+               const v = Number(e.target.value);
+               setDrag((d) => ({ ...d, [key]: v }));
+               // Sent live, not on release: these are performance controls and
+               // watching the rig respond is how you find the value you want.
+               if (key === "size") send({ type: "macro", size: v });
+               else if (key === "spread") send({ type: "macro", spread: v });
+               else send({ type: "macro",
+                           center: key === "bearing"
+                             ? [v, value("elev")] : [value("bearing"), v] });
+             }}
+             onPointerUp={() => setDrag((d) => ({ ...d, [key]: undefined }))}
+             onBlur={() => setDrag((d) => ({ ...d, [key]: undefined }))} />
+      <p className="small muted" style={{ margin: 0 }}>{hint}</p>
+    </div>
+  );
+
+  return (
+    <Card title="Shape" right={
+      <button className="small" disabled={!changed}
+              onClick={() => send({ type: "macro", reset: true })}>Reset</button>
+    }>
+      {row("size", "Size", 0, 3, 0.05, (v) => `${v.toFixed(2)}×`,
+           "How far the route travels. 0 parks every head on the mirror ball.")}
+      {row("spread", "Spread", -1, 1, 0.02, (v) => v.toFixed(2),
+           "Lags each head along its own route. 0 is unison, 1 spreads them evenly around one cycle.")}
+      {row("bearing", "Centre —", -180, 180, 1, (v) => `${v.toFixed(0)}° round`,
+           "Swings the whole look around the room.")}
+      {row("elev", "Centre |", -90, 90, 1, (v) => `${v.toFixed(0)}° up/down`,
+           "Drops or lifts the whole look. The safety taper still runs after this, so aiming down does not bypass it.")}
+    </Card>
   );
 }

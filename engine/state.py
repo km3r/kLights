@@ -99,6 +99,27 @@ class EvalContext:
     strobe: bool = False
     taper: safetymod.TaperConfig = field(default_factory=safetymod.TaperConfig)
 
+    # Live shape controls over whatever movement look is up.
+    #
+    # The ported library has 103 poses and 26 paths because QLC+ stored DMX
+    # values and had no parameters, so every variation of a move had to be a
+    # separate scene. The engine holds parameters, and these are the ones that
+    # actually vary: how far a move travels, whether the heads do it together,
+    # and where the whole thing is centred. One "Ball Wave" with a centre offset
+    # is the "Floor Wave" that used to be its own entry.
+    #
+    # They live on the context rather than in the composed Show for the same
+    # reason `energy` does: auto mode rebuilds the layer stack on every look
+    # change, and a size the operator dialled in has to survive that. Identity
+    # defaults, so a show that never touches them behaves exactly as before.
+    move_size: float = 1.0
+    # Degrees added to every head's offset -- moves the whole look off the ball.
+    move_center: tuple[float, float] = (0.0, 0.0)
+    # Phase spread across the heads, in CYCLES. 0 is unison; 1.0 spreads n heads
+    # evenly around one cycle, which is the idiom every multi-head move in the
+    # old library hand-encoded.
+    move_spread: float = 0.0
+
     # Last frame's safety multiplier per fixture, and when it was computed.
     # State the safety layer needs and nothing else may touch -- slew limiting
     # is inherently temporal, and the alternative (making clearance() stateful)
@@ -227,13 +248,27 @@ def move_layer(offset: Callable[[EvalContext, int], tuple[float, float]],
     every effect in the workspace to be rebuilt as relative.
     """
     def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
+        size = ctx.move_size
+        centre_b, centre_e = ctx.move_center
         for f in _targets(ctx, tags):
             state = out[f.fid]
             if state.aim is None or f.head is None:
                 continue
             d_bearing, d_elev = offset(ctx, f.head)
-            state.aim = geo.Aim(state.aim.bearing_delta + d_bearing,
-                                state.aim.elev_deg + d_elev)
+            # SIZE scales about zero, and zero is each head's own calibrated
+            # ball aim, because that is what these offsets are relative to. So
+            # size 0 collapses every head onto the ball and size 2 doubles the
+            # excursion -- about the look's own centre, per head, with no extra
+            # geometry. CENTRE then moves the whole thing off the ball, which is
+            # what turns one "Ball Wave" into the "Floor Wave" that used to need
+            # its own entry.
+            #
+            # Applied here rather than in each of the three offset builders
+            # because this is the single point every movement offset passes
+            # through, and three copies of it would be three chances to differ.
+            state.aim = geo.Aim(
+                state.aim.bearing_delta + d_bearing * size + centre_b,
+                state.aim.elev_deg + d_elev * size + centre_e)
     return layer
 
 

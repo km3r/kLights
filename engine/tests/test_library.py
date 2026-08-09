@@ -202,8 +202,19 @@ offset_fn = libmod.path_offsets(sample.steps, sample.bars or 8.0)
 
 
 class FakeCtx:
+    """Just enough context to sample a movement offset function.
+
+    Kept as a stand-in rather than a real EvalContext because this is checking
+    continuity of the interpolation, not evaluation. It has to carry the shape
+    macros at their identity values, though: `move_spread` is read on every
+    sample, and defaulting it inside the offset function to accommodate a test
+    double would put the default in the wrong place.
+    """
     motion_bar = 0.0
     geometry = rig.geometry
+    move_spread = 0.0
+    move_size = 1.0
+    move_center = (0.0, 0.0)
 
 
 ctx = FakeCtx()
