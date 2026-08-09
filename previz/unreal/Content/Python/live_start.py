@@ -20,9 +20,11 @@ import cosmos_live
 cosmos_live.stop()
 
 for name in ("engine.config", "engine.geometry", "engine.venue", "engine.rig",
-             "engine.servo", "previz.scene"):
+             "engine.servo", "previz.config", "previz.scene"):
     if name in sys.modules:
         importlib.reload(sys.modules[name])
 importlib.reload(cosmos_live)
 
-cosmos_live.start()
+from previz import config as previz_config    # noqa: E402  (after the reloads)
+
+cosmos_live.start(previz_config.event())

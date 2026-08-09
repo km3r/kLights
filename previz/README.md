@@ -58,7 +58,19 @@ cannot reach either, which is why they are here and not in `build_level.py`:
 The stills are captured through the same pinned exposure, so with those two set
 the viewport and `renders/` agree.
 
-If nothing happens, in order: is the editor open (`python previz/ue_remote.py
+If nothing happens, ask the doctor first — every failure here looks the same
+from a viewport, and each one has a different fix:
+
+```bash
+python previz/doctor.py
+```
+
+It checks the event resolves and its scene actually builds, that an Unreal
+install with remote execution is findable, that the project is there, that an
+editor is answering, and whether anything already owns Art-Net 6454. Non-zero
+exit only for things that would genuinely stop a previz working.
+
+Then, in order: is the editor open (`python previz/ue_remote.py
 --ping`), is a sender running, and what does the driver say?
 
 ```bash
@@ -74,6 +86,33 @@ something looks wrong in 3D:
 ```bash
 python previz/scene.py despacio -o scene.json
 ```
+
+## Another event, another room
+
+The previz builds whatever `previz/previz.json` names, and nothing in the
+Unreal path knows the word "despacio" any more:
+
+```bash
+COSMOS_EVENT=cosmos26 python previz/ue_remote.py previz/unreal/Content/Python/go.py
+```
+
+`COSMOS_EVENT` beats the file on purpose — the file is what the repo is set up
+for, the variable is one person looking at something else for ten minutes.
+`python previz/config.py` prints which is winning.
+
+The four snapshot cameras are **derived from the room** rather than measured in
+it. They used to be literal coordinates, which put four cameras inside a wall
+in any other venue; `scene.camera_views` holds the framing rules instead —
+never on a diagonal (that is where the heads are), never on a mid-line (that is
+where the pinspots are), above the truss, and inside the clear floor rather than
+outside a cut-away wall. Run against despacio it reproduces the hand-measured
+originals to within a centimetre, and the self-test builds a 6 m room and a
+4 × 0.9 m corridor to check they stay inside a room that is not this one.
+
+Optics — fog, beam gains, albedo — live in `previz/optics.json` per venue, with
+the re-sweep procedure written in the file. A room with no profile inherits
+despacio's numbers and the doctor says so, because inherited optics render
+perfectly happily and render like somewhere else.
 
 Anything that emits Art-Net will drive it:
 

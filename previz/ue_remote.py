@@ -28,6 +28,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -36,27 +37,122 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent
 PROJECT = REPO / "previz" / "unreal" / "CosmosPrevis.uproject"
 
-# Where the engine keeps the client library. Newest first, so a machine with
-# several engines installed side by side uses the one the project targets.
-ENGINE_ROOTS = [
-    Path(r"C:\Program Files\Epic Games\UE_5.8"),
-    Path(r"C:\Program Files\Epic Games\UE_5.7"),
-]
 REMOTE_EXEC_RELPATH = Path(
     "Engine/Plugins/Experimental/PythonScriptPlugin/Content/Python/remote_execution.py")
 
 DISCOVERY_TIMEOUT = 8.0
+
+# Where the Epic launcher records what it installed. Authoritative when it
+# exists, which is why it is consulted before any guess at a path -- an engine
+# installed to a second drive is completely ordinary and is invisible to a
+# hardcoded list.
+LAUNCHER_MANIFESTS = [
+    Path(r"C:\ProgramData\Epic\UnrealEngineLauncher\LauncherInstalled.dat"),
+    Path("/Users/Shared/Epic/UnrealEngineLauncher/LauncherInstalled.dat"),
+]
+
+# Conventional install locations, used only when the manifest and the registry
+# have nothing to say -- a source build, or a Linux machine, where there is no
+# launcher to ask.
+CONVENTIONAL = [
+    Path(r"C:\Program Files\Epic Games"),
+    Path("/Users/Shared/Epic Games"),
+    Path.home() / "UnrealEngine",
+    Path("/opt/UnrealEngine"),
+]
 
 
 class NoEditorError(RuntimeError):
     """No editor answered the discovery ping."""
 
 
+def _from_manifest() -> list[Path]:
+    """Engines the Epic launcher says it installed."""
+    out = []
+    for manifest in LAUNCHER_MANIFESTS:
+        if not manifest.is_file():
+            continue
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8-sig"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for entry in data.get("InstallationList", []):
+            location = entry.get("InstallLocation")
+            # `AppName` is `UE_5.8` for an engine and something else entirely
+            # for a game or a plugin, which share this manifest.
+            if location and str(entry.get("AppName", "")).startswith("UE_"):
+                out.append(Path(location))
+    return out
+
+
+def _from_registry() -> list[Path]:
+    """Engines the Windows registry knows about, launcher and source builds."""
+    if sys.platform != "win32":
+        return []
+    try:
+        import winreg
+    except ImportError:
+        return []
+    out = []
+    for hive, key, value_is_path in (
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\EpicGames\Unreal Engine", False),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Epic Games\Unreal Engine\Builds", True)):
+        try:
+            with winreg.OpenKey(hive, key) as handle:
+                if value_is_path:
+                    # Source builds: the VALUES are the paths, keyed by a GUID.
+                    for i in range(winreg.QueryInfoKey(handle)[1]):
+                        _, path, _ = winreg.EnumValue(handle, i)
+                        out.append(Path(path))
+                else:
+                    # Launcher installs: a SUBKEY per version, each with
+                    # InstalledDirectory.
+                    for i in range(winreg.QueryInfoKey(handle)[0]):
+                        version = winreg.EnumKey(handle, i)
+                        with winreg.OpenKey(handle, version) as sub:
+                            path, _ = winreg.QueryValueEx(sub, "InstalledDirectory")
+                            out.append(Path(path))
+        except OSError:
+            continue
+    return out
+
+
+def _conventional() -> list[Path]:
+    out = []
+    for parent in CONVENTIONAL:
+        if (parent / REMOTE_EXEC_RELPATH).exists():
+            out.append(parent)                 # the engine root itself
+        try:
+            out.extend(sorted(p for p in parent.iterdir()
+                              if p.is_dir() and p.name.startswith("UE_")))
+        except OSError:
+            continue
+    return out
+
+
+def _version_key(root: Path) -> tuple:
+    """Sort key that puts UE_5.10 after UE_5.9 rather than before it."""
+    digits = [int(n) for n in re.findall(r"\d+", root.name)]
+    return tuple(digits) or (0,)
+
+
 def _engine_roots() -> list[Path]:
-    """Engine installs to search, honouring UE_ENGINE_ROOT if it is set."""
+    """Engine installs to search, best guess first.
+
+    `UE_ENGINE_ROOT` always wins -- it is someone stating the answer. After
+    that: what the launcher recorded, what the registry knows (which is the only
+    place a SOURCE build appears), then conventional locations for machines with
+    neither. Newest last-resort first, so a box with several engines side by
+    side uses the newest rather than whichever was listed first in a constant.
+    """
     override = os.environ.get("UE_ENGINE_ROOT")
-    roots = [Path(override)] if override else []
-    return roots + [r for r in ENGINE_ROOTS if r not in roots]
+    found: list[Path] = [Path(override)] if override else []
+    discovered = _from_manifest() + _from_registry()
+    discovered += sorted(_conventional(), key=_version_key, reverse=True)
+    for root in discovered:
+        if root not in found:
+            found.append(root)
+    return found
 
 
 def load_remote_execution():

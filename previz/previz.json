@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Which event the previz builds and drives.",
+    "",
+    "This exists so the one-command path stays one command. go.py used to",
+    "call build_level.main() with no argument, which hardwired the documented",
+    "workflow to despacio even though every function it called had taken an",
+    "event since the day it was written.",
+    "",
+    "Overridden by COSMOS_EVENT in the environment, and by an explicit",
+    "--event. The environment wins over this file on purpose: this is what",
+    "the repo is set up for, the variable is one person looking at something",
+    "else for ten minutes, and that should not need a tracked file edited.",
+    "",
+    "A path works as well as a name, so an event on a stick at a venue needs",
+    "no special case."
+  ],
+  "event": "despacio"
+}

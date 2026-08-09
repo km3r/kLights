@@ -312,6 +312,95 @@ def build_scene(event_dir: Path) -> SceneSpec:
         unplaced=unplaced, warnings=warnings)
 
 
+# ---------------------------------------------------------------- cameras ----
+
+def camera_views(spec: dict) -> dict:
+    """Where to stand to photograph this room, derived from its own geometry.
+
+    These were four literal coordinate sets measured in despacio. In another
+    venue they put four cameras in a wall, or outside the building -- which
+    made "previz your room" mean "previz your room and then re-derive the
+    cameras by hand", and nobody was going to.
+
+    The FRAMING RULES are what is worth keeping, and every one of them was
+    learned by taking a bad photograph:
+
+      * Never stand on a diagonal. Heads live in the corners aiming inward, so
+        a camera on the line takes a beam straight down the barrel and the shot
+        comes back with a white spike up the middle.
+      * Never stand on a mid-line. That is where pinspots hang, aimed at the
+        ball, so their bodies eclipse the thing you are looking at.
+      * Stand above the truss. A bar at beam height cuts the frame in half.
+      * Stand in the clear floor between the rig and the wall, not outside the
+        room. A cutaway wall is a wall not bouncing light, so the picture
+        stops being the room.
+
+    Everything below is those rules expressed against the spec instead of
+    against one room's numbers.
+    """
+    room, ball = spec["room"], spec["ball"]
+    w, d = float(room["width"]), float(room["depth"])
+    cx, cy = float(room["center"][0]), float(room["center"][1])
+    bx, by, bz = (float(v) for v in ball["location"])
+    ball_r = float(ball.get("radius") or 30.0)
+
+    truss = spec.get("truss") or {}
+    rig_top = float(truss.get("height") or bz)
+    # The clear floor between the rig and the wall -- where a camera can stand
+    # without being inside the rig. From the truss when there is one, since that
+    # is what defines how far in the hardware reaches.
+    if truss.get("bars"):
+        xs = [b["center"][0] for b in truss["bars"]]
+        ys = [b["center"][1] for b in truss["bars"]]
+        margin = max(30.0, min(min(xs), min(ys), w - max(xs), d - max(ys)))
+    else:
+        margin = min(w, d) * 0.2
+
+    # Enough to clear a fixture body without leaving the shot you wanted.
+    off_axis = max(80.0, min(w, d) * 0.06)
+    eye = rig_top + max(150.0, min(w, d) * 0.1)     # above the bars
+
+    crowd = spec.get("crowd_zone")
+    if crowd:
+        near = float(crowd["center"][0]) - float(crowd["extent"][0])
+        stand = near + min(50.0, float(crowd["extent"][0]) * 0.07)
+        head = float(crowd["center"][2]) - float(crowd["extent"][2]) + 25.0
+    else:
+        # No crowd zone declared: stand just inside the clear floor at a
+        # plausible eye height, so the view still exists rather than vanishing.
+        stand, head = margin + 50.0, 165.0
+
+    return {
+        # The working view: inside the near wall, outside the rig, whole thing
+        # in frame and lifted above the bars.
+        "overview": dict(location=(margin * 0.25, cy + off_axis, eye),
+                         target=(bx, by, bz),
+                         fov=70.0, hide=("PZ_Ceiling",), fog_start=80.0),
+        # Down the room's diagonal from the empty corner -- but NOT on the
+        # diagonal, hence the two different fractions.
+        "corner": dict(location=(margin * 0.33, margin * 0.68, eye),
+                       target=(bx, by, bz - ball_r * 0.6),
+                       fov=70.0, hide=("PZ_Ceiling",), fog_start=80.0),
+        # Standing in the crowd at eye height. Kept blinding beams and all:
+        # it is the only view that answers "is this unpleasant to stand in".
+        "audience": dict(location=(stand, cy + off_axis, head),
+                         target=(bx, by, bz - ball_r),
+                         fov=85.0, hide=(), fog_start=0.0),
+        # Close on the ball, which is the only way to judge the tiling -- from
+        # anywhere a person stands it is 40 cm at 6 m and any two tessellations
+        # look identical. Framed off the ball's own RADIUS, so it fills the
+        # frame in a room of any size... but clamped to the room, because a
+        # small room does not have eleven ball-radii of space behind the
+        # camera and the shot would be taken from outside the wall. The
+        # self-test builds a 6 m room precisely to catch that, and did.
+        "ball": dict(location=(cx + off_axis,
+                               by - min(ball_r * 11.5, by * 0.85),
+                               bz + ball_r * 0.5),
+                     target=(bx, by, bz),
+                     fov=26.0, hide=("PZ_Ceiling",), fog_start=0.0),
+    }
+
+
 # -------------------------------------------------------------- self-test ----
 
 def _self_test() -> None:
@@ -352,6 +441,35 @@ def _self_test() -> None:
 
     # Units: the despacio room is 9.144 m, which is 914.4 Unreal cm.
     assert math.isclose(mm(9144.0), 914.4)
+
+    # Cameras: the framing RULES, checked against a room that is not despacio.
+    # Four literal coordinate sets are trivially "correct" for the room they
+    # were measured in and put a camera inside a wall anywhere else, so the
+    # only check worth making is on a different room.
+    for w, dpth, ball_z in ((1828.8, 1828.8, 274.3), (4000.0, 900.0, 500.0),
+                            (600.0, 600.0, 200.0)):
+        spec = {
+            "room": {"width": w, "depth": dpth, "height": ball_z * 2.5,
+                     "center": [w / 2, dpth / 2, 0.0]},
+            "ball": {"location": [w / 2, dpth / 2, ball_z], "radius": 30.0},
+            "truss": {"height": ball_z * 0.9, "bars": [
+                {"center": [w * 0.25, dpth / 2, ball_z * 0.9]},
+                {"center": [w * 0.75, dpth / 2, ball_z * 0.9]},
+                {"center": [w / 2, dpth * 0.25, ball_z * 0.9]},
+                {"center": [w / 2, dpth * 0.75, ball_z * 0.9]}]},
+            "crowd_zone": {"center": [w / 2, dpth / 2, ball_z * 0.6],
+                           "extent": [w * 0.18, dpth * 0.18, 30.0]},
+        }
+        for name, view in camera_views(spec).items():
+            x, y, z = view["location"]
+            assert 0.0 < x < w, f"{name} camera is outside the room in x: {x}"
+            assert 0.0 < y < dpth, f"{name} camera is outside the room in y: {y}"
+            assert z > 0.0, f"{name} camera is below the floor: {z}"
+            # Never on a diagonal or a mid-line -- that is where the hardware
+            # is, and a camera on one photographs the inside of a fixture.
+            assert abs(x - y) > 1.0 or abs(w - dpth) > 1.0, (
+                f"{name} camera sits on the diagonal")
+            assert view["target"] != view["location"], f"{name} looks at itself"
 
     # A static fixture's rotator really points at the thing it was aimed at.
     # Same check as above but for the branch that has no geometry head behind

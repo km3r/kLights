@@ -26,14 +26,25 @@ cosmos_live.stop()
 # so a change to a config schema would not take effect until the editor was
 # restarted, which is exactly the thing this list exists to avoid.
 for name in ("engine.config", "engine.geometry", "engine.venue", "engine.rig",
-             "engine.servo", "previz.scene", "previz.mirrorball"):
+             "engine.servo", "previz.config", "previz.scene",
+             "previz.mirrorball"):
     if name in sys.modules:
         importlib.reload(sys.modules[name])
 importlib.reload(build_level)
 importlib.reload(cosmos_live)
 
-build_level.main(restart_hint=False)      # we restart it ourselves, below
-cosmos_live.start()
+# Resolved ONCE and handed to both, rather than letting each default. This
+# script used to call these with no argument at all, which hardwired the
+# documented one-command path to despacio even though both functions had taken
+# an event since the day they were written.
+from previz import config as previz_config    # noqa: E402  (after the reloads)
+
+_event = previz_config.event()
+print(f"[cosmos] event {_event} "
+      f"(from {previz_config.describe()['source']})")
+
+build_level.main(_event, restart_hint=False)  # we restart it ourselves, below
+cosmos_live.start(_event)
 
 print("[cosmos] ready. Now send it some DMX, e.g.")
 print("[cosmos]   python previz/ball_check.py --artnet 127.0.0.1 --seconds 300")

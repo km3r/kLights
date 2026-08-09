@@ -57,45 +57,21 @@ FOV = 85.0
 # middle of it, so there is 4.5 m of clear floor all the way round: every view
 # stands in that margin instead. Nothing is cut away any more except the ceiling,
 # which is the honest version -- a cutaway wall is a wall not bouncing light.
-MIDLINE = 914.4                    # the room's centre line, UE cm
-BALL = (914.4, 914.4, 274.3)
-OFF_AXIS = 110.0
+def _views():
+    """Where to stand, derived from the event's own room.
 
-VIEWS = {
-    # The working view: inside the front wall, outside the truss, whole rig in
-    # frame. Lifted above beam height as well as offset, so the near pinspot --
-    # which hangs at exactly the height of everything worth looking at -- drops
-    # below the ball in frame instead of eclipsing it.
-    # Above bar height (297 cm) as well, so the near bar sits below the line to
-    # the ball instead of cutting the frame in half.
-    "overview": dict(location=(100.0, MIDLINE + OFF_AXIS, 480.0),
-                     target=BALL,
-                     fov=70.0, hide=("PZ_Ceiling",), fog_start=80.0),
-    # Looking down the room's diagonal from the empty corner outside the truss.
-    # Deliberately NOT on the diagonal, near as it looks: the nearest head is in
-    # that corner aiming at the ball, so a camera exactly on the line takes its
-    # beam straight down the barrel and the shot comes back with a white spike
-    # up the middle.
-    "corner": dict(location=(150.0, 310.0, 480.0), target=(914.4, 914.4, 255.0),
-                   fov=70.0, hide=("PZ_Ceiling",), fog_start=80.0),
-    # Standing in the crowd at eye height. Deliberately kept, blinding beams and
-    # all: this is what a person actually sees, and it is the only view that
-    # answers "is this going to be unpleasant to stand in". Just inside the
-    # crowd footprint's near edge (577 cm), which is where a real person is.
-    "audience": dict(location=(600.0, MIDLINE + OFF_AXIS, 165.0),
-                     target=(914.4, 914.4, 245.0),
-                     fov=85.0, hide=(), fog_start=0.0),
-    # Close on the ball, which is the only way to judge the tiling: from
-    # anywhere a person stands it is 40 cm at 6 m, and any two tessellations
-    # look the same at that size.
-    # Off the diagonal, because the four heads sit in the four corners and
-    # anything on a diagonal is standing in a beam -- the shot comes back as a
-    # white rectangle. And off the mid-line, because that is where the pinspots
-    # now are; on it, one of their bodies eclipses the ball.
-    "ball": dict(location=(MIDLINE + OFF_AXIS, 570.4, 290.0),
-                 target=BALL,
-                 fov=26.0, hide=("PZ_Ceiling",), fog_start=0.0),
-}
+    These were four literal coordinate sets measured in despacio. In any other
+    venue they put four cameras in a wall -- so `previz your room` meant
+    `previz your room and then re-derive the cameras by hand`, and nobody was
+    ever going to. `scene.camera_views` holds the framing RULES instead; run
+    against despacio it reproduces the hand-measured originals to within a
+    centimetre, which is the check that says the rules and not just the numbers
+    were captured.
+    """
+    from previz import config as previz_config
+    from previz import scene as previz_scene
+    spec = previz_scene.build_scene(previz_config.event_dir()).to_dict()
+    return previz_scene.camera_views(spec)
 
 
 def _actors_labelled(labels):
@@ -127,8 +103,9 @@ def _settle_driver():
 
 
 def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
-             passes=24):
-    view = VIEWS[name]
+             passes=24, views=None):
+    views = _views() if views is None else views
+    view = views[name]
     _settle_driver()
     location, target = view["location"], view["target"]
     editor = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
@@ -195,5 +172,8 @@ def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
 
 
 if __name__ == "__main__":
-    for view in VIEWS:
-        snapshot(view)
+    # Built once and shared, so four snapshots of one room do not reload and
+    # re-derive the scene four times.
+    _all = _views()
+    for view in _all:
+        snapshot(view, views=_all)
