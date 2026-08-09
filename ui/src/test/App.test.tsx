@@ -619,3 +619,68 @@ describe("navigation", () => {
     expect(location.hash).toBe("#setup");
   });
 });
+
+describe("patch", () => {
+  const openSetup = async (user: ReturnType<typeof userEvent.setup>) =>
+    goTo(user, /Setup/);
+
+  it("is locked until you say otherwise", async () => {
+    const user = userEvent.setup();
+    mount();
+    await openSetup(user);
+    // Locked: the summary shows, the editing controls do not. A re-addressed
+    // rig is a walk around the room with a torch, unlike every other control
+    // on this surface.
+    expect(screen.getByRole("button", { name: /Unlock to edit/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Autopatch$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add fixture/i })).toBeNull();
+  });
+
+  it("reveals a row per fixture once unlocked", async () => {
+    const user = userEvent.setup();
+    mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Unlock to edit/i }));
+    expect(screen.getByLabelText("Moving Head #1 address")).toBeTruthy();
+    expect(screen.getByLabelText("Pinspot #2 tags")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Autopatch$/i })).toBeTruthy();
+  });
+
+  it("sends an address change on blur, not per keystroke", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Unlock to edit/i }));
+
+    const field = screen.getByLabelText("Pinspot #1 address");
+    await user.clear(field);
+    await user.type(field, "300");
+    // Bound straight to the server this would have sent 3, then 30, then 300 --
+    // the first two of which are real addresses that clash with the movers.
+    expect(socket.commands.some((c) => c.type === "patch_address")).toBe(false);
+
+    await user.tab();
+    expect(socket.last()).toEqual({
+      type: "patch_address", name: "Pinspot #1", address: 300,
+    });
+  });
+
+  it("does not send anything when the address is unchanged", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Unlock to edit/i }));
+    const field = screen.getByLabelText("Pinspot #1 tags");
+    await user.click(field);
+    await user.tab();
+    expect(socket.commands.some((c) => c.type === "patch_tags")).toBe(false);
+  });
+
+  it("says so, permanently, when a saved patch is not the running one", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => { s.pending_patch = true; })));
+    await openSetup(user);
+    expect(screen.getByText(/saved but NOT running/i)).toBeTruthy();
+  });
+});

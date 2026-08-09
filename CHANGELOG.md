@@ -31,6 +31,15 @@ the only record of them until a roadmap doc lands.
   `events/<name>/.engine.lock` at startup; the CLI and MCP server check it. The
   engine reads its config once, so an edit mid-show leaves the file and the rig
   disagreeing with nothing on screen to explain it.
+- **A Patch section on the Setup tab** — add, remove, re-address, retag and
+  autopatch from the phone with the rig in front of you. A *section* rather than
+  a sixth tab, following Rig and Venue, which were tabs once and became sections
+  here because they are all one job. Locked by default: every other control on
+  that surface is recoverable by pressing it again, and a re-addressed rig is a
+  walk around the room with a torch. Nothing takes effect until the engine
+  restarts, and a standing banner says so until it does — the engine resolves
+  profiles, channel offsets and head indices once at startup, so a saved patch
+  and a running rig genuinely disagree in that window.
 - **Access tiers** — `view` / `operate` / `configure`, checked at the single
   point a command enters the show. A token is generated per run and printed
   inside the URL so it survives being a QR code; `--no-token` and `--bind`

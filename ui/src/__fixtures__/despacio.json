@@ -2,6 +2,70 @@
   "type": "state",
   "rev": 7,
   "version": "0.1.0",
+  "pending_patch": false,
+  "profiles": [
+    {
+      "manufacturer": "Amazon",
+      "model": "DerbyLaserParty",
+      "type": "Color Changer",
+      "modes": {
+        "default": 13
+      }
+    },
+    {
+      "manufacturer": "Chauvet",
+      "model": "Mini Kinta IRC 3D",
+      "type": "Color Changer",
+      "modes": {
+        "4-Channel": 4
+      }
+    },
+    {
+      "manufacturer": "Chauvet",
+      "model": "Scorpion Dual RGB 3D",
+      "type": "Color Changer",
+      "modes": {
+        "10-Channel": 10
+      }
+    },
+    {
+      "manufacturer": "MingJie",
+      "model": "MJ-OS-018 60W Beam",
+      "type": "Moving Head",
+      "modes": {
+        "9 Channel": 9,
+        "11 Channel": 11
+      }
+    },
+    {
+      "manufacturer": "UKing",
+      "model": "Par 36 Custom",
+      "type": "Color Changer",
+      "modes": {
+        "5 Channel": 5
+      }
+    },
+    {
+      "manufacturer": "UKing",
+      "model": "ZQ-B93 Pinspot RGBW",
+      "type": "Color Changer",
+      "modes": {
+        "6-channel": 6
+      }
+    },
+    {
+      "manufacturer": "YeeSite",
+      "model": "60W RGB Pixel Light Bar",
+      "type": "LED Bar (Pixels)",
+      "modes": {
+        "3 Channel": 3,
+        "5 Channel": 5,
+        "8 Channel": 8,
+        "90 Channel (Pixel)": 90,
+        "94 Channel (Pixel)": 94
+      }
+    }
+  ],
   "event": "despacio",
   "clock": {
     "bpm": 124.0,

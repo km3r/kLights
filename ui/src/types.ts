@@ -152,12 +152,25 @@ export interface Preset extends Selection {
   master?: number;
 }
 
+/** One fixture definition the engine can resolve, with its modes and their
+ *  channel counts. Only these manufacturer/model pairs can be patched. */
+export interface ProfileInfo {
+  manufacturer: string;
+  model: string;
+  type: string;
+  modes: Record<string, number>;
+}
+
 export interface EngineState {
   type: "state";
   rev: number;
   /** Engine version. The bundle is served from disk but a phone can hold a
    *  cached one, so this is the only reliable answer to "which engine is this". */
   version: string;
+  /** A patch edit is saved to rig.json that the running show is not using. */
+  pending_patch: boolean;
+  /** Fixture definitions available to patch, from shared/fixtures/. */
+  profiles: ProfileInfo[];
   event: string;
   taper: TaperState;
   clock: ClockState;
@@ -227,7 +240,16 @@ export type Command =
       }>; canopy?: Partial<{ enabled: boolean; height: number; radius: number }> }
   | { type: "taper"; crowd_level?: number; margin_deg?: number;
       slew_per_second?: number; enabled?: boolean }
-  | { type: "venue_save" };
+  | { type: "venue_save" }
+  | { type: "patch_add"; name: string; manufacturer: string; model: string;
+      mode: string; address?: number; universe?: number; tags?: string[];
+      position?: { x: number; y: number; z: number }; beam_deg?: number }
+  | { type: "patch_remove"; name: string }
+  | { type: "patch_address"; name: string; address: number; universe?: number }
+  | { type: "patch_tags"; name: string; tags: string[] }
+  | { type: "patch_position"; name: string;
+      position: { x: number; y: number; z: number } }
+  | { type: "patch_autopatch"; start?: number; universe?: number };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

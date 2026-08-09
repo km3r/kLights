@@ -292,6 +292,15 @@ class ShowController:
         # missed would be the one the UI displays.
         self.slots: dict[str, dict[str, str]] = {"color": {}, "level": {}}
         self.presets = load_presets(self.event_dir)
+        # Profiles, resolved once. The patch editor needs to size a fixture's
+        # channel footprint to answer "does this address clash", and rescanning
+        # shared/fixtures/ per keystroke on a phone is not the way.
+        self.profiles = rigmod.ProfileLibrary()
+        # Set when an edit has been written that the running show is not using.
+        # The UI turns this into a standing banner, because a patch that is
+        # saved and not loaded is exactly the state where the file and the rig
+        # disagree and nothing on screen says so.
+        self.pending_patch = False
         self._recompose()
 
     @property
@@ -837,6 +846,69 @@ class ShowController:
         if not self.ctx.taper.enabled:
             self.note("SAFETY TAPER DISABLED -- beams are no longer dimmed over the crowd")
 
+    # -- the patch ---------------------------------------------------------
+
+    def _patch(self, edit) -> None:
+        """Apply one patch edit to rig.json and report it.
+
+        Writes immediately rather than staging, because the alternative is a
+        second notion of "the patch" living in the server that the file does not
+        agree with, and a half-applied patch is worse than either state.
+
+        It does NOT take effect on the running show. The engine resolves
+        profiles, channel offsets and head indices once at startup, and
+        re-deriving them mid-frame would change what every layer is writing to
+        underneath a look that is up. So every edit says so: this is load-in
+        work, and the restart is part of it.
+
+        Note this is the one writer that does not check the lockfile. The lock
+        exists to stop an OUTSIDE tool editing behind a running engine's back;
+        this is that engine, and it is telling the operator what it did.
+        """
+        cfg = patchmod.load_rig_config(str(self.event_dir))
+        result = edit(cfg, self.profiles)
+        for problem in result.errors:
+            self.note(f"patch refused: {problem}")
+        if not result.ok:
+            return
+        for warning in result.warnings:
+            self.note(f"patch: {warning}")
+        patchmod.write_rig(str(self.event_dir), result.config)
+        self.pending_patch = True
+        self.note("patch saved to rig.json -- RESTART THE ENGINE to apply it. "
+                  "The running show is still using the rig it loaded at startup")
+
+    def _cmd_patch_add(self, m: dict, now: float) -> None:
+        self._patch(lambda cfg, lib: patchmod.add_fixture(
+            cfg, name=m["name"], manufacturer=m["manufacturer"],
+            model=m["model"], mode=m["mode"], address=m.get("address"),
+            universe=int(m.get("universe", 0)), tags=m.get("tags", ()),
+            position=m.get("position"), beam_deg=m.get("beam_deg"),
+            notes=m.get("notes", ""), lib=lib))
+
+    def _cmd_patch_remove(self, m: dict, now: float) -> None:
+        self._patch(lambda cfg, lib: patchmod.remove_fixture(
+            cfg, m["name"], lib=lib))
+
+    def _cmd_patch_address(self, m: dict, now: float) -> None:
+        self._patch(lambda cfg, lib: patchmod.set_address(
+            cfg, m["name"], int(m["address"]), m.get("universe"), lib=lib))
+
+    def _cmd_patch_tags(self, m: dict, now: float) -> None:
+        self._patch(lambda cfg, lib: patchmod.set_tags(
+            cfg, m["name"], list(m.get("tags", [])), lib=lib))
+
+    def _cmd_patch_position(self, m: dict, now: float) -> None:
+        pos = m["position"]
+        self._patch(lambda cfg, lib: patchmod.set_position(
+            cfg, m["name"], float(pos["x"]), float(pos["y"]), float(pos["z"]),
+            lib=lib))
+
+    def _cmd_patch_autopatch(self, m: dict, now: float) -> None:
+        self._patch(lambda cfg, lib: patchmod.autopatch(
+            cfg, universe=m.get("universe"), start=int(m.get("start", 1)),
+            lib=lib))
+
     def _cmd_venue_save(self, m: dict, now: float) -> None:
         """Write the live venue back to venue.json, preserving its comments.
 
@@ -937,6 +1009,12 @@ class ShowController:
             # So a phone that loaded a stale bundle from cache can be told which
             # engine it is actually driving, rather than the operator guessing.
             "version": __version__,
+            # An edit is on disk that the running show is not using. A patch
+            # saved and not loaded is precisely the state where the file and the
+            # rig disagree, so it gets a standing banner rather than a notice
+            # that scrolls away.
+            "pending_patch": self.pending_patch,
+            "profiles": patchmod.list_profiles(self.profiles),
             "event": self.rig.name,
             "clock": {"bpm": round(self.clock.bpm, 2),
                       "effective_bpm": round(self.clock.effective_bpm, 2),

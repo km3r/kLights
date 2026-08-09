@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Banner, Card } from "../components";
+import { PatchSection } from "./Patch";
 import { RigSection } from "./Rig";
 import { VenueSection } from "./Venue";
 import type { Command, EngineState, FixtureState } from "../types";
@@ -216,6 +217,8 @@ export function SetupTab({ state, send, name, setName }: {
               <div key={i} className="small mono muted">{n}</div>
             ))}
       </Card>
+
+      <PatchSection state={state} send={send} />
 
       <RigSection state={state} />
 
