@@ -41,6 +41,21 @@ the only record of them until a roadmap doc lands.
 - Same correction applied to `engine/safety.py`, the README, the Rig panel and
   the test commentary, so the codebase does not carry two framings.
 
+### Added — F15, the missing live controls
+
+- **Flash** — a momentary bump per group, held rather than latched, on the
+  Bright tab. It *sets* intensity rather than multiplying it, so it bumps a
+  group you have trimmed all the way down, which is the case it exists for. The
+  safety taper still applies after it. Released on pointer-up, pointer-leave and
+  pointer-cancel, and cleared on reconnect: a thumb sliding off the button or a
+  phone locking mid-press never sends a normal release, and a flash stuck on is
+  a group stuck at full.
+- **`auto_interval` and `palette_select` finally have senders.** Both have had
+  working handlers since F7 and nothing in the UI that sent one, so how often
+  the show rearranges itself was the only auto setting editable exclusively in
+  code. Interval buttons now sit under the Auto toggles, and a long-press on a
+  palette swatch selects it.
+
 ### Added — F15, the cue list
 
 - **The Night cue list is back.** The QLC+ show's six Collections — Warm Up,

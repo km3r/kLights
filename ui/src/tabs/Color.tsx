@@ -63,10 +63,22 @@ export function ColorTab({ state, send }: {
       }>
         <div className="grid small">
           {state.palette.map((c, i) => (
-            <button key={i} className="swatch"
+            <button key={i}
+                    className={state.palette_index === i ? "swatch on" : "swatch"}
                     style={{ background: rgbCss(c) }}
                     aria-label={`palette ${i}`}
-                    onClick={() => send({ type: "color", target, color: c })} />
+                    // Tap sets the target's colour; long-press makes it the
+                    // palette's own current entry, which is what auto-rotation
+                    // then advances from. `palette_select` had a handler since
+                    // F7 and no sender, so the palette could only be advanced
+                    // by the timer.
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      send({ type: "palette_select", index: i });
+                    }}
+                    onClick={() => send({ type: "color", target, color: c })}>
+              {state.palette_index === i && <span className="dot" />}
+            </button>
           ))}
         </div>
         <p className="small muted" style={{ marginBottom: 0 }}>

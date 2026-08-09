@@ -834,3 +834,54 @@ describe("cue list", () => {
     expect(screen.getByText(/end of the list/i)).toBeTruthy();
   });
 });
+
+describe("controls that had handlers but no sender", () => {
+  it("flash is held, not latched", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Bright/);
+    const button = screen.getByRole("button", { name: /^Movers$/ });
+    // A click fires on release, and a bump that lands when you let go is not a
+    // bump — so this has to be pointer down/up.
+    await user.pointer({ keys: "[MouseLeft>]", target: button });
+    expect(socket.last()).toEqual({ type: "flash", target: "corner movers" });
+    await user.pointer({ keys: "[/MouseLeft]", target: button });
+    expect(socket.last()).toEqual({
+      type: "flash", target: "corner movers", on: false });
+  });
+
+  it("releases the flash when the pointer slides off the button", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Bright/);
+    const button = screen.getByRole("button", { name: /^All$/ });
+    await user.pointer({ keys: "[MouseLeft>]", target: button });
+    // A thumb sliding off never sends a normal release, and a flash stuck on is
+    // a group stuck at full.
+    fireEvent.pointerLeave(button);
+    expect(socket.last()).toEqual({ type: "flash", target: "all", on: false });
+  });
+
+  it("sends auto_interval, which nothing sent before", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(screen.getByLabelText("looks every 4 phrases"));
+    expect(socket.last()).toEqual({
+      type: "auto_interval", axis: "looks", value: 4 });
+  });
+
+  it("sends palette_select, which nothing sent before", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Color/);
+    fireEvent.contextMenu(screen.getByLabelText("palette 3"));
+    expect(socket.last()).toEqual({ type: "palette_select", index: 3 });
+  });
+
+  it("clears any held flash on reconnect", async () => {
+    const socket = mount();
+    // The release never arrives if the socket drops mid-press, and the operator
+    // is then looking at a reconnected console that appears fine.
+    expect(socket.commands.some((c) => c.type === "flash_clear")).toBe(true);
+  });
+});

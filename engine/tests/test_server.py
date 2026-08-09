@@ -659,6 +659,62 @@ check("submit stamps the command with engine time, off the frame grid",
       f"arrival {at:.4f} vs last frame {controller.ctx.time:.4f}")
 
 
+# -- flash is momentary, and outranks a trim ----------------------------------
+print("\n11b. flash")
+
+
+def frame_now():
+    """Evaluate as the frame loop would.
+
+    `_attach_overrides` is the runner's on_show hook, so a command applied
+    directly does not reach the Show until a frame runs. Skipping this made the
+    first version of these checks report the same number three times, which
+    looked like a broken flash and was a broken harness.
+    """
+    controller.runner.sync_clock()
+    return statemod.evaluate(controller.ctx, controller.runner.show)
+
+
+controller.apply({"type": "level", "target": "corner movers", "value": 0.0}, None)
+dark = frame_now()
+movers = [f for f in controller.rig.fixtures if "corner movers" in f.tags]
+check("a group trimmed to zero is dark",
+      all(dark[f.fid].intensity < 1e-9 for f in movers),
+      f"{[round(dark[f.fid].intensity, 3) for f in movers]}")
+
+controller.apply({"type": "flash", "target": "corner movers"}, None)
+lit = frame_now()
+# The case flash exists for: bumping something you have pulled down. A
+# multiplier could never do this, which is why it sets rather than multiplies.
+# Full on, as limited by the master and the taper -- which for these heads is
+# 0.9 * 0.5, since they are aimed over the crowd. Asserting a bare threshold
+# instead would be asserting where the taper happens to be today.
+check("flash bumps it anyway, from a trim of zero",
+      all(abs(lit[f.fid].intensity
+              - controller.master * lit[f.fid].safety.taper) < 1e-9
+          for f in movers),
+      f"{[round(lit[f.fid].intensity, 3) for f in movers]} "
+      f"(master {controller.master} x taper "
+      f"{lit[movers[0].fid].safety.taper})")
+check("and the taper still applies after it",
+      all(lit[f.fid].intensity <= (lit[f.fid].safety.taper + 1e-9)
+          for f in movers if lit[f.fid].safety))
+
+controller.apply({"type": "flash", "target": "corner movers", "on": False}, None)
+released = frame_now()
+check("releasing it goes back to the trim",
+      all(released[f.fid].intensity < 1e-9 for f in movers),
+      f"{[round(released[f.fid].intensity, 3) for f in movers]}")
+
+# A pointer leaving the button while down never sends the release, and a flash
+# stuck on is a group stuck at full.
+controller.apply({"type": "flash", "target": "corner movers"}, None)
+controller.apply({"type": "flash_clear"}, None)
+check("flash_clear releases everything", controller.flashing == set(),
+      f"{controller.flashing}")
+controller.apply({"type": "level", "target": "corner movers", "clear": True}, None)
+
+
 client.close()
 server.stop()
 controller.stop()

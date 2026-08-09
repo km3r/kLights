@@ -147,6 +147,8 @@ export function BrightTab({ state, send }: {
         </p>
       </Card>
 
+      <Flash state={state} send={send} />
+
       <Dimmers state={state} send={send} />
 
       <Card title="What each fixture is actually at">
@@ -185,5 +187,44 @@ export function BrightTab({ state, send }: {
         </p>
       </Card>
     </>
+  );
+}
+
+/**
+ * Momentary bumps, one per group.
+ *
+ * Held, not latched: a latching flash is a level, and there is already a level
+ * right underneath this. It SETS intensity rather than multiplying it, so it
+ * works from a group trimmed to zero — which is the case it exists for.
+ *
+ * onPointerDown/Up rather than onClick, because a click fires on release and a
+ * bump that lands when you let go is not a bump. onPointerLeave and onPointerCancel
+ * are the ones that matter in practice: a thumb that slides off the button, or a
+ * phone that locks mid-press, never sends a normal release, and a flash stuck on
+ * is a group stuck at full.
+ */
+function Flash({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const targets = ["all", ...state.groups];
+  const release = (t: string) => send({ type: "flash", target: t, on: false });
+
+  return (
+    <Card title="Flash">
+      <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+        {targets.map((t) => (
+          <button key={t} style={{ flex: 1, minWidth: 96, minHeight: 56 }}
+                  className={state.flashing.includes(t) ? "on" : ""}
+                  onPointerDown={() => send({ type: "flash", target: t })}
+                  onPointerUp={() => release(t)}
+                  onPointerLeave={() => release(t)}
+                  onPointerCancel={() => release(t)}>
+            {t === "all" ? "All" : groupLabel(t)}
+          </button>
+        ))}
+      </div>
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        Held, not latched. Overrides a trim, so it bumps a group you have pulled
+        all the way down — the safety taper still applies after it.
+      </p>
+    </Card>
   );
 }

@@ -284,6 +284,10 @@ class ShowController:
         # the level slot and before the master -- so it trims a running pattern
         # rather than replacing it, and the master still governs the lot.
         self.level_overrides: dict[str, float] = {}
+        # Momentary bumps, by target. Held while a finger is down and released
+        # when it lifts -- the one control here that is not a state you leave
+        # somewhere, which is why it is a set rather than a level.
+        self.flashing: set[str] = set()
         self.jog: dict[str, tuple[int, int]] = {}
         self.captures: dict[str, list[calibmod.Capture]] = {}
 
@@ -693,6 +697,34 @@ class ShowController:
             self.level_overrides[target] = max(0.0, min(1.0, float(m["value"])))
         self._rebuild_overrides()
 
+    def _cmd_flash(self, m: dict, now: float) -> None:
+        """Momentary bump on a group, a fixture, or everything.
+
+        Held rather than latched: `on: false` on release. A latching flash is a
+        level, and there is already a level.
+
+        It sets intensity rather than multiplying it, so it works from a group
+        that is trimmed to zero -- which is the case it exists for. The safety
+        taper still runs after it, so a bump cannot put a beam anywhere a look
+        could not.
+        """
+        target = m.get("target", "all")
+        if m.get("on", True):
+            self.flashing.add(target)
+        else:
+            self.flashing.discard(target)
+        self._rebuild_overrides()
+
+    def _cmd_flash_clear(self, m: dict, now: float) -> None:
+        """Release every bump.
+
+        A pointer that leaves the button while down, or a phone that locks
+        mid-press, never sends the release -- and a flash stuck on is a group
+        stuck at full. The UI sends this on reconnect for that reason.
+        """
+        self.flashing.clear()
+        self._rebuild_overrides()
+
     def _rebuild_overrides(self) -> None:
         layers: list[statemod.Layer] = []
         for target, color in self.color_overrides.items():
@@ -702,6 +734,13 @@ class ShowController:
             tags = None if target == "all" else (target,)
             layers.append(statemod.intensity_layer(
                 lambda ctx, fixture, level=level: level, tags=tags))
+        # Flash last, so a bump outranks a hand trim that is dimming the same
+        # group -- pressing flash on something you just pulled down should make
+        # it bright, not multiply two numbers together and produce nothing.
+        # Still under the master and under safety, like every other override.
+        for target in self.flashing:
+            tags = None if target == "all" else (target,)
+            layers.append(statemod.on_layer(1.0, tags=tags))
         for name, (pan, tilt) in self.jog.items():
             layers.append(statemod.raw_pose_layer({name: (pan, tilt)}, intensity=1.0))
         self.override_layers = layers
@@ -1234,6 +1273,7 @@ class ShowController:
                 "max_seconds": self.ctx.strobe_policy.max_seconds,
             },
             "cues": self.cues.status() if self.cues else None,
+            "flashing": sorted(self.flashing),
             "fading": self.runner.fading,
             "macro": {"size": round(self.ctx.move_size, 3),
                       "spread": round(self.ctx.move_spread, 3),

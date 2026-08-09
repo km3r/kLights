@@ -72,6 +72,7 @@
       }
     ]
   },
+  "flashing": [],
   "fading": false,
   "macro": {
     "size": 1.0,
@@ -176,6 +177,10 @@
       "look_changes": false,
       "palette": true,
       "energy": false
+    },
+    "intervals": {
+      "looks": 2.0,
+      "palette": 4.0
     }
   },
   "looks": [

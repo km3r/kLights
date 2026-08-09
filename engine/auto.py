@@ -432,6 +432,12 @@ class AutoDirector:
                      "look_changes": self.config.look_changes,
                      "palette": self.config.palette,
                      "energy": self.config.energy},
+            # How often each timed axis fires, in phrases. Reported so the UI
+            # can show and change it: `auto_interval` has had a handler since
+            # F7 and nothing that sent one, which made the rate at which a show
+            # rearranges itself the one auto setting only editable in code.
+            "intervals": {"looks": self.config.change_every_phrases,
+                          "palette": self.config.palette_every_phrases},
         }
 
 

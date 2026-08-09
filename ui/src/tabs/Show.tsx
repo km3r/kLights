@@ -231,6 +231,34 @@ function Auto({ state, send }: { state: EngineState; send: (c: Command) => void 
                 onChange={(on) => send({ type: "auto", axis: "energy", on })} />
       </div>
 
+      {/* How often the timed axes fire. `auto_interval` has had a handler since
+          F7 and nothing that sent one, so the rate at which the show rearranges
+          itself was the one auto setting you could only change in code. */}
+      <div className="row tight" style={{ marginTop: "0.6rem", flexWrap: "wrap" }}>
+        {(["looks", "palette"] as const).map((axis) => (
+          <div key={axis} className="row tight" style={{ gap: "0.3rem" }}>
+            {/* "Colours every", not "Palette every": there is a Palette toggle
+                two lines above, and two controls whose labels both start with
+                the same word is ambiguous to read and ambiguous to click. */}
+            <span className="small muted">
+              {axis === "looks" ? "Looks every" : "Colours every"}
+            </span>
+            {[0.5, 1, 2, 4, 8].map((v) => (
+              <button key={v} className={
+                        Math.abs(auto.intervals[axis] - v) < 0.01 ? "small on" : "small"}
+                      // The accessible name comes from here, not the visible text,
+                      // so this has to avoid the "Palette" toggle above just as
+                      // the label does.
+                      aria-label={`${axis === "looks" ? "looks" : "colours"} `
+                                  + `every ${v} phrases`}
+                      onClick={() => send({ type: "auto_interval", axis, value: v })}>
+                {v}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
       {!auto.axes.timing && (
         <p className="small muted">
           Timing is off, so movement is frozen where it stands. Musical position

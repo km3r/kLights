@@ -42,6 +42,8 @@ export interface AutoState {
   palette_changes: number;
   last_change: string;
   axes: AutoAxes;
+  /** How often each timed axis fires, in phrases. */
+  intervals: { looks: number; palette: number };
 }
 
 export interface SafetyState {
@@ -183,6 +185,8 @@ export interface EngineState {
   } | null;
   /** A crossfade is in progress. */
   fading: boolean;
+  /** Targets currently bumped by a held flash. */
+  flashing: string[];
   /** What the rig is allowed to do with the shutter. `ceiling` is a position in
    *  the fixture's own slow-to-fast band, NOT a frequency — the profile
    *  declares no Hz. See docs/SAFETY.md. */
@@ -271,6 +275,8 @@ export type Command =
   | { type: "cue_back" }
   | { type: "cue"; index: number }
   | { type: "cue_reset" }
+  | { type: "flash"; target: string; on?: boolean }
+  | { type: "flash_clear" }
   | { type: "macro"; size?: number; spread?: number;
       center?: [number, number]; reset?: boolean };
 

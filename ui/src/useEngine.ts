@@ -81,6 +81,11 @@ export function useEngine() {
         backoff.current = RECONNECT_MIN;
         setStatus("open");
         ws.send(JSON.stringify({ type: "hello", name: nameRef.current }));
+        // A flash is held while a finger is down and released when it lifts. If
+        // the socket dropped between those two, the release never arrived and a
+        // group is stuck at full — with the operator looking at a reconnected
+        // console that appears fine. Cheap to send, and only ever a no-op.
+        ws.send(JSON.stringify({ type: "flash_clear" }));
       };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
