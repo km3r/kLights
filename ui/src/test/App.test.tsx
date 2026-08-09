@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
+import type { EngineState } from "../types";
 import {
   currentSocket, despacioState, installMockSocket, stateWith,
 } from "./mockSocket";
@@ -931,6 +932,84 @@ describe("patch", () => {
     await openSetup(user);
     await user.click(screen.getByRole("button", { name: /Apply now/i }));
     expect(socket.last()).toEqual({ type: "patch_apply" });
+  });
+});
+
+/**
+ * The DJ sync row.
+ *
+ * Every test here is about a failure state, because the success state is a word
+ * on a card and the failure states are what decide whether anyone trusts it.
+ */
+describe("dj sync", () => {
+  const driving = (edit: (s: EngineState["sync"]) => void = () => {}) =>
+    stateWith((s) => {
+      s.sync = {
+        listening: true, driving: true, age: 0.2, phrase: "Build",
+        phrase_ends_in: 16, deck: "2", track: "Cosmic Slop",
+      };
+      s.clock.source = "prolink";
+      edit(s.sync);
+    });
+
+  it("says nothing at all when no bridge is configured", () => {
+    mount();
+    // The fixture has the port closed, which is the normal case forever for
+    // anyone who never sets this up. A console that nags about an unused
+    // feature every night is a console people stop reading.
+    expect(screen.queryByText("DJ sync")).toBeNull();
+  });
+
+  it("shows the port as open before anything has spoken through it", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true };
+    })));
+    expect(screen.getByText("DJ sync")).toBeInTheDocument();
+    expect(screen.getByText(/nothing has spoken through it yet/i))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /take over/i })).toBeDisabled();
+  });
+
+  it("reports locked, with the phrase and what is playing", () => {
+    const socket = mount();
+    act(() => socket.push(driving()));
+    expect(screen.getByText("LOCKED")).toBeInTheDocument();
+    expect(screen.getByText("Cosmic Slop")).toBeInTheDocument();
+    expect(screen.getByText(/Build/)).toBeInTheDocument();
+    // 16 beats is 4 bars — counted down here from an absolute beat the engine
+    // holds, so a bridge can speak once a bar rather than once a beat.
+    expect(screen.getByText(/4 bar\(s\) left/)).toBeInTheDocument();
+  });
+
+  it("says loudly when the bridge has gone quiet", () => {
+    const socket = mount();
+    act(() => socket.push(driving((s) => { s.age = 9; })));
+    // THE failure this row exists for: the clock keeps free-running at the last
+    // tempo with `source` still naming it, so the console looks locked while it
+    // drifts away from a DJ nobody is listening to.
+    expect(screen.getByText("NO SIGNAL")).toBeInTheDocument();
+    expect(screen.getByText(/free-running on the tempo it left behind/i))
+      .toBeInTheDocument();
+  });
+
+  it("keeps take-over one tap away, always", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(driving()));
+    await user.click(screen.getByRole("button", { name: /take over/i }));
+    expect(socket.last()).toEqual({ type: "sync_off" });
+  });
+
+  it("distinguishes silence from a bridge it cannot read", () => {
+    const socket = mount();
+    act(() => socket.push(driving((s) => {
+      s.port = { port: 9000, bind: "127.0.0.1", received: 0, rejected: 12,
+                 last_reject: "127.0.0.1: b'\\x00'" };
+    })));
+    // "No bridge" and "a bridge sending something I cannot parse" look
+    // identical from behind the console and have completely different fixes.
+    expect(screen.getByText(/12 unreadable packet/i)).toBeInTheDocument();
   });
 });
 

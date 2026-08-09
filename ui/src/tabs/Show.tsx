@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Toggle } from "../components";
+import { Banner, Card, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type { Command, EngineState, Preset } from "../types";
 
@@ -21,6 +21,7 @@ export function ShowTab({ state, send }: {
       <Cues state={state} send={send} />
       <Now state={state} send={send} />
       <Presets state={state} send={send} />
+      <Sync state={state} send={send} />
       <Tempo state={state} send={send} />
       <Auto state={state} send={send} />
       <Panic state={state} send={send} />
@@ -355,6 +356,97 @@ function PresetEditor({ state, send, picked, onDeleted }: {
         Delete {preset.name}
       </button>
     </div>
+  );
+}
+
+/** Beyond this many seconds without a packet, a bridge is not driving any more,
+ *  it is a tempo somebody left behind. Two bars at 120 bpm — long enough that a
+ *  sparse sender does not flicker, short enough to notice before a whole
+ *  phrase has gone by. */
+const SYNC_STALE = 4;
+
+/**
+ * What the DJ link is doing, and how to take it back.
+ *
+ * Absent entirely when no port is open, because "you have not set this up" is
+ * not something a console should say every night to someone who never will.
+ *
+ * The rest of it exists for one failure: a bridge that dies leaves the timeline
+ * free-running at whatever tempo it last sent, with the clock still naming it.
+ * The console looks locked while it drifts away from a DJ nobody is listening
+ * to any more. So the age of the last packet is the loudest thing here, and
+ * taking over is always one tap — a bridge must never silently own the clock.
+ */
+function Sync({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const sync = state.sync;
+  if (!sync?.listening && !sync?.driving) return null;
+
+  const stale = sync.age != null && sync.age > SYNC_STALE;
+  const locked = sync.driving && !stale;
+
+  return (
+    <Card title="DJ sync" right={
+      <span className="small mono" style={{
+        color: locked ? "var(--good)" : stale ? "var(--bad)" : undefined,
+      }}>
+        {locked ? "LOCKED" : stale ? "NO SIGNAL" : "waiting"}
+      </span>
+    }>
+      {stale && (
+        <Banner kind="bad">
+          Nothing from <b>{state.clock.source}</b> for {Math.round(sync.age!)}s.
+          The show is free-running on the tempo it left behind — it has not
+          stopped, it has stopped being right.
+        </Banner>
+      )}
+
+      <div className="spread small">
+        <span className="muted">
+          {sync.driving ? <>source <b>{state.clock.source}</b></>
+            : "port open, nothing has spoken through it yet"}
+          {sync.deck && <> · deck {sync.deck}</>}
+        </span>
+        {sync.age != null && (
+          <span className="mono muted">{sync.age.toFixed(1)}s ago</span>
+        )}
+      </div>
+
+      {sync.track && (
+        <div className="small" style={{ marginTop: "0.3rem" }}>{sync.track}</div>
+      )}
+
+      {sync.phrase && (
+        <div className="small" style={{ marginTop: "0.3rem" }}>
+          Phrase <b>{sync.phrase}</b>
+          {/* Counted down here from an absolute beat the engine holds, rather
+              than from a number the bridge re-sends — which is what lets a
+              sender speak once a bar instead of once a beat. */}
+          {sync.phrase_ends_in != null && sync.phrase_ends_in > 0 && (
+            <span className="muted">
+              {" "}· {Math.ceil(sync.phrase_ends_in / 4)} bar(s) left
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="row" style={{ marginTop: "0.6rem" }}>
+        <button style={{ flex: 1 }} disabled={!sync.driving}
+                onClick={() => send({ type: "sync_off" })}>
+          Take over
+        </button>
+      </div>
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        {sync.driving
+          ? "Taking over leaves the tempo and the phase exactly where they are — it only changes who decides next."
+          : "Start a bridge and point it at the engine's sync port. bridges/prolink/README.md, or --fake to try it with no players."}
+        {sync.port && sync.port.rejected > 0 && (
+          <> <span style={{ color: "var(--warn)" }}>
+            {sync.port.rejected} unreadable packet(s) — something is sending,
+            but not in a shape this understands.
+          </span></>
+        )}
+      </p>
+    </Card>
   );
 }
 

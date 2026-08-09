@@ -1092,6 +1092,103 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         live.stop()
 
+# -- 15. the DJ tempo seam, end to end ----------------------------------------
+#
+# A datagram in, a moved show clock out, with no CDJs in the room. Proving the
+# whole downstream path at the desk is the point of building the seam before
+# the hardware exists.
+print("\n15. tempo ingest")
+from engine import sync as syncmod          # noqa: E402
+
+djs = ShowController(REPO / "events" / "despacio")
+try:
+    djs.enable_sync(port=0, bind="127.0.0.1")
+    sync_port = djs.sync.sock.getsockname()[1]
+    djs.start()
+    time.sleep(0.3)
+
+    before = djs.snapshot()
+    check("the clock starts on tap, not on a bridge",
+          before["clock"]["source"] != "prolink"
+          and before["sync"]["driving"] is False,
+          f"{before['clock']['source']}, {before['sync']}")
+    check("but the port reports itself as listening",
+          before["sync"]["listening"] is True)
+
+    syncmod.send({"bpm": 132.0, "beat_in_bar": 0, "source": "prolink",
+                  "phrase_measured": True, "phrase_label": "Build",
+                  "phrase_ends_in": 32.0, "deck": "2", "track": "Cosmic Slop"},
+                 port=sync_port)
+    deadline = time.time() + 3
+    while abs(djs.clock.bpm - 132.0) > 1e-6 and time.time() < deadline:
+        time.sleep(0.02)
+    after = djs.snapshot()
+    check("a datagram moves the show tempo",
+          abs(after["clock"]["bpm"] - 132.0) < 1e-6, f"{after['clock']['bpm']}")
+    check("and names what is driving it", after["clock"]["source"] == "prolink",
+          f"{after['clock']['source']}")
+    # The thing the whole milestone is for: phrase stops being counted from a
+    # tapped downbeat and starts being read off the player.
+    check("phrase becomes MEASURED rather than counted",
+          after["clock"]["phrase_measured"] is True)
+    check("and the phrase itself is reported",
+          after["sync"]["phrase"] == "Build"
+          and after["sync"]["track"] == "Cosmic Slop",
+          f"{after['sync']}")
+    check("with a countdown the UI can run without the bridge re-sending",
+          0 < after["sync"]["phrase_ends_in"] <= 32.0,
+          f"{after['sync']['phrase_ends_in']}")
+
+    # STALENESS. A bridge that dies leaves the timeline free-running at the last
+    # tempo with `source` still naming it -- the console looks locked while it
+    # drifts away from a DJ nobody is listening to.
+    check("the age of the last packet is reported",
+          after["sync"]["age"] is not None and after["sync"]["age"] < 5,
+          f"{after['sync']['age']}")
+    time.sleep(0.6)
+    check("and it grows while the bridge is quiet",
+          djs.snapshot()["sync"]["age"] > after["sync"]["age"],
+          f"{after['sync']['age']} -> {djs.snapshot()['sync']['age']}")
+
+    # Taking it back. The bridge must never silently own the clock.
+    held = djs.ctx.beat
+    djs.apply({"type": "sync_off"}, None)
+    took = djs.snapshot()
+    check("take-over returns the clock without moving the music",
+          took["clock"]["source"] == "tap"
+          and abs(took["clock"]["bpm"] - 132.0) < 1e-6
+          and djs.ctx.beat >= held,
+          f"{took['clock']['source']} at {took['clock']['bpm']}")
+    check("and drops the phrase, which was the bridge's claim not ours",
+          took["clock"]["phrase_measured"] is False
+          and took["sync"]["phrase"] is None, f"{took['sync']}")
+
+    # OSC on the same port, because beat-link-trigger speaks it and pointing it
+    # here is meant to be the entire integration.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.sendto(b"/beat-link/bpm\0\0,f\0\0" + struct.pack(">f", 140.0),
+                 ("127.0.0.1", sync_port))
+    deadline = time.time() + 3
+    while abs(djs.clock.bpm - 140.0) > 1e-3 and time.time() < deadline:
+        time.sleep(0.02)
+    check("an OSC message from beat-link-trigger drives it too",
+          abs(djs.clock.bpm - 140.0) < 1e-3, f"{djs.clock.bpm}")
+
+    # And the one that must never work: this port is a tempo seam, not a command
+    # channel. There is no token on a datagram, so the guard has to be that the
+    # port simply cannot express anything else.
+    fixtures_before = len(djs.rig.fixtures)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.sendto(b'{"type": "panic"}', ("127.0.0.1", sync_port))
+        s.sendto(b'{"type": "patch_remove", "name": "Pinspot #1"}',
+                 ("127.0.0.1", sync_port))
+    time.sleep(0.4)
+    check("the tempo port cannot panic the rig or edit the patch",
+          not djs.runner.panicked and len(djs.rig.fixtures) == fixtures_before,
+          f"panicked={djs.runner.panicked}, {len(djs.rig.fixtures)} fixtures")
+finally:
+    djs.stop()
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

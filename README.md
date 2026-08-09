@@ -98,6 +98,38 @@ console. It defaults to Perform on a phone and Design on a laptop, remembers
 itself per device, and is always one tap from the other — it is a preference
 about screen space, not a permission. Access is what `--token` decides.
 
+## Tempo from the DJ
+
+The engine can take tempo, bar phase and **phrase** from the players rather than
+from a tapped downbeat:
+
+```bash
+python -m engine.server --sync-port 9000
+```
+
+**No analysis happens here.** Pro DJ Link has been reverse-engineered thoroughly
+enough that beat position and rekordbox's own phrase labels are a *read*, not a
+derivation — so everything that knows what a CDJ is lives in a sidecar under
+[`bridges/`](bridges/prolink/README.md), in its own environment, and the engine
+stays stdlib-only. Its whole side of this is a `sync` command and a UDP port
+that speaks JSON or OSC.
+
+Provable with no hardware at all:
+
+```bash
+python bridges/prolink/bridge.py --fake
+```
+
+That is a synthetic 128 BPM feed with a scripted Intro → Build → Drop → Outro
+timeline, so the console's Sync row, `phrase_measured`, and anything driven by
+phrase can all be exercised at a desk.
+
+The Show tab's **DJ sync** row reports the source, the current phrase, bars
+until the next one, and — the part that matters — **how long ago the last packet
+arrived**. A bridge that dies leaves the show free-running at the tempo it was
+left holding, which looks exactly like a bridge that is working. Take-over is
+always one tap, and leaves the tempo and phase where they are.
+
 The Move tab opens with a **plan view**: the room from above, with every lit
 beam drawn to where it actually lands at the width it actually spreads to. It
 needs no GPU and nothing installed — every number in it is already in the

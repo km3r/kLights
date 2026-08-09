@@ -161,6 +161,25 @@ class MasterClock:
         # look change on a phrase is trustworthy or whether to fall back to bars.
         self.phrase_measured = False
 
+        # What the source says this section of the track IS -- rekordbox's own
+        # phrase analysis, read off the player rather than inferred here. None
+        # when nothing is supplying it, which is the normal case.
+        self.phrase_label: Optional[str] = None
+        # Cumulative beat the current phrase ends at, so the UI can count down
+        # live instead of the bridge re-sending a countdown every packet.
+        self.phrase_ends_at: Optional[float] = None
+
+        # WALL time of the last accepted sync, and the wall clock that measured
+        # it. Both, because everything else here runs on the engine's monotonic
+        # frame time and staleness is a real-world duration.
+        #
+        # This exists because the failure mode is silent: a bridge that dies
+        # leaves the timeline free-running at the last tempo it sent, with
+        # `source` still naming it. The show carries on looking locked while it
+        # drifts away from a DJ nobody is listening to any more. Reported, so
+        # the console can say so and the operator can take it back.
+        self.synced_at: Optional[float] = None
+
     # -- reading -----------------------------------------------------------
 
     @property
@@ -263,9 +282,38 @@ class MasterClock:
     def taps(self) -> int:
         return self._tap.taps
 
+    def align_bar(self, now: float, beat_in_bar: float) -> None:
+        """Put the bar grid where the source says it is, without moving tempo.
+
+        This is what a Pro DJ Link beat packet is FOR. It carries beat-within-bar
+        directly, so the downbeat stops being something an operator taps and
+        starts being something the player states -- and `phrase_measured` stops
+        being a polite fiction.
+
+        Corrects to the NEAREST equivalent beat, so the grid never moves more
+        than half a bar however wrong it was. A source that is a whole bar out
+        would otherwise be corrected by three beats in one frame, which is a
+        visible lurch in every running move, and it would happen on the very
+        first packet of every set.
+
+        Cumulative beat position is dragged along with the grid rather than
+        recomputed, which is the same reason `sync` warns against passing `beat`
+        continuously: the phase has to stay continuous or the moves judder.
+        """
+        self._reanchor(now)
+        bpb = self.meter.beats_per_bar
+        delta = (float(beat_in_bar) - self._anchor_beat) % bpb
+        if delta > bpb / 2:
+            delta -= bpb
+        self._anchor_beat += delta
+
     def sync(self, now: float, bpm: Optional[float] = None,
              beat: Optional[float] = None, source: Optional[str] = None,
-             phrase_measured: Optional[bool] = None) -> None:
+             phrase_measured: Optional[bool] = None,
+             beat_in_bar: Optional[float] = None,
+             phrase_label: Optional[str] = None,
+             phrase_ends_in: Optional[float] = None,
+             at: Optional[float] = None) -> None:
         """Accept a position from an external source -- Pro DJ Link, MIDI clock,
         an audio beat tracker.
 
@@ -273,6 +321,15 @@ class MasterClock:
         it as a JUMP is correct for a re-sync and wrong for continuous tracking,
         so a source that fires every beat should pass bpm only and let the
         timeline free-run between corrections; otherwise it will judder.
+
+        `beat_in_bar` is the safe way for a per-beat source to keep the grid
+        honest -- it corrects phase by at most half a bar and never touches
+        cumulative position. Prefer it to `beat` for anything that fires often.
+
+        `at` is wall time, recorded so staleness can be reported. Everything
+        else here runs on the engine's monotonic frame clock; how long ago a
+        bridge last spoke is a real-world duration, and the two are not the
+        same thing.
         """
         self._reanchor(now)
         if bpm is not None:
@@ -281,10 +338,31 @@ class MasterClock:
             self._bpm = float(bpm)
         if beat is not None:
             self._anchor_beat = float(beat)
+        if beat_in_bar is not None:
+            self.align_bar(now, beat_in_bar)
         if source is not None:
             self.source = source
         if phrase_measured is not None:
             self.phrase_measured = phrase_measured
+        if phrase_label is not None:
+            # Empty string clears it: a bridge that has lost track of the phrase
+            # must be able to SAY so, and leaving the last label up would have
+            # the console confidently announcing a drop that ended minutes ago.
+            self.phrase_label = phrase_label or None
+        if phrase_ends_in is not None:
+            self.phrase_ends_at = self._anchor_beat + float(phrase_ends_in)
+        if at is not None:
+            self.synced_at = float(at)
+
+    def unsync(self, source: str = "tap") -> None:
+        """Hand the clock back. Tempo and phase stay exactly where the source
+        left them -- taking over is not a reason to change what the lights are
+        doing, only who decides it next."""
+        self.source = source
+        self.phrase_measured = False
+        self.phrase_label = None
+        self.phrase_ends_at = None
+        self.synced_at = None
 
     def start(self, now: float) -> None:
         if not self.running:

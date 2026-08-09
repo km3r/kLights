@@ -11,6 +11,45 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F16, tempo and phrase from the DJ
+
+**No analysis is written here.** No beat tracking, no DSP, no audio in the
+chain. Pro DJ Link is reverse-engineered thoroughly enough that beat position
+and rekordbox's own phrase labels are a *read*; anything inferred from a room
+mic would be worse data, obtained harder.
+
+- **`engine/sync.py`** — a `sync` command and an opt-in UDP port
+  (`--sync-port`), speaking **JSON or OSC**. OSC because beat-link-trigger is
+  the reference implementation of this protocol and already has phrase triggers:
+  the engine reading its wire format directly is what turns route 1 into "point
+  it at this port" rather than a shim. ~40 lines, no dependency.
+- **`MasterClock.align_bar`** — the safe way for a per-beat source to keep the
+  grid honest. Corrects to the nearest equivalent beat, so phase never moves
+  more than half a bar however wrong the grid was; passing absolute `beat` every
+  packet re-anchors the timeline and makes every move judder, which is the trap
+  `sync` has always documented and now has an alternative to.
+- `phrase_label` and a countdown stored as an **absolute** end beat, so a bridge
+  can speak once a bar rather than once a beat and the UI still counts down live.
+- **Staleness is reported.** A bridge that dies leaves the show free-running at
+  the tempo it was left holding with the clock still naming it — locked-looking
+  and wrong. The Show tab's Sync row shows the age of the last packet, says NO
+  SIGNAL past four seconds, and take-over is always one tap.
+- **`bridges/prolink/`** — a sidecar, stdlib-only, that never shares a process
+  with the engine. `--fake` is a synthetic feed with a scripted Intro → Build →
+  Drop → Outro timeline, so the whole downstream path is provable at a desk with
+  no players in the room; `--replay` plays back a captured session. `--live`
+  refuses honestly and names the two routes rather than half-working.
+
+**The security shape**, since this is a write path into the show clock that no
+token guards — a datagram cannot be challenged:
+
+- off unless `--sync-port` is given;
+- loopback by default (`--sync-bind` to change it);
+- the listener parses into a **fixed set of clock fields** and the engine builds
+  the command. This port cannot patch a fixture, write a calibration or panic
+  the rig whatever is sent to it. That is structural, and both `test_sync` and
+  `test_server` assert it by firing exactly those commands at it.
+
 ### Added — F17a, the plan view
 
 The previz that will actually get used. Unreal renders a beautiful room and

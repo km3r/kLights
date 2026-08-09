@@ -185,6 +185,26 @@ export interface ProfileInfo {
   modes: Record<string, number>;
 }
 
+/** The DJ link. `listening` is whether the port is open; `driving` is whether
+ *  anything has ever spoken through it. Both, because "no bridge configured"
+ *  and "a bridge that has gone quiet" need different words on screen. */
+export interface SyncState {
+  listening: boolean;
+  driving: boolean;
+  /** Seconds since the last accepted packet, or null if there has been none.
+   *  The one number that separates LOCKED from a bridge that died holding the
+   *  tempo it last sent. */
+  age: number | null;
+  phrase: string | null;
+  phrase_ends_in: number | null;
+  deck: string | null;
+  track: string | null;
+  port?: {
+    port: number; bind: string; received: number; rejected: number;
+    last_reject: string | null;
+  };
+}
+
 export interface EngineState {
   type: "state";
   rev: number;
@@ -216,6 +236,7 @@ export interface EngineState {
   event: string;
   taper: TaperState;
   clock: ClockState;
+  sync: SyncState;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
@@ -310,7 +331,10 @@ export type Command =
   /** How fast ONE slot's chase runs. Distinct from `speed`, which is the clock
    *  and moves the whole show including cue holds and auto boundaries. */
   | { type: "rate"; slot: Slot; value: number }
-  | { type: "rate"; reset: true };
+  | { type: "rate"; reset: true }
+  /** Take the clock back from a bridge. Tempo and phase stay put; only who
+   *  decides next changes. */
+  | { type: "sync_off" };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

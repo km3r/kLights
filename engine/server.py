@@ -56,6 +56,7 @@ from . import patch as patchmod
 from . import rig as rigmod
 from . import safety as safetymod
 from . import state as statemod
+from . import sync as syncmod
 from . import venue as venuemod
 from .output import ArtNetOutput, NullOutput
 from .runner import Runner
@@ -310,6 +311,14 @@ class ShowController:
         # up" would need syncing on every auto change, and the one that got
         # missed would be the one the UI displays.
         self.slots: dict[str, dict[str, str]] = {"color": {}, "level": {}}
+        # Tempo ingest, opened only by `enable_sync`. See engine/sync.py for why
+        # an open UDP port that can move the show clock is off by default.
+        self.sync: Optional[syncmod.SyncListener] = None
+        # What the bridge says is playing. Held here rather than on the clock
+        # because it is not musical time -- it is a label for the operator, and
+        # a clock that carried track titles would be a clock with opinions.
+        self.sync_deck: Optional[str] = None
+        self.sync_track: Optional[str] = None
         self.presets = load_presets(self.event_dir)
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
@@ -357,6 +366,18 @@ class ShowController:
 
     # -- lifecycle ---------------------------------------------------------
 
+    def enable_sync(self, port: int, bind: str = "127.0.0.1") -> None:
+        """Open the tempo ingest port. Opt-in, and off unless asked for.
+
+        The callback goes through `submit`, not `apply`, so a datagram lands at
+        a frame boundary like every other command -- a bridge sending on its own
+        thread must not be able to move the tempo halfway through an evaluation.
+        """
+        self.sync = syncmod.SyncListener(
+            on_sync=lambda fields: self.submit({"type": "sync", **fields}, None),
+            port=port, bind=bind)
+        self.sync.start()
+
     def start(self) -> None:
         # A marker so the editing tools know not to rewrite this event's config
         # underneath a running show. Nothing is corrupted if they do -- the
@@ -373,6 +394,8 @@ class ShowController:
         self.runner.start()
 
     def stop(self) -> None:
+        if self.sync is not None:
+            self.sync.stop()
         self.runner.stop()
         self.output.close()
         try:
@@ -1120,6 +1143,52 @@ class ShowController:
             self.ctx.move_spread = 0.0
             self.ctx.move_center = (0.0, 0.0)
 
+    def _cmd_sync(self, m: dict, now: float) -> None:
+        """A position from something that already knows -- a CDJ, rekordbox.
+
+        Arrives from the UDP port or over the WebSocket; both end here, so there
+        is one place a external tempo can enter the show and one place that
+        decides what it is allowed to do.
+
+        A source that fires every beat should send `bpm` and `beat_in_bar` and
+        leave `beat` alone. `beat` is a jump, correct for a re-sync and wrong for
+        tracking -- `MasterClock.sync` says so, and this is the caller it is
+        talking about.
+        """
+        self.clock.sync(
+            now,
+            bpm=m.get("bpm"),
+            beat=m.get("beat"),
+            beat_in_bar=m.get("beat_in_bar"),
+            # The bridge naming itself is what makes the console able to say
+            # WHICH thing is driving the clock, rather than just "not you".
+            source=m.get("source", "sync"),
+            phrase_measured=m.get("phrase_measured"),
+            phrase_label=m.get("phrase_label"),
+            phrase_ends_in=m.get("phrase_ends_in"),
+            at=syncmod.now())
+        if "deck" in m:
+            self.sync_deck = m["deck"]
+        if "track" in m:
+            self.sync_track = m["track"]
+
+    def sync_status(self) -> dict:
+        return _sync_status(self)
+
+    def _cmd_sync_off(self, m: dict, now: float) -> None:
+        """Take the clock back by hand.
+
+        Always available, and it is the reason the sync source is displayed at
+        all: a bridge must never silently own the tempo. Tempo and phase are
+        left exactly where the bridge had them, because taking over is a
+        decision about who decides next, not a reason to move the lights.
+        """
+        was = self.clock.source
+        self.clock.unsync()
+        self.sync_deck = self.sync_track = None
+        self.note(f"took the clock back from {was!r} at "
+                  f"{self.clock.bpm:.1f} bpm")
+
     def _cmd_rate(self, m: dict, now: float) -> None:
         """How fast one slot's chase runs, relative to everything else.
 
@@ -1408,6 +1477,7 @@ class ShowController:
                       "source": self.clock.source,
                       "phrase_measured": self.clock.phrase_measured,
                       "taps": self.clock.taps},
+            "sync": self.sync_status(),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -1533,6 +1603,36 @@ def arrange_presets(presets: list[dict]) -> list[dict]:
         out.append(p)
     out.sort(key=_at)
     return out
+
+
+def _sync_status(controller: "ShowController") -> dict:
+    """What the DJ link is doing, including when it is doing nothing.
+
+    `age` is the whole point. A bridge that dies leaves the timeline
+    free-running at whatever tempo it last sent, with `clock.source` still
+    naming it -- the console looks locked while it drifts away from a DJ nobody
+    is listening to. Reporting how long ago the last packet arrived is what lets
+    the UI say "LOCKED" and "no packets for 6s" as different things.
+    """
+    clock = controller.clock
+    listening = controller.sync
+    age = (None if clock.synced_at is None
+           else round(syncmod.now() - clock.synced_at, 2))
+    ends_in = None
+    if clock.phrase_ends_at is not None:
+        ends_in = round(clock.phrase_ends_at - controller.ctx.beat, 2)
+    return {
+        # Distinct from `clock.source`: a bridge can be connected and driving,
+        # or connected and quiet, or not there at all.
+        "listening": listening is not None,
+        "driving": clock.synced_at is not None,
+        "age": age,
+        "phrase": clock.phrase_label,
+        "phrase_ends_in": ends_in,
+        "deck": controller.sync_deck,
+        "track": controller.sync_track,
+        **({"port": listening.status()} if listening is not None else {}),
+    }
 
 
 def load_presets(event_dir: Path) -> list[dict]:
@@ -1980,6 +2080,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                              "one each run, printed in the URL below")
     parser.add_argument("--no-token", action="store_true",
                         help="no access control -- every client may do anything")
+    parser.add_argument("--sync-port", type=int, metavar="PORT",
+                        help="listen for tempo from a DJ bridge (JSON or OSC "
+                             "over UDP). Off unless given -- see engine/sync.py")
+    parser.add_argument("--sync-bind", default="127.0.0.1", metavar="IP",
+                        help="interface for --sync-port. Loopback by default, "
+                             "because the bridge normally runs on this machine "
+                             "and the port has no authentication")
     args = parser.parse_args(argv)
 
     # A token by default, because the alternative default is that anyone who can
@@ -1992,6 +2099,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                                 bpm=args.bpm)
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
+
+    if args.sync_port:
+        controller.enable_sync(args.sync_port, args.sync_bind)
 
     controller.start()
     server.start()
@@ -2025,6 +2135,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("strobe  UNLIMITED -- no ceiling, no duration cap "
               "(docs/SAFETY.md)")
     print(f"timing  {', '.join(controller.runner.applied_timing)}")
+    # Said out loud because it is a write path into the show clock that no token
+    # guards -- a datagram cannot be challenged. Anyone reading this line should
+    # be able to tell whether it is bound where they meant.
+    if controller.sync is not None:
+        print(f"sync    tempo ingest on {args.sync_bind}:{args.sync_port} "
+              f"(UDP, JSON or OSC, unauthenticated)")
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     if token is None:
         print("access  OPEN -- anyone who can reach this port has full control")

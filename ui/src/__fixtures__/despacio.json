@@ -158,6 +158,15 @@
     "phrase_measured": false,
     "taps": 0
   },
+  "sync": {
+    "listening": false,
+    "driving": false,
+    "age": null,
+    "phrase": null,
+    "phrase_ends_in": null,
+    "deck": null,
+    "track": null
+  },
   "auto": {
     "look": "Lazy Circle",
     "held": true,
