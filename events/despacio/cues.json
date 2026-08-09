@@ -1,0 +1,112 @@
+{
+  "$schema": "../../schemas/cues.schema.json",
+  "_comment": [
+    "THE NIGHT, as one GO button. Rebuilt 2026-08-08 from the shape the QLC+",
+    "show ran: Warm Up -> Idle -> Deep -> Spiral -> Cathedral -> Peak -> Build",
+    "-> Drop -> Landing. Those were six Collections in the workspace and the",
+    "porter skipped every one of them ('Collection -- rebuild with motion",
+    "primitives'), so the cue list has been missing since the port. This is it.",
+    "",
+    "A cue is the same three slots a preset is, plus a fade and an optional",
+    "hold. 'fade' and 'hold' are in BEATS, not seconds -- everything authored in",
+    "this engine is musical, and a cue list that ignored tempo would be the one",
+    "surface drifting out of the music it is cueing.",
+    "",
+    "Every 'hold' here is 0, which means every cue waits for GO. That is",
+    "deliberate and it is why the original worked: the operator decides when the",
+    "drop is. Set a hold on a cue only if you genuinely want it to leave on its",
+    "own.",
+    "",
+    "'macro' restores a shape where the cue wants a particular one. Cues that",
+    "omit it leave whatever is dialled in alone, so the list does not fight an",
+    "operator mid-set."
+  ],
+
+  "name": "Night",
+
+  "cues": [
+    {
+      "name": "Warm Up",
+      "movement": { "corner movers": "Heads - Ball" },
+      "color": { "corner movers": "Split Warm/Cool", "pinspots": "Pin Amber" },
+      "fade": 32,
+      "master": 0.55,
+      "macro": { "size": 0.6, "spread": 0 },
+      "notes": "Doors. Everything on the ball, small and warm, nothing moving fast enough to look at."
+    },
+    {
+      "name": "Idle",
+      "movement": { "corner movers": "Ball Wave" },
+      "color": { "corner movers": "Split Warm/Cool", "pinspots": "Pin Ball Glow" },
+      "fade": 32,
+      "master": 0.65,
+      "macro": { "size": 0.8, "spread": 0.25 },
+      "notes": "Room filling. The wave opens up and the heads stop moving together."
+    },
+    {
+      "name": "Deep",
+      "movement": { "corner movers": "Slow Sweep" },
+      "color": { "corner movers": "Duo Cyan/Pink", "pinspots": "Pin Ball Glow" },
+      "fade": 16,
+      "master": 0.75,
+      "macro": { "size": 1.0, "spread": 0.5 },
+      "notes": "Colour arrives. Spread to a half cycle so the sweep reads as a chase rather than a bar."
+    },
+    {
+      "name": "Spiral",
+      "movement": { "corner movers": "Ball Spiral" },
+      "color": { "corner movers": "Split Pink/Green" },
+      "fade": 16,
+      "macro": { "size": 1.2, "spread": 0.75 },
+      "notes": "Still on the ball, but the specks start travelling."
+    },
+    {
+      "name": "Cathedral",
+      "movement": { "corner movers": "Heads - Cathedral" },
+      "color": { "corner movers": "Split Warm/Cool", "pinspots": "Pin Amber" },
+      "fade": 24,
+      "master": 0.7,
+      "macro": { "size": 1.0, "spread": 0 },
+      "notes": "Up and out. The look everyone looks up for -- back to unison so the four columns read as one shape."
+    },
+    {
+      "name": "Peak",
+      "movement": { "corner movers": "Iris" },
+      "color": { "corner movers": "MH Pink" },
+      "fade": 8,
+      "master": 0.9,
+      "macro": { "size": 1.4, "spread": 0.5 },
+      "notes": "Converge and diverge. Bigger than authored, because the room is full by now."
+    },
+    {
+      "name": "Build",
+      "movement": { "corner movers": "Rise" },
+      "color": { "corner movers": "MH Pink" },
+      "fade": 8,
+      "speed": 2.0,
+      "master": 0.95,
+      "macro": { "size": 1.6, "spread": 0.75 },
+      "notes": "Vertical curtain at double speed. Passes through the ball twice a cycle, so the specks pulse on each pass."
+    },
+    {
+      "name": "Drop",
+      "movement": { "corner movers": "Drop" },
+      "color": { "corner movers": "Drop" },
+      "fade": 0,
+      "speed": 1.0,
+      "master": 1.0,
+      "macro": { "size": 1.0, "spread": 0 },
+      "notes": "A CUT, not a fade. The one cue on this list where fade 0 is the right answer."
+    },
+    {
+      "name": "Landing",
+      "movement": { "corner movers": "Heads - Ball" },
+      "color": { "corner movers": "Split Warm/Cool", "pinspots": "Pin Ball Glow" },
+      "fade": 48,
+      "speed": 0.5,
+      "master": 0.5,
+      "macro": { "size": 0.5, "spread": 0 },
+      "notes": "Long way down. Back where it started, smaller and slower. The list stops here rather than wrapping."
+    }
+  ]
+}

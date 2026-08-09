@@ -779,3 +779,58 @@ describe("strobe policy", () => {
     expect(screen.getByText(/Blocked entirely/i)).toBeTruthy();
   });
 });
+
+describe("cue list", () => {
+  it("does not claim a current cue before the first GO", async () => {
+    mount();
+    // -1 is not the same as being on cue 0. Saying "now: Warm Up" when nothing
+    // has been taken is the one thing that would make an operator distrust it.
+    expect(screen.getByText(/Not started/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /GO — Warm Up/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Back$/ })).toHaveProperty(
+      "disabled", true);
+  });
+
+  it("sends GO", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(screen.getByRole("button", { name: /GO —/ }));
+    expect(socket.last()).toEqual({ type: "go" });
+  });
+
+  it("shows where it is once started", async () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.cues!.index = 4;
+      s.cues!.current = "Cathedral";
+      s.cues!.next = "Peak";
+    })));
+    expect(screen.getByText("Cathedral")).toBeTruthy();
+    expect(screen.getByText("5/9")).toBeTruthy();
+  });
+
+  it("can jump straight to a cue", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await user.click(screen.getByRole("button", { name: /Show all 9 cues/i }));
+    await user.click(screen.getByRole("button", { name: /8\. Drop/ }));
+    expect(socket.last()).toEqual({ type: "cue", index: 7 });
+  });
+
+  it("marks the cut cue as a cut rather than a fade", async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.click(screen.getByRole("button", { name: /Show all 9 cues/i }));
+    expect(screen.getByRole("button", { name: /8\. Drop cut/ })).toBeTruthy();
+  });
+
+  it("disables GO at the end rather than wrapping", async () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.cues!.index = 8; s.cues!.current = "Landing"; s.cues!.next = null;
+    })));
+    expect(screen.getByRole("button", { name: /GO —/ })).toHaveProperty(
+      "disabled", true);
+    expect(screen.getByText(/end of the list/i)).toBeTruthy();
+  });
+});

@@ -17,6 +17,7 @@ export function ShowTab({ state, send }: {
 }) {
   return (
     <>
+      <Cues state={state} send={send} />
       <Now state={state} send={send} />
       <Presets state={state} send={send} />
       <Tempo state={state} send={send} />
@@ -282,5 +283,72 @@ function Energy({ state, send }: { state: EngineState; send: (c: Command) => voi
         source that knows what the room is doing.
       </p>
     </div>
+  );
+}
+
+/**
+ * The night as one GO button.
+ *
+ * The QLC+ show had this and the port lost it: its six Collections were the
+ * actual shape of the set, and every one was skipped with "rebuild with motion
+ * primitives". A guest operator who knows nothing about the rig can run the
+ * whole night off GO, which is what it was for.
+ *
+ * Absent entirely when the event has no cues.json, rather than showing an empty
+ * shell — a show driven by hand off the look picker is still a show.
+ */
+function Cues({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const cues = state.cues;
+  const [open, setOpen] = useState(false);
+  if (!cues) return null;
+
+  const started = cues.index >= 0;
+
+  return (
+    <Card title={cues.name} right={
+      <span className="small muted mono">
+        {started ? `${cues.index + 1}/${cues.count}` : `— /${cues.count}`}
+      </span>
+    }>
+      <p className="small" style={{ marginBottom: "0.6rem" }}>
+        {/* Before the first GO there is no current cue, and saying "now: Warm
+            Up" when nothing has been taken is the one thing that would make an
+            operator distrust the whole list. */}
+        {started ? <>Now: <b>{cues.current}</b></> : <span className="muted">Not started</span>}
+        {cues.next
+          ? <> · next: <b>{cues.next}</b></>
+          : <span className="muted"> · end of the list</span>}
+        {state.fading && <span className="muted"> · fading…</span>}
+      </p>
+
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <button className="small" disabled={cues.index <= 0}
+                onClick={() => send({ type: "cue_back" })}>Back</button>
+        <button style={{ flex: 2 }} disabled={!cues.next}
+                onClick={() => send({ type: "go" })}>
+          {started ? `GO — ${cues.next ?? "end"}` : `GO — ${cues.next}`}
+        </button>
+      </div>
+
+      <button className="small" style={{ width: "100%", marginTop: "0.5rem",
+                                         justifyContent: "flex-start" }}
+              onClick={() => setOpen(!open)}>
+        {open ? "Hide" : "Show"} all {cues.count} cues
+      </button>
+      {open && (
+        <div className="grid tiles" style={{ marginTop: "0.4rem" }}>
+          {cues.cues.map((c, i) => (
+            <button key={c.name} className={i === cues.index ? "on" : ""}
+                    onClick={() => send({ type: "cue", index: i })}>
+              {i + 1}. {c.name}
+              <div className="small muted">
+                {c.fade === 0 ? "cut" : `${c.fade} beat fade`}
+                {c.hold > 0 && ` · auto after ${c.hold}`}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

@@ -174,6 +174,15 @@ export interface EngineState {
   /** Live shape controls over whatever movement look is up. Identity is
    *  size 1, spread 0, centre [0, 0]. */
   macro: { size: number; spread: number; center: [number, number] };
+  /** The night as an ordered list of cues, or null when the event has none.
+   *  `index` is -1 before the first GO — not the same as being on cue 0. */
+  cues: {
+    name: string; index: number; count: number;
+    current: string | null; next: string | null; auto_advance: boolean;
+    cues: { name: string; fade: number; hold: number; notes: string }[];
+  } | null;
+  /** A crossfade is in progress. */
+  fading: boolean;
   /** What the rig is allowed to do with the shutter. `ceiling` is a position in
    *  the fixture's own slow-to-fast band, NOT a frequency — the profile
    *  declares no Hz. See docs/SAFETY.md. */
@@ -258,6 +267,10 @@ export type Command =
       position: { x: number; y: number; z: number } }
   | { type: "patch_autopatch"; start?: number; universe?: number }
   | { type: "patch_apply" }
+  | { type: "go" }
+  | { type: "cue_back" }
+  | { type: "cue"; index: number }
+  | { type: "cue_reset" }
   | { type: "macro"; size?: number; spread?: number;
       center?: [number, number]; reset?: boolean };
 

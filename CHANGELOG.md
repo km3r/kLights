@@ -41,6 +41,34 @@ the only record of them until a roadmap doc lands.
 - Same correction applied to `engine/safety.py`, the README, the Rig panel and
   the test commentary, so the codebase does not carry two framings.
 
+### Added — F15, the cue list
+
+- **The Night cue list is back.** The QLC+ show's six Collections — Warm Up,
+  Idle, Deep, Spiral, Peak, Landing — were the actual shape of the set, and the
+  porter skipped every one with *"Collection — rebuild with motion primitives"*.
+  They have been missing since F9, which made this the one live regression from
+  the old console rather than a new feature. `events/despacio/cues.json` rebuilds
+  the whole night as nine cues, using looks that already exist plus the F15 shape
+  macros to make each section its own size and spread.
+- **A cue is the same three slots a preset is**, plus a fade and an optional
+  hold. A cue list with its own private notion of a look would be a second way
+  to say the same thing, and the two would drift.
+- `fade` and `hold` are in **beats**, not seconds — everything authored in this
+  engine is musical, and a cue list that ignored tempo would be the one surface
+  drifting out of the music it is cueing. Every despacio cue holds at 0, meaning
+  every one waits for GO: the operator deciding when the drop is, which is why
+  the original worked.
+- **Crossfade between shows** (`state.evaluate_crossfade`), which also closes the
+  long-standing "a look change is a hard cut" gap independently. Blends in
+  *parameter* space — blending rendered DMX would interpolate a colour-wheel slot
+  index and quantise the aim to 8 bits before smoothing it. Aim blends in
+  degrees, and because `bearing_delta` is unwrapped servo rotation, a head
+  crossing ±180° travels the way a yoke physically can rather than teleporting.
+- Both stacks are evaluated, blended, and *then* finished, so safety and the
+  strobe policy see the aim actually going to the wire, once. Running them per
+  side and blending the results would let a fade pass through a state neither
+  show was allowed to produce.
+
 ### Added — F15, shape macros
 
 - **Four live controls over whatever movement look is up**: size, spread, and a

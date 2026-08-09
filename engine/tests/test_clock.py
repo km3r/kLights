@@ -250,6 +250,63 @@ Runner(ctx=still, show=show).run(seconds=0.2)
 check("no clock means no musical motion", still.beat == 0.0 and still.bar == 0.0)
 
 
+# -- crossfading between two shows --------------------------------------------
+#
+# A look change used to be a hard cut on the frame it landed. The engine holds
+# parameters, so a fade can blend the parameters rather than the DMX -- which is
+# what makes it smooth rather than a dissolve between two quantised frames.
+print("\n7. crossfade")
+import engine.state as statemod
+from engine import geometry as geo                                    # noqa: E402
+from engine.rig import load_rig                                    # noqa: E402
+
+fade_rig = load_rig(REPO / "events" / "despacio")
+fctx = statemod.EvalContext(rig=fade_rig, venue=fade_rig.venue)
+
+
+def flat_show(level, bearing, elev):
+    show = statemod.Show()
+    show.base.append(statemod.pose_layer(
+        lambda c, head, b=bearing, e=elev: geo.Aim(b, e)))
+    show.base.append(statemod.on_layer(level))
+    return show
+
+
+dim = flat_show(0.0, 0.0, 40.0)
+bright = flat_show(1.0, 60.0, 40.0)
+fid = fade_rig.movers[0].fid
+
+ends = [statemod.evaluate_crossfade(fctx, dim, bright, t) for t in (0.0, 1.0)]
+check("t=0 is the outgoing show", abs(ends[0][fid].intensity - 0.0) < 1e-9,
+      f"{ends[0][fid].intensity}")
+check("t=1 is the incoming show", abs(ends[1][fid].intensity - 1.0) < 1e-9,
+      f"{ends[1][fid].intensity}")
+
+mid = statemod.evaluate_crossfade(fctx, dim, bright, 0.5)
+check("intensity blends", abs(mid[fid].intensity - 0.5) < 1e-6,
+      f"{mid[fid].intensity:.4f}")
+check("the aim blends in degrees, not in DMX",
+      abs(mid[fid].aim.bearing_delta - 30.0) < 1e-6,
+      f"{mid[fid].aim.bearing_delta:.4f}")
+
+# The reason bearing_delta is unwrapped servo rotation: a head crossing the wrap
+# has to travel the way it physically can, not teleport through the short way.
+wide = statemod.evaluate_crossfade(fctx, flat_show(1.0, 170.0, 40.0),
+                                   flat_show(1.0, -170.0, 40.0), 0.5)
+check("a head crossing the wrap travels the long way, as a yoke must",
+      abs(wide[fid].aim.bearing_delta - 0.0) < 1e-6,
+      f"{wide[fid].aim.bearing_delta:.2f} deg (0 = through the middle)")
+
+# Safety must see the BLENDED aim, once. Running it per side and blending the
+# results would let a fade pass through a state neither show could produce.
+steps = [statemod.evaluate_crossfade(fctx, dim, bright, k / 20.0)
+         for k in range(21)]
+check("every mid-fade frame carries a safety decision",
+      all(s[fid].safety is not None for s in steps))
+check("and none exceeds its own taper",
+      all(s[fid].intensity <= s[fid].safety.taper + 1e-9 for s in steps))
+
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

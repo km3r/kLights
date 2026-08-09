@@ -47,6 +47,7 @@ from . import __version__
 from . import auto as autom
 from . import calibrate as calibmod
 from . import config as configmod
+from . import cues as cuesmod
 from . import clock as clockmod
 from . import geometry as geo
 from . import library as libmod
@@ -111,6 +112,7 @@ TIER: dict[str, str] = {
     "patch_address": "configure", "patch_tags": "configure",
     "patch_position": "configure", "patch_autopatch": "configure",
     "patch_apply": "configure",
+    # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
 
@@ -305,6 +307,16 @@ class ShowController:
         # missed would be the one the UI displays.
         self.slots: dict[str, dict[str, str]] = {"color": {}, "level": {}}
         self.presets = load_presets(self.event_dir)
+        # The cue list, if this event has one. Optional: a show driven entirely
+        # by hand off the look picker is still a show, and the despacio night
+        # was one for its whole first run.
+        self.cues: Optional[cuesmod.CueList] = None
+        cue_path = self.event_dir / "cues.json"
+        if cue_path.exists():
+            try:
+                self.cues = cuesmod.load(cue_path)
+            except configmod.ConfigError as exc:
+                self.notices.append(f"cues.json not loaded: {exc}")
         # Profiles, resolved once. The patch editor needs to size a fixture's
         # channel footprint to answer "does this address clash", and rescanning
         # shared/fixtures/ per keystroke on a phone is not the way.
@@ -437,12 +449,17 @@ class ShowController:
     def entry(self, name: Optional[str]) -> Optional[libmod.LibraryEntry]:
         return self.by_name.get(name) if name else None
 
-    def _recompose(self) -> None:
+    def _recompose(self, fade_beats: Optional[float] = None) -> None:
         """Rebuild the Show from the three slots.
 
         The director keeps owning WHICH movement look is up (that is what auto
         look changes change), but it no longer owns the whole Show -- it
         delegates back here so the colour and level slots survive a look change.
+
+        `fade_beats` crossfades into the result instead of cutting. Only cues
+        pass it today: a look picked by hand is an operator watching the rig and
+        wanting it now, while a cue is a rehearsed transition that should look
+        like one.
         """
         def compose(look, color: tuple[float, float, float]):
             movement = self.entry(look.name) if look is not None else None
@@ -450,7 +467,17 @@ class ShowController:
                 movement if movement is not None and movement.is_movement else None,
                 self.slot_entries("color"), self.slot_entries("level"), color)
         self.director.compose = compose
-        self.director.rebuild()
+        show = self.director.rebuild()
+        if fade_beats is not None:
+            # `is not None`, not truthiness: a cue with fade 0 is a CUT, and it
+            # has to cancel a fade already in flight rather than letting the
+            # previous one carry on underneath it. Taking the Drop mid-fade and
+            # watching it dissolve is exactly the failure.
+            #
+            # The runner picks the director's show up on the next frame anyway;
+            # handing it over here is what gives it something to fade FROM,
+            # since by then the old one is gone.
+            self.runner.set_show(show, fade_beats=fade_beats)
 
     def _cmd_select_look(self, m: dict, now: float) -> None:
         """Select a look INTO ITS OWN SLOT, worked out from what it sets.
@@ -891,6 +918,81 @@ class ShowController:
         self.note("patch saved to rig.json -- not live yet. Apply it to load it "
                   "into the running show")
 
+    # -- the cue list ------------------------------------------------------
+
+    def take_cue(self, cue: "cuesmod.Cue") -> None:
+        """Put a cue on stage, crossfading over its own fade time.
+
+        Fills the same three slots a preset does, because a cue IS a preset
+        with somewhere to go next -- a cue list with its own private notion of a
+        look would be a second way to say the same thing, and the two would
+        drift.
+
+        A look a cue names but the library does not have is skipped with a
+        notice rather than aborting the cue. A cue list outlives any one port of
+        the library, and taking four of five slots is a recoverable night;
+        refusing the cue is not.
+        """
+        for slot in ("color", "level"):
+            wanted = getattr(cue, slot)
+            if wanted:
+                self.slots[slot] = {}
+                for group, look in wanted.items():
+                    if self.entry(look) is None:
+                        self.note(f"cue {cue.name!r}: no look {look!r}")
+                        continue
+                    self.slots[slot][group] = look
+        for look in cue.movement.values():
+            if self.entry(look) is None:
+                self.note(f"cue {cue.name!r}: no look {look!r}")
+                continue
+            # hold=True: a cue is an explicit decision, and auto mode advancing
+            # off it two bars later would make the cue list look broken.
+            self.director.select(look, hold=True)
+            break
+
+        if cue.speed is not None:
+            self.clock.set_speed(cue.speed, self.runner.now())
+        if cue.master is not None:
+            self.master = max(0.0, min(1.0, cue.master))
+        if cue.macro is not None:
+            self._cmd_macro(dict(cue.macro), 0.0)
+
+        self._recompose(fade_beats=cue.fade)
+        self.note(f"cue {self.cues.index + 1}/{len(self.cues.cues)}: "
+                  f"{cue.name}" + (f" (fade {cue.fade:g} beats)"
+                                   if cue.fade else " (cut)"))
+
+    def _cmd_go(self, m: dict, now: float) -> None:
+        if self.cues is None:
+            raise ValueError("this event has no cues.json")
+        cue = self.cues.go(self.ctx.beat)
+        if cue is None:
+            self.note("end of the cue list -- it does not wrap")
+            return
+        self.take_cue(cue)
+
+    def _cmd_cue_back(self, m: dict, now: float) -> None:
+        if self.cues is None:
+            raise ValueError("this event has no cues.json")
+        cue = self.cues.back(self.ctx.beat)
+        if cue is None:
+            self.note("already at the first cue")
+            return
+        self.take_cue(cue)
+
+    def _cmd_cue(self, m: dict, now: float) -> None:
+        """Jump straight to a cue. Fades like any other take."""
+        if self.cues is None:
+            raise ValueError("this event has no cues.json")
+        self.take_cue(self.cues.jump(int(m["index"]), self.ctx.beat))
+
+    def _cmd_cue_reset(self, m: dict, now: float) -> None:
+        if self.cues is None:
+            raise ValueError("this event has no cues.json")
+        self.cues.reset()
+        self.note("cue list rewound -- nothing taken")
+
     def _cmd_macro(self, m: dict, now: float) -> None:
         """Live shape controls over whatever movement look is up.
 
@@ -1131,6 +1233,8 @@ class ShowController:
                 "ceiling": self.ctx.strobe_policy.ceiling,
                 "max_seconds": self.ctx.strobe_policy.max_seconds,
             },
+            "cues": self.cues.status() if self.cues else None,
+            "fading": self.runner.fading,
             "macro": {"size": round(self.ctx.move_size, 3),
                       "spread": round(self.ctx.move_spread, 3),
                       "center": [round(self.ctx.move_center[0], 2),

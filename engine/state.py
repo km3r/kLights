@@ -500,13 +500,91 @@ def apply_strobe_policy(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
         ctx._strobe_rest[f.fid] = 0.0
 
 
-def evaluate(ctx: EvalContext, show: Show) -> dict[int, FixtureState]:
-    """One frame of parameters. Safety runs after the stack, unconditionally."""
+def evaluate_stack(ctx: EvalContext, show: Show) -> dict[int, FixtureState]:
+    """The layers, and nothing after them. Not safe to send on its own."""
     states = {f.fid: FixtureState() for f in ctx.rig.fixtures}
     for layer in show.stack():
         layer(ctx, states)
+    return states
+
+
+def finish(ctx: EvalContext, states: dict[int, FixtureState]) -> None:
+    """Everything that runs after the stack, unconditionally, exactly once."""
     apply_safety(ctx, states)
     apply_strobe_policy(ctx, states)
+
+
+def blend(a: dict[int, FixtureState], b: dict[int, FixtureState],
+          t: float) -> dict[int, FixtureState]:
+    """Interpolate two evaluated frames. `t` 0 is all `a`, 1 is all `b`.
+
+    In PARAMETER space, which is the whole reason the engine holds parameters.
+    Blending the rendered DMX instead would interpolate a colour-wheel slot
+    index -- halfway between "red" and "blue" being "orange" because those slots
+    happen to be adjacent on the disc -- and would quantise the aim to 8 bits
+    before smoothing it, which is what makes a fade look steppy.
+
+    Aim blends in DEGREES, and `bearing_delta` is deliberately unwrapped servo
+    rotation, so a head crossing from +170 to -170 travels the 340 degrees it
+    physically has to rather than teleporting through the short way. That is the
+    right answer for a yoke and the wrong one for an angle, which is exactly why
+    the convention exists.
+
+    Things that cannot be interpolated take `b` past the midpoint: a gobo is a
+    slot, and there is no half of one.
+    """
+    out: dict[int, FixtureState] = {}
+    for fid, first in a.items():
+        second = b.get(fid)
+        if second is None:
+            out[fid] = first
+            continue
+        aim = None
+        if first.aim is not None and second.aim is not None:
+            aim = geo.Aim(
+                first.aim.bearing_delta
+                + (second.aim.bearing_delta - first.aim.bearing_delta) * t,
+                first.aim.elev_deg
+                + (second.aim.elev_deg - first.aim.elev_deg) * t)
+        else:
+            # One side has no aim at all -- a colour-only look, or a fixture
+            # that is not a mover. Holding the side that HAS one keeps the head
+            # where it is instead of snapping it to a default.
+            aim = second.aim if second.aim is not None else first.aim
+
+        raw = second.raw_position if t >= 0.5 else first.raw_position
+        out[fid] = FixtureState(
+            aim=aim,
+            intensity=first.intensity + (second.intensity - first.intensity) * t,
+            color=tuple(c1 + (c2 - c1) * t
+                        for c1, c2 in zip(first.color, second.color)),
+            white=first.white + (second.white - first.white) * t,
+            strobe=first.strobe + (second.strobe - first.strobe) * t,
+            gobo=second.gobo if t >= 0.5 else first.gobo,
+            raw_position=raw)
+    return out
+
+
+def evaluate(ctx: EvalContext, show: Show) -> dict[int, FixtureState]:
+    """One frame of parameters. Safety runs after the stack, unconditionally."""
+    states = evaluate_stack(ctx, show)
+    finish(ctx, states)
+    return states
+
+
+def evaluate_crossfade(ctx: EvalContext, outgoing: Show, incoming: Show,
+                       t: float) -> dict[int, FixtureState]:
+    """One frame mid-fade between two shows.
+
+    Both stacks are evaluated, blended, and THEN finished -- so safety and the
+    strobe policy see the aim and intensity that are actually going to the wire,
+    once, rather than each side separately. Running them per side and blending
+    the results would let a fade pass through a state neither show would have
+    been allowed to produce.
+    """
+    states = blend(evaluate_stack(ctx, outgoing), evaluate_stack(ctx, incoming),
+                   max(0.0, min(1.0, t)))
+    finish(ctx, states)
     return states
 
 

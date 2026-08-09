@@ -108,6 +108,11 @@ class Runner:
     """Evaluates the show and puts frames on the wire at a fixed rate."""
     ctx: statemod.EvalContext
     show: statemod.Show
+    # Beats a crossfade takes when the show is replaced. 0 is the old behaviour,
+    # a hard cut on the frame the new look lands. Musical rather than seconds
+    # because everything an operator authors here is musical, and a fade that
+    # ignores tempo is the one thing on this surface that would.
+    fade_beats: float = 0.0
     output: Output = field(default_factory=NullOutput)
     fps: float = DEFAULT_FPS
     # The musical timeline. Looks read ctx.bar and ctx.beat, which this keeps
@@ -137,6 +142,15 @@ class Runner:
         # goes black is a stopped show.
         self._last: dict[int, bytes] = {}
         self._blackout = bytes(512)
+        # A crossfade in progress: the show being faded OUT, when it started in
+        # musical time, and how far through it is. The outgoing show is kept
+        # whole rather than snapshotted as a frame, so it carries on running
+        # underneath -- a move that was mid-sweep keeps sweeping as it fades,
+        # which is the difference between a crossfade and a dissolve to a still.
+        self._fading_from: Optional[statemod.Show] = None
+        self._fade_start_beat = 0.0
+        self._fade_beats = 0.0
+        self._fade_t = 0.0
         # The mapping from wall time to engine time, so any thread can ask what
         # time it is on the show's clock. Needed because a command's timestamp
         # has to be taken when it ARRIVES, not when the frame loop gets round to
@@ -202,15 +216,52 @@ class Runner:
         self.ctx.phrase = position.phrase
         self.ctx.bpm = position.bpm
 
+        # Advance any crossfade in progress. Measured in BEATS off the same
+        # position everything else reads, so slowing the tempo lengthens the
+        # fade rather than desynchronising it from the music it is under.
+        if self._fading_from is not None:
+            elapsed = position.beat - self._fade_start_beat
+            if self._fade_beats <= 0 or elapsed >= self._fade_beats:
+                self._fading_from = None
+            else:
+                self._fade_t = max(0.0, min(1.0, elapsed / self._fade_beats))
+
         if self.director is None:
             # No auto mode: movement phase IS musical position, so a look reads
             # the same whether or not a director is attached.
             self.ctx.motion_bar = position.bar
         else:
-            self.show = self.director.update(position, self.clock.phrase_measured)
+            self.set_show(self.director.update(position,
+                                               self.clock.phrase_measured))
             self.director.apply(self.ctx)
         if self.on_show is not None:
             self.on_show(self.show)
+
+    def set_show(self, show: statemod.Show, fade_beats: Optional[float] = None
+                 ) -> None:
+        """Swap the running show, fading if asked.
+
+        A second change mid-fade does NOT stack: it starts a new fade from
+        whatever is currently on stage. Chaining fades would mean three shows
+        evaluated per frame at the second change and four at the third, and the
+        operator pressing GO twice quickly means "go to that one", not "blend
+        the last three".
+        """
+        if show is self.show:
+            return
+        beats = self.fade_beats if fade_beats is None else fade_beats
+        if beats > 0 and self.clock is not None:
+            self._fading_from = self.show
+            self._fade_start_beat = self.ctx.beat
+            self._fade_beats = beats
+            self._fade_t = 0.0
+        else:
+            self._fading_from = None
+        self.show = show
+
+    @property
+    def fading(self) -> bool:
+        return self._fading_from is not None
 
     def render_once(self) -> dict[int, bytes]:
         """Evaluate and emit a single frame. Never raises.
@@ -222,7 +273,11 @@ class Runner:
         if self._panic:
             return {u: self._blackout for u in self.ctx.rig.universes}
         try:
-            states = statemod.evaluate(self.ctx, self.show)
+            if self._fading_from is not None:
+                states = statemod.evaluate_crossfade(
+                    self.ctx, self._fading_from, self.show, self._fade_t)
+            else:
+                states = statemod.evaluate(self.ctx, self.show)
             frames = {u: bytes(f) for u, f in statemod.render(self.ctx, states).items()}
             self._last = frames
             if self.on_frame is not None:

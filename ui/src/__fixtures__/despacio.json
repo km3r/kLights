@@ -8,6 +8,71 @@
     "ceiling": 0.75,
     "max_seconds": 8.0
   },
+  "cues": {
+    "name": "Night",
+    "index": -1,
+    "count": 9,
+    "current": null,
+    "next": "Warm Up",
+    "auto_advance": false,
+    "cues": [
+      {
+        "name": "Warm Up",
+        "fade": 32.0,
+        "hold": 0.0,
+        "notes": "Doors. Everything on the ball, small and warm, nothing moving fast enough to look at."
+      },
+      {
+        "name": "Idle",
+        "fade": 32.0,
+        "hold": 0.0,
+        "notes": "Room filling. The wave opens up and the heads stop moving together."
+      },
+      {
+        "name": "Deep",
+        "fade": 16.0,
+        "hold": 0.0,
+        "notes": "Colour arrives. Spread to a half cycle so the sweep reads as a chase rather than a bar."
+      },
+      {
+        "name": "Spiral",
+        "fade": 16.0,
+        "hold": 0.0,
+        "notes": "Still on the ball, but the specks start travelling."
+      },
+      {
+        "name": "Cathedral",
+        "fade": 24.0,
+        "hold": 0.0,
+        "notes": "Up and out. The look everyone looks up for -- back to unison so the four columns read as one shape."
+      },
+      {
+        "name": "Peak",
+        "fade": 8.0,
+        "hold": 0.0,
+        "notes": "Converge and diverge. Bigger than authored, because the room is full by now."
+      },
+      {
+        "name": "Build",
+        "fade": 8.0,
+        "hold": 0.0,
+        "notes": "Vertical curtain at double speed. Passes through the ball twice a cycle, so the specks pulse on each pass."
+      },
+      {
+        "name": "Drop",
+        "fade": 0.0,
+        "hold": 0.0,
+        "notes": "A CUT, not a fade. The one cue on this list where fade 0 is the right answer."
+      },
+      {
+        "name": "Landing",
+        "fade": 48.0,
+        "hold": 0.0,
+        "notes": "Long way down. Back where it started, smaller and slower. The list stops here rather than wrapping."
+      }
+    ]
+  },
+  "fading": false,
   "macro": {
     "size": 1.0,
     "spread": 0.0,
