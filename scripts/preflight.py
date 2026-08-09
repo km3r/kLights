@@ -41,8 +41,16 @@ def bundle_matches_source() -> tuple[bool, str]:
     """The check CI exists for, run locally: does the committed ui/dist match a
     build from the committed source? Rebuilds first, so it also catches a bundle
     that was simply never rebuilt after a UI edit."""
+    # Skip, don't fail, when the toolchain to check with is absent. A show
+    # laptop has neither Node nor node_modules and does not need them -- the
+    # bundle is committed precisely so it does not. Reporting NOT READY there
+    # would be crying wolf, and a preflight that cries wolf gets ignored, which
+    # costs more than the check is worth.
     if shutil.which("npm") is None:
-        return True, "skipped -- npm not installed"
+        return True, "skipped -- npm not installed, and a venue does not need it"
+    if not (REPO / "ui" / "node_modules").is_dir():
+        return True, ("skipped -- ui/node_modules absent. Run `cd ui && npm ci` "
+                      "to enable this check on a machine that builds the UI")
     build = subprocess.run(["npm", "run", "build"], cwd=REPO / "ui",
                            capture_output=True, text=True, shell=True)
     if build.returncode != 0:
