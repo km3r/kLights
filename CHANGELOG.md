@@ -31,6 +31,11 @@ the only record of them until a roadmap doc lands.
   `events/despacio/NOTES.md`.
 - Screenshots: a real previz render and the console's own plan view, both
   produced by this project rather than mocked up.
+- **The web console is in the README with screenshots** — all four performance
+  tabs on a phone and the Setup tab on a laptop, captured from a live engine
+  running the despacio show rather than staged. Plus what the README never said
+  out loud: the console is served by the engine itself, and several people can
+  be on it at once with no locking.
 
 ### Added — F18, the 60-minute soak
 
