@@ -10,11 +10,11 @@ matching "Fixture Positions" empty (matched by the qlcplus_id custom property).
 Set EVENT below to choose which show to patch.
 
 Run it from Blender:
-    Scripting workspace -> Open -> shared/tools/patch_blenderdmx.py -> Run Script
+    Scripting workspace -> Open -> legacy/blenderdmx/patch_blenderdmx.py -> Run Script
 
 Prerequisites:
     - BlenderDMX addon installed and enabled
-    - shared/gdtf/ contains the .gdtf files (run shared/tools/build_gdtf.py first)
+    - shared/gdtf/ contains the .gdtf files (run legacy/blenderdmx/build_gdtf.py first)
 
 Re-running is safe: it clears the GDTF cache, removes the fixtures it manages,
 and re-patches from scratch so the scene always matches the CSV.

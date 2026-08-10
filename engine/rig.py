@@ -12,8 +12,9 @@ fixture IDs.
 Channel meaning is read from the QLC+ `.qxf` profiles in `shared/fixtures/`,
 which are already the authority for both events and for the GDTF build. Reading
 them beats re-describing the hardware in a second format that can drift -- and
-`shared/tools/build_gdtf.py` is the cautionary example, since it hand-transcribes
-its channel maps and can silently disagree with the `.qxf` it claims to read.
+`legacy/blenderdmx/build_gdtf.py` is the cautionary example, since it
+hand-transcribes its channel maps and can silently disagree with the `.qxf` it
+claims to read. It is retired, and that is part of why.
 
 **Merge semantics come from QLC+'s rule**, kept deliberately: a channel in the
 Intensity group is HTP (highest takes precedence), everything else is LTP (latest

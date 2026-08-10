@@ -1,5 +1,14 @@
 # The Show Pipeline
 
+> **The BlenderDMX half of this document is history.** QLC+ drove the rig and
+> BlenderDMX previsualised it; the show is a parametric Python engine now, and
+> the previz is [`previz/`](../previz/README.md) plus the console's own plan
+> view. The four Blender scripts still referenced below live in
+> [`legacy/blenderdmx/`](../legacy/blenderdmx/README.md) and are kept because a
+> reference pointing at missing files is worse than one pointing at retired
+> ones. The Art-Net architecture at the top, and the venue-day material, still
+> describe how this works.
+
 Generic pipeline documentation — applies to any event in this repo. For a
 specific show's patch, venue and rigging notes, see `events/<name>/README.md`.
 
@@ -71,7 +80,7 @@ lights/
 ├── spike/                    The timing spike behind the frame clock
 ├── shared/                   Everything reusable across events
 │   ├── fixtures/             .qxf fixture definitions, one per hardware model
-│   ├── gdtf/                 Generated GDTF profiles (build_gdtf.py)
+│   ├── gdtf/                 Generated GDTF profiles (legacy/blenderdmx/build_gdtf.py)
 │   ├── inventory.json        The units we actually own
 │   └── tools/                Generic scripts (Art-Net, porting, GDTF, Blender)
 └── events/
@@ -151,7 +160,7 @@ mis-rendered fixture.
 Regenerate the GDTF profiles for BlenderDMX with:
 
 ```bash
-python shared/tools/build_gdtf.py
+python legacy/blenderdmx/build_gdtf.py
 ```
 
 
@@ -387,7 +396,7 @@ Art-Net output so BlenderDMX receives live values.
    - Match the mode exactly (e.g. "10-Channel" for Scorpion Dual RGB)
 
 Or patch the whole rig at once — set `EVENT` at the top of
-`shared/tools/patch_blenderdmx.py`, then run it from Blender's Scripting
+`legacy/blenderdmx/patch_blenderdmx.py`, then run it from Blender's Scripting
 workspace.
 
 ### Blender helper scripts
@@ -397,9 +406,9 @@ a shell:
 
 | Script | What it does |
 |---|---|
-| `shared/tools/go_live.py` | Puts BlenderDMX into the live-receive state after a restart — the Art-Net receiver and the render timer, which do not always come back wired up together. Idempotent. |
-| `shared/tools/tune_live_look.py` | Tunes the live EEVEE viewport so the rig reads as a light show while you program: matte floors, haze, brighter beam cones, punchy exposure. Run after `go_live.py`. |
-| `shared/tools/patch_blenderdmx.py` | Patches a whole event's rig from its `patch_sheet.csv`. |
+| `legacy/blenderdmx/go_live.py` | Puts BlenderDMX into the live-receive state after a restart — the Art-Net receiver and the render timer, which do not always come back wired up together. Idempotent. |
+| `legacy/blenderdmx/tune_live_look.py` | Tunes the live EEVEE viewport so the rig reads as a light show while you program: matte floors, haze, brighter beam cones, punchy exposure. Run after `go_live.py`. |
+| `legacy/blenderdmx/patch_blenderdmx.py` | Patches a whole event's rig from its `patch_sheet.csv`. |
 
 `shared/tools/gen_mirrorball.py` and `gen_checkerboard.py` generate scene
 geometry and run from a normal shell.

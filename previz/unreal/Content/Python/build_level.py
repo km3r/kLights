@@ -586,36 +586,28 @@ def spawn_instances(label, tags, parts):
 
 
 def apply_render_cvars():
-    """Push the volumetric settings live, as well as into DefaultEngine.ini.
+    """Push the ini's volumetric settings into the RUNNING editor.
 
-    The ini is what a fresh editor starts with; these are what the *running*
-    editor uses, so a tuning change can be judged without a restart. Kept in
-    both places deliberately -- console-only would be lost on restart, ini-only
-    would make every experiment a five-minute round trip.
+    The ini is what a fresh editor starts with; this is what the editor already
+    open uses, so a tuning change can be judged without a restart. ONE source,
+    two moments -- rather than two sources hoping to agree.
+
+    These were written out twice, once here as console commands and once in
+    DefaultEngine.ini, each with a comment saying they must match. They drifted
+    anyway, and the symptom was fog that looked different before and after the
+    first rebuild of a session, which is about as hard to attribute as a symptom
+    gets. The ini wins as the source because it is the one UE reads natively: a
+    fresh editor has to start correct without anything of ours having run.
+
+    The measurements behind the numbers live in the ini beside them, which is
+    now also the only place they can be edited.
     """
+    from previz import config as previz_config
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-    for command in (
-            # The froxel grid is screen-space tiles by DEPTH SLICE, and the
-            # beading that makes a beam look like a string of beads is the
-            # depth axis, not the screen axis. Measured on a single-beam shot:
-            # (pixel 2, Z 128) beads badly; (2, 512) is clean; (4, 512) is just
-            # as clean and costs the same as (2, 128) did. So at any given
-            # budget, spend it on Z. Drop the pixel size to 2 as well if the
-            # GPU has room -- it is a small extra gain for 4x the fill rate.
-            # There is no upper clamp and no budget fallback in the renderer
-            # (GetVolumetricFogGridPixelSize is just Max(1, cvar)), so both are
-            # honoured as written.
-            "r.VolumetricFog.GridPixelSize 4",
-            "r.VolumetricFog.GridSizeZ 512",
-            "r.VolumetricFog.HistoryMissSupersampleCount 16",
-            # LEAVE THIS AT THE DEFAULT. It is tempting to lower it to spread
-            # the depth slices evenly over a small room, but the slice
-            # distribution degenerates well before that helps: at 1 the far
-            # half of the room renders as a solid black rectangle, and at 8 the
-            # beam is measurably beadier than at 32. Measured, not assumed --
-            # the sweep is in the README.
-            "r.VolumetricFog.DepthDistributionScale 32"):
-        unreal.SystemLibrary.execute_console_command(world, command)
+    pairs = previz_config.render_cvars()
+    for key, value in pairs:
+        unreal.SystemLibrary.execute_console_command(world, f"{key} {value}")
+    log(f"render cvars: {len(pairs)} pushed from DefaultEngine.ini")
 
 
 def clear_previous():

@@ -141,6 +141,50 @@ def optics(venue: Optional[str] = None) -> dict[str, float]:
     return merged
 
 
+# ------------------------------------------------------------ render cvars --
+
+DEFAULT_ENGINE_INI = REPO / "previz" / "unreal" / "Config" / "DefaultEngine.ini"
+RENDER_SECTION = "[/Script/Engine.RendererSettings]"
+
+
+def render_cvars(path: Optional[Path] = None) -> list[tuple[str, str]]:
+    """The renderer settings from DefaultEngine.ini, as (cvar, value) pairs.
+
+    These used to be written out TWICE -- once in the ini, once again as console
+    commands in `build_level.apply_render_cvars` -- with a comment in each
+    saying they must match. They drifted anyway, and the symptom was fog that
+    looked different before and after the first rebuild of a session, which is
+    about as hard to attribute as a symptom gets.
+
+    The ini wins as the source because it is the one UE reads natively: a fresh
+    editor has to start correct without anything of ours having run. This reads
+    it so the running editor can be updated from the same numbers.
+
+    Only `r.`-prefixed keys, because that section can legitimately hold settings
+    that are not console variables, and `execute_console_command` on one of
+    those is a silent no-op that looks exactly like the setting not taking.
+
+    Lives here rather than beside its caller so it can be read -- and tested --
+    on a machine with no Unreal installed.
+    """
+    ini = path or DEFAULT_ENGINE_INI
+    if not ini.is_file():
+        return []
+    text = ini.read_text(encoding="utf-8")
+    if RENDER_SECTION not in text:
+        return []
+    body = text.split(RENDER_SECTION, 1)[1].split("\n[", 1)[0]
+    out = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith(";") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key.startswith("r."):
+            out.append((key, value))
+    return out
+
+
 def has_profile(venue: str) -> bool:
     """Whether this venue has been swept, as opposed to inheriting.
 

@@ -111,6 +111,20 @@ def check_engine(r: Report) -> None:
     else:
         r.bad("previz project", f"missing: {ue_remote.PROJECT}")
 
+    # The ini is the single source for the render settings and build_level reads
+    # it. If that section stops parsing, a fresh editor is still correct and the
+    # running one silently stops being updated -- which is the quiet half of the
+    # drift this arrangement exists to end.
+    cvars = previz_config.render_cvars()
+    if cvars:
+        r.ok("render settings", f"{len(cvars)} cvars readable from "
+                                f"DefaultEngine.ini")
+    else:
+        r.bad("render settings",
+              f"no r.* lines found under {previz_config.RENDER_SECTION} in "
+              f"{previz_config.DEFAULT_ENGINE_INI.name} -- the running editor "
+              f"will not be updated")
+
 
 def check_editor(r: Report, timeout: float) -> None:
     print("\neditor")

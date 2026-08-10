@@ -4,7 +4,7 @@ channel maps. A .gdtf file is just a ZIP archive containing a description.xml
 (GDTF 1.2 schema). BlenderDMX parses these with pygdtf.
 
 Run:
-    python shared/tools/build_gdtf.py
+    python legacy/blenderdmx/build_gdtf.py
 
 Writes one .gdtf per entry in FIXTURES (currently 6) into shared/gdtf/.
 

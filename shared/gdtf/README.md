@@ -1,11 +1,16 @@
 # GDTF Profiles
 
+> **Retired with the BlenderDMX path.** These served the QLC+ era previz; the
+> current previz reads `rig.json` directly and needs no GDTF at all. See
+> [`legacy/blenderdmx/`](../../legacy/blenderdmx/README.md), and note the
+> warning there about hand-transcribed channel maps.
+
 All six profiles in this folder are **auto-generated** from the QLC+ `.qxf`
-fixture definitions by `scripts/build_gdtf.py`. Channel order, counts, and mode
-names match the patch sheet exactly. To rebuild after editing the channel maps:
+fixture definitions by `legacy/blenderdmx/build_gdtf.py`. Channel order,
+counts and mode names match the patch sheet exactly. To rebuild after editing the channel maps:
 
 ```bash
-python scripts/build_gdtf.py
+python legacy/blenderdmx/build_gdtf.py
 ```
 
 A `.gdtf` file is just a ZIP containing a `description.xml` (GDTF 1.2 schema).
