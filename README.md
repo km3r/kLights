@@ -1,102 +1,107 @@
 # Cosmos Lights
 
-Lighting design, control and previsualization for a small moving-head and wash
-rig, across multiple events.
+A lighting console for a small moving-head rig, with 3D previsualization.
 
-The show runs on a **parametric Python engine**. It holds parameters rather
-than stored DMX values, owns its own 40 fps frame clock, knows the room in three
-dimensions, and dims beams that get near people — per frame, from the current
-aim. A web UI drives it from a phone; Unreal renders it in 3D by listening to
-the same Art-Net the rig sees.
+It runs a **parametric show engine**: it holds parameters rather than stored DMX
+values, owns its own 40 fps frame clock, knows the room in three dimensions, and
+dims beams that get near people. You drive it from a phone. Unreal renders it by
+listening to the same Art-Net the rig hears.
 
-> See [`docs/SAFETY.md`](docs/SAFETY.md) for what the beam taper manages — it is
-> a comfort feature for LED beams, not a protective device — and for the two
-> things on this rig that are a different category: **strobe** (nothing limits
-> the rate, and photosensitive epilepsy is a real risk) and **lasers**.
+**Nothing needs installing.** The engine is stdlib-only Python and the web
+console ships pre-built, so a show laptop needs a checkout and a Python.
 
-```
-lights/
-├── docs/                     Generic pipeline documentation
-│   ├── pipeline.md           Art-Net, the engine, previz, legacy QLC+ setup
-│   └── SAFETY.md             What the beam taper manages, and the two real risks
-├── engine/                   The show engine (stdlib only, no dependencies)
-│   ├── geometry.py           Where a head is, where it points, what DMX aims it
-│   ├── rig.py venue.py       What is patched; the room it is patched into
-│   ├── state.py              Parameters and the layered per-frame evaluation
-│   ├── safety.py             Beam-aware intensity taper
-│   ├── clock.py motion.py    Musical time; movement as a path over bars
-│   ├── auto.py library.py    Self-running axes; the ported look library
-│   ├── calibrate.py          Fast re-aim, drift detection, snapshots
-│   ├── runner.py output/     The frame clock and the Art-Net driver
-│   ├── server.py websocket.py  HTTP + WebSocket, hand-rolled RFC 6455
-│   └── tests/                Standalone test scripts, one per area
-├── ui/                       React console — five tabs, phone through desktop
-│   └── dist/                 Committed build, so a venue needs no Node
-├── previz/                   Unreal previz: an Art-Net listener, never in the path
-├── spike/                    Timing spike that settled the frame-clock question
-├── schemas/                  JSON Schema, generated from engine/config.py
-├── scripts/preflight.py      Everything that must be green before a venue
-├── shared/                   Reusable across every event
-│   ├── fixtures/             .qxf fixture definitions, one per hardware model
-│   ├── venues/               Rooms. A venue outlives any one show
-│   ├── gdtf/                 Generated GDTF profiles for BlenderDMX
-│   ├── inventory.json        The units we actually own
-│   └── tools/                Art-Net utilities, library porter, GDTF builder,
-│                             patch validator, schema generator
-└── events/
-    ├── cosmos26/             ARCHIVED — the Year-3 Cosmos rig
-    └── despacio/             4 moving heads + 2 pinspots on a mirror ball
+> ⚠️ Read [`docs/SAFETY.md`](docs/SAFETY.md) before pointing this at people. The
+> beam taper is a **comfort feature for LED beams, not a protective device**,
+> and two things on this rig are a different category: **strobe** (nothing
+> limits the rate, and photosensitive epilepsy is a real risk) and **lasers**.
+
+---
+
+<img src="docs/images/previz-ball.png" alt="Unreal previz: two beams on a mirror ball scattering across a hazy room" width="100%">
+
+*The Unreal previz — the same Art-Net the rig receives, rendered in 3D.*
+
+<img src="docs/images/plan-view.svg" alt="Plan view of the room from above, beams drawn to where they land" width="520">
+
+*The console's plan view: the room from above, every lit beam drawn to where it
+actually lands, at the width it actually spreads to. No GPU, no install — this
+runs on the show laptop.*
+
+## Quick start
+
+```bash
+git clone <this repo>
+cd lights
+python -m engine.server
 ```
 
-**The organizing rule:** a file belongs to an event if it encodes *this rig or
-this night* — patch, calibration, look library, workspace. It belongs in
-`shared/` if it describes *hardware we own*, *a room*, or *a thing we do to any
-show*, and in `engine/` if it is show logic that does not know which event it is
-running. Events come and go; the inventory, the rooms, the tools and the engine
-carry forward.
+That runs the despacio show against a **null output** — no DMX on the wire —
+which is the safe way to try it with a rig plugged in. Open the URL it prints
+(including its `?token=`) on a phone or a laptop.
 
-A **room** is shared because it outlives any one show: `rig.json` names one with
-`"venue": "despacio-room"` and it resolves to `shared/venues/despacio-room.json`.
-An event with no `venue` key keeps its own `venue.json`, so a second night in the
-same room is a one-line change rather than a forked copy of the geometry the
-safety taper reads.
-
-Every config file is validated on load against a declared shape, and names a
-generated JSON Schema in `$schema`, so an editor offers completion and inline
-errors while you hand-edit at the venue.
-
-## Events
-
-| Event | Status | Rig |
-|---|---|---|
-| [despacio](events/despacio/README.md) | Ran 2026-08 | 4× MingJie MJ-OS-018 beams in the corners of a 30 ft room, sideways-mounted, aimed at a centre-hung mirror ball, + 2 pinspots. Now the engine's reference event: `rig.json`, `venue.json`, `calibration.json` and a 206-look library ported from its QLC+ workspace. |
-| [cosmos26](events/cosmos26/README.md) | Archived | 4× Par 36 wash, 2× pinspot, 2× YeeSite pixel bar, Scorpion laser, Mini Kinta, dimmer. APC40-driven, QLC+ only. |
-
-## Running a show
-
-Start the engine and its UI. This is the whole show:
+To actually drive a rig:
 
 ```bash
 python -m engine.server --artnet 255.255.255.255
 ```
 
-It prints the rig it loaded, which timing settings took effect, and the URLs to
-open — including the LAN one to type into a phone. Defaults are the despacio
-event, port 8765, 40 fps and 124 BPM; `--event`, `--port`, `--fps` and `--bpm`
-override them. With no `--artnet` it runs against a null output, which is the
-safe way to try things with the rig plugged in.
+Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
+`--no-token`, `--sync-port` (tempo from a DJ). `--help` lists them all.
 
-The UI is served from the committed `ui/dist/`, so a show laptop needs Python
-and a checkout and nothing else. Five tabs, all driven by the same WebSocket
-state: **Show** (cues, presets, tempo, auto, panic), **Color**, **Move**,
-**Bright**, and **Setup** — the rig, venue, calibration and patch panels.
-Master and Blackout live in the header, on every tab.
+Before a show, run everything that must be green:
 
-The header also carries **Perform / Design**. Perform hides Setup and the
-read-only diagnostics, leaving only what drives the show; Design is the full
-console. It defaults to Perform on a phone and Design on a laptop, remembers
-itself per device, and is always one tap from the other — it is a preference
-about screen space, not a permission. Access is what `--token` decides.
+```bash
+python scripts/preflight.py
+```
+
+## Using the console
+
+Five tabs, all driven by the same live state.
+
+| tab | what it is for |
+|---|---|
+| **Show** | the cue list, preset banks, tempo and tap, auto mode, DJ sync, panic |
+| **Color** | colour looks, a quick palette, a per-fixture picker, colour rate |
+| **Move** | the plan view, movement routes, shape macros, movement rate |
+| **Bright** | level patterns, hand dimming, momentary flash, strobe policy |
+| **Setup** | the rig, the room, calibration and the patch editor |
+
+Master and Blackout are in the header on every tab.
+
+**Perform / Design** is in the header too. Perform hides Setup and the read-only
+diagnostics, leaving only what drives the show; Design is everything. It
+defaults to Perform on a phone and Design on a laptop and is always one tap from
+the other. It is a preference about screen space, **not** a permission — access
+is what `--token` decides.
+
+Three ideas make the rest make sense:
+
+- **Movement, colour and level are independent slots.** Picking a colour does
+  not disturb the move. Each has its own rate, so a colour chase can crawl under
+  a move running flat out.
+- **Presets are pages of eight pads**, and a pad is a *place*. Saving over a
+  preset keeps its pad; adding or deleting neighbours does not shuffle it.
+- **The cue list is the night**, and GO walks it. A guest who knows nothing
+  about the rig can run the whole show off one button.
+
+## Running a show
+
+Full procedure for the day, including what to do when something breaks:
+**[`docs/runbook.md`](docs/runbook.md)**.
+
+## Previz
+
+```bash
+python previz/doctor.py     # checks everything before you wonder why
+python previz/ue_remote.py previz/unreal/Content/Python/go.py
+```
+
+Needs Unreal Engine 5.8. The previz is a **listener** — it watches the same
+Art-Net the rig does, so it can never break a show. It builds whatever event
+`previz/previz.json` names, and its cameras and optics are derived from the room
+rather than measured in one. See [`previz/README.md`](previz/README.md).
+
+The console's own plan view needs none of that and runs anywhere.
 
 ## Tempo from the DJ
 
@@ -105,208 +110,110 @@ from a tapped downbeat:
 
 ```bash
 python -m engine.server --sync-port 9000
+python bridges/prolink/bridge.py --fake      # no hardware needed
 ```
 
-**No analysis happens here.** Beat position and rekordbox's own phrase labels
-are a *read*, not a derivation — so everything that knows what a CDJ is lives in
-a sidecar under [`bridges/`](bridges/prolink/README.md), in its own environment,
-and the engine stays stdlib-only. Its whole side of this is a `sync` command and
-a UDP port that speaks JSON or OSC.
-
-**Both rigs are supported, by different tools:** CDJs via
-[beat-link-trigger](https://github.com/Deep-Symmetry/beat-link-trigger) over Pro
-DJ Link, and a DDJ-1000 via [rkbx_link](https://github.com/grufkork/rkbx_link),
-which reads rekordbox's memory — a DDJ is USB and never speaks Pro DJ Link at
-all. Both emit OSC, and the engine's decoder is written against both address
-shapes, so it has one seam and no idea which is on the other end.
-
-Provable with no hardware at all:
-
-```bash
-python bridges/prolink/bridge.py --fake
-```
-
-That is a synthetic 128 BPM feed with a scripted Intro → Build → Drop → Outro
-timeline, so the console's Sync row, `phrase_measured`, and anything driven by
-phrase can all be exercised at a desk.
-
-The Show tab's **DJ sync** row reports the source, the current phrase, bars
-until the next one, and — the part that matters — **how long ago the last packet
-arrived**. A bridge that dies leaves the show free-running at the tempo it was
-left holding, which looks exactly like a bridge that is working. Take-over is
-always one tap, and leaves the tempo and phase where they are.
-
-The Move tab opens with a **plan view**: the room from above, with every lit
-beam drawn to where it actually lands at the width it actually spreads to. It
-needs no GPU and nothing installed — every number in it is already in the
-snapshot — so it is the previz that works on the show laptop at a venue. Beams
-the safety taper is holding are ringed in amber, and the legend says how many
-fixtures have no position and are therefore not drawn.
-
-Movement, colour and level are three independent slots, and each has its own
-**Rate** on its own tab — so a colour chase can crawl under a move running flat
-out. That is separate from **Speed** on the Show tab, which is the clock and
-moves the whole show including cue holds. A rate of 0 is a hold: it parks that
-slot on its current frame while everything else keeps running.
-
-Presets are pages of **eight pads**, the APC40 layout the despacio show ran on
-for two years. A preset holds a fixed pad: saving over one leaves it where it
-is, and adding or deleting neighbours does not shuffle it. Tags (`intro`,
-`build`, `drop`, …) cut across banks for the times you want every drop rather
-than a particular pad.
-
-Smoke-test the frame path without the UI:
-
-```bash
-python -m engine.demo --artnet 127.0.0.1 --seconds 30
-```
-
-Point [`shared/tools/artnet_listener.py`](shared/tools/artnet_listener.py) at
-it to see the frames, or `--no-taper` to see what the safety taper is holding
-back.
+**No audio analysis happens here.** Beat position and rekordbox's phrase labels
+are a *read*, not a derivation, so everything that knows what a CDJ is lives in
+a sidecar. CDJs via beat-link-trigger; a DDJ-1000 via rkbx_link, since a DDJ is
+USB and never speaks Pro DJ Link at all. Both emit OSC and the engine reads
+both. See [`bridges/prolink/README.md`](bridges/prolink/README.md).
 
 ## Editing the rig
 
-Three surfaces, one set of rules — `engine/patch.py` decides what a legal patch
-is, so the answer cannot differ between them.
+Three surfaces, one set of rules — every write goes through the same API and the
+same validation:
 
 ```bash
-python -m engine.patch describe
-python -m engine.patch add --name "Par 1" --manufacturer UKing \
-    --model "Par 36 Custom" --mode "5 Channel" --tags pars --write
+python -m engine.newevent                       # a new show, interactively
+python -m engine.patch add --name "Par 5" ...   # one-shot edits
 ```
 
-Everything is a dry run until `--write`, and a write is refused while an engine
-is running against that event — it reads its config once at startup, so an edit
-mid-show leaves the file and the rig disagreeing with nothing on screen to say
-so. `profiles`, `venues`, `remove`, `address`, `tags`, `position`, `autopatch`,
-`venue`, `import` and `new` round it out; `--help` on any of them.
+- the **Setup tab** in the console, phone in hand at load-in
+- the **MCP server** (`mcp/cosmos_mcp.py`), so an assistant can patch and
+  describe the rig
+- the **CLI** above, which needs no UI
 
-The same operations are available to Claude over MCP, registered in `.mcp.json`:
+Edits are validated, written atomically, and applied to the running show without
+a restart. A rig that will not load is refused and the old one keeps running.
+
+## Building the UI
+
+Only needed if you change it — `ui/dist/` is committed so a venue needs no Node.
 
 ```bash
-python mcp/cosmos_mcp.py
+cd ui
+npm ci
+npm run dev      # live-reloading dev server
+npm test         # 115 tests against a fixture captured from a real engine
+npm run build    # writes ui/dist/
 ```
 
-It speaks JSON-RPC over stdio in pure standard library — no SDK, so the
-zero-dependency rule survives. Editing tools take `write`, defaulting to false.
-
-## At the venue
-
-Re-aim after the heads get nudged overnight — three captures per head solve
-position, offsets and invert flags together:
-
-```bash
-python -m engine.calibrate solve captures.json --write
-```
-
-`drift` flags which heads moved from a set of readings, `snap` and `diff`
-record and compare calibration snapshots, and `jog` parks one head at a
-Pan/Tilt so you can eyeball it. Every subcommand takes `--event`.
-
-Validate the patch after editing one:
-
-```bash
-python shared/tools/validate_patch.py
-```
-
-Re-port the look library from a QLC+ workspace (writes `looks.json`):
-
-```bash
-python shared/tools/port_library.py --write
-```
-
-The despacio show also keeps its own one-command readiness check, covering the
-geometry self-test, patch and mount-mode guardrails:
-
-```bash
-python events/despacio/preflight.py
-```
-
-## Previz
-
-Unreal 5.8 renders the show live by listening to Art-Net — it sits beside the
-rig, never between the engine and it, so previz cannot break a show. It decodes
-with `engine.geometry`, the show's own decoder, rather than a GDTF profile,
-because the heads are mounted sideways in a way a fixture profile cannot
-express. The heads model a real yoke (`engine.servo`), so a move takes the time
-it takes — without that the previz teleported between routines and could not
-show either what a routine change costs or what a dark move looks like. See
-[`previz/README.md`](previz/README.md) for the runbook, the mirror ball, and the
-several things about Unreal's volumetric fog that are the opposite of the
-obvious guess.
-
-```bash
-python previz/ue_remote.py previz/unreal/Content/Python/go.py
-```
+CI rebuilds the bundle and fails if it differs from what is committed. That
+check exists because a stale bundle ships a blank console to a venue, and it
+nearly did.
 
 ## Tests
 
-The engine's tests are standalone scripts with no test-runner dependency — run
-one directly (`python engine/tests/test_clock.py`), or all of them plus the
-module self-tests:
-
 ```bash
-python -m engine.tests
+python -m engine.tests    # 16 suites, no test framework
+cd ui && npm test         # the console
 ```
 
-Each suite runs in its own subprocess, because several set process-wide timing
-and assert on wall-clock behaviour. `-k <substring>` narrows it, `-v` streams a
-suite's own output instead of capturing it. Before a venue, run the lot along
-with the patch, venue and bundle checks:
+Engine suites are standalone scripts — run one directly with
+`python engine/tests/test_clock.py`. Each runs in its own subprocess, since
+several set process-wide timing and assert on wall-clock behaviour.
 
-```bash
-python scripts/preflight.py
+Two are load-bearing. `test_geometry_parity.py` compares every aim against the
+code that drove the real show and requires agreement within one 8-bit step.
+`test_qlc_parity.py` diffs whole DMX frames against QLC+ across the ported
+library, and requires every differing channel to fall into a category that was
+*derived* rather than assumed.
+
+## Layout
+
+```
+engine/        the show engine — stdlib only, no dependencies
+ui/            React console; ui/dist is committed so a venue needs no Node
+previz/        Unreal previz — an Art-Net listener, never in the show's path
+bridges/       sidecars that may have dependencies (DJ tempo)
+mcp/           MCP server over stdio, for patching from an assistant
+events/        one directory per show: patch, calibration, looks, cues, presets
+shared/        things that outlive a show: fixtures, venues, inventory, tools
+schemas/       JSON Schema, generated from engine/config.py
+docs/          how it works, how to run it, and why it is like this
+legacy/        the retired BlenderDMX path, kept for reference
+spike/         the timing spike that settled the frame-clock question
 ```
 
-Two of them are load-bearing. `test_geometry_parity.py` compares every aim
-against `events/despacio/aim_calc.py`, the code that drove the real show, and
-insists they agree to within one 8-bit step. `test_qlc_parity.py` diffs whole
-DMX frames against QLC+ across the ported library and requires every differing
-channel to fall in a category that was *derived* — held, base, taper — leaving
-`dropped` and `unexplained` as the findings.
+**The organizing rule:** a file belongs to an event if it encodes *this rig or
+this night*. It belongs in `shared/` if it describes *hardware we own*, *a room*,
+or *a thing we do to any show*, and in `engine/` if it is show logic that does
+not know which event it is running. Events come and go; the inventory, the
+rooms, the tools and the engine carry forward.
 
-```bash
-python shared/tools/qlc_parity.py check --verbose
-```
+A **room** is shared because it outlives any one show, so a second night in the
+same room is a one-line change rather than a forked copy of the geometry the
+safety taper reads.
 
-By default that models QLC+ from the workspace's stored scene values. To diff
-against what QLC+ really emits, record it off the wire first and compare
-against that:
+## Documentation
 
-```bash
-python shared/tools/qlc_parity.py capture --out captures.json --all
-```
-
-The UI has its own suite, run against a fixture captured from a real engine:
-
-```bash
-cd ui && npm test
-```
-
-CI runs all of the above on Linux and Windows, and adds the one check that
-cannot be made by being careful: it rebuilds `ui/dist` and fails if the result
-differs from what is committed. That bundle is committed on purpose so a show
-laptop needs no Node — which means a stale or half-staged one ships a blank
-console to the venue, and it nearly did.
-
-## The QLC+ path
-
-QLC+ programmed every show before the engine, and the workspaces stay runnable
-as the fallback. That model stores *values*, which is why per-fixture colour,
-phrase-aware automation, smooth interpolated motion and venue portability were
-each expensive or impossible — see
-[`docs/pipeline.md`](docs/pipeline.md#the-legacy-qlc-path) for the setup, and
-`events/<name>/README.md` for a show's own patch and rigging notes.
+| | |
+|---|---|
+| [`docs/runbook.md`](docs/runbook.md) | show night, start to finish |
+| [`docs/SAFETY.md`](docs/SAFETY.md) | what the taper does and does not do |
+| [`docs/engine.md`](docs/engine.md) | how the engine works, for changing it |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | what was built, why, and what is not |
+| [`docs/pipeline.md`](docs/pipeline.md) | Art-Net architecture; the QLC+ era |
+| [`docs/design/`](docs/design/) | working notes and measurements |
+| [`CHANGELOG.md`](CHANGELOG.md) | notable changes, newest first |
 
 ## Requirements
 
-- **Python 3.10+** — stdlib only. The engine, the tools and the previz host
-  half have no pip dependencies at all.
-- **Node 18+** — only to rebuild the UI (`cd ui && npm run build`). Never
-  needed at a venue; `ui/dist/` is committed.
-- **Unreal Engine 5.8** — for previz.
-- **Blender 3.3+ with BlenderDMX**, **QLC+ 4.14+** — for the legacy path.
+- **Python 3.10+**, stdlib only — the engine, the tools and the previz host half
+  have no pip dependencies at all.
+- **Node 18+**, only to rebuild the UI. Never needed at a venue.
+- **Unreal Engine 5.8**, only for the 3D previz.
 
 ## Licence
 

@@ -11,6 +11,45 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Changed — F18, documentation
+
+- **`README.md` is a user document now.** What it is, screenshots, quick start,
+  how to use the console, how to build the UI, where everything lives. The
+  rationale that filled it moved to `docs/`.
+- **New: [`docs/runbook.md`](docs/runbook.md)** — show night start to finish,
+  written to be followed by someone who did not build this. The QLC+ era had one
+  and the engine era did not.
+- **New: [`docs/engine.md`](docs/engine.md)** — layer order, the three slots, the
+  taper, the protocol, the tiers, the config contract.
+- **New: [`docs/ROADMAP.md`](docs/ROADMAP.md)** — F1–F18 reconstructed, the
+  decisions worth knowing, and what is *not* built. Six places in the code cite
+  "the plan" as an authority that was not in the repo.
+- **History and working notes moved out of the READMEs**, verbatim:
+  `previz/README.md` 692 → 221 lines, with the optics and modelling essays now
+  in [`docs/design/previz-optics.md`](docs/design/previz-optics.md);
+  `events/despacio/README.md` 1418 → 325 lines, with the QLC+/APC40 era in
+  `events/despacio/NOTES.md`.
+- Screenshots: a real previz render and the console's own plan view, both
+  produced by this project rather than mocked up.
+
+### Added — F18, the 60-minute soak
+
+[`spike/timing/soak.py`](spike/timing/soak.py) runs the **real engine** for an
+hour with auto mode on, and watches the clock and the garbage collector
+together.
+
+Running `jitter_harness.py --minutes 60` would not have answered the question F2
+actually left open. Its caveat was specific: *"GC collections were 0 in every
+run… a real engine holding cyclic object graphs will collect, and that is the
+most likely source of a long-run outlier."* The harness holds no cyclic graphs,
+so it would have reported zero collections again and proved nothing. The soak
+drives the engine's real frame loop and real layer stack, recomposing on every
+auto look change, and reports collections per generation and object-count drift
+alongside fps, drops and worst interval error.
+
+Art-Net goes to loopback and the script refuses a broadcast address: a soak is
+not a reason to move a rig that might be plugged in.
+
 ### Added — F16, tempo and phrase from the DJ
 
 **No analysis is written here.** No beat tracking, no DSP, no audio in the
