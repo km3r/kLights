@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/venue.schema.json",
+  "$id": "https://github.com/klights/schemas/venue.schema.json",
   "title": "cosmos venue",
   "description": "A room: its size, the mirror ball, the crowd zone, the canopy and truss, and the safety taper policy.",
   "type": "object",

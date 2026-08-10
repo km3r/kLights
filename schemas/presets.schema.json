@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/presets.schema.json",
+  "$id": "https://github.com/klights/schemas/presets.schema.json",
   "title": "cosmos presets",
   "description": "Named combinations of the three slots, plus the speed and master they were built at.",
   "type": "object",

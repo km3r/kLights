@@ -3,7 +3,7 @@ Build the previz level from an event's config. Runs inside the Unreal editor.
 
     python previz/ue_remote.py previz/unreal/Content/Python/build_level.py
 
-Everything this places is tagged `cosmos_previz` and rebuilt from scratch each
+Everything this places is tagged `klights_previz` and rebuilt from scratch each
 run, so the level is a *generated artefact* -- edit `venue.json` / `rig.json`
 and re-run rather than dragging things around in the viewport. Actors without
 that tag (a camera you parked somewhere useful) are left alone.
@@ -27,7 +27,10 @@ if str(REPO) not in sys.path:
 from previz import mirrorball as mb                 # noqa: E402
 from previz import scene as previz_scene            # noqa: E402
 
-TAG = "cosmos_previz"
+TAG = "klights_previz"
+# Tags this script used to place, still swept by clear_previous so a level
+# built before the rename does not leave orphans nothing can delete.
+LEGACY_TAGS = ("cosmos_previz",)
 LEVEL_PATH = "/Game/Maps/Previz"
 MATERIAL_DIR = "/Game/Previz/Materials"
 
@@ -122,7 +125,7 @@ subobjects = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
 # ------------------------------------------------------------------ helpers --
 
 def log(message):
-    print(f"[cosmos] {message}")
+    print(f"[kLights] {message}")
 
 
 def vec(xyz):
@@ -617,10 +620,19 @@ def clear_previous():
     keeping them would mean a tuning change here silently did nothing -- the
     `does_asset_exist` early-out in `make_material` would hand back the old one
     and the next render would look identical for no visible reason.
+
+    LEGACY_TAGS is a rename escape hatch. The tag was `cosmos_previz` before the
+    project was named kLights, and a level built under the old name is sitting
+    on somebody's disk -- levels are generated artefacts and are not committed,
+    so the old actors exist locally and nowhere else. Sweeping only the current
+    tag would leave every one of them behind permanently, un-deletable by this
+    script, with a fresh set built on top at the same coordinates. Cheap to
+    keep; delete it once no old level can plausibly remain.
     """
+    wanted = {TAG, *LEGACY_TAGS}
     removed = 0
     for actor in actors.get_all_level_actors():
-        if TAG in [str(t) for t in actor.tags]:
+        if wanted & {str(t) for t in actor.tags}:
             actors.destroy_actor(actor)
             removed += 1
     if unreal.EditorAssetLibrary.does_directory_exist(MATERIAL_DIR):
@@ -1133,9 +1145,9 @@ def stop_live():
     survives that -- the tick catches and counts -- but the errors are noise
     that looks exactly like a real fault the next time someone reads the log.
     """
-    if "cosmos_live" not in sys.modules:
+    if "klights_live" not in sys.modules:
         return False
-    sys.modules["cosmos_live"].stop()
+    sys.modules["klights_live"].stop()
     return True
 
 

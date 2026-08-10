@@ -7,12 +7,12 @@ since the day it was written; and the optics were eight numbers eyeballed
 against one photo of one room, which is fine until there is a second room.
 
     python previz/config.py                 # what is configured now
-    COSMOS_EVENT=cosmos26 python previz/ue_remote.py .../go.py
+    KLIGHTS_EVENT=cosmos26 python previz/ue_remote.py .../go.py
 
 Resolution order, most specific first:
 
   1. an explicit argument (`--event`, or `main(event=...)`)
-  2. `COSMOS_EVENT` in the environment
+  2. `KLIGHTS_EVENT` in the environment
   3. `previz/previz.json`
   4. `despacio`
 
@@ -60,7 +60,7 @@ def event(explicit: Optional[str] = None) -> str:
     """The event name to build. See the resolution order above."""
     if explicit:
         return explicit
-    from_env = os.environ.get("COSMOS_EVENT")
+    from_env = os.environ.get("KLIGHTS_EVENT")
     if from_env:
         return from_env
     return str(_load(PREVIZ_JSON).get("event") or DEFAULT_EVENT)
@@ -204,8 +204,8 @@ def describe(explicit: Optional[str] = None) -> dict[str, Any]:
     """
     if explicit:
         source = "asked for directly"
-    elif os.environ.get("COSMOS_EVENT"):
-        source = "COSMOS_EVENT"
+    elif os.environ.get("KLIGHTS_EVENT"):
+        source = "KLIGHTS_EVENT"
     elif _load(PREVIZ_JSON).get("event"):
         source = "previz.json"
     else:

@@ -94,10 +94,10 @@ def _settle_driver():
     straight back to following on the next editor tick.
     """
     try:
-        import cosmos_live_state
+        import klights_live_state
     except ImportError:
         return
-    state = getattr(cosmos_live_state, "current", None)
+    state = getattr(klights_live_state, "current", None)
     if state is not None:
         state.settle()
 
@@ -119,7 +119,7 @@ def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
 
     # Point the fog's slice range at this camera, and put it back afterwards so
     # a snapshot never leaves the viewport looking different from before.
-    fogs = [a for a in unreal.GameplayStatics.get_all_actors_with_tag(world, "cosmos_previz")
+    fogs = [a for a in unreal.GameplayStatics.get_all_actors_with_tag(world, "klights_previz")
             if isinstance(a, unreal.ExponentialHeightFog)]
     restore = [(f, f.component.get_editor_property("volumetric_fog_start_distance"))
                for f in fogs]
@@ -162,7 +162,7 @@ def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
         unreal.RenderingLibrary.export_render_target(
             world, target_rt, str(out_dir), filename)
         path = out_dir / filename
-        print(f"[cosmos] {path}")
+        print(f"[kLights] {path}")
         return str(path)
     finally:
         actors.destroy_actor(capture)

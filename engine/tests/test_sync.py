@@ -181,7 +181,7 @@ check("a string phrase decodes, and claims phrase is measured with it",
 # Matched on the last path component, so renaming the namespace in
 # beat-link-trigger is a configuration choice rather than a silent failure.
 check("a renamed namespace still matches",
-      syncmod.parse(osc("/cosmos/from-the-decks/bpm", "f", 124.0))
+      syncmod.parse(osc("/klights/from-the-decks/bpm", "f", 124.0))
       == {"bpm": 124.0})
 check("an address we do not model is ignored",
       syncmod.parse(osc("/beat-link/hotcue", "i", 2)) is None)

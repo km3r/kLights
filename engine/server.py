@@ -2078,7 +2078,7 @@ class ShowServer:
 
 PLACEHOLDER = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>cosmos engine</title>
+<title>kLights engine</title>
 <style>
  body{font:16px/1.6 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:2rem;}
  code{background:#222;padding:.15em .4em;border-radius:3px;}

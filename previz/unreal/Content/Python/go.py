@@ -16,11 +16,11 @@ import importlib
 import sys
 
 import build_level
-import cosmos_live
+import klights_live
 
 # Reload both, so editing either one and re-running actually takes effect --
 # the editor caches imported modules for its whole session.
-cosmos_live.stop()
+klights_live.stop()
 # engine.config first: engine.venue and engine.rig both import it, and reloading
 # a module without reloading what it imported leaves the old objects in place --
 # so a change to a config schema would not take effect until the editor was
@@ -31,7 +31,7 @@ for name in ("engine.config", "engine.geometry", "engine.venue", "engine.rig",
     if name in sys.modules:
         importlib.reload(sys.modules[name])
 importlib.reload(build_level)
-importlib.reload(cosmos_live)
+importlib.reload(klights_live)
 
 # Resolved ONCE and handed to both, rather than letting each default. This
 # script used to call these with no argument at all, which hardwired the
@@ -40,12 +40,12 @@ importlib.reload(cosmos_live)
 from previz import config as previz_config    # noqa: E402  (after the reloads)
 
 _event = previz_config.event()
-print(f"[cosmos] event {_event} "
+print(f"[kLights] event {_event} "
       f"(from {previz_config.describe()['source']})")
 
 build_level.main(_event, restart_hint=False)  # we restart it ourselves, below
-cosmos_live.start(_event)
+klights_live.start(_event)
 
-print("[cosmos] ready. Now send it some DMX, e.g.")
-print("[cosmos]   python previz/ball_check.py --artnet 127.0.0.1 --seconds 300")
-print("[cosmos]   python -m engine.demo --artnet 127.0.0.1 --seconds 300")
+print("[kLights] ready. Now send it some DMX, e.g.")
+print("[kLights]   python previz/ball_check.py --artnet 127.0.0.1 --seconds 300")
+print("[kLights]   python -m engine.demo --artnet 127.0.0.1 --seconds 300")

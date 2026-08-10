@@ -18,9 +18,9 @@ try:
     if (REPO / "engine" / "geometry.py").exists():
         if str(REPO) not in sys.path:
             sys.path.insert(0, str(REPO))
-        print(f"[cosmos] repo on sys.path: {REPO}")
+        print(f"[kLights] repo on sys.path: {REPO}")
     else:
-        print(f"[cosmos] WARNING: {REPO} does not look like the lights repo; "
+        print(f"[kLights] WARNING: {REPO} does not look like the lights repo; "
               f"`import engine` will fail and previz cannot decode aims.")
 except Exception:                                  # noqa: BLE001 - see docstring
     traceback.print_exc()

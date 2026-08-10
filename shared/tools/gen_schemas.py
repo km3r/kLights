@@ -106,7 +106,7 @@ def build(schema: dict[str, cfg.Spec], name: str, description: str) -> dict:
     # note to a file must not make an editor mark it broken.
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": f"https://github.com/cosmos-lights/schemas/{name}.schema.json",
+        "$id": f"https://github.com/klights/schemas/{name}.schema.json",
         "title": f"cosmos {name}",
         "description": description,
         "type": "object",

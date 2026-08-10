@@ -50,11 +50,11 @@ export function useMode(): [Mode, (m: Mode) => void] {
   // rather than of the show. A phone that reopens into Design after a reload
   // mid-set is the whole problem back again.
   const [mode, setStored] = useState<Mode>(() => {
-    const saved = localStorage.getItem("cosmos.mode");
+    const saved = localStorage.getItem("klights.mode");
     return saved === "perform" || saved === "design" ? saved : defaultMode();
   });
   const set = useCallback((next: Mode) => {
-    localStorage.setItem("cosmos.mode", next);
+    localStorage.setItem("klights.mode", next);
     setStored(next);
   }, []);
   return [mode, set];

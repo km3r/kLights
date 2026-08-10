@@ -337,7 +337,7 @@ review finding #17 and the last substantial piece of F15.
 - **`python -m engine.patch`** — describe, profiles, venues, add, remove,
   address, tags, position, autopatch, venue, import, new. Dry run until
   `--write`.
-- **`mcp/cosmos_mcp.py`** — the same operations over MCP, so the rig can be
+- **`mcp/klights_mcp.py`** — the same operations over MCP, so the rig can be
   described in conversation. JSON-RPC over stdio in pure standard library, no
   SDK. Registered in `.mcp.json`. Covered by `engine/tests/test_mcp.py`, which
   drives it through a real pipe rather than importing it, because the transport

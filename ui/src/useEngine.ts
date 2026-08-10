@@ -30,10 +30,10 @@ const RECONNECT_MAX = 4000;
 function token(): string {
   const fromUrl = new URLSearchParams(location.search).get("token");
   if (fromUrl) {
-    sessionStorage.setItem("cosmos.token", fromUrl);
+    sessionStorage.setItem("klights.token", fromUrl);
     return fromUrl;
   }
-  return sessionStorage.getItem("cosmos.token") ?? "";
+  return sessionStorage.getItem("klights.token") ?? "";
 }
 
 function socketUrl(): string {
@@ -43,13 +43,13 @@ function socketUrl(): string {
 }
 
 function clientName(): string {
-  const stored = localStorage.getItem("cosmos.name");
+  const stored = localStorage.getItem("klights.name");
   if (stored) return stored;
   // Something recognisable in the presence list without asking anyone to type.
   const guess = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
     ? "phone" : "laptop";
   const name = `${guess}-${Math.random().toString(36).slice(2, 5)}`;
-  localStorage.setItem("cosmos.name", name);
+  localStorage.setItem("klights.name", name);
   return name;
 }
 
@@ -117,7 +117,7 @@ export function useEngine() {
   }, []);
 
   const setName = useCallback((next: string) => {
-    localStorage.setItem("cosmos.name", next);
+    localStorage.setItem("klights.name", next);
     setNameState(next);
     const ws = socket.current;
     if (ws && ws.readyState === WebSocket.OPEN) {

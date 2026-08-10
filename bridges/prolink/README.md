@@ -1,4 +1,4 @@
-# Pro DJ Link → cosmos
+# Pro DJ Link → kLights
 
 Tempo, bar phase and phrase, off the CDJs, into the show clock.
 

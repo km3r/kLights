@@ -21,7 +21,7 @@ swapping either end is a config change rather than a rebuild.
   ┌──────────────────────┐                        ┌──────────────────────┐
   │  engine.server       │   Art-Net (UDP 6454)   │  Unreal previz       │
   │  40 fps frame clock  │ ──────────────┬───────▶│  previz/unreal       │
-  │  Universe 0          │               │        │  (cosmos_live.py)    │
+  │  Universe 0          │               │        │  (klights_live.py)    │
   └──────────┬───────────┘               │        └──────────────────────┘
              │ HTTP + WebSocket          │
              ▼                           ▼

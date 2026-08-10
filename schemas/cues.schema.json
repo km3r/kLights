@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/cues.schema.json",
+  "$id": "https://github.com/klights/schemas/cues.schema.json",
   "title": "cosmos cues",
   "description": "The night as an ordered list of cues, each filling the same three slots a preset does plus a fade and an optional hold, in beats.",
   "type": "object",

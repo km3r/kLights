@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO))
 
 from engine import rig as rigmod                           # noqa: E402
 
-SERVER = REPO / "mcp" / "cosmos_mcp.py"
+SERVER = REPO / "mcp" / "klights_mcp.py"
 EVENT = REPO / "events" / "despacio"
 
 failures: list[str] = []
@@ -91,7 +91,7 @@ server = Server()
 init = server.rpc("initialize", {"protocolVersion": "2024-11-05",
                                  "capabilities": {}})
 check("initialize names the server",
-      init["result"]["serverInfo"]["name"] == "cosmos-lights",
+      init["result"]["serverInfo"]["name"] == "klights",
       f"{init['result']['serverInfo']}")
 check("and declares the tools capability",
       "tools" in init["result"]["capabilities"])

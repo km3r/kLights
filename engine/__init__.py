@@ -1,4 +1,4 @@
-"""The despacio/cosmos show engine.
+"""The kLights show engine.
 
 A parametric lighting engine that owns its own DMX frame clock, knows the room
 in three dimensions, and is safe by construction. Replaces the QLC+ workspace

@@ -2,7 +2,7 @@
 Art-Net in, beams out. Runs inside the Unreal editor, on the editor tick.
 
     python previz/ue_remote.py previz/unreal/Content/Python/live_start.py
-    python previz/ue_remote.py -c "import cosmos_live; cosmos_live.stop()"
+    python previz/ue_remote.py -c "import klights_live; klights_live.stop()"
 
 A module rather than a script because the editor's Python keeps `sys.modules`
 between remote-execution calls, and the receive socket plus the tick handle have
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import unreal
 
-import cosmos_live_state
+import klights_live_state
 
 REPO = Path(__file__).resolve().parents[4]
 if str(REPO) not in sys.path:
@@ -44,7 +44,7 @@ from previz import scene as previz_scene            # noqa: E402
 ARTNET_PORT = 6454
 ARTNET_HEADER = b"Art-Net\x00"
 ARTNET_OP_DMX = 0x5000
-TAG = "cosmos_previz"
+TAG = "klights_previz"
 
 # How much of a beam survives each metre of haze, as an extinction coefficient:
 # what is left after d metres is exp(-k*d). At 0.09 a beam has lost about a
@@ -453,12 +453,12 @@ class Live:
                 if found:
                     pools[name] = found[0]
             if len(pools) != 2:
-                print(f"[cosmos] WARNING: {key}'s reflection actor is "
+                print(f"[kLights] WARNING: {key}'s reflection actor is "
                       f"missing an instance pool ({sorted(pools)}). Re-run go.py.")
                 continue
             materials = {n: self._shared_material(c) for n, c in pools.items()}
             if any(m is None for m in materials.values()):
-                print(f"[cosmos] WARNING: {key}'s reflections have no "
+                print(f"[kLights] WARNING: {key}'s reflections have no "
                       f"material to instance; they will not take colour.")
                 continue
             # The reflected shafts all leave the same place, and the ball does
@@ -1148,55 +1148,55 @@ def start(event="despacio"):
 
     state = Live(event_dir)
     state.handle = unreal.register_slate_post_tick_callback(state.tick)
-    cosmos_live_state.current = state
+    klights_live_state.current = state
 
     placed = [f for f in state.rig.fixtures if f.position is not None]
     missing = [f.name for f in placed if unit_key(f) not in state.lights]
-    print(f"[cosmos] live: listening on 0.0.0.0:{ARTNET_PORT}, "
+    print(f"[kLights] live: listening on 0.0.0.0:{ARTNET_PORT}, "
           f"universe(s) {list(state.frames)}, {len(state.rig.movers)} head(s) "
           f"and {len(state.statics)} fixed fixture(s) driven")
     if missing:
-        print(f"[cosmos] no previz actor for: {', '.join(missing)} "
+        print(f"[kLights] no previz actor for: {', '.join(missing)} "
               f"-- run build_level.py first")
     return state
 
 
 def stop():
-    state = cosmos_live_state.current
+    state = klights_live_state.current
     if state is not None:
         state.close()
-        print(f"[cosmos] live: stopped after {state.packets} packet(s), "
+        print(f"[kLights] live: stopped after {state.packets} packet(s), "
               f"{state.errors} error(s)")
-        cosmos_live_state.current = None
+        klights_live_state.current = None
 
 
 def status():
-    state = cosmos_live_state.current
+    state = klights_live_state.current
     if state is None:
-        print("[cosmos] live: not running")
+        print("[kLights] live: not running")
         return
-    print(f"[cosmos] live: {state.packets} packet(s), {state.errors} error(s), "
+    print(f"[kLights] live: {state.packets} packet(s), {state.errors} error(s), "
           f"{len(state.lights)} fixture(s), driving world "
           f"{state.world.get_name()!r} ({state.rebinds} rebind(s))")
-    print(f"[cosmos] tick: {state.tick_ms:.2f} ms now, {state.tick_ms_worst:.2f} ms "
+    print(f"[kLights] tick: {state.tick_ms:.2f} ms now, {state.tick_ms_worst:.2f} ms "
           f"worst over {state.ticks} tick(s)")
-    print(f"[cosmos] ball: spun {state.ball_angle:.0f} deg, {len(state.facets)} "
+    print(f"[kLights] ball: spun {state.ball_angle:.0f} deg, {len(state.facets)} "
           f"facets of {state.facet_mm:.0f} mm, reflections showing "
           f"{ {h: n for h, n in sorted(state.dots_shown.items())} }")
-    print(f"[cosmos] dots: {state.spot_mm[0]:.0f}-{state.spot_mm[1]:.0f} mm "
+    print(f"[kLights] dots: {state.spot_mm[0]:.0f}-{state.spot_mm[1]:.0f} mm "
           f"across (lens aperture {mb.APERTURE_MM:.0f} mm, an assumption)")
     if state.dots_sampled:
-        print(f"[cosmos] facet stride (REFLECT_BUDGET={REFLECT_BUDGET}): "
+        print(f"[kLights] facet stride (REFLECT_BUDGET={REFLECT_BUDGET}): "
               f"{ {k: f'every {n}' for k, n in sorted(state.dots_sampled.items())} }"
               f" -- a source wide enough to overshoot the ball lights more "
               f"facets than are worth drawing; density drops, coverage does not")
     if state.dots_truncated:
-        print(f"[cosmos] WARNING: the reflection pool ran out on "
-              f"{state.dots_truncated} frame(s) -- cosmos_live and build_level "
+        print(f"[kLights] WARNING: the reflection pool ran out on "
+              f"{state.dots_truncated} frame(s) -- klights_live and build_level "
               f"disagree about the facet count, so re-run go.py to rebuild")
     moving = [k for k, s in state.servos.servos.items()
               if s.target is not None and not s.arrived(*s.target)]
-    print(f"[cosmos] yokes: {servomod.DEFAULT_PAN_DEG_PER_S:.0f} deg/s pan, "
+    print(f"[kLights] yokes: {servomod.DEFAULT_PAN_DEG_PER_S:.0f} deg/s pan, "
           f"{servomod.DEFAULT_TILT_DEG_PER_S:.0f} deg/s tilt (ASSUMED -- see "
           f"engine/servo.py), "
           + (f"in flight: {', '.join(sorted(moving))}" if moving

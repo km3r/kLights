@@ -67,7 +67,7 @@ def main():
                         sp.shading.type = SHADING
                         vp += 1
 
-    print("── Cosmos Lights: LIVE ──────────────────────────────")
+    print("── kLights: LIVE ──────────────────────────────")
     print(f" fixtures        : {len(dmx.fixtures)}")
     print(f" art-net enabled : {dmx.artnet_enabled}  (status: {dmx.artnet_status})")
     print(f" universe 0 input: {next((u.input for u in dmx.universes if int(u.id)==0), '?')}")

@@ -7,7 +7,7 @@
     "workflow to despacio even though every function it called had taken an",
     "event since the day it was written.",
     "",
-    "Overridden by COSMOS_EVENT in the environment, and by an explicit",
+    "Overridden by KLIGHTS_EVENT in the environment, and by an explicit",
     "--event. The environment wins over this file on purpose: this is what",
     "the repo is set up for, the variable is one person looking at something",
     "else for ten minutes, and that should not need a tracked file edited.",

@@ -1,6 +1,6 @@
 """An MCP server for the rig, so it can be described in conversation.
 
-    python mcp/cosmos_mcp.py
+    python mcp/klights_mcp.py
 
 Speaks MCP over stdio: JSON-RPC 2.0, one object per line, on stdin and stdout.
 Written against the protocol directly rather than against an SDK, because the
@@ -261,7 +261,7 @@ def handle(request: dict) -> "dict | None":
         return ok({
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "cosmos-lights", "version": "0.1.0"},
+            "serverInfo": {"name": "klights", "version": "0.1.0"},
         })
     if method in ("notifications/initialized", "initialized"):
         return None                      # a notification: no id, no reply

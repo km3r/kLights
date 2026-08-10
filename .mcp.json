@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "cosmos": {
+    "klights": {
       "command": "python",
-      "args": ["mcp/cosmos_mcp.py"],
+      "args": ["mcp/klights_mcp.py"],
       "env": {}
     }
   }

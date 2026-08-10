@@ -12,7 +12,7 @@ F10 was always safe to build alongside everything else.
 
 ```
   engine.runner ──Art-Net UDP 6454──┬──▶ the rig
-                                    └──▶ Unreal (cosmos_live.py)
+                                    └──▶ Unreal (klights_live.py)
 ```
 
 ## Running it
@@ -80,7 +80,7 @@ Then, in order: is the editor open (`python previz/ue_remote.py
 --ping`), is a sender running, and what does the driver say?
 
 ```bash
-python previz/ue_remote.py -c "import cosmos_live; cosmos_live.status()"
+python previz/ue_remote.py -c "import klights_live; klights_live.status()"
 ```
 
 Only **one sender at a time** — two both emitting to 6454 means the previz
@@ -99,10 +99,10 @@ The previz builds whatever `previz/previz.json` names, and nothing in the
 Unreal path knows the word "despacio" any more:
 
 ```bash
-COSMOS_EVENT=cosmos26 python previz/ue_remote.py previz/unreal/Content/Python/go.py
+KLIGHTS_EVENT=cosmos26 python previz/ue_remote.py previz/unreal/Content/Python/go.py
 ```
 
-`COSMOS_EVENT` beats the file on purpose — the file is what the repo is set up
+`KLIGHTS_EVENT` beats the file on purpose — the file is what the repo is set up
 for, the variable is one person looking at something else for ten minutes.
 `python previz/config.py` prints which is winning.
 
@@ -145,11 +145,11 @@ python previz/ue_remote.py previz/unreal/Content/Python/snapshot.py
 Other useful one-liners:
 
 ```bash
-python previz/ue_remote.py -c "import cosmos_live; cosmos_live.status()"
+python previz/ue_remote.py -c "import klights_live; klights_live.status()"
 ```
 
 ```bash
-python previz/ue_remote.py -c "import cosmos_live; cosmos_live.stop()"
+python previz/ue_remote.py -c "import klights_live; klights_live.stop()"
 ```
 
 ## Play in the editor

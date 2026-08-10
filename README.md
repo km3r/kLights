@@ -1,4 +1,4 @@
-# Cosmos Lights
+# kLights
 
 A lighting console for a small moving-head rig, with 3D previsualization.
 
@@ -130,7 +130,7 @@ python -m engine.patch add --name "Par 5" ...   # one-shot edits
 ```
 
 - the **Setup tab** in the console, phone in hand at load-in
-- the **MCP server** (`mcp/cosmos_mcp.py`), so an assistant can patch and
+- the **MCP server** (`mcp/klights_mcp.py`), so an assistant can patch and
   describe the rig
 - the **CLI** above, which needs no UI
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/calibration.schema.json",
+  "$id": "https://github.com/klights/schemas/calibration.schema.json",
   "title": "cosmos calibration",
   "description": "What this rig measured in this room on this day: per head, the DMX that aims it at the ball.",
   "type": "object",

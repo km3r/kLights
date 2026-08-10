@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/rig.schema.json",
+  "$id": "https://github.com/klights/schemas/rig.schema.json",
   "title": "cosmos rig",
   "description": "What is plugged in: fixtures, addresses, positions, tags, and which room this event uses.",
   "type": "object",

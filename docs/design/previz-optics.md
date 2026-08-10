@@ -81,7 +81,7 @@ heads are mounted *sideways*: Pan carries elevation, Tilt carries bearing, and
 each head's true mount facing is backed out of one hand-aimed mirror-ball
 reading. Unreal's fixture model cannot express that, so a GDTF-driven previz
 would articulate confidently and wrongly — and would keep doing so after every
-recalibration. Instead `cosmos_live.py` reads Art-Net itself and decodes with
+recalibration. Instead `klights_live.py` reads Art-Net itself and decodes with
 **`engine.geometry`, the show's own decoder**. Previz and show cannot drift
 because they are the same code. (`previz/scene.py`'s self-test additionally
 checks the Unreal frame conversion against `geometry.ray()`, which is what the
@@ -189,7 +189,7 @@ blackout. The other is every **dark move**, whose travel time *is* the effect;
 with a teleporting previz, Teleport and an ordinary lit sweep render identically.
 
 `engine.servo` rate-limits each head toward the commanded position and
-`cosmos_live` decodes where the yoke has *got to* rather than where it was told
+`klights_live` decodes where the yoke has *got to* rather than where it was told
 to be. The decode itself is untouched, so previz and show still share one
 geometry.
 
@@ -331,7 +331,7 @@ all the opposite of the obvious guess:
 
 ## What the level is made of
 
-Everything is tagged `cosmos_previz` and rebuilt from scratch by
+Everything is tagged `klights_previz` and rebuilt from scratch by
 `build_level.py`, so **the level is a generated artefact** — change
 `venue.json` / `rig.json` / `calibration.json` and re-run, rather than dragging
 things around in the viewport. Untagged actors (a camera you parked somewhere

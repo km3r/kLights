@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/cosmos-lights/schemas/inventory.schema.json",
+  "$id": "https://github.com/klights/schemas/inventory.schema.json",
   "title": "cosmos inventory",
   "description": "Hardware actually owned. Events select from this; they never redefine hardware.",
   "type": "object",

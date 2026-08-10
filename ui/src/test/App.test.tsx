@@ -389,7 +389,7 @@ describe("preset banks", () => {
  */
 describe("perform mode", () => {
   function performing() {
-    localStorage.setItem("cosmos.mode", "perform");
+    localStorage.setItem("klights.mode", "perform");
     return mount();
   }
 
@@ -422,7 +422,7 @@ describe("perform mode", () => {
 
   it("shows the strobe warning anyway when there is no policy at all", async () => {
     const user = userEvent.setup();
-    localStorage.setItem("cosmos.mode", "perform");
+    localStorage.setItem("klights.mode", "perform");
     installMockSocket();
     render(<App />);
     const socket = currentSocket();
@@ -449,7 +449,7 @@ describe("perform mode", () => {
     await user.click(screen.getByRole("button", { name: /^Perform$/ }));
     const bar = document.querySelector("nav.tabbar") as HTMLElement;
     expect(within(bar).getByRole("button", { name: /Setup/ })).toBeInTheDocument();
-    expect(localStorage.getItem("cosmos.mode")).toBe("design");
+    expect(localStorage.getItem("klights.mode")).toBe("design");
   });
 
   it("comes back to Show rather than a tab with no button", async () => {
@@ -1146,7 +1146,7 @@ describe("plan view", () => {
     // Perform mode, which is where this matters: the Heads card that also
     // reports landings is Design-only, and the SVG <title> tooltips need a
     // pointer that a phone does not have.
-    localStorage.setItem("cosmos.mode", "perform");
+    localStorage.setItem("klights.mode", "perform");
     const socket = mount();
     act(() => socket.push(stateWith((s) => {
       const mh = s.fixtures.find((f) => f.name === "Moving Head #1")!;

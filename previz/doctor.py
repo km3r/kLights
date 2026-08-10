@@ -170,7 +170,7 @@ def main(argv: list | None = None) -> int:
 
     if args.event:
         import os
-        os.environ["COSMOS_EVENT"] = args.event
+        os.environ["KLIGHTS_EVENT"] = args.event
 
     r = Report()
     check_event(r)
