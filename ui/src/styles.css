@@ -406,3 +406,24 @@ label.field input, label.field select {
 /* Buttons hold two lines of text often enough (a name plus a hint) that the
    default centre alignment reads as ragged. */
 button { max-width: 100%; overflow-wrap: anywhere; }
+
+/* The six rate buttons, and the one place the rule above is wrong.
+
+   `overflow-wrap: anywhere` is right for a look called "Split Pink/Green" and
+   wrong for a five-character label: six equal flex children on a 420 px phone
+   are narrower than "0.25×", so it broke them mid-token -- "hol" over "d",
+   "0.25" over "×" -- which reads as a rendering fault rather than a tight fit.
+   These labels are short and atomic, so they never break; the ROW gives way
+   instead. auto-fit means six columns where they fit and four plus two on a
+   narrow phone, with every label intact either way. */
+.rates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.4rem, 1fr));
+  gap: 0.35rem;
+}
+.rates button {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}

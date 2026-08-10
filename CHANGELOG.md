@@ -11,6 +11,25 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Fixed — the rate buttons, and a test that meant two different things
+
+- **The six Rate buttons broke mid-token on a phone.** `overflow-wrap: anywhere`
+  is right for a look called "Split Pink/Green" and wrong for a five-character
+  label: six equal flex children at 420 px are narrower than `0.25×`, so it
+  rendered "hol / d" and "0.25 / ×". They are a six-column auto-fit grid now,
+  with the labels atomic and the *row* giving way instead — six across where
+  they fit, four plus two on a 320 px phone.
+- **`test_server` failed on Linux and passed on Windows**, for the whole
+  repository's history. The stuck-client check sampled presence at a fixed
+  moment ~2.6 s after the client went quiet. But the drop is not on the same
+  clock as the stall: the app queue only fills once the kernel stops absorbing
+  writes, and the buffer that has to fill first is the *server's* send buffer,
+  which Linux auto-tunes into the megabytes — so the same client is dropped in
+  under a second on Windows and after ~5 s on Linux. It now waits for the drop.
+  The behaviour was always correct; the test was measuring the platform.
+  Its first clause also looked for a notice reading `stalls the broadcast`,
+  which no code has ever emitted — dead since it was written.
+
 ### Changed — F18, documentation
 
 - **`README.md` is a user document now.** What it is, screenshots, quick start,
