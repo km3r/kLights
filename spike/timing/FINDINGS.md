@@ -138,12 +138,11 @@ own pan/tilt-speed smoothing and its tens-of-milliseconds mechanical response.
 
 Stated plainly, because the run was short:
 
-- **3 minutes, not 60.** Thermal throttling and long-run GC behaviour are
-  untested. Notably **GC collections were 0 in every run** — the loop allocates
-  floats and bytes, which are refcounted and not GC-tracked. A real engine
-  holding cyclic object graphs will collect, and that is the most likely source
-  of a long-run outlier. Re-run at `--minutes 60` on an otherwise-idle machine
-  before trusting this for a show.
+- ~~**3 minutes, not 60.**~~ **Answered 2026-08-09 — see below.** Thermal
+  throttling and long-run GC behaviour were untested. Notably **GC collections
+  were 0 in every run** — the loop allocates floats and bytes, which are
+  refcounted and not GC-tracked. A real engine holding cyclic object graphs will
+  collect, and that is the most likely source of a long-run outlier.
 - **This machine, not the show laptop.** Windows 10, Python 3.11.9.
 - **6 fixtures.** A club rig of 48 is ~8× the per-frame math — still trivial in
   absolute terms, but unmeasured.
@@ -162,3 +161,63 @@ Reproduce with:
 ```bash
 python spike/timing/jitter_harness.py --minutes 3 --contend 2 --contend-procs 2 --switch-interval 0.5
 ```
+
+---
+
+# The 60-minute soak — 2026-08-09
+
+**Answered: yes, and the thing we were worried about barely happens.**
+
+Run with [`soak.py`](soak.py), not this harness. The caveat above was specific
+about GC in *a real engine holding cyclic object graphs*, and this harness holds
+none — running it for an hour would have reported zero collections again and
+proved nothing. So the soak drives the actual show engine: the real frame loop,
+the real layer stack, auto mode on, recomposing the whole stack on every look
+change.
+
+```bash
+python spike/timing/soak.py --minutes 60 --sample 120 --json soak-60min.json
+```
+
+| metric | measured | threshold |
+|---|---|---|
+| duration | 62.0 min, 148 802 frames | 60 |
+| mean rate | 40.0008 fps | 40 |
+| min rate (any 2-min window) | 40.000 fps | — |
+| **dropped frames** | **0** | 0 |
+| **evaluation errors** | **0** | 0 |
+| **worst interval error** | **2.659 ms** | < 10 ms |
+| GC collections (gen 0 / 1 / 2) | **9 / 0 / 0** | — |
+| tracked objects, start → end | 23 939 → 24 076 | — |
+| auto look changes | 120 | — |
+
+## What it says
+
+**1. The GC worry was real and small.** Collections happen now — 9 of them,
+where the harness saw zero — so the engine does hold cyclic graphs, as predicted.
+But **gen-1 and gen-2 never ran at all**, because gen-1 only triggers every ten
+gen-0 passes. Nine collections in an hour is very little net allocation churn for
+a process rebuilding a layer stack 120 times. The predicted long-run outlier did
+not appear.
+
+**2. Nothing leaks.** Tracked objects moved 23 939 → 24 076 over the hour, 0.6%,
+and it oscillates rather than climbs — 23 981, 23 999, 23 985, 23 987 across
+consecutive samples. That is noise, not growth.
+
+**3. The clock holds.** Zero drops across 148 802 frames, and the rate is exact
+to four decimal places. The worst single interval error was 2.659 ms, up from
+2.122 ms in the 3-minute contended run — one outlier somewhere in the middle
+hour, still a ~4× margin on the threshold.
+
+## What this run does NOT show
+
+- **The machine was not idle.** The caveat asked for one; this ran alongside the
+  full test suite, several `npm run build`s, and an Unreal editor. Row B of the
+  matrix above says external process load is a non-issue, so this is arguably
+  the stronger result — but it is not the experiment that was asked for, and a
+  genuinely idle 60 minutes has still never been run.
+- **Max, not percentiles.** `soak.py` records a running worst-case interval
+  error and drop count; it does not keep the distribution, so there is no p99
+  here to compare against the 0.046 ms above. Only the max is comparable.
+- **Still this machine** (now Python 3.12.10), still 6 fixtures, still no DMX
+  hardware in the loop. All three earlier caveats stand unchanged.

@@ -1,0 +1,494 @@
+{
+  "report": {
+    "minutes": 62.0,
+    "fps_target": 40.0,
+    "fps_mean": 40.0008,
+    "fps_min": 40.0,
+    "frames": 148802,
+    "drops": 0,
+    "eval_errors": 0,
+    "worst_error_ms": 2.659,
+    "gc_collections": [
+      9,
+      0,
+      0
+    ],
+    "objects_start": 23939,
+    "objects_end": 24076,
+    "object_growth": 137,
+    "look_changes": 120,
+    "timing_applied": [
+      "sys.setswitchinterval(0.0005)",
+      "timeBeginPeriod(1)"
+    ],
+    "python": "3.12.10",
+    "platform": "win32"
+  },
+  "samples": [
+    {
+      "t": 120.0,
+      "fps": 40.0081,
+      "frames": 4801,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.112,
+      "gc": [
+        6,
+        0,
+        0
+      ],
+      "rss_objects": 23939,
+      "look_changes": 3
+    },
+    {
+      "t": 240.0,
+      "fps": 40.0038,
+      "frames": 9601,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.112,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23959,
+      "look_changes": 7
+    },
+    {
+      "t": 360.0,
+      "fps": 40.0024,
+      "frames": 14401,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.711,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23961,
+      "look_changes": 11
+    },
+    {
+      "t": 480.0,
+      "fps": 40.0017,
+      "frames": 19201,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.711,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24006,
+      "look_changes": 15
+    },
+    {
+      "t": 600.0,
+      "fps": 40.0012,
+      "frames": 24001,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.711,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23965,
+      "look_changes": 19
+    },
+    {
+      "t": 720.0,
+      "fps": 40.0009,
+      "frames": 28801,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24018,
+      "look_changes": 23
+    },
+    {
+      "t": 840.0,
+      "fps": 40.0007,
+      "frames": 33601,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23953,
+      "look_changes": 27
+    },
+    {
+      "t": 960.0,
+      "fps": 40.0006,
+      "frames": 38401,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24022,
+      "look_changes": 30
+    },
+    {
+      "t": 1080.0,
+      "fps": 40.0005,
+      "frames": 43201,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24016,
+      "look_changes": 34
+    },
+    {
+      "t": 1200.0,
+      "fps": 40.0004,
+      "frames": 48001,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23975,
+      "look_changes": 38
+    },
+    {
+      "t": 1320.0,
+      "fps": 40.0003,
+      "frames": 52801,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23961,
+      "look_changes": 42
+    },
+    {
+      "t": 1440.0,
+      "fps": 40.0002,
+      "frames": 57601,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23963,
+      "look_changes": 46
+    },
+    {
+      "t": 1560.0,
+      "fps": 40.0002,
+      "frames": 62401,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 0.887,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23965,
+      "look_changes": 50
+    },
+    {
+      "t": 1680.0,
+      "fps": 40.0001,
+      "frames": 67201,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23967,
+      "look_changes": 54
+    },
+    {
+      "t": 1800.0,
+      "fps": 40.0001,
+      "frames": 72001,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23969,
+      "look_changes": 58
+    },
+    {
+      "t": 1920.0,
+      "fps": 40.0,
+      "frames": 76801,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23971,
+      "look_changes": 61
+    },
+    {
+      "t": 2040.0,
+      "fps": 40.0,
+      "frames": 81601,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24040,
+      "look_changes": 65
+    },
+    {
+      "t": 2160.0,
+      "fps": 40.0004,
+      "frames": 86402,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24042,
+      "look_changes": 69
+    },
+    {
+      "t": 2280.0,
+      "fps": 40.0004,
+      "frames": 91202,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24081,
+      "look_changes": 73
+    },
+    {
+      "t": 2400.0,
+      "fps": 40.0003,
+      "frames": 96002,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.143,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24083,
+      "look_changes": 77
+    },
+    {
+      "t": 2520.0,
+      "fps": 40.0003,
+      "frames": 100802,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23981,
+      "look_changes": 81
+    },
+    {
+      "t": 2640.0,
+      "fps": 40.0003,
+      "frames": 105602,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23999,
+      "look_changes": 85
+    },
+    {
+      "t": 2760.0,
+      "fps": 40.0002,
+      "frames": 110402,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23985,
+      "look_changes": 89
+    },
+    {
+      "t": 2880.0,
+      "fps": 40.0002,
+      "frames": 115202,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23987,
+      "look_changes": 93
+    },
+    {
+      "t": 3000.0,
+      "fps": 40.0002,
+      "frames": 120002,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24005,
+      "look_changes": 96
+    },
+    {
+      "t": 3120.0,
+      "fps": 40.0001,
+      "frames": 124802,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24007,
+      "look_changes": 100
+    },
+    {
+      "t": 3240.0,
+      "fps": 40.0001,
+      "frames": 129602,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24009,
+      "look_changes": 104
+    },
+    {
+      "t": 3360.0,
+      "fps": 40.0001,
+      "frames": 134402,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 23995,
+      "look_changes": 108
+    },
+    {
+      "t": 3480.0,
+      "fps": 40.0001,
+      "frames": 139202,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24013,
+      "look_changes": 112
+    },
+    {
+      "t": 3599.9,
+      "fps": 40.0001,
+      "frames": 144002,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24015,
+      "look_changes": 116
+    },
+    {
+      "t": 3719.9,
+      "fps": 40.0,
+      "frames": 148802,
+      "drops": 0,
+      "eval_errors": 0,
+      "worst_error_ms": 2.659,
+      "gc": [
+        9,
+        0,
+        0
+      ],
+      "rss_objects": 24076,
+      "look_changes": 120
+    }
+  ]
+}

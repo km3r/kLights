@@ -49,7 +49,7 @@ every one of those four points is a thing the engine now does differently.
 | **F15** | Show control | Shape macros, the Night cue list, crossfade, flash, per-slot rate, preset banks, Perform/Design. |
 | **F16** | Tempo from the DJ | A `sync` seam and a UDP port speaking JSON and OSC. **No analysis is written here** — beat position and rekordbox's phrase labels are a *read*. |
 | **F17** | Previz, generic | A plan view that needs no GPU; an Unreal path that does not know the word "despacio"; optics as config. |
-| **F18** | Docs | This file, [`engine.md`](engine.md), [`runbook.md`](runbook.md), and the 60-minute soak F2 asked for. |
+| **F18** | Docs and the soak | This file, [`engine.md`](engine.md), [`runbook.md`](runbook.md), and the 60-minute soak F2 asked for — **passed**: 148 802 frames, zero drops, and the predicted GC outlier did not appear. |
 
 ## Decisions worth knowing
 

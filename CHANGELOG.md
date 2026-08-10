@@ -50,6 +50,18 @@ alongside fps, drops and worst interval error.
 Art-Net goes to loopback and the script refuses a broadcast address: a soak is
 not a reason to move a rig that might be plugged in.
 
+**Result — 62 minutes, 148 802 frames: zero drops, zero evaluation errors, mean
+40.0008 fps, worst interval error 2.659 ms against a 10 ms threshold.** The GC
+worry was real and small: collections happened (9, where the harness saw zero),
+so the engine does hold cyclic graphs — but gen-1 and gen-2 never ran, and the
+predicted long-run outlier did not appear. Tracked objects moved 0.6% and
+oscillated rather than climbed, so nothing leaks.
+
+Two honest limits on that: the machine was **not idle** — the run shared it with
+the test suite, several UI builds and an Unreal editor — and `soak.py` records a
+running max rather than a distribution, so there is no p99 to compare with the
+harness. Both are written into `FINDINGS.md` beside the result.
+
 ### Added — F16, tempo and phrase from the DJ
 
 **No analysis is written here.** No beat tracking, no DSP, no audio in the
