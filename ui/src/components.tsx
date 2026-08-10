@@ -104,9 +104,9 @@ export function RateCard({ state, send, slot, hint }: {
         Reset
       </button>
     }>
-      <div className="row">
+      <div className="rates">
         {RATES.map((r) => (
-          <button key={r} style={{ flex: 1 }}
+          <button key={r}
                   className={Math.abs(rate - r) < 0.01 ? "on" : ""}
                   aria-label={`${slot} rate ${r}`}
                   onClick={() => send({ type: "rate", slot, value: r })}>

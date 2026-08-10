@@ -1017,10 +1017,26 @@ try:
     elapsed = time.time() - started
     check("a stuck client does not stall the broadcast for a live one",
           elapsed < 2.0, f"{elapsed:.2f}s to see a change land")
-    check("and the stuck one was dropped, with a reason",
-          any("stalls the broadcast" in n for n in seen["notices"])
-          or len(seen["presence"]) <= 1,
-          f"presence={len(seen['presence'])}, notices={seen['notices'][-1:]}")
+
+    # The drop is NOT on the same clock as the stall, and sampling one snapshot
+    # at a fixed moment made this check mean different things on different
+    # platforms. The queue only fills once the kernel stops absorbing writes,
+    # and the buffer that has to fill first is the SERVER's send buffer, which
+    # Linux auto-tunes into the megabytes -- so the same stuck client is dropped
+    # in well under a second on Windows and around seven seconds on Linux. The
+    # guarantee is that it is dropped and said so, not that it happens inside
+    # the window the stall check happens to use, so wait for it.
+    try:
+        seen = live.wait_for(
+            lambda s: len(s["presence"]) <= 1
+            or any("not reading" in n for n in s["notices"]),
+            timeout=30.0)
+        dropped, why = True, f"dropped after {time.time() - started:.1f}s"
+    except AssertionError:
+        dropped, why = False, "still present after 30s"
+    check("and the stuck one was dropped, with a reason", dropped,
+          f"{why}; presence={len(seen['presence'])}, "
+          f"notices={seen['notices'][-1:]}")
     idle.close()
     live.close()
 finally:
