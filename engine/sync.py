@@ -206,6 +206,23 @@ def parse(data: bytes) -> Optional[dict]:
     return clean(raw)
 
 
+def _flag(value) -> bool:
+    """A boolean off the wire. `bool("false")` is True, and a JSON sender that
+    quoted its booleans would otherwise claim a measured phrase by saying it
+    had not. Anything that is not recognisably true or false is refused."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in ("1", "true", "yes", "on"):
+            return True
+        if word in ("0", "false", "no", "off", ""):
+            return False
+    raise ValueError(f"not a flag: {value!r}")
+
+
 def clean(raw: dict) -> Optional[dict]:
     """Whitelist, coerce and range-check. Returns None if nothing usable is left.
 
@@ -223,7 +240,7 @@ def clean(raw: dict) -> Optional[dict]:
             if key in ("bpm", "beat", "beat_in_bar", "phrase_ends_in"):
                 out[key] = float(value)
             elif key == "phrase_measured":
-                out[key] = bool(value)
+                out[key] = _flag(value)
             else:
                 out[key] = str(value)[:64]
         except (TypeError, ValueError):

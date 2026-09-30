@@ -11,6 +11,29 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19a: replies, a worker thread, and one validator for sync
+
+- **A command can ask for a reply.** Give it an `id` and the engine answers the
+  sender, and only the sender, with `ok` or the reason it failed. The designer
+  needs to know whether *its* save worked, not scan a notices list shared with
+  every phone. Commands without an id behave exactly as before.
+- **A worker thread for slow work.** Parsing, matching and writes to a shared
+  folder cannot run on the output thread, which already drains every command
+  inside the 25 ms frame. They run on the worker and hand their result back to
+  be installed at a frame boundary. Tested by thread name, because a worker
+  that quietly ran jobs inline would pass every other test.
+- **The WebSocket `sync` command now goes through the UDP port's checks.** It
+  used to take the message as it came: a bpm of 900 reached the clock, and a
+  track title could be any length. Both routes into the clock now share one
+  validator.
+
+### Fixed — a quoted "false" read as true
+
+- `sync.clean` turned `phrase_measured: "false"` into True, because
+  `bool("false")` is. A sender that quoted its booleans claimed a measured
+  phrase by saying it had none. Flags are parsed now, and one that is neither
+  true nor false is refused rather than guessed.
+
 ### Changed — the fake bridge speaks rekordbox's phrase vocabulary
 
 - **`bridge.py --fake` used phrase names rekordbox never sends.** Its script said

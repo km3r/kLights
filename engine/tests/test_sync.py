@@ -147,6 +147,15 @@ check("a string where a number belongs does not poison the whole packet",
 check("a long label is truncated rather than stored whole",
       len(syncmod.parse(b'{"phrase_label": "' + b"x" * 200 + b'"}')
           ["phrase_label"]) == 64)
+# bool("false") is True. A sender that quoted its booleans would otherwise
+# claim a measured phrase by saying it had not one.
+check("a quoted false is false, not a non-empty string",
+      syncmod.clean({"phrase_measured": "false"}) == {"phrase_measured": False}
+      and syncmod.clean({"phrase_measured": "0"}) == {"phrase_measured": False})
+check("a quoted true is true",
+      syncmod.clean({"phrase_measured": "True"}) == {"phrase_measured": True})
+check("and a flag that is neither is refused rather than guessed",
+      syncmod.clean({"phrase_measured": "maybe"}) is None)
 
 
 # -- 5. the wire: OSC ----------------------------------------------------------

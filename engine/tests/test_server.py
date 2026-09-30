@@ -583,6 +583,13 @@ client.sock.sendall(bytes([0x81, 0x83]) + b"\x00\x00\x00\x00" + b"abc")
 after = client.wait_for(lambda s: s["stats"]["frames"] > after["stats"]["frames"] + 5)
 check("non-JSON text is ignored, connection survives", True)
 
+# Valid JSON that is not an object used to reach `.get` and end the connection.
+client.sock.sendall(bytes([0x81, 0x86]) + b"\x00\x00\x00\x00" + b"[1, 2]")
+client.send({"type": "master", "value": 0.8})
+after = client.wait_for(lambda s: abs(s["master"] - 0.8) < 1e-9)
+check("a JSON array is ignored too, and the connection still takes commands",
+      True)
+
 
 # -- multi-user ---------------------------------------------------------------
 print("\n7. two clients, no locking")
@@ -923,6 +930,134 @@ except ValueError as exc:
 phases.reset()
 for name in ("rated", "unrated"):
     controller.apply({"type": "preset_delete", "name": name}, None)
+
+
+# -- 11d. replies, and work done off the output thread -------------------------
+#
+# F19a. A designer that saves a timeline needs to know whether THAT save worked,
+# not scan a shared notices list for a line that might be someone else's. And
+# anything slow must run on the worker, with its result installed on the output
+# thread -- checked by thread name, because a version that quietly ran the work
+# inline would pass every "did it happen" check and break the DMX clock.
+print("\n11d. replies, submit_call and the worker")
+
+
+def wait_reply(c, rid, timeout=6.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "reply" and msg.get("id") == rid:
+            return msg
+    raise AssertionError(f"no reply {rid!r}")
+
+
+def replies_within(c, seconds):
+    got = []
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "reply":
+            got.append(msg)
+    return got
+
+
+other = Client(port, "other")
+other.recv()                                             # welcome
+other.recv()                                             # first state
+
+client.send({"type": "master", "value": 0.5, "id": "m1"})
+reply = wait_reply(client, "m1")
+check("a command with an id gets a reply", reply["ok"] is True
+      and "error" not in reply, f"{reply}")
+check("and it took effect", abs(controller.master - 0.5) < 1e-9)
+check("the reply went to the sender only, not to everyone",
+      replies_within(other, 0.5) == [])
+
+seen_before = sum("no_such_command failed" in n for n in controller.notices)
+client.send({"type": "no_such_command", "id": 7})
+reply = wait_reply(client, 7)
+check("a failure comes back in the reply, with the reason",
+      reply["ok"] is False and "unknown command" in reply.get("error", ""),
+      f"{reply}")
+client.wait_for(lambda s: True)
+check("and it does not ALSO land in everyone's notices",
+      sum("no_such_command failed" in n for n in controller.notices) <= seen_before,
+      f"{controller.notices[-2:]}")
+
+client.send({"type": "master", "value": 0.6, "id": {"not": "an id"}})
+client.wait_for(lambda s: abs(s["master"] - 0.6) < 1e-9)
+check("an id that is not a short string or an integer means no reply, "
+      "and the command still runs", replies_within(client, 0.4) == [])
+client.send({"type": "master", "value": 0.7, "id": "x" * 65})
+client.wait_for(lambda s: abs(s["master"] - 0.7) < 1e-9)
+check("nor does an id too long to echo back", replies_within(client, 0.4) == [])
+
+where: dict = {}
+ran = threading.Event()
+controller.submit_call(lambda: (where.__setitem__("call", threading.current_thread().name),
+                                ran.set()))
+ran.wait(2.0)
+check("submit_call runs on the output thread, at a frame boundary",
+      where.get("call") == "dmx-output", f"{where}")
+
+finished = threading.Event()
+controller.worker.submit(
+    lambda: threading.current_thread().name,
+    lambda job_thread: (where.update(job=job_thread,
+                                     done=threading.current_thread().name),
+                        finished.set()))
+finished.wait(3.0)
+check("worker jobs run on the worker",
+      where.get("job") == "klights-worker", f"{where}")
+check("and their result is installed on the output thread",
+      where.get("done") == "dmx-output", f"{where}")
+
+
+def parse_show():
+    raise ValueError("timelines/x.json line 3: expected ','")
+
+
+controller.worker.submit(parse_show, label="load timeline")
+after = client.wait_for(lambda s: any("load timeline failed" in n
+                                      for n in s["notices"]))
+check("a failed worker job becomes a notice, not a dead thread",
+      controller.worker.running, f"{after['notices'][-1:]}")
+controller.submit_call(lambda: 1 / 0)
+after = client.wait_for(lambda s: any("engine task failed" in n
+                                      for n in s["notices"]))
+check("and so does a posted call that raises -- the show keeps running",
+      after["stats"]["eval_errors"] == 0, f"{after['notices'][-1:]}")
+
+# The WebSocket route into the clock used to skip the checks the UDP port
+# makes: a bpm of 900 went straight to the clock.
+bpm_before = controller.clock.bpm
+client.send({"type": "sync", "bpm": 900, "id": "s1"})
+reply = wait_reply(client, "s1")
+check("a sync over the WebSocket gets the UDP port's range checks",
+      reply["ok"] is False and abs(controller.clock.bpm - bpm_before) < 1e-9,
+      f"{reply}, bpm {controller.clock.bpm}")
+client.send({"type": "sync", "bpm": 126, "track": "x" * 1000,
+             "phrase_measured": "false", "id": "s2"})
+reply = wait_reply(client, "s2")
+check("the usable fields of a sync are applied",
+      reply["ok"] is True and abs(controller.clock.bpm - 126) < 1e-6,
+      f"{reply}, bpm {controller.clock.bpm}")
+check("a 1000-character title is cut to the port's 64",
+      len(controller.sync_track or "") == 64, f"{len(controller.sync_track or '')}")
+check("and a quoted false is false", controller.clock.phrase_measured is False)
+client.send({"type": "sync_off", "id": "s3"})
+wait_reply(client, "s3")
+
+# A handler whose answer JSON cannot carry must not stop the frame it was sent
+# from -- the reply is built on the output thread.
+controller._cmd_test_unserialisable = lambda m, now: {"when": object()}
+client.send({"type": "test_unserialisable", "id": "u1"})
+reply = wait_reply(client, "u1")
+check("a reply whose data cannot be sent says so, and the show runs on",
+      reply["ok"] is True and "not serialisable" in reply.get("error", ""),
+      f"{reply}")
+del controller._cmd_test_unserialisable
+other.close()
 
 
 client.close()

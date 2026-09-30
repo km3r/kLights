@@ -58,6 +58,7 @@ from . import safety as safetymod
 from . import state as statemod
 from . import sync as syncmod
 from . import venue as venuemod
+from . import worker as workermod
 from .output import ArtNetOutput, NullOutput
 from .runner import Runner
 from .websocket import WebSocket, WebSocketClosed, WebSocketError
@@ -272,8 +273,18 @@ class ShowController:
             before_frame=self._drain, on_show=self._attach_overrides,
             on_frame=self._publish)
 
-        self.commands: "queue.Queue[tuple[dict, Optional[Client], float]]" = queue.Queue()
+        # Each entry is (command dict, sender, arrival time) -- or, from inside
+        # the engine only, (callable, None, time): see `submit_call`.
+        self.commands: "queue.Queue[tuple[Any, Optional[Client], float]]" = queue.Queue()
         self.clients: dict[str, Client] = {}
+        # How a reply reaches the one client that asked for it. Set by the
+        # ShowServer that owns the sockets; None when there is no server (the
+        # tests that drive a controller directly), and then nothing is sent.
+        self.reply_to: Optional[Callable[[str, dict], None]] = None
+        # Anything slow -- parsing a show file, matching a track, an fsync to a
+        # shared folder -- runs here and posts its result back through
+        # `submit_call`, so it lands on the output thread at a frame boundary.
+        self.worker = workermod.Worker(post=self.submit_call, report=self.note)
         self.master = 0.9
         self.blackout = False
 
@@ -391,12 +402,14 @@ class ShowController:
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
         except OSError:
             pass
+        self.worker.start()
         self.runner.start()
 
     def stop(self) -> None:
         if self.sync is not None:
             self.sync.stop()
         self.runner.stop()
+        self.worker.stop()
         self.output.close()
         try:
             patchmod.lock_path(str(self.event_dir)).unlink(missing_ok=True)
@@ -413,12 +426,47 @@ class ShowController:
                 message, client, at = self.commands.get_nowait()
             except queue.Empty:
                 return
+            if callable(message):
+                # Posted from inside the engine by `submit_call` -- a worker
+                # handing a result back. Never reachable from a socket: those
+                # deliver parsed JSON, and JSON has no callables.
+                try:
+                    message()
+                except Exception as exc:                    # noqa: BLE001
+                    self.note(f"engine task failed: {exc}")
+                continue
+            rid = reply_id(message)
             try:
-                self.apply(message, client, at)
+                result = self.apply(message, client, at)
             except Exception as exc:                        # noqa: BLE001
                 # One bad command must not stop the others, and must not stop
-                # the show. Record it where the UI can see it.
-                self.note(f"{message.get('type', '?')} failed: {exc}")
+                # the show. A command that asked for a reply gets its failure
+                # there, where the screen that sent it can show it beside the
+                # thing that failed; one that did not is reported where every
+                # console can see it, as it always was.
+                if rid is not None and client is not None:
+                    self._reply(client, rid, ok=False, error=str(exc))
+                else:
+                    self.note(f"{message.get('type', '?')} failed: {exc}")
+                continue
+            if rid is not None and client is not None:
+                self._reply(client, rid, ok=True, data=result)
+
+    def _reply(self, client: Client, rid: Any, ok: bool,
+               error: Optional[str] = None, data: Any = None) -> None:
+        if self.reply_to is None:
+            return
+        payload: dict = {"type": "reply", "id": rid, "ok": ok}
+        if error is not None:
+            payload["error"] = error
+        if data is not None:
+            payload["data"] = data
+        try:
+            self.reply_to(client.id, payload)
+        except Exception as exc:                            # noqa: BLE001
+            # Outside _drain's per-command guard, and on the output thread: a
+            # reply that cannot be sent is a notice, never a stopped frame.
+            self.note(f"reply to {client.name} failed: {exc}")
 
     def _attach_overrides(self, show: statemod.Show) -> None:
         show.master = 0.0 if self.blackout else self.master
@@ -449,8 +497,21 @@ class ShowController:
         """
         self.commands.put((message, client, self.runner.now()))
 
+    def submit_call(self, fn: Callable[[], None]) -> None:
+        """Run `fn()` on the output thread at the next frame boundary.
+
+        The way back in for work done elsewhere. A worker thread that has parsed
+        a file or compiled a timeline must not install the result itself -- it
+        would be mutating the show from a second thread, mid-evaluation, which
+        is the exact bug the command queue exists to rule out. It posts here
+        instead, and the install happens where every other mutation does.
+
+        Internal only. Nothing a client sends can become a callable.
+        """
+        self.commands.put((fn, None, self.runner.now()))
+
     def apply(self, message: dict, client: Optional[Client],
-              at: Optional[float] = None) -> None:
+              at: Optional[float] = None) -> Any:
         kind = message.get("type")
         now = self.ctx.time if at is None else at
         handler = getattr(self, f"_cmd_{kind}", None)
@@ -465,11 +526,15 @@ class ShowController:
                 f"{kind!r} needs {need} access and this client has "
                 f"{client.tier}. Open the URL the engine printed, including "
                 f"its ?token=, or restart with --no-token")
-        handler(message, now)
+        result = handler(message, now)
         self.rev += 1
         if client is not None and kind != "hello":
             client.last_action = describe(message)
             client.last_action_at = time.time()
+        # Whatever the handler returned rides back in the reply, for the few
+        # commands whose answer is not visible in the broadcast state -- a
+        # validation result, say. Most return None and the reply is just ok.
+        return result
 
     # slots ----------------------------------------------------------------
 
@@ -1171,22 +1236,31 @@ class ShowController:
         tracking -- `MasterClock.sync` says so, and this is the caller it is
         talking about.
         """
+        # The same whitelist and range checks as the UDP port, applied here so
+        # both routes in share one validator. The WebSocket route used to take
+        # the message as it came: a bpm of 900 went straight to the clock, and a
+        # track title was whatever length the sender liked. Cleaning twice is
+        # harmless -- a datagram arrives already clean and comes out the same.
+        fields = syncmod.clean(m)
+        if fields is None:
+            raise ValueError("sync carried no usable fields (bpm must be "
+                             "40-250, beat_in_bar 0-64)")
         self.clock.sync(
             now,
-            bpm=m.get("bpm"),
-            beat=m.get("beat"),
-            beat_in_bar=m.get("beat_in_bar"),
+            bpm=fields.get("bpm"),
+            beat=fields.get("beat"),
+            beat_in_bar=fields.get("beat_in_bar"),
             # The bridge naming itself is what makes the console able to say
             # WHICH thing is driving the clock, rather than just "not you".
-            source=m.get("source", "sync"),
-            phrase_measured=m.get("phrase_measured"),
-            phrase_label=m.get("phrase_label"),
-            phrase_ends_in=m.get("phrase_ends_in"),
+            source=fields.get("source", "sync"),
+            phrase_measured=fields.get("phrase_measured"),
+            phrase_label=fields.get("phrase_label"),
+            phrase_ends_in=fields.get("phrase_ends_in"),
             at=syncmod.now())
-        if "deck" in m:
-            self.sync_deck = m["deck"]
-        if "track" in m:
-            self.sync_track = m["track"]
+        if "deck" in fields:
+            self.sync_deck = fields["deck"]
+        if "track" in fields:
+            self.sync_track = fields["track"]
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -1739,6 +1813,27 @@ def venue_summary(venue) -> dict:
                 "radius": venue.canopy.radius}}
 
 
+def reply_id(message: dict) -> Optional[Any]:
+    """The id a command wants its reply tagged with, or None for no reply.
+
+    Only a short string or a plain integer. Anything else is treated as no id at
+    all rather than an error: the id is the sender's bookkeeping, and a command
+    that did its job should not fail because its label was odd. Bounded, because
+    it is echoed back and a client should not be able to make the engine send it
+    a megabyte.
+    """
+    if not isinstance(message, dict):
+        return None
+    rid = message.get("id")
+    if isinstance(rid, bool):
+        return None
+    if isinstance(rid, int) and abs(rid) < 2 ** 53:
+        return rid
+    if isinstance(rid, str) and 0 < len(rid) <= 64:
+        return rid
+    return None
+
+
 def describe(message: dict) -> str:
     kind = message.get("type", "?")
     if kind == "select_look":
@@ -1821,6 +1916,7 @@ class ShowServer:
         self._id_lock = threading.Lock()
         self._stop = threading.Event()
         self.httpd: Optional[ThreadingHTTPServer] = None
+        controller.reply_to = self.send_to
 
     def new_client_id(self) -> str:
         with self._id_lock:
@@ -1883,6 +1979,31 @@ class ShowServer:
                     f"snapshots behind and not reading")
                 self.drop(cid)
 
+    def send_to(self, cid: str, payload: dict) -> None:
+        """One message to one client. Never blocks, because it is called from
+        the output thread with a frame waiting.
+
+        A full queue means this client is already `QUEUE_DEPTH` snapshots behind
+        and the broadcast loop is about to drop it; the reply is skipped rather
+        than dropping it from here, because closing a socket can wait on the
+        network and the output thread cannot.
+        """
+        conn = self.sockets.get(cid)
+        if conn is None:
+            return
+        try:
+            text = json.dumps(payload)
+        except (TypeError, ValueError) as exc:
+            # A handler returned something JSON cannot carry. The sender still
+            # learns the command ran; the data is what is lost, and says so.
+            text = json.dumps({"type": "reply", "id": payload.get("id"),
+                               "ok": payload.get("ok"),
+                               "error": f"reply data not serialisable: {exc}"})
+        try:
+            conn.queue.put_nowait(text)
+        except queue.Full:
+            pass
+
     def drop(self, cid: str) -> None:
         conn = self.sockets.pop(cid, None)
         self.controller.clients.pop(cid, None)
@@ -1912,6 +2033,11 @@ class ShowServer:
                 try:
                     message = json.loads(text)
                 except json.JSONDecodeError:
+                    continue
+                # Valid JSON that is not an object -- `[1, 2]`, `"go"`, `7` --
+                # used to reach `.get` below and end this client's connection.
+                # It is not a command; ignore it like any other junk.
+                if not isinstance(message, dict):
                     continue
                 if message.get("type") == "hello":
                     client.name = str(message.get("name", "someone"))[:40]

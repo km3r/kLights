@@ -119,6 +119,16 @@ live.
   that locks its screen cannot stall the broadcast for everyone.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
+- A command may carry an `id` (a short string or an integer). It then gets a
+  `{"type": "reply", "id", "ok", "error"?, "data"?}` frame back, **to its sender
+  only**, and a failure goes in that reply rather than in everyone's notices. A
+  command without an id behaves as it always did. The reply is small by
+  contract: anything large is read over HTTP, never pushed.
+- Anything slow — parsing a file, matching a track, an fsync to a shared folder
+  — runs on one **worker thread** ([`worker.py`](../engine/worker.py)) and hands
+  its result back with `submit_call`, so the install still happens on the
+  output thread at a frame boundary. Nothing that touches the show runs on the
+  worker.
 
 ### Access tiers
 
