@@ -27,10 +27,11 @@ something in another language without it noticing.
 python bridges/prolink/bridge.py --fake
 ```
 
-Synthetic 128 BPM with a scripted phrase timeline — Intro, Verse, **Build**,
-Chorus, Verse, Build, **Drop**, Outro — that cycles in about two minutes. Every
-downstream branch happens: phrase becomes measured, the console's sync row
-lights up, and anything driven by phrase gets exercised.
+Synthetic 128 BPM with a scripted phrase timeline in rekordbox's own
+vocabulary — Intro, Verse 1, **Up 1**, **Chorus**, Down, Up 2, Chorus, Outro —
+that cycles every three minutes. Every downstream branch happens: phrase becomes
+measured, the console's sync row lights up, and anything driven by phrase gets
+exercised.
 
 Start the engine with the port open first:
 
@@ -176,7 +177,7 @@ JSON over UDP, any subset of these, unknown keys ignored:
 | `beat_in_bar` | beat within the bar. **This is what a per-beat source should send.** Corrects the grid by at most half a bar and never moves cumulative position. |
 | `beat` | absolute musical position. A **jump** — correct for a re-sync, wrong for tracking. Sending it every beat makes every move judder. |
 | `phrase_measured` | true when phrase is read, not counted from a tapped downbeat. |
-| `phrase_label` | `Intro` / `Verse` / `Build` / `Chorus` / `Drop` / `Outro`. Empty string clears it. |
+| `phrase_label` | rekordbox's label as it shows it: `Intro`, `Verse 1`, `Up 2`, `Chorus`, `Down`, `Bridge`, `Outro`. It never says Build or Drop. Empty string clears it. |
 | `phrase_ends_in` | beats until the phrase ends. Stored as an absolute beat, so sending it once per bar is enough. |
 | `source` | what to display as the clock owner. |
 | `deck`, `track` | labels for the console. |

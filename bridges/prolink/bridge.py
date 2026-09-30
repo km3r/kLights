@@ -32,13 +32,17 @@ import time
 from pathlib import Path
 from typing import Iterator, Optional
 
-# The shape of a night, in the vocabulary rekordbox's phrase analysis uses. Not
-# a guess at any particular track: it is a scripted timeline whose job is to
-# make every downstream branch happen -- a build that arms, a drop that fires,
-# an outro that releases -- within a couple of minutes rather than an hour.
+# The shape of a track, in the vocabulary rekordbox's phrase analysis actually
+# uses: it says Up, Chorus and Down, never Build or Drop, and it numbers repeats
+# ("Verse 1", "Up 2"). An earlier version of this list used Build/Drop, which
+# no rekordbox export will ever send -- so anything keyed on those names would
+# have passed here and done nothing at a venue. Not a guess at any particular
+# track: it is a scripted timeline whose job is to make every downstream branch
+# happen -- an Up that arms, a Chorus that fires, an Outro that releases -- in
+# three minutes rather than an hour. Units are bars; 96 bars at 128 BPM is 3:00.
 FAKE_PHRASES = [
-    ("Intro", 16), ("Verse", 32), ("Build", 16), ("Chorus", 32),
-    ("Verse", 16), ("Build", 8), ("Drop", 32), ("Outro", 16),
+    ("Intro", 16), ("Verse 1", 16), ("Up 1", 8), ("Chorus", 16),
+    ("Down", 8), ("Up 2", 8), ("Chorus", 16), ("Outro", 8),
 ]
 
 

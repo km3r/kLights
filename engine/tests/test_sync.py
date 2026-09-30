@@ -348,11 +348,15 @@ check("and the countdown shrinks bar by bar",
       == sorted((f["phrase_ends_in"] for f in labelled), reverse=True),
       f"{[f['phrase_ends_in'] for f in labelled]}")
 
-# The scripted timeline has to actually reach a Drop, or nothing downstream of
-# a phrase can be tested with it.
+# The scripted timeline has to actually reach a Chorus, or nothing downstream
+# of a phrase can be tested with it -- and it has to speak rekordbox's own
+# vocabulary, because rekordbox never sends "Build" or "Drop" and a fake that
+# did would pass tests that the real decks would fail.
 timeline = [name for name, _ in bridgemod.FAKE_PHRASES]
-check("the scripted night contains the phrases the cue list cares about",
-      {"Build", "Drop", "Outro"} <= set(timeline), f"{timeline}")
+check("the scripted track contains the phrases templates care about",
+      {"Up 1", "Chorus", "Down", "Outro"} <= set(timeline), f"{timeline}")
+check("and none rekordbox would never send",
+      not {"Build", "Drop"} & set(timeline), f"{timeline}")
 
 sink.stop()
 

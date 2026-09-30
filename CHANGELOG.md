@@ -11,6 +11,23 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Changed — the fake bridge speaks rekordbox's phrase vocabulary
+
+- **`bridge.py --fake` used phrase names rekordbox never sends.** Its script said
+  Build and Drop; rekordbox's phrase analysis says Up, Chorus and Down, and
+  numbers repeats ("Verse 1", "Up 2"). Anything keyed on the fake's names would
+  have passed every test and done nothing at a venue. The script is now a
+  three-minute track in rekordbox's own labels, and `test_sync` refuses the two
+  names that can never arrive. The README and roadmap said the same wrong thing
+  and are corrected.
+
+### Added — F19 design record
+
+- [`docs/design/timecoded-shows.md`](docs/design/timecoded-shows.md): shows
+  driven by which track is playing and where in it. The decisions, the designer
+  layout chosen from three clickable mock-ups, and the staged build. Nothing in
+  the engine changes yet.
+
 ### Fixed — the rate buttons, and a test that meant two different things
 
 - **The six Rate buttons broke mid-token on a phone.** `overflow-wrap: anywhere`
