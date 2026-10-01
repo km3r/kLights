@@ -433,7 +433,10 @@ def _body(fixture: rigmod.PatchedFixture, bodies: dict, models: _Models,
             warnings.append(f"{where} should be an object")
         else:
             entry = override
-    if entry is None or "model" not in entry:
+    def names_model(e):
+        return e is not None and ("model" in e or "file" in e)
+
+    if not names_model(entry):
         mapped = bodies.get(f"{fixture.profile.manufacturer}/{fixture.profile.model}")
         if mapped is not None:
             entry = {**mapped, **(entry or {})}
@@ -450,8 +453,9 @@ def _body(fixture: rigmod.PatchedFixture, bodies: dict, models: _Models,
         out["size"] = [mm(w), mm(h), mm(d)]
     if entry is None:
         return out
-    if "model" in entry:
-        out["model"] = models.resolve(entry["model"], base, where)
+    if names_model(entry):
+        # `model` in rig.json, `file` in bodies.json -- either is accepted in both.
+        out["model"] = models.resolve(entry.get("model", entry.get("file")), base, where)
     nodes = entry.get("nodes")
     if isinstance(nodes, dict):
         out["nodes"].update({k: v for k, v in nodes.items()
@@ -899,6 +903,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("event", nargs="?", default=None,
                         help="event folder name under events/, or a path")
     parser.add_argument("-o", "--out", help="write JSON here (default: stdout)")
+    parser.add_argument("--models", metavar="DIR",
+                        help="also copy every model the scene names into DIR as <sha256>.glb "
+                             "-- with the JSON, a bundle the app opens with no engine "
+                             "(-Scene=scene.json -ModelCache=DIR)")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
 
@@ -914,6 +922,13 @@ def main(argv: list[str]) -> int:
         event_dir = REPO / "events" / args.event
     scene = build_for(event_dir)
     text = json.dumps(scene.manifest, indent=2, sort_keys=True)
+    if args.models:
+        import shutil
+        target = Path(args.models)
+        target.mkdir(parents=True, exist_ok=True)
+        for sha, path in scene.files.items():
+            shutil.copyfile(path, target / f"{sha}.glb")
+        print(f"{len(scene.files)} model(s) -> {target}", file=sys.stderr)
     if args.out:
         Path(args.out).write_text(text + "\n", encoding="utf-8")
         m = scene.manifest

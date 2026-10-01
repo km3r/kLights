@@ -44,6 +44,8 @@ public:
 
 	/** Where a model with this hash lives on disk once fetched. */
 	static FString CachePath(const FString& Sha);
+	/** Use another cache directory (-ModelCache=): an offline bundle's models. */
+	static void SetCacheDir(const FString& Dir);
 
 private:
 	void Poll();

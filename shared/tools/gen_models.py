@@ -11,7 +11,10 @@ Two jobs, both small enough that a hand-written GLB writer beats a dependency:
     +Z (blue, the asset's front). Load it anywhere and you can read off exactly
     how a glTF frame lands in Unreal, and whether textures survived the trip.
 
-  * the default bodies (added with the fixture-body work).
+  * ``shared/models/fixtures/`` -- the DEFAULT BODIES the previz draws for
+    fixtures with no model of their own: an articulated moving head and a can
+    light, both built to the body convention in docs/models.md and mapped to
+    profiles by shared/fixtures/bodies.json.
 
 Output is byte-for-byte deterministic -- no timestamps, no float formatting that
 depends on the platform -- so ``--check`` can guard the committed files the way
@@ -256,8 +259,92 @@ def axes() -> bytes:
     return glb.bytes()
 
 
+def moving_head() -> bytes:
+    """A generic moving head, sized like the MJ-OS-018 (180 x 280 x 200 mm).
+
+    Built to the body convention in docs/models.md, which is what lets the
+    previz articulate it:
+
+      * nodes `base`, `yoke`, `head`, `lens`, each a child of the one before;
+      * at rest the fixture stands on its base, +Y up, and the beam leaves
+        `lens` along +Z (the asset's front);
+      * the yoke pans about +Y and the head tilts about +X;
+      * no rotation on `yoke` or `head` at rest, and the head's tilt pivot sits
+        ON the pan axis, so panning never moves it.
+    """
+    glb = Glb()
+    shell = glb.material("housing", (0.06, 0.06, 0.065), metallic=0.3, roughness=0.45)
+    trim = glb.material("trim", (0.18, 0.18, 0.19), metallic=0.6, roughness=0.35)
+    glass = glb.material("lens", (0.85, 0.9, 1.0), metallic=0.0, roughness=0.05,
+                         emissive=(0.25, 0.27, 0.3))
+
+    # The head is centred on its tilt axle; the lens is its front face.
+    lens = glb.node("lens", glb.mesh("lens", [(Geometry().cylinder(0.045, 0.006, 32, axis="z"), glass)]),
+                    translation=(0.0, 0.0, 0.1))
+    head_shape = Geometry().cylinder(0.062, 0.16, 32, axis="z")
+    head_shape.cylinder(0.055, 0.02, 32, (0.0, 0.0, 0.09), axis="z")
+    head = glb.node("head", glb.mesh("head", [(head_shape, shell)]),
+                    translation=(0.0, 0.135, 0.0), children=[lens])
+
+    yoke_shape = Geometry().box((0.18, 0.02, 0.07), (0.0, 0.01, 0.0))
+    yoke_shape.box((0.018, 0.16, 0.06), (0.081, 0.09, 0.0))
+    yoke_shape.box((0.018, 0.16, 0.06), (-0.081, 0.09, 0.0))
+    yoke_shape.cylinder(0.02, 0.17, 16, (0.0, 0.135, 0.0), axis="x")      # the tilt axle
+    yoke = glb.node("yoke", glb.mesh("yoke", [(yoke_shape, trim)]),
+                    translation=(0.0, 0.075, 0.0), children=[head])
+
+    base_shape = Geometry().box((0.18, 0.07, 0.2), (0.0, 0.035, 0.0))
+    base_shape.cylinder(0.05, 0.006, 24, (0.0, 0.073, 0.0), axis="y")    # the pan bearing
+    base = glb.node("base", glb.mesh("base", [(base_shape, shell)]), children=[yoke])
+    glb.node("moving_head", children=[base], root=True)
+    return glb.bytes()
+
+
+def can() -> bytes:
+    """A generic can light -- par, pinspot -- pointing along +Z, its front.
+
+    One node is enough: a fixture that cannot move is posed as a whole, with
+    its front along the beam. The origin is the lens, where the beam starts.
+    """
+    glb = Glb()
+    shell = glb.material("housing", (0.06, 0.06, 0.065), metallic=0.3, roughness=0.45)
+    glass = glb.material("lens", (0.85, 0.9, 1.0), roughness=0.05, emissive=(0.25, 0.27, 0.3))
+    body = Geometry().cylinder(0.06, 0.18, 32, (0.0, 0.0, -0.095), axis="z")
+    body.box((0.012, 0.16, 0.012), (0.0, -0.02, -0.09))                    # the bracket
+    lens = Geometry().cylinder(0.05, 0.006, 32, (0.0, 0.0, -0.003), axis="z")
+    glb.node("can", glb.mesh("can", [(body, shell), (lens, glass)]), root=True)
+    return glb.bytes()
+
+
+def room_shell() -> bytes:
+    """A 12 x 4.5 x 8 m room, in the VENUE convention: origin at the front-left
+    floor corner, +X across, +Y up, receding along -Z. For testing a venue whose
+    walls come from a model rather than the drawn box."""
+    glb = Glb()
+    wall = glb.material("plaster", (0.16, 0.16, 0.18), roughness=0.85)
+    glb.node("room_shell", glb.mesh("room_shell", [
+        (Geometry().box((12.0, 4.5, 8.0), (6.0, 2.25, -4.0)), wall)]), root=True)
+    return glb.bytes()
+
+
+def riser() -> bytes:
+    """A 4 x 0.6 x 2 m stage riser with a 2 m back panel, origin at its front
+    centre on the floor, front along +Z."""
+    glb = Glb()
+    deck = glb.material("deck", (0.09, 0.07, 0.06), roughness=0.7)
+    panel = glb.material("panel", (0.03, 0.03, 0.035), roughness=0.9)
+    shape = Geometry().box((4.0, 0.6, 2.0), (0.0, 0.3, -1.0))
+    back = Geometry().box((4.0, 2.0, 0.08), (0.0, 1.6, -1.96))
+    glb.node("riser", glb.mesh("riser", [(shape, deck), (back, panel)]), root=True)
+    return glb.bytes()
+
+
 OUTPUTS = {
+    MODELS / "test" / "room_shell.glb": room_shell,
+    MODELS / "test" / "riser.glb": riser,
     MODELS / "test" / "axes.glb": axes,
+    MODELS / "fixtures" / "generic_moving_head.glb": moving_head,
+    MODELS / "fixtures" / "generic_can.glb": can,
 }
 
 

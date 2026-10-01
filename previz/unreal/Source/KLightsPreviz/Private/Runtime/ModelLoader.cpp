@@ -222,6 +222,9 @@ namespace
 				Mesh->CreateBodySetup();
 			}
 			Mesh->GetBodySetup()->CollisionTraceFlag = CTF_UseComplexAsSimple;
+			// Both faces block: a venue's walls are seen -- and shot at -- from
+			// INSIDE, and are routinely authored as single planes facing out.
+			Mesh->GetBodySetup()->bDoubleSidedGeometry = true;
 		}
 		Triangles += Description.Triangles().Num();
 		Out.Mesh = Mesh;

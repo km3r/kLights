@@ -4,6 +4,7 @@
 #include "Core/Decode.h"
 #include "Core/Optics.h"
 #include "GameFramework/Actor.h"
+#include "Runtime/ModelLoader.h"
 #include "Runtime/Scene.h"
 #include "KLightsFixture.generated.h"
 
@@ -33,6 +34,8 @@ struct FKLightsRigContext
 	UMaterialInterface* Surface = nullptr;
 	UMaterialInterface* Beam = nullptr;
 	UMaterialInterface* Dot = nullptr;
+	/** The scene's models by hash; null when one is missing. */
+	TFunction<const FKLightsModel*(const FString& Sha, bool bCollide)> Model;
 };
 
 /** Per-fixture numbers the subsystem derives from the whole rig. */
@@ -78,6 +81,9 @@ private:
 	void PlaceReflections(const FVector& Origin, const FVector& Direction, const KLights::FOutput& Out,
 	                      const TArray<FVector>& SpunNormals);
 	USpotLightComponent* MakeSpot(const TCHAR* Name);
+	void BuildBoxBody();
+	void BuildModelBody(const FKLightsModel& Model);
+	void PoseBody(const FVector& Direction);
 
 	FKLightsFixture Fixture;
 	FKLightsRigContext Context;
@@ -94,7 +100,13 @@ private:
 	UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Rays;
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> DotMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> RayMaterial;
-	UPROPERTY() TObjectPtr<UStaticMeshComponent> Body;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> Body;     // the stand-in box
+	UPROPERTY() TObjectPtr<USceneComponent> BodyRoot;      // a model body
+	UPROPERTY() TObjectPtr<USceneComponent> Yoke;
+	UPROPERTY() TObjectPtr<USceneComponent> HeadPart;
+	/** The frame the yoke pans in: the base's mount, times any rotation above the yoke. */
+	FQuat PanFrame = FQuat::Identity;
+	double BodyPan = 0.0;
 
 	int32 Capacity = 0;
 	int32 DotsShown = 0;

@@ -44,7 +44,7 @@ UStaticMeshComponent* AKLightsStage::Shape(const TCHAR* Name, UStaticMesh* Mesh,
 	return C;
 }
 
-void AKLightsStage::Build(const FKLightsScene& Scene, const FKLightsStageAssets& InAssets)
+void AKLightsStage::Build(const FKLightsScene& Scene, const FKLightsStageAssets& InAssets, const FModelSource& Model)
 {
 	Assets = InAssets;
 	const FKLightsOptics& O = Scene.Optics;
@@ -132,6 +132,42 @@ void AKLightsStage::Build(const FKLightsScene& Scene, const FKLightsStageAssets&
 			              FVector(Tile.Width * B.TileCoverage / ShapeCm, Tile.Height * B.TileCoverage / ShapeCm, 1.0));
 		}
 		BallTiles->AddInstances(Tiles, false, /*bWorldSpace=*/ false);
+	}
+
+	// A ball model REPLACES the drawn tiles, and turns with them. The core stays:
+	// it is the occluder the beams and the safety taper both stop on.
+	if (const FKLightsModel* BallModel = Model(B.Model, false))
+	{
+		BallTiles->SetVisibility(false);
+		TMap<FString, USceneComponent*> Unused;
+		FKLightsModelLoader::Instantiate(*BallModel, this, BallPivot, false, Unused);
+	}
+
+	// Set pieces and venue architecture. They collide unless told otherwise: a
+	// beam aimed at a wall that is in the model really does stop there.
+	for (const FKLightsPlacedModel& Placed : Scene.Models)
+	{
+		const FKLightsModel* Loaded = Model(Placed.Model, Placed.bCollide);
+		if (Loaded == nullptr)
+		{
+			continue;   // reported by the subsystem; the room still appears
+		}
+		USceneComponent* Holder = NewObject<USceneComponent>(this, *(TEXT("Model_") + Placed.Name));
+		Holder->SetupAttachment(Root);
+		Holder->SetMobility(EComponentMobility::Movable);
+		// A venue model is authored standing at the room's front looking in -- +X
+		// across its width, +Y up, receding along -Z (in Blender: X, then Y away
+		// from you, Z up) -- with its origin at the front-left floor corner, the
+		// same corner the venue file measures from. GLTFCore lands that frame in
+		// Unreal mirrored relative to the show's (it swaps Y and Z; the show's
+		// mapping cycles them), and a quarter turn about Z is exactly the
+		// difference. See docs/models.md.
+		const FQuat Venue = Placed.Rotation.Quaternion() * FRotator(0.0, 90.0, 0.0).Quaternion();
+		Holder->SetRelativeTransform(FTransform(Venue, Placed.Location, FVector(Placed.Scale)));
+		Holder->RegisterComponent();
+		AddInstanceComponent(Holder);
+		TMap<FString, USceneComponent*> Unused;
+		FKLightsModelLoader::Instantiate(*Loaded, this, Holder, Placed.bCollide, Unused);
 	}
 
 	// The frame the rig hangs on. Collision ON: a beam aimed into steel stops

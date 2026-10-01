@@ -102,6 +102,11 @@ void UKLightsSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		UE_LOG(LogKLights, Error, TEXT("%s"), *Problem);
 	}
 
+	const FString Cache = Setting(TEXT("ModelCache"), FString());
+	if (!Cache.IsEmpty())
+	{
+		FKLightsEngineLink::SetCacheDir(FPaths::ConvertRelativePathToFull(Cache));
+	}
 	Link.OnScene = [this](const FKLightsScene& NewScene) { Rebuild(NewScene); };
 	const FString File = Setting(TEXT("Scene"), FString());
 	if (!File.IsEmpty())
@@ -152,12 +157,70 @@ void UKLightsSubsystem::Clear()
 	Stage = nullptr;
 }
 
+const FKLightsModel* UKLightsSubsystem::GetModel(const FString& Sha, bool bCollide)
+{
+	if (Sha.IsEmpty())
+	{
+		return nullptr;
+	}
+	const FString Key = bCollide ? Sha + TEXT("|collide") : Sha;
+	if (const TSharedPtr<FKLightsModel>* Found = Models.Find(Key))
+	{
+		return Found->Get();
+	}
+	const FString Name = Scene.IsValid() && Scene->AssetNames.Contains(Sha) ? Scene->AssetNames[Sha] : Sha.Left(12);
+	const FString Path = FKLightsEngineLink::CachePath(Sha);
+	TSharedPtr<FKLightsModel> Model;
+	FString Error;
+	if (!FPaths::FileExists(Path))
+	{
+		Error = TEXT("not fetched");
+	}
+	else
+	{
+		Model = MakeShared<FKLightsModel>();
+		const double Started = FPlatformTime::Seconds();
+		// The subsystem as Outer: it lives in the game world, which is what lets
+		// a colliding mesh's trimesh cook at runtime (see ModelLoader.h).
+		if (FKLightsModelLoader::Load(Path, this, SurfaceMaterial, bCollide, *Model, Error))
+		{
+			UE_LOG(LogKLights, Display, TEXT("loaded model %s: %d node(s), %d triangle(s) in %.0f ms"), *Name,
+			       Model->Nodes.Num(), Model->Triangles, (FPlatformTime::Seconds() - Started) * 1000.0);
+			for (const FString& Warning : Model->Warnings)
+			{
+				UE_LOG(LogKLights, Warning, TEXT("model %s: %s"), *Name, *Warning);
+			}
+		}
+		else
+		{
+			Model.Reset();
+		}
+	}
+	if (!Model.IsValid())
+	{
+		ModelProblems.Add(FString::Printf(TEXT("model %s: %s"), *Name, *Error));
+		UE_LOG(LogKLights, Warning, TEXT("%s"), *ModelProblems.Last());
+	}
+	Models.Add(Key, Model);
+	return Model.Get();
+}
+
 void UKLightsSubsystem::Rebuild(const FKLightsScene& NewScene)
 {
 	namespace Ball = KLights::Ball;
 	Clear();
 	Scene = MakeUnique<FKLightsScene>(NewScene);
 	const FKLightsScene& S = *Scene;
+	ModelProblems.Reset();
+	// A model that failed last time may have been fetched since.
+	for (auto It = Models.CreateIterator(); It; ++It)
+	{
+		if (!It->Value.IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+	auto Model = [this](const FString& Sha, bool bCollide) { return GetModel(Sha, bCollide); };
 	UWorld* World = GetWorld();
 
 	FActorSpawnParameters Params;
@@ -169,7 +232,7 @@ void UKLightsSubsystem::Rebuild(const FKLightsScene& NewScene)
 	StageAssets.Cylinder = Cylinder;
 	StageAssets.Plane = Plane;
 	StageAssets.Surface = SurfaceMaterial;
-	Stage->Build(S, StageAssets);
+	Stage->Build(S, StageAssets, Model);
 
 	// One ball, one rotation, shared by every fixture this frame.
 	const FIntPoint Lattice = Ball::Lattice(S.Ball.RadiusMm, S.Ball.ReflectSpacingMm);
@@ -190,6 +253,7 @@ void UKLightsSubsystem::Rebuild(const FKLightsScene& NewScene)
 	Context.Surface = SurfaceMaterial;
 	Context.Beam = BeamMaterial;
 	Context.Dot = DotMaterial;
+	Context.Model = Model;
 
 	// Brightness ratios between fixtures, fixed for the scene's life because
 	// neither the fixtures nor the ball move. The beam shafts are drawn relative
@@ -327,6 +391,29 @@ void UKLightsSubsystem::TickSnapshot(double Now)
 		const int32 Index = Scene->Views.IndexOfByPredicate([this](const FKLightsView& V) { return V.Name == SnapshotView; });
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
 		GoToView(FMath::Max(0, Index), PC);
+		// -At=X,Y,Z -LookAt=X,Y,Z (Unreal cm): stand somewhere the scene's own
+		// views do not, keeping the named view's fog and field of view.
+		FVector At, LookAt;
+		auto Parse = [](const TCHAR* Key, FVector& Out)
+		{
+			FString Text;
+			TArray<FString> Parts;
+			// bShouldStopOnSeparator off: the value IS comma-separated.
+			if (!FParse::Value(FCommandLine::Get(), Key, Text, false) || Text.ParseIntoArray(Parts, TEXT(",")) != 3)
+			{
+				return false;
+			}
+			Out = FVector(FCString::Atod(*Parts[0]), FCString::Atod(*Parts[1]), FCString::Atod(*Parts[2]));
+			return true;
+		};
+		if (PC != nullptr && Parse(TEXT("At="), At) && Parse(TEXT("LookAt="), LookAt))
+		{
+			if (APawn* Pawn = PC->GetPawn())
+			{
+				Pawn->SetActorLocation(At, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			PC->SetControlRotation((LookAt - At).Rotation());
+		}
 		// The overlay is drawn into the frame, not over it, so a still has to ask.
 		if (AKLightsHUD* Hud = PC ? Cast<AKLightsHUD>(PC->GetHUD()) : nullptr)
 		{

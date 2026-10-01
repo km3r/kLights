@@ -1,6 +1,8 @@
 #include "Runtime/KLightsFixture.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Core/Body.h"
+#include "KLightsLog.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -158,6 +160,19 @@ void AKLightsFixture::Setup(const FKLightsFixture& InFixture, const FKLightsRigC
 	RayMaterial->SetScalarParameterValue(TEXT("Falloff"),
 	                                     float(KLights::Look::Surviving(Scene.MaxThrow, O.BeamExtinctionPerM)));
 
+	const FKLightsModel* BodyModel = Context.Model ? Context.Model(Fixture.Body.Model, false) : nullptr;
+	if (BodyModel != nullptr)
+	{
+		BuildModelBody(*BodyModel);
+	}
+	else
+	{
+		BuildBoxBody();
+	}
+}
+
+void AKLightsFixture::BuildBoxBody()
+{
 	// A stand-in housing. Never collides (a beam's trace starts inside it) and
 	// never shadows (its own light is inside it).
 	Body = NewObject<UStaticMeshComponent>(this, TEXT("Body"));
@@ -174,6 +189,71 @@ void AKLightsFixture::Setup(const FKLightsFixture& InFixture, const FKLightsRigC
 	Body->SetRelativeScale3D(FVector(Size.Z, Size.X, Size.Y) / 100.0);
 	Body->RegisterComponent();
 	AddInstanceComponent(Body);
+}
+
+void AKLightsFixture::BuildModelBody(const FKLightsModel& Model)
+{
+	BodyRoot = NewObject<USceneComponent>(this, TEXT("BodyRoot"));
+	BodyRoot->SetupAttachment(Root);
+	Absolute(BodyRoot);
+	BodyRoot->SetMobility(EComponentMobility::Movable);
+	BodyRoot->RegisterComponent();
+	AddInstanceComponent(BodyRoot);
+	BodyRoot->SetWorldTransform(FTransform::Identity);
+
+	TMap<FString, USceneComponent*> Parts;
+	FKLightsModelLoader::Instantiate(Model, this, BodyRoot, false, Parts);
+	for (const TPair<FString, USceneComponent*>& Part : Parts)
+	{
+		if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Part.Value))
+		{
+			Ghost(Primitive);   // same reasons as the box: its light starts inside it
+		}
+	}
+	Yoke = Parts.FindRef(Fixture.Body.YokeNode);
+	HeadPart = Parts.FindRef(Fixture.Body.HeadNode);
+	USceneComponent* Lens = Parts.FindRef(Fixture.Body.LensNode);
+
+	// How the base is mounted. A mover's base follows its mount mode and the
+	// facing its calibration backed out; a fixed fixture's whole body looks
+	// along its beam. Either can be overridden from rig.json.
+	const FQuat Base = Fixture.Body.bHasRotation
+		? Fixture.Body.Rotation.Quaternion()
+		: Fixture.bMover
+			? KLights::Body::BaseRotation(Context.Scene->MountMode, Fixture.Decode.MountFacing)
+			: KLights::Body::AimRotation(KLights::BeamDirection(Fixture.RestRotation.Yaw, Fixture.RestRotation.Pitch));
+
+	// The model's anchor goes where the beam starts: a mover's tilt pivot (which
+	// sits on the pan axis, so panning never moves it), a fixed fixture's lens.
+	// BodyRoot is still at the world origin, unrotated, so these are model-local.
+	USceneComponent* Anchor = Fixture.bMover ? (HeadPart ? HeadPart.Get() : Lens) : Lens;
+	const FVector AnchorLocal = Anchor ? Anchor->GetComponentLocation() : FVector::ZeroVector;
+	if (Yoke != nullptr && Yoke->GetAttachParent() != nullptr)
+	{
+		PanFrame = Base * Yoke->GetAttachParent()->GetComponentQuat();
+	}
+	BodyRoot->SetWorldTransform(FTransform(Base, Fixture.Location - Base.RotateVector(AnchorLocal)));
+
+	if (Fixture.bMover && (Yoke == nullptr || HeadPart == nullptr || HeadPart->GetAttachParent() != Yoke))
+	{
+		UE_LOG(LogKLights, Warning, TEXT("%s: its model has no '%s' > '%s' pair, so the body will not follow the beam"),
+		       *Fixture.Name, *Fixture.Body.YokeNode, *Fixture.Body.HeadNode);
+		Yoke = nullptr;
+		HeadPart = nullptr;
+	}
+}
+
+void AKLightsFixture::PoseBody(const FVector& Direction)
+{
+	if (Yoke == nullptr || HeadPart == nullptr)
+	{
+		return;
+	}
+	double Pan, Tilt;
+	KLights::Body::Solve(PanFrame.Inverse().RotateVector(Direction), BodyPan, Pan, Tilt);
+	BodyPan = Pan;
+	Yoke->SetRelativeRotation(FQuat(FVector::ZAxisVector, Pan));
+	HeadPart->SetRelativeRotation(FQuat(FVector::XAxisVector, Tilt));
 }
 
 void AKLightsFixture::Drive(const uint8* Frame, double Dt, const TArray<FVector>& SpunNormals)
@@ -196,6 +276,7 @@ void AKLightsFixture::Drive(const uint8* Frame, double Dt, const TArray<FVector>
 		KLights::DecodeAim(Fixture.Decode, At.X, At.Y, Bearing, Elevation);
 		Aim = FRotator(Elevation, Bearing, 0.0);
 		Direction = KLights::BeamDirection(Bearing, Elevation);
+		PoseBody(Direction);
 	}
 	else
 	{

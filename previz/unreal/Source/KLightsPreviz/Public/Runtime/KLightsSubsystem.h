@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Core/ArtNet.h"
 #include "Runtime/EngineLink.h"
+#include "Runtime/ModelLoader.h"
 #include "Runtime/Scene.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "KLightsSubsystem.generated.h"
@@ -23,8 +24,10 @@ class UStaticMesh;
  * Arguments (command line, else [KLights] in Game.ini):
  *   -Engine=http://host:8765   where the show engine is (default loopback, 8765)
  *   -Scene=<file.json>         render a saved manifest instead; no engine needed
+ *   -ModelCache=<dir>          where models live as <sha256>.glb (an offline bundle's)
  *   -ArtNetBind=0.0.0.0  -ArtNetPort=6454
  *   -Snapshot=<file.png> [-View=overview] [-SnapshotDelay=3] [-SnapshotHud]
+ *                              [-At=X,Y,Z -LookAt=X,Y,Z]  (Unreal cm)
  *                              photograph a view once DMX has arrived, then quit
  */
 UCLASS()
@@ -44,6 +47,7 @@ public:
 	const FArtNetReceiver& GetArtNet() const { return ArtNet; }
 	double GetPacketsPerSecond() const { return PacketsPerSecond; }
 	const FString& GetProblem() const { return Problem; }
+	const TArray<FString>& GetModelProblems() const { return ModelProblems; }
 	int32 GetViewIndex() const { return View; }
 	int32 GetMovingHeads() const;
 
@@ -52,6 +56,13 @@ public:
 
 	/** Finish every head's travel now. For stills. */
 	void SettleAll();
+
+	/**
+	 * A model the scene names, loaded from the cache once and shared by every
+	 * use of it. Null if it is not cached or will not load -- the caller draws a
+	 * stand-in, because a missing set piece must not stop the room appearing.
+	 */
+	const FKLightsModel* GetModel(const FString& Sha, bool bCollide);
 
 private:
 	void Rebuild(const FKLightsScene& NewScene);
@@ -72,6 +83,10 @@ private:
 	UPROPERTY() TObjectPtr<UMaterialInterface> SurfaceMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> BeamMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> DotMaterial;
+
+	/** Loaded models, by hash (and whether they collide: that changes the build). */
+	TMap<FString, TSharedPtr<FKLightsModel>> Models;
+	TArray<FString> ModelProblems;
 
 	/** The ball's reflection facets (show frame), and this frame's spun copy. */
 	TArray<FVector> Normals;

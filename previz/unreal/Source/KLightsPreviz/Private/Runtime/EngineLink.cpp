@@ -7,9 +7,23 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
+namespace
+{
+	FString& CacheDir()
+	{
+		static FString Dir = FPaths::ProjectSavedDir() / TEXT("ModelCache");
+		return Dir;
+	}
+}
+
 FString FKLightsEngineLink::CachePath(const FString& Sha)
 {
-	return FPaths::ProjectSavedDir() / TEXT("ModelCache") / (Sha + TEXT(".glb"));
+	return CacheDir() / (Sha + TEXT(".glb"));
+}
+
+void FKLightsEngineLink::SetCacheDir(const FString& Dir)
+{
+	CacheDir() = Dir;
 }
 
 void FKLightsEngineLink::Start(const FString& InBaseUrl)

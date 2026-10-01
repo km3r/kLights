@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Runtime/ModelLoader.h"
 #include "Runtime/Scene.h"
 #include "KLightsStage.generated.h"
 
@@ -40,7 +41,9 @@ class KLIGHTSPREVIZ_API AKLightsStage : public AActor
 public:
 	AKLightsStage();
 
-	void Build(const FKLightsScene& Scene, const FKLightsStageAssets& Assets);
+	using FModelSource = TFunction<const FKLightsModel*(const FString& Sha, bool bCollide)>;
+
+	void Build(const FKLightsScene& Scene, const FKLightsStageAssets& Assets, const FModelSource& Model);
 
 	/** The ball's visible mirrors turn with the reflections, which spin about Z. */
 	void SpinBall(double AngleDeg);
