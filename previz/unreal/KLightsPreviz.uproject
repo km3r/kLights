@@ -3,10 +3,28 @@
 	"EngineAssociation": "5.8",
 	"Category": "kLights",
 	"Description": "Previsualization for the kLights show engine. Listens to Art-Net; never sits between the engine and the rig.",
+	"Modules": [
+		{
+			"Name": "KLightsPreviz",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
 	"Plugins": [
 		{
 			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "Interchange",
 			"Enabled": true
+		},
+		{
+			"Name": "AndroidFileServer",
+			"Enabled": false
 		}
 	]
 }
