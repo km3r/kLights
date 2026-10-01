@@ -201,8 +201,31 @@ export interface SyncState {
   track: string | null;
   port?: {
     port: number; bind: string; received: number; rejected: number;
+    /** Understood and deliberately unused (rkbx_link's phrase/next). Not a
+     *  fault, so never shown as one. */
+    ignored?: number;
     last_reject: string | null;
   };
+}
+
+/** Which track the DJ is playing and where in it (F19), from the engine's
+ *  transport. `time` is the position in the audio, in seconds. */
+export interface TrackState {
+  state: "no_track" | "playing" | "stalled" | "paused" | "reverse";
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  duration: number | null;
+  source: string | null;
+  deck: string | null;
+  time: number | null;
+  /** Audio seconds per wall second: the DJ's pitch. */
+  rate: number;
+  age: number | null;
+  /** Bump on every track change and every jump (loop, hot cue). */
+  track_seq: number;
+  jump_seq: number;
+  on_air: boolean | null;
 }
 
 export interface EngineState {
@@ -237,6 +260,8 @@ export interface EngineState {
   taper: TaperState;
   clock: ClockState;
   sync: SyncState;
+  /** Absent from an engine older than F19d. */
+  track?: TrackState;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */

@@ -384,8 +384,23 @@ const SYNC_STALE = 4;
  * to any more. So the age of the last packet is the loudest thing here, and
  * taking over is always one tap — a bridge must never silently own the clock.
  */
+/** What the transport is doing, in the operator's words. "packets late" rather
+ *  than "stalled": the deck is probably still playing; the bridge is not
+ *  keeping up. */
+const TRACK_STATE: Record<string, string> = {
+  playing: "playing", stalled: "packets late", paused: "paused",
+  reverse: "scratching",
+};
+
+function clockTime(seconds: number | null): string {
+  if (seconds == null) return "–:––";
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function Sync({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const sync = state.sync;
+  const track = state.track;
   if (!sync?.listening && !sync?.driving) return null;
 
   const stale = sync.age != null && sync.age > SYNC_STALE;
@@ -418,7 +433,19 @@ function Sync({ state, send }: { state: EngineState; send: (c: Command) => void 
         )}
       </div>
 
-      {sync.track && (
+      {track && track.state !== "no_track" ? (
+        <div className="small" style={{ marginTop: "0.3rem" }}>
+          <b>{track.title}</b>
+          {track.artist && <span className="muted"> — {track.artist}</span>}
+          <div className="mono muted">
+            {clockTime(track.time)}
+            {track.duration ? ` / ${clockTime(track.duration)}` : ""}
+            {" · "}{TRACK_STATE[track.state]}
+            {track.state === "playing" && Math.abs(track.rate - 1) >= 0.0005 &&
+              ` · ${track.rate > 1 ? "+" : ""}${((track.rate - 1) * 100).toFixed(1)}%`}
+          </div>
+        </div>
+      ) : sync.track && (
         <div className="small" style={{ marginTop: "0.3rem" }}>{sync.track}</div>
       )}
 

@@ -167,6 +167,21 @@
     "deck": null,
     "track": null
   },
+  "track": {
+    "state": "no_track",
+    "title": null,
+    "artist": null,
+    "album": null,
+    "duration": null,
+    "source": null,
+    "deck": null,
+    "time": null,
+    "rate": 0.0,
+    "age": null,
+    "track_seq": 0,
+    "jump_seq": 0,
+    "on_air": null
+  },
   "auto": {
     "look": "Lazy Circle",
     "held": true,

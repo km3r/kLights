@@ -1,6 +1,8 @@
 """Feed the engine tempo, bar phase and phrase -- with or without CDJs.
 
     python bridges/prolink/bridge.py --fake
+    python bridges/prolink/bridge.py --fake --track --osc   # a deck, rkbx_link-shaped
+    python bridges/prolink/bridge.py --fake --track --blt --script "play:64,loop:4x3,hotcue:160"
     python bridges/prolink/bridge.py --replay captures/warehouse.jsonl
     python bridges/prolink/bridge.py --live          # not built yet; see README
 
@@ -24,7 +26,9 @@ here behind a process boundary.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import math
 import socket
 import struct
 import sys
@@ -57,6 +61,25 @@ def osc_message(address: str, value) -> bytes:
     return pad(address.encode()) + pad(b",f") + struct.pack(">f", float(value))
 
 
+def osc_args(address: str, *args) -> bytes:
+    """An OSC message with several arguments: int -> i, float -> f, str -> s.
+    Our /klights/v1 namespace needs these; rkbx_link sends one value each."""
+    def pad(raw: bytes) -> bytes:
+        return raw + b"\0" * (4 - len(raw) % 4)
+    tags, payload = "", b""
+    for arg in args:
+        if isinstance(arg, str):
+            tags += "s"
+            payload += pad(arg.encode("utf-8"))
+        elif isinstance(arg, bool) or isinstance(arg, int):
+            tags += "i"
+            payload += struct.pack(">i", int(arg))
+        else:
+            tags += "f"
+            payload += struct.pack(">f", float(arg))
+    return pad(address.encode()) + pad(b"," + tags.encode()) + payload
+
+
 def as_osc(fields: dict) -> list[bytes]:
     """A field set as the OSC rkbx_link would have sent for it.
 
@@ -77,21 +100,65 @@ def as_osc(fields: dict) -> list[bytes]:
     if "phrase_ends_in" in fields:
         out.append(osc_message("/master/phrase/countin",
                                fields["phrase_ends_in"]))
-    if "track" in fields:
-        out.append(osc_message("/master/track/title", fields["track"]))
+    title = fields.get("title", fields.get("track"))
+    if title is not None:
+        out.append(osc_message("/master/track/title", title))
+    # rkbx_link sends who the track is a field at a time, which is exactly the
+    # case the transport's settle window exists for -- so the fake does too.
+    for key in ("artist", "album"):
+        if key in fields:
+            out.append(osc_message(f"/master/track/{key}", fields[key]))
+    if "bpm_original" in fields:
+        out.append(osc_message("/master/bpm/original", fields["bpm_original"]))
+    # And it sends no position at all while the deck is paused: silence is its
+    # only pause signal, so the fake is silent too.
+    if "track_time" in fields and fields.get("playing", True):
+        out.append(osc_message("/master/time", fields["track_time"]))
+    return out
+
+
+def as_blt(fields: dict) -> list[bytes]:
+    """A field set as the beat-link-trigger expressions we ship send it: our
+    /klights/v1 messages for position and identity, flat addresses for tempo
+    and bar phase (which the clock path already reads)."""
+    out = []
+    deck = int(fields.get("deck", 1))
+    if "title" in fields:
+        out.append(osc_args("/klights/v1/track", deck,
+                            int(fields.get("rekordbox_id", 0)),
+                            fields.get("signature", ""), fields["title"],
+                            fields.get("artist", ""), fields.get("album", ""),
+                            float(fields.get("duration", 0.0))))
+    if "track_time" in fields:
+        out.append(osc_args("/klights/v1/pos", deck,
+                            int(bool(fields.get("playing", True))),
+                            float(fields["track_time"]), 1.0,
+                            int(fields.get("beat_number", 0)), 1, 1))
+    if "bpm" in fields:
+        out.append(osc_message("/bpm", fields["bpm"]))
+    if "beat_in_bar" in fields:
+        out.append(osc_message("/beat", fields["beat_in_bar"]))
+    if "phrase_label" in fields:
+        out.append(osc_message("/phrase", fields["phrase_label"]))
     return out
 
 
 def emit(sock: socket.socket, host: str, port: int, fields: dict,
-         verbose: bool, use_osc: bool = False) -> None:
-    if use_osc:
+         verbose: bool, use_osc: bool = False, shape: str = "") -> None:
+    shape = shape or ("osc" if use_osc else "json")
+    if "raw" in fields:
+        # A captured datagram, replayed byte for byte -- see capture.py.
+        sock.sendto(base64.b64decode(fields["raw"]), (host, port))
+    elif shape == "osc":
         for message in as_osc(fields):
+            sock.sendto(message, (host, port))
+    elif shape == "blt":
+        for message in as_blt(fields):
             sock.sendto(message, (host, port))
     else:
         sock.sendto(json.dumps(fields).encode("utf-8"), (host, port))
     if verbose:
-        print(f"  -> {'osc  ' if use_osc else ''}{json.dumps(fields)}",
-              flush=True)
+        print(f"  -> {shape:<4} {json.dumps(fields)}", flush=True)
 
 
 def fake(bpm: float, beats_per_bar: int = 4) -> Iterator[tuple[float, dict]]:
@@ -131,6 +198,140 @@ def fake(bpm: float, beats_per_bar: int = 4) -> Iterator[tuple[float, dict]]:
         phrase_at += 1
 
 
+# -- a deck: which track, and where in it (F19) ----------------------------------
+
+# The two tracks the fake deck can play. The first is the show-example's
+# synthetic track (prep.py synthetic writes exactly it), so a fake run plays its
+# timeline. The second is NOT in any show folder: it is what a guest DJ's
+# unknown track looks like, for testing the unmatched path.
+DECK_TRACKS = [
+    {"title": "synthetic 128", "artist": "kLights", "album": "test track",
+     "duration": 180.0, "rekordbox_id": 1, "phrases": True},
+    {"title": "Unknown Guest Tune", "artist": "Guest DJ", "album": "",
+     "duration": 240.0, "rekordbox_id": 2, "phrases": False},
+]
+
+
+def parse_script(script: str) -> list[tuple[str, tuple]]:
+    """`play:64,loop:4x3,hotcue:160,pause:3s,play,switch,scratch` -> steps.
+
+    play[:BEATS]    play forwards (BEATS omitted: until the next step never comes)
+    loop:BxK        play B beats and jump back to their start, K times
+    hotcue:BEAT     jump to a beat of the track
+    pause:SECONDS   stop (an "s" suffix is allowed)
+    switch          the other deck becomes master, with the other track
+    scratch         a second of back-and-forth on the platter
+    """
+    steps: list[tuple[str, tuple]] = []
+    for raw in filter(None, (part.strip() for part in script.split(","))):
+        name, _, arg = raw.partition(":")
+        try:
+            if name == "play":
+                steps.append(("play", (float(arg),) if arg else ()))
+            elif name == "loop":
+                beats, _, times = arg.partition("x")
+                steps.append(("loop", (float(beats), int(times or 1))))
+            elif name == "hotcue":
+                steps.append(("hotcue", (float(arg),)))
+            elif name == "pause":
+                steps.append(("pause", (float(arg.rstrip("s")),)))
+            elif name in ("switch", "scratch") and not arg:
+                steps.append((name, ()))
+            else:
+                raise ValueError(raw)
+        except ValueError:
+            raise ValueError(f"cannot read script step {raw!r}; see "
+                             f"`--help` for the steps") from None
+    return steps
+
+
+def deck(bpm: float, script: str = "", hz: float = 30.0,
+         identity_every_s: float = 4.0) -> Iterator[tuple[float, dict]]:
+    """A deck playing a track, sending position `hz` times a second, with
+    tempo and bar phase on each beat and the phrase on each downbeat, exactly
+    as `fake` does. The script drives the transport; once it runs out the deck
+    plays on forever."""
+    steps = parse_script(script)
+    beat_s = 60.0 / bpm
+    tick = 1.0 / hz
+    state = {"track": 0, "beat": 0.0, "playing": True, "since_id": None,
+             "last_beat": None}
+
+    def phrase_at(beat: float):
+        start = 0
+        for label, bars in FAKE_PHRASES:
+            end = start + bars * 4
+            if beat < end:
+                return label, end - beat
+            start = end
+        return None, None
+
+    def packet() -> dict:
+        track = DECK_TRACKS[state["track"]]
+        beat = state["beat"]
+        fields = {"source": "fake", "deck": str(state["track"] + 1),
+                  "track_time": round(beat * beat_s, 4),
+                  "playing": state["playing"],
+                  "beat_number": max(1, int(math.floor(beat)) + 1)}
+        if state["since_id"] is None or state["since_id"] >= identity_every_s:
+            fields.update({k: track[k] for k in ("title", "artist", "album",
+                                                 "duration", "rekordbox_id")})
+            state["since_id"] = 0.0
+        state["since_id"] += tick
+        whole = int(math.floor(beat))
+        if state["playing"] and whole != state["last_beat"]:
+            state["last_beat"] = whole
+            fields.update({"bpm": bpm, "bpm_original": bpm,
+                           "beat_in_bar": float(whole % 4)})
+            if whole % 4 == 0 and track["phrases"]:
+                label, left = phrase_at(whole)
+                if label is not None:
+                    fields.update({"phrase_label": label, "phrase_ends_in": left,
+                                   "phrase_measured": True})
+        return fields
+
+    def play(beats: Optional[float]):
+        ticks = None if beats is None else int(round(beats * beat_s * hz))
+        n = 0
+        while ticks is None or n < ticks:
+            yield tick, packet()
+            state["beat"] += tick / beat_s
+            n += 1
+
+    for name, args in steps:
+        if name == "play":
+            yield from play(args[0] if args else None)
+            if not args:
+                return
+        elif name == "loop":
+            beats, times = args
+            for _ in range(times):
+                start = state["beat"]
+                yield from play(beats)
+                state["beat"] = start
+        elif name == "hotcue":
+            state["beat"] = args[0]
+            state["last_beat"] = None
+        elif name == "pause":
+            state["playing"] = False
+            for _ in range(int(round(args[0] * hz))):
+                yield tick, packet()
+            state["playing"] = True
+            state["last_beat"] = None
+        elif name == "switch":
+            state["track"] ^= 1
+            state["beat"] = 0.0
+            state["since_id"] = None
+            state["last_beat"] = None
+        elif name == "scratch":
+            for k in range(int(hz)):
+                # Two ticks back, one forward: the platter pushed and pulled.
+                state["beat"] += (-0.6 if k % 3 < 2 else 0.9)
+                yield tick, packet()
+            state["last_beat"] = None
+    yield from play(None)
+
+
 def replay(path: Path) -> Iterator[tuple[float, dict]]:
     """A captured session: one JSON object per line, each with `dt` seconds.
 
@@ -154,11 +355,11 @@ def replay(path: Path) -> Iterator[tuple[float, dict]]:
 
 def run(source: Iterator[tuple[float, dict]], host: str, port: int,
         verbose: bool, limit: Optional[int] = None,
-        use_osc: bool = False) -> int:
+        use_osc: bool = False, shape: str = "") -> int:
     sent = 0
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         for dt, fields in source:
-            emit(sock, host, port, fields, verbose, use_osc)
+            emit(sock, host, port, fields, verbose, use_osc, shape)
             sent += 1
             if limit is not None and sent >= limit:
                 return sent
@@ -183,9 +384,23 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--beats", type=int, metavar="N",
                         help="stop after N packets. For tests and for checking "
                              "a venue's network without leaving a feed running")
-    parser.add_argument("--osc", action="store_true",
+    shapes = parser.add_mutually_exclusive_group()
+    shapes.add_argument("--osc", action="store_true",
                         help="send rkbx_link-shaped OSC instead of JSON, to "
                              "exercise the rekordbox path's decoder")
+    shapes.add_argument("--blt", action="store_true",
+                        help="send what our beat-link-trigger expressions send: "
+                             "/klights/v1 OSC")
+    parser.add_argument("--track", action="store_true",
+                        help="with --fake: a deck playing a track, with its "
+                             "position, not just the beat")
+    parser.add_argument("--script", default="",
+                        help="with --track: what the deck does, e.g. "
+                             "'play:64,loop:4x3,hotcue:160,pause:3s,play:32,"
+                             "switch,scratch'. Steps: play[:BEATS], loop:BxK, "
+                             "hotcue:BEAT, pause:SECONDS, switch, scratch")
+    parser.add_argument("--hz", type=float, default=30.0,
+                        help="with --track: position packets per second")
     parser.add_argument("-q", "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -210,6 +425,15 @@ def main(argv: Optional[list] = None) -> int:
             return 2
         source = replay(args.replay)
         what = f"replaying {args.replay.name}"
+    elif args.track:
+        try:
+            parse_script(args.script)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        source = deck(args.bpm, args.script, args.hz)
+        what = (f"a deck at {args.bpm:g} bpm playing {DECK_TRACKS[0]['title']!r}"
+                + (f", script {args.script!r}" if args.script else ""))
     else:
         source = fake(args.bpm)
         what = f"faking {args.bpm:g} bpm, phrases: " + " ".join(
@@ -218,7 +442,7 @@ def main(argv: Optional[list] = None) -> int:
     print(f"{what}\n  -> {args.host}:{args.port}  (Ctrl-C to stop)")
     try:
         sent = run(source, args.host, args.port, not args.quiet, args.beats,
-                   use_osc=args.osc)
+                   use_osc=args.osc, shape="blt" if args.blt else "")
     except KeyboardInterrupt:
         print("\nstopped.")
         return 0

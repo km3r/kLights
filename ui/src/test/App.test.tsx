@@ -1021,6 +1021,35 @@ describe("dj sync", () => {
     expect(socket.last()).toEqual({ type: "sync_off" });
   });
 
+  it("names the track and where in it, once the transport has it", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.1,
+                 track: "Night Drive" };
+      s.track = { state: "playing", title: "Night Drive", artist: "Someone",
+                  album: "EP", duration: 372.4, source: "rkbx", deck: "2",
+                  time: 61.7, rate: 1.06, age: 0.02, track_seq: 1,
+                  jump_seq: 0, on_air: null };
+    })));
+    expect(screen.getByText("Night Drive")).toBeInTheDocument();
+    expect(screen.getByText(/— Someone/)).toBeInTheDocument();
+    // Position against length, and the DJ's pitch: what you need to see to
+    // believe a timeline is going to land where it should.
+    expect(screen.getByText(/1:01 \/ 6:12 · playing · \+6\.0%/)).toBeInTheDocument();
+  });
+
+  it("says when the packets are late, rather than calling the deck stopped", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.4 };
+      s.track = { state: "stalled", title: "Night Drive", artist: null,
+                  album: null, duration: null, source: "rkbx", deck: null,
+                  time: 75, rate: 1, age: 0.4, track_seq: 1, jump_seq: 2,
+                  on_air: null };
+    })));
+    expect(screen.getByText(/1:15 · packets late/)).toBeInTheDocument();
+  });
+
   it("distinguishes silence from a bridge it cannot read", () => {
     const socket = mount();
     act(() => socket.push(driving((s) => {

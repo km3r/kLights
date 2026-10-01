@@ -49,6 +49,44 @@ JSON, which is how the rekordbox path's decoder — the deck filter, the nested
 addresses, the 0–1 subdiv conversion — gets exercised without a DDJ, rekordbox
 and a licensed copy of rkbx_link in one room.
 
+### A deck, not just a beat (F19)
+
+```bash
+python bridges/prolink/bridge.py --fake --track --osc
+python bridges/prolink/bridge.py --fake --track --blt \
+    --script "play:64,loop:4x3,play:8,hotcue:160,pause:3s,play:32,switch,scratch"
+```
+
+`--track` plays the show-example's synthetic track as a deck would: its
+position 30 times a second (`--hz`), its identity, and the beat and phrase as
+before. `--osc` shapes it as rkbx_link does — identity a field at a time, and
+**silence while paused**. `--blt` shapes it as the beat-link-trigger
+expressions we ship do: `/klights/v1` messages with an explicit playing flag.
+
+`--script` is what the deck does, step by step, then it plays on forever:
+
+| step | |
+|---|---|
+| `play[:BEATS]` | play forwards |
+| `loop:BxK` | play B beats and jump back to their start, K times |
+| `hotcue:BEAT` | jump to a beat of the track |
+| `pause:SECONDS` | stop |
+| `switch` | the other deck becomes master, playing a track no show folder has — a guest DJ's |
+| `scratch` | a second of back-and-forth on the platter |
+
+### Capturing what a source really sends
+
+```bash
+python bridges/prolink/capture.py --listen 9001 --forward 127.0.0.1:9000 --out venue.jsonl
+python bridges/prolink/bridge.py --replay venue.jsonl
+```
+
+Point rkbx_link or beat-link-trigger at `--listen` instead of the engine;
+`--forward` passes every datagram on, so the show keeps running. It records the
+**bytes**, base64, one per line, and `--replay` sends them back exactly — a
+capture taken at a venue becomes a regression test at a desk. The F19 design
+record lists what the first captures on each rig have to show.
+
 ## Two rigs, two tools, one wire format
 
 The CDJs and the DDJ-1000 need completely different mechanisms — one is a

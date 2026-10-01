@@ -27,6 +27,18 @@ the only record of them until a roadmap doc lands.
   the old track. Lock-free: one immutable state, swapped by reference.
 - The snapshot has a `track` section: state, title, artist, source, position,
   rate. Taking the clock back clears it.
+- **The console's DJ sync card names the track and where in it**: position
+  against length, its state, and the DJ's pitch. "Packets late" is shown as
+  such rather than as a stopped deck.
+- **`bridge.py --fake --track`** plays the show-example's synthetic track as a
+  deck: position at 30 Hz, shaped as rkbx_link (`--osc`, silent while paused)
+  or as our beat-link-trigger expressions (`--blt`). `--script` drives the
+  transport: loops, hot cues, pauses, a master switch to a guest track, a
+  scratch. Each shape is tested through the real decoder and transport, and
+  must tell the same story.
+- **`bridges/prolink/capture.py`** records what a source really sends, byte for
+  byte, while forwarding it to the engine; `--replay` sends the bytes back
+  exactly. Venue captures become regression tests.
 
 ### Added — F19c: the prep tool
 

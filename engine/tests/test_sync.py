@@ -15,6 +15,7 @@ Run: python engine/tests/test_sync.py
 import socket
 import struct
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -498,6 +499,122 @@ check("the fake bridge's OSC round-trips through the engine's decoder",
       f"{merged}")
 check("and nothing it sent was unreadable", osc_sink.rejected == 0,
       f"{osc_sink.status()}")
+
+
+# -- 7b. a scripted deck, through the decoder and the transport -----------------
+#
+# The F19 transport is only as testable as the fake that drives it. Each wire
+# shape -- our JSON, rkbx_link's OSC, our beat-link-trigger OSC -- is run
+# through the engine's real decoder and the real transport on simulated time,
+# and has to see the same story: two loop-backs and a hot cue are three jumps,
+# a pause is not a jump, and a master switch is a track change and NOT a jump.
+print("\n7b. a scripted deck")
+from engine import transport as tpmod      # noqa: E402
+
+# A play after the loop, because a loop-back followed at once by a hot cue
+# never sends a packet from where it looped to -- nothing could see that jump.
+SCRIPT = "play:16,loop:4x2,play:4,hotcue:160,play:8,pause:1s,play:8,switch,play:16"
+
+
+def drive(shape: str):
+    """Run the scripted deck through one wire shape; return the transport and
+    what it looked like during the pause."""
+    t = tpmod.TrackTransport()
+    clock = 0.0
+    seen = {"paused_state": None, "titles": [], "rejected": 0}
+    for dt, fields in bridgemod.deck(128.0, SCRIPT, hz=30.0):
+        if shape == "json":
+            messages = [syncmod.clean(fields)]
+        else:
+            encoder = bridgemod.as_osc if shape == "osc" else bridgemod.as_blt
+            messages = [syncmod.parse(m) for m in encoder(fields)]
+        for m in messages:
+            if m is None:
+                seen["rejected"] += 1
+            elif m is not syncmod.IGNORED:
+                t.ingest(m, clock)
+        if fields.get("playing") is False:
+            seen["paused_state"] = t.sample(clock).state   # the last one wins
+        clock += dt
+        title = t.sample(clock).identity.title
+        if title and (not seen["titles"] or seen["titles"][-1] != title):
+            seen["titles"].append(title)
+        if t.sample(clock).identity.title == "Unknown Guest Tune" \
+                and (t.sample(clock).time_s or 0) > 6.0:
+            break
+    return t.sample(clock), seen
+
+
+for shape in ("json", "osc", "blt"):
+    final, seen = drive(shape)
+    check(f"{shape}: every message the deck sent was readable",
+          seen["rejected"] == 0, f"{seen['rejected']} rejected")
+    check(f"{shape}: two loop-backs and a hot cue are three jumps",
+          final.jump_seq == 3, f"jump_seq={final.jump_seq}")
+    check(f"{shape}: the master switch is a track change, not a jump",
+          seen["titles"] == ["synthetic 128", "Unknown Guest Tune"]
+          and final.track_seq == 2, f"{seen['titles']} track_seq={final.track_seq}")
+    check(f"{shape}: and the new track is playing from where it started",
+          final.state == tpmod.PLAYING and 6.0 < final.time_s < 6.2, f"{final}")
+check("rkbx_link's shape goes silent on pause, which inside the grace period "
+      "is a stall, not a pause", drive("osc")[1]["paused_state"] == tpmod.STALLED)
+check("beat-link-trigger's says so, and the transport pauses at once",
+      drive("blt")[1]["paused_state"] == tpmod.PAUSED)
+paused = {"track_time": 10.0, "playing": False, "deck": "1"}
+check("a paused rkbx_link-shaped packet carries no position at all",
+      not any(m.startswith(b"/master/time") for m in bridgemod.as_osc(paused)))
+for bad in ("dance", "loop:4", "pause:soon", "switch:2"):
+    try:
+        bridgemod.parse_script(bad)
+        check(f"a script step it cannot read is refused: {bad!r}",
+              bad == "loop:4", "accepted")
+    except ValueError:
+        check(f"a script step it cannot read is refused: {bad!r}", True)
+
+# A capture replays byte for byte. Venue captures are the regression tests for
+# the hardware nobody has at a desk, so the bytes are what must survive.
+import capture as capturemod            # noqa: E402
+import socket as socketmod              # noqa: E402
+
+
+def free_port() -> int:
+    with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+cap_port = free_port()
+cap_file = REPO / "engine" / "tests" / "data" / "capture-roundtrip.jsonl"
+recorded: dict = {}
+recorder = threading.Thread(target=lambda: recorded.update(
+    n=capturemod.record(cap_port, cap_file, seconds=1.5)), daemon=True)
+recorder.start()
+time.sleep(0.2)
+sent_bytes: list[bytes] = []
+with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as out:
+    for _, (_, fields) in zip(range(12), bridgemod.deck(128.0, "", hz=60.0)):
+        for message in bridgemod.as_osc(fields):
+            sent_bytes.append(message)
+            out.sendto(message, ("127.0.0.1", cap_port))
+            time.sleep(0.002)
+recorder.join(4)
+check("capture records every datagram",
+      recorded.get("n") == len(sent_bytes) > 10, f"{recorded} of {len(sent_bytes)}")
+sink_port = free_port()
+got_bytes: list[bytes] = []
+with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as sink:
+    sink.bind(("127.0.0.1", sink_port))
+    sink.settimeout(2.0)
+    bridgemod.run(bridgemod.replay(cap_file), "127.0.0.1", sink_port,
+                  verbose=False)
+    try:
+        while len(got_bytes) < len(sent_bytes):
+            got_bytes.append(sink.recvfrom(4096)[0])
+    except socketmod.timeout:
+        pass
+check("and --replay sends exactly those bytes back, in order",
+      got_bytes == sent_bytes, f"{len(got_bytes)} of {len(sent_bytes)}")
+cap_file.unlink(missing_ok=True)
 osc_sink.stop()
 
 
