@@ -74,19 +74,28 @@ def check_event(r: Report) -> None:
     for warning in spec.warnings:
         r.warn("rig", warning)
 
+    # The standalone app's scene, which is also where the room's optics are
+    # checked: every bad optics key, model or aim is one of its warnings.
+    from engine import scene as engine_scene
+    from engine import rig as engine_rig
     try:
-        previz_config.optics(spec.venue)
-    except ValueError as exc:
-        r.bad("optics.json", str(exc))
+        manifest = engine_scene.build_for(Path(info["event_dir"])).manifest
+    except Exception as exc:                     # noqa: BLE001
+        r.bad("the previz app's scene builds", f"{type(exc).__name__}: {exc}")
         return
-    if previz_config.has_profile(spec.venue):
-        r.ok("optics", f"{spec.venue} has its own profile")
+    r.ok("the previz app's scene builds",
+         f"rev {manifest['rev']}, {len(manifest['models'])} model(s)")
+    for warning in manifest["warnings"]:
+        r.warn("scene", warning)
+    venue = engine_rig.load_rig(Path(info["event_dir"])).venue
+    if isinstance(venue.previz, dict) and venue.previz.get("optics"):
+        r.ok("optics", f"{spec.venue} has its own")
     else:
         # Not a failure: inherited optics render, they just render like
         # somewhere else. Worth saying once, because the alternative is
         # wondering for an hour why the fog looks wrong.
-        r.warn("optics", f"{spec.venue} has no profile, so it inherits numbers "
-                         f"eyeballed in a different room. previz/optics.json "
+        r.warn("optics", f"{spec.venue} has no previz.optics, so it inherits "
+                         f"numbers eyeballed in a different room. docs/models.md "
                          f"has the re-sweep procedure")
 
 

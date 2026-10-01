@@ -55,6 +55,7 @@ from . import motion
 from . import patch as patchmod
 from . import rig as rigmod
 from . import safety as safetymod
+from . import scene as scenemod
 from . import state as statemod
 from . import sync as syncmod
 from . import venue as venuemod
@@ -1827,6 +1828,20 @@ class ShowServer:
             self._next_id += 1
             return f"c{self._next_id}"
 
+    def previz_scene(self) -> scenemod.Scene:
+        """The previz app's scene, for the rig this engine is driving NOW.
+
+        Rebuilt on every request rather than cached. It costs about 0.3 ms, the
+        app polls once a second, and a cache would need invalidating from every
+        path that can change what is drawn -- a patch reload, a live venue edit,
+        a model re-exported on disk -- each one a way for the previz to show a
+        room that no longer exists. One read of `self.controller.rig`: a reload
+        swaps the reference rather than mutating the old rig, so the build sees
+        one rig, never half of two.
+        """
+        controller = self.controller
+        return scenemod.build(controller.rig, controller.event_dir)
+
     # -- broadcasting ------------------------------------------------------
 
     def broadcast_loop(self) -> None:
@@ -1992,7 +2007,63 @@ class ShowServer:
                     self.close_connection = True
                     server.serve_websocket(self.connection, key, tier=tier)
                     return
+                if urlparse(self.path).path.startswith("/api/previz/"):
+                    self.serve_previz(urlparse(self.path).path)
+                    return
                 self.serve_static()
+
+            def serve_previz(self, path):
+                """The standalone previz app's two reads: its scene, and the
+                model files that scene names.
+
+                View tier, read-only, no token: the same rig the console
+                already shows every phone. Models are served by CONTENT HASH
+                and only when the current scene names that hash, so this
+                cannot be used to fetch an arbitrary file, and a model that has
+                not changed is never downloaded twice.
+                """
+                try:
+                    scene = server.previz_scene()
+                except Exception as exc:                # noqa: BLE001
+                    # A previz must never be able to take the console down.
+                    body = json.dumps({"error": f"no previz scene: {exc}"}).encode("utf-8")
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path == "/api/previz/scene":
+                    etag = f'"{scene.rev}"'
+                    if self.headers.get("If-None-Match") == etag:
+                        self.send_response(304)
+                        self.send_header("ETag", etag)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    body = scene.to_json()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                prefix, suffix = "/api/previz/model/", ".glb"
+                sha = path[len(prefix):-len(suffix)] if (
+                    path.startswith(prefix) and path.endswith(suffix)) else ""
+                if sha in scene.files:
+                    body = scene.files[sha].read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "model/gltf-binary")
+                    # Named by its own hash, so it can never change: cache hard.
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_error(404, "not part of the current previz scene")
 
             def serve_static(self):
                 path = self.path.split("?", 1)[0]

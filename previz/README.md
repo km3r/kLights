@@ -115,8 +115,8 @@ outside a cut-away wall. Run against despacio it reproduces the hand-measured
 originals to within a centimetre, and the self-test builds a 6 m room and a
 4 × 0.9 m corridor to check they stay inside a room that is not this one.
 
-Optics — fog, beam gains, albedo — live in `previz/optics.json` per venue, with
-the re-sweep procedure written in the file. A room with no profile inherits
+Optics — fog, beam gains, albedo — live in each venue file under
+`previz.optics`, merged over the defaults in `engine/scene.py`. A room with no profile inherits
 despacio's numbers and the doctor says so, because inherited optics render
 perfectly happily and render like somewhere else.
 

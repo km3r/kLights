@@ -125,6 +125,38 @@
     "center": { "x": 9144, "z": 9144 }
   },
 
+  "_previz_comment": [
+    "HOW THE ROOM IS DRAWN. Read only by the previz; nothing here changes the",
+    "show, and a mistake here is a warning in the previz, never an error that",
+    "stops the engine loading.",
+    "",
+    "optics: every number was eyeballed against a SINGLE PHOTOGRAPH of this",
+    "room on the night (2026-08, an 18 m room, 8-degree beams, a 9 m truss",
+    "frame). Honest for despacio and meaningless anywhere else, which is why",
+    "they live with the room. Keys left out fall back to the defaults in",
+    "engine/scene.py, so a room that only needs different fog says only that.",
+    "The re-sweep procedure is in docs/models.md.",
+    "",
+    "models: glTF binaries (.glb) placed in the room -- set pieces, a DJ booth,",
+    "walls of a venue that is not a box. Paths are relative to THIS file, then",
+    "shared/models/. Position in mm in this file's frame; rotation in degrees.",
+    "",
+    "ball.rpm: the motor's speed. ASSUMED -- nothing records the real one."
+  ],
+  "previz": {
+    "optics": {
+      "beam_extinction_per_m": 0.09,
+      "beam_gain": 1.4,
+      "dot_gain": 2.3,
+      "ray_gain": 1.8,
+      "mesh_contrast": 0.22,
+      "room_albedo": 0.16,
+      "fog_density": 0.35
+    },
+    "ball": { "rpm": 2.0 },
+    "models": []
+  },
+
   "elev_extreme_deg": 90,
 
   "_strobe_comment": [

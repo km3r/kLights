@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "A SECOND EVENT, deliberately unlike despacio, so the previz is proven",
+    "generic rather than assumed to be. Every axis despacio holds fixed is",
+    "varied here: a hung mount instead of sideways, a room that is not square,",
+    "a fixed par aimed at a point instead of the ball, a fixture with no",
+    "position, and a set piece from a model file. Test data, never a show."
+  ],
+  "name": "sample",
+  "mount_mode": "hung",
+  "fixtures": [
+    {"id": 0, "name": "Hung Mover L", "manufacturer": "MingJie", "model": "MJ-OS-018 60W Beam",
+     "mode": "11 Channel", "universe": 0, "address": 1, "tags": ["movers"],
+     "position": {"x": 3000, "y": 3800, "z": 2000}, "hold": {"reset": 0}},
+    {"id": 1, "name": "Hung Mover R", "manufacturer": "MingJie", "model": "MJ-OS-018 60W Beam",
+     "mode": "11 Channel", "universe": 0, "address": 12, "tags": ["movers"],
+     "position": {"x": 9000, "y": 3800, "z": 2000}, "hold": {"reset": 0},
+     "pan_speed_deg_s": 150},
+    {"id": 2, "name": "Stage Par", "manufacturer": "UKing", "model": "Par 36 Custom",
+     "mode": "5 Channel", "universe": 1, "address": 1, "tags": ["pars"],
+     "position": {"x": 6000, "y": 3500, "z": 500},
+     "aim": {"x": 6000, "y": 1000, "z": 4000}},
+    {"id": 3, "name": "Ball Pinspot", "manufacturer": "UKing", "model": "ZQ-B93 Pinspot RGBW",
+     "mode": "6-channel", "universe": 1, "address": 10, "tags": ["pinspots"],
+     "position": {"x": 6000, "y": 3500, "z": 7500},
+     "hold": {"Total function control": 255}},
+    {"id": 4, "name": "Spare Par", "manufacturer": "UKing", "model": "Par 36 Custom",
+     "mode": "5 Channel", "universe": 1, "address": 20, "tags": ["pars"]}
+  ]
+}

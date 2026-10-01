@@ -210,6 +210,9 @@
         }
       }
     },
+    "previz": {
+      "description": "how the room is drawn: optics, models and the mirror ball's look. Checked by engine.scene, never by the show"
+    },
     "version": {
       "type": "integer",
       "description": "Format version. Current is 1; a file with no version is treated as 1."
