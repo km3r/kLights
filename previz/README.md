@@ -19,7 +19,7 @@ F10 was always safe to build alongside everything else.
 
 Needs Unreal Engine **5.8** (5.8.1 is what this was built against).
 
-**1.** Open `previz/unreal/CosmosPrevis.uproject` in the editor and leave it
+**1.** Open `previz/unreal/KLightsPreviz.uproject` in the editor and leave it
 sitting on the Previz level. **Do not press Play.**
 
 **2.** Build the level and start the driver — one command, safe to re-run any
