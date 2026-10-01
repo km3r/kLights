@@ -185,7 +185,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 19 suites, no test framework
+python -m engine.tests    # 20 suites, no test framework
 cd ui && npm test         # the console
 ```
 
@@ -205,7 +205,7 @@ library, and requires every differing channel to fall into a category that was
 engine/        the show engine — stdlib only, no dependencies
 ui/            React console; ui/dist is committed so a venue needs no Node
 previz/        Unreal previz — an Art-Net listener, never in the show's path
-bridges/       sidecars that may have dependencies (DJ tempo)
+bridges/       sidecars: DJ tempo and position, and the rekordbox prep tool
 mcp/           MCP server over stdio, for patching from an assistant
 events/        one directory per show: patch, calibration, looks, cues, presets
 shared/        things that outlive a show: fixtures, venues, inventory, tools

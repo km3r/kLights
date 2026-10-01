@@ -11,6 +11,24 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19c: the prep tool
+
+- **[`bridges/rekordbox/prep.py`](bridges/rekordbox/README.md)** reads what
+  rekordbox already knows about a track and writes it into a show folder.
+  Identity and file location come from rekordbox's XML export. Beat grid,
+  phrases, cues and waveform come from its analysis files. The two are joined on
+  the audio path the analysis records, falling back to the file name, which is
+  what makes a USB stick work. Stdlib only; no encrypted database is read.
+- **`bridges/rekordbox/anlz.py`**, a reader for `ANLZ0000.DAT/.EXT`: the grid,
+  phrases (unmasking rekordbox 6+'s XOR mask), named cues, waveforms and the
+  audio path. Phrase labels are rekordbox's own, including high-mood numbering
+  ("Up 3", "Chorus 2").
+- Re-running prep changes nothing. A track renamed in rekordbox keeps its old
+  name as an alias. A re-gridded track is reported along with every timeline
+  drawn on the old grid, and prep never touches a timeline.
+- `engine/tracks.py`: how track names are compared. It forgives accents, case,
+  "&" and "ft.", but never "Original Mix" against "Extended Mix".
+
 ### Added — F19b: a track's time, and the show folder
 
 - **`engine/tracktime.py`.** A track's own musical time, from rekordbox's beat
