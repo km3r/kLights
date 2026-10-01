@@ -166,6 +166,30 @@ one, never a truncated one.
 room is a one-line change rather than a forked copy of the geometry the safety
 taper reads.
 
+### The show folder (F19)
+
+Timecoded shows — prepped tracks, per-track timelines, routines, template sets
+— live in a **show folder outside the repo**, because they move between the
+machine you design on and the show laptop through a shared folder. The engine
+finds it from `--show-dir`, then `$KLIGHTS_SHOW_DIR`, then `show_dir` in a
+gitignored `klights.local.json`; with none of those it runs exactly as before.
+
+| file | what it is |
+|---|---|
+| `show.json` | template set, fallback, pause policy, per-source latency, Follow DJ default |
+| `tracks/<id>.json` | one prepped track: identity, beat grid, rekordbox's phrases |
+| `timelines/<track>.json` | the hand-built show for one track, in beats on its grid |
+| `routines/<id>.json`, `templates/<id>.json` | reusable routines, and phrase → routine template sets |
+
+[`showfiles.py`](../engine/showfiles.py) is the one authoring API: the designer,
+MCP and the prep tool all validate and write through it. Writes carry the
+revision the editor read and are refused if the file changed since — a sync
+from another machine is the normal way that happens. Sync-service conflict
+copies are never loaded. A track's time is [`tracktime.py`](../engine/tracktime.py):
+beat 0 is the first downbeat, and the grid is the only thing that turns a
+position in the audio into a beat. `python -m engine.showfiles check` validates
+a folder; [`shared/show-example/`](../shared/show-example/) is a complete one.
+
 ## Where to look
 
 | question | file |

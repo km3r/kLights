@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/waveform.schema.json",
+  "title": "cosmos waveform",
+  "description": "A track's waveform, for the designer. Written by the prep tool.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.waveform"
+      ],
+      "description": "\"klights.waveform\" -- it says which format the file is"
+    },
+    "track": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preview": {
+      "type": "string",
+      "description": "base64 of rekordbox's PWAV preview"
+    },
+    "detail": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 1
+        },
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "data"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "track"
+  ],
+  "additionalProperties": true
+}

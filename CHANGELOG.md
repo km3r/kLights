@@ -11,6 +11,29 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19b: a track's time, and the show folder
+
+- **`engine/tracktime.py`.** A track's own musical time, from rekordbox's beat
+  grid: beat 0 is the first downbeat, a position in the audio maps to a beat
+  through anchors, and the map is continuous and monotonic by construction
+  across tempo changes. A grid fingerprint (`rev`) lets a timeline notice that
+  its track was re-gridded after it was drawn.
+- **`engine/showfiles.py`: the show folder and its formats.** Show settings,
+  tracks, timelines, routines, template sets and waveforms, each validated for
+  shape and meaning, with errors for what cannot mean anything and warnings
+  for what is merely suspicious. One authoring API for the designer, MCP and
+  the prep tool. Writes are refused if the file changed since it was read;
+  sync-service conflict copies are never loaded; unknown keys survive a round
+  trip. `python -m engine.showfiles init|check`.
+- **Six generated schemas** in `schemas/`, so an editor completes a timeline
+  as it does a rig. `config.Spec` gained discriminated variants, emitted as
+  `oneOf`, and each format has its own version.
+- **[`shared/show-example/`](shared/show-example/)**: a complete show folder
+  around the fake bridge's synthetic track, with one of everything a timeline
+  can hold.
+- `validate` is tested against 4,570 mutated documents and never raises. That
+  sweep found four ways it could.
+
 ### Added — F19a: replies, a worker thread, and one validator for sync
 
 - **A command can ask for a reply.** Give it an `id` and the engine answers the

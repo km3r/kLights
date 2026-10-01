@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/routine.schema.json",
+  "title": "cosmos routine",
+  "description": "A reusable routine: rows of building blocks over N bars, written against roles, with open parameters.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.routine"
+      ],
+      "description": "\"klights.routine\" -- it says which format the file is"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "lower-case letters, digits, '-' and '_', starting with a letter or digit, at most 64 characters. It is also the file name"
+    },
+    "name": {
+      "type": "string"
+    },
+    "bars": {
+      "type": "number",
+      "minimum": 0.25,
+      "maximum": 256
+    },
+    "loop": {
+      "type": "boolean"
+    },
+    "rig": {
+      "type": "string",
+      "description": "the event a rig-bound routine was built for -- set when any row uses a look or snapshot"
+    },
+    "roles": {
+      "type": "object",
+      "description": "{\"movers\": {\"default\": \"movers\"}} -- a role binds to a rig tag unless the use site says otherwise"
+    },
+    "params": {
+      "type": "object"
+    },
+    "variations": {
+      "type": "object"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "clips",
+              "hits",
+              "automation"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "clips"
+              },
+              "target": {
+                "type": "string",
+                "enum": [
+                  "movement",
+                  "color",
+                  "level"
+                ]
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "description": "one of this routine's roles"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "beats from the routine's start"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "block": {
+                      "type": "string",
+                      "enum": [
+                        "fan_sweep",
+                        "orbit",
+                        "pendulum",
+                        "aim_points",
+                        "solid",
+                        "color_chase",
+                        "chase",
+                        "pulse",
+                        "dim",
+                        "strobe",
+                        "look",
+                        "snapshot"
+                      ]
+                    },
+                    "args": {
+                      "type": "object",
+                      "description": "arguments, and \"$name\" for an open parameter"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "len",
+                    "block"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "target",
+              "role",
+              "items"
+            ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "hits"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": -64,
+                      "description": "beats from the track's first downbeat, not seconds"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "hit": {
+                      "type": "string",
+                      "enum": [
+                        "flash",
+                        "strobe",
+                        "blackout"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "description": "which fixtures; none means all of them"
+                    },
+                    "level": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "envelope": {
+                      "type": "string",
+                      "enum": [
+                        "hold",
+                        "decay"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "len",
+                    "hit"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "automation"
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1
+              },
+              "points": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "type",
+              "target",
+              "points"
+            ]
+          }
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "id",
+    "bars",
+    "roles",
+    "rows"
+  ],
+  "additionalProperties": true
+}

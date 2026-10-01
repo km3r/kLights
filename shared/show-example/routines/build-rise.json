@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../schemas/routine.schema.json",
+  "kind": "klights.routine",
+  "version": 1,
+  "id": "build-rise",
+  "name": "Build rise",
+  "bars": 8,
+  "loop": false,
+  "roles": {
+    "movers": {
+      "default": "movers"
+    },
+    "pins": {
+      "default": "pinspots",
+      "optional": true
+    }
+  },
+  "params": {
+    "color": {
+      "type": "color",
+      "default": "@accent"
+    }
+  },
+  "rows": [
+    {
+      "id": "m",
+      "type": "clips",
+      "target": "movement",
+      "role": "movers",
+      "items": [
+        {
+          "id": "orbit",
+          "at": 0,
+          "len": 32,
+          "block": "orbit",
+          "args": {
+            "radius": 40,
+            "bars": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "type": "clips",
+      "target": "color",
+      "role": "movers",
+      "items": [
+        {
+          "id": "solid",
+          "at": 0,
+          "len": 32,
+          "block": "solid",
+          "args": {
+            "color": "$color"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p",
+      "type": "clips",
+      "target": "level",
+      "role": "pins",
+      "items": [
+        {
+          "id": "chase",
+          "at": 0,
+          "len": 32,
+          "block": "chase",
+          "args": {
+            "order": "x",
+            "bars": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "size",
+      "type": "automation",
+      "target": "size",
+      "points": [
+        [
+          0,
+          1.5
+        ],
+        [
+          32,
+          0.3,
+          "ease"
+        ]
+      ]
+    },
+    {
+      "id": "rate",
+      "type": "automation",
+      "target": "rate.movement",
+      "points": [
+        [
+          0,
+          1
+        ],
+        [
+          32,
+          4
+        ]
+      ]
+    }
+  ]
+}
