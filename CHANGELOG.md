@@ -11,6 +11,23 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19d: which track, and where in it
+
+- **The sync port reads position and identity.** rkbx_link's `/master/time`,
+  artist, album and original bpm; our `/klights/v1/pos` and `/track` for
+  beat-link-trigger, decoded strictly at a fixed arity; and the same fields as
+  JSON. Every one is range-checked. Addresses the tools send that we choose not
+  to use (`phrase/next`, `beat/trigger`) are counted as ignored rather than
+  rejected, so healthy rkbx_link traffic no longer reads as unreadable packets.
+- **`engine/transport.py`.** The track's position between packets. It is a
+  smoothed line, so jitter never reads as motion. It detects jumps (loops, hot
+  cues), pauses (including rkbx_link's silence), stalls and scratching. Identity
+  arriving a field at a time waits for the rest, and a jump from such a source
+  waits 30 ms, so a master switch reads as a track change and not as a jump in
+  the old track. Lock-free: one immutable state, swapped by reference.
+- The snapshot has a `track` section: state, title, artist, source, position,
+  rate. Taking the clock back clears it.
+
 ### Added — F19c: the prep tool
 
 - **[`bridges/rekordbox/prep.py`](bridges/rekordbox/README.md)** reads what

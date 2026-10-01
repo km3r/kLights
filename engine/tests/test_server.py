@@ -1404,6 +1404,45 @@ try:
     check("the tempo port cannot panic the rig or edit the patch",
           not djs.runner.panicked and len(djs.rig.fixtures) == fixtures_before,
           f"panicked={djs.runner.panicked}, {len(djs.rig.fixtures)} fixtures")
+
+    # -- which track, and where in it (F19d) --------------------------------
+    # rkbx_link's shapes, over the real port: the identity a field at a time,
+    # then position at ~60 Hz. The snapshot is what the console will show.
+    def osc_msg(address: str, tag: str, value) -> bytes:
+        def pad(b: bytes) -> bytes:
+            return b + b"\0" * (4 - len(b) % 4)
+        payload = (struct.pack(">f", value) if tag == "f"
+                   else pad(value.encode()) if tag == "s" else b"")
+        return pad(address.encode()) + pad(b"," + tag.encode()) + payload
+
+    ignored_before = djs.sync.ignored
+    rejected_before = djs.sync.rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        for address, value in (("/master/track/title", "Night Drive"),
+                               ("/master/track/artist", "Someone"),
+                               ("/master/track/album", "EP")):
+            s.sendto(osc_msg(address, "s", value), ("127.0.0.1", sync_port))
+        s.sendto(osc_msg("/master/phrase/next", "s", "Chorus"), ("127.0.0.1", sync_port))
+        started = time.time()
+        for i in range(40):
+            s.sendto(osc_msg("/master/time", "f", 61.0 + i / 60), ("127.0.0.1", sync_port))
+            time.sleep(1 / 60)
+    first = djs.snapshot()["track"]
+    time.sleep(0.1)
+    later = djs.snapshot()["track"]
+    check("the snapshot says which track and where",
+          first["state"] == "playing" and first["title"] == "Night Drive"
+          and first["artist"] == "Someone" and first["source"] == "rkbx"
+          and 61.4 < first["time"] < 62.0, f"{first}")
+    check("and the position keeps moving between snapshots",
+          later["time"] > first["time"], f"{first['time']} -> {later['time']}")
+    check("rkbx_link's phrase/next is counted as ignored, not rejected",
+          djs.sync.ignored == ignored_before + 1
+          and djs.sync.rejected == rejected_before,
+          f"ignored {djs.sync.ignored}, rejected {djs.sync.rejected}")
+    djs.apply({"type": "sync_off"}, None)
+    check("taking the clock back forgets the track too",
+          djs.snapshot()["track"]["state"] == "no_track")
 finally:
     djs.stop()
 

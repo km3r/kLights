@@ -57,6 +57,7 @@ from . import rig as rigmod
 from . import safety as safetymod
 from . import state as statemod
 from . import sync as syncmod
+from . import transport as transportmod
 from . import venue as venuemod
 from . import worker as workermod
 from .output import ArtNetOutput, NullOutput
@@ -330,6 +331,11 @@ class ShowController:
         # a clock that carried track titles would be a clock with opinions.
         self.sync_deck: Optional[str] = None
         self.sync_track: Optional[str] = None
+        # Which track the DJ is playing and where in it (F19). Fed by the same
+        # `sync` command as the clock; read by the snapshot from another
+        # thread, which is safe because it keeps its state in one immutable
+        # value swapped by reference.
+        self.transport = transportmod.TrackTransport()
         self.presets = load_presets(self.event_dir)
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
@@ -1261,6 +1267,10 @@ class ShowController:
             self.sync_deck = fields["deck"]
         if "track" in fields:
             self.sync_track = fields["track"]
+        # `now` is when the datagram ARRIVED (see submit), which is what the
+        # transport's line needs: applying it at the frame boundary instead
+        # would quantise every position to the 25 ms frame grid.
+        self.transport.ingest(fields, now)
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -1276,6 +1286,7 @@ class ShowController:
         was = self.clock.source
         self.clock.unsync()
         self.sync_deck = self.sync_track = None
+        self.transport.clear()
         self.note(f"took the clock back from {was!r} at "
                   f"{self.clock.bpm:.1f} bpm")
 
@@ -1604,6 +1615,7 @@ class ShowController:
                       "phrase_measured": self.clock.phrase_measured,
                       "taps": self.clock.taps},
             "sync": self.sync_status(),
+            "track": _track_status(self),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -1758,6 +1770,27 @@ def _sync_status(controller: "ShowController") -> dict:
         "deck": controller.sync_deck,
         "track": controller.sync_track,
         **({"port": listening.status()} if listening is not None else {}),
+    }
+
+
+def _track_status(controller: "ShowController") -> dict:
+    """Which track the DJ is playing and where in it, for the console. Small on
+    purpose: it rides the 10 Hz snapshot."""
+    s = controller.transport.sample(controller.runner.now())
+    return {
+        "state": s.state,
+        "title": s.identity.title or None,
+        "artist": s.identity.artist or None,
+        "album": s.identity.album or None,
+        "duration": s.identity.duration,
+        "source": s.source,
+        "deck": s.deck,
+        "time": None if s.time_s is None else round(s.time_s, 3),
+        "rate": round(s.rate, 4),
+        "age": None if s.age is None else round(s.age, 2),
+        "track_seq": s.track_seq,
+        "jump_seq": s.jump_seq,
+        "on_air": s.on_air,
     }
 
 

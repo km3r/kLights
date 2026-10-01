@@ -89,7 +89,14 @@ its analysis files. It emits OSC, Ableton Link and sACN. Windows, rekordbox
 | `/master/beat/subdiv/4` | `beat_in_bar` — it sends a 0–1 ramp looping every *n* beats, scaled back up here |
 | `/master/phrase/current` | `phrase_label`, and `phrase_measured` with it |
 | `/master/phrase/countin` | `phrase_ends_in` |
-| `/master/track/title` | `track` |
+| `/master/track/title` | `title`, and the console's `track` label |
+| `/master/track/artist`, `/master/track/album` | `artist`, `album` |
+| `/master/bpm/original` | `bpm_original` — with `bpm/current`, the pitch |
+| `/master/time` | `track_time`: where in the track, in seconds (F19) |
+| `/master/phrase/next`, `/master/beat/trigger/*` | understood and **ignored** — counted separately from rejects |
+
+Everything under `/master/` is tagged `source: "rkbx"`, which is how the
+transport applies rkbx_link's latency offset and the console names it.
 
 Three things to get right, each of which fails quietly otherwise:
 
@@ -181,6 +188,39 @@ JSON over UDP, any subset of these, unknown keys ignored:
 | `phrase_ends_in` | beats until the phrase ends. Stored as an absolute beat, so sending it once per bar is enough. |
 | `source` | what to display as the clock owner. |
 | `deck`, `track` | labels for the console. |
+
+And which track is playing, and where in it (F19). These can select
+pre-authored shows, so each is range-checked and anything out of range is
+dropped:
+
+| field | meaning |
+|---|---|
+| `track_time` | position in the audio, seconds, -60 to 14400. Send it often: ~60 Hz from rkbx_link, 25 Hz from beat-link-trigger. |
+| `title`, `artist`, `album` | who the track is. Unicode-normalised, control characters stripped, 200 characters at most. A `title` also sets `track`. |
+| `duration` | track length, seconds. |
+| `bpm_original` | the track's own tempo; with `bpm`, the pitch. |
+| `pitch` | playback rate, 0–4, when a source knows it directly. |
+| `playing`, `on_air`, `master` | flags. `playing: false` pauses at once; without it, a source going silent for the grace period counts as paused. |
+| `rekordbox_id` | 0 to 2³²−1. Only meaningful with the database it came from. |
+| `signature` | beat-link-trigger's track signature, 40 hex characters. |
+| `beat_number` | the beat in the track, for the grid phase check. |
+
+### `/klights/v1` — our own namespace
+
+The beat-link-trigger expressions we ship send two messages, each with
+**several** arguments. Unlike the flat addresses they are decoded strictly:
+the exact argument count, each of the right kind, or the whole message is
+rejected.
+
+| address | arguments |
+|---|---|
+| `/klights/v1/pos` | deck, playing, time_s, pitch, beat_number, master, on_air |
+| `/klights/v1/track` | deck, rekordbox_id, signature, title, artist, album, duration_s |
+
+Numbers may be OSC `i`, `f`, `d` or `h`. Both are tagged `source: "blt"`.
+Identity arrives whole in one message, so a track change and a jump from this
+source count at once; from rkbx_link, whose identity arrives a field at a time,
+both wait a moment for the rest (see `engine/transport.py`).
 
 ## Security
 
