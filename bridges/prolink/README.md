@@ -101,12 +101,34 @@ the receiving end of both.
 
 [beat-link-trigger](https://github.com/Deep-Symmetry/beat-link-trigger) sits on
 Deep Symmetry's `beat-link`, *the* reference implementation of Pro DJ Link. It
-already has **phrase-triggered cues** as a first-class feature, and it emits
-OSC. Point a trigger at the engine's sync port and there is no code of ours in
-the path.
+already has **phrase-triggered cues** as a first-class feature.
 
-`engine/sync.py` reads flat addresses — `/…/bpm`, `/…/beat`, `/…/phrase`,
-`/…/deck`, `/…/track` — so the namespace can be renamed freely.
+It sends OSC only from **expressions** — Clojure that someone writes inside it.
+We ship them: [`blt/klights.clj`](blt/klights.clj). Paste each section into the
+expression it names, in the Triggers window's File menu:
+
+1. **Shared Functions** — the three `klights-` functions.
+2. **Global Setup Expression** — set `:klights-port` to the engine's
+   `--sync-port` (and `:klights-host` if the engine is on another machine).
+3. **Came Online Expression** and **Going Offline Expression** and **Global
+   Shutdown Expression** — one line or block each.
+
+Then go online. 25 times a second they send the tempo master's position and
+playing state (`/klights/v1/pos`), its identity whenever the deck or track
+changes (`/klights/v1/track`, with rekordbox id and signature), and on every
+beat its tempo and bar phase (`/bpm`, `/beat`), which the clock reads as before.
+`engine/tests/data/blt_klights_v1_golden.json` holds the exact bytes they must
+produce; the engine decodes them and `bridge.py --blt` reproduces them, so a
+desk test with `--blt` is a test of this encoding.
+
+**Not yet run against a CDJ.** They follow BLT's documented API and its own
+ArtNet-timecode example; the first real run is judged by the hardware
+checklist in [the F19 design record](../../docs/design/timecoded-shows.md).
+Position is exact only on CDJ-3000s, which report it every 30 ms; older players'
+is estimated from beats and goes wrong on loops — BLT's documentation says so.
+
+`engine/sync.py` also reads flat addresses — `/…/bpm`, `/…/beat`, `/…/phrase`,
+`/…/deck`, `/…/track` — for anything hand-rolled.
 
 Cost: a JVM in the show chain.
 
@@ -136,8 +158,13 @@ its analysis files. It emits OSC, Ableton Link and sACN. Windows, rekordbox
 Everything under `/master/` is tagged `source: "rkbx"`, which is how the
 transport applies rkbx_link's latency offset and the console names it.
 
-Three things to get right, each of which fails quietly otherwise:
+[`rkbx_link.config.example`](rkbx_link.config.example) is a complete config
+with every setting kLights needs, each commented with why. Four things to get
+right, each of which fails quietly otherwise:
 
+- **`osc.msg.master/time true` and `osc.msg.master/phrase true`.** Both are
+  `false` in rkbx_link's shipped config: without the first there is no position
+  at all, and without the second, no phrases.
 - **`osc.destination` must point at the engine's `--sync-port`.** rkbx_link
   defaults to `127.0.0.1:4460`.
 - **`osc.phrase_output_format string`.** The other formats send a number, which

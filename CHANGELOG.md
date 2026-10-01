@@ -11,6 +11,19 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19e: the wire format, shipped to both sources
+
+- **`bridges/prolink/blt/klights.clj`**: the beat-link-trigger expressions that
+  send the tempo master's position, playing state and identity (`/klights/v1`)
+  and its tempo and bar phase on every beat. Not yet run against a CDJ. A golden
+  fixture holds the exact bytes they must produce: the engine decodes them, and
+  `bridge.py --blt` reproduces them.
+- **`bridges/prolink/rkbx_link.config.example`**: a complete rkbx_link config
+  for kLights, with the two settings its shipped config has off (`master/time`,
+  `master/phrase`) turned on, and every other choice commented with why.
+- The bridge README no longer says beat-link-trigger "emits OSC" with "no code
+  of ours in the path". It sends OSC only from expressions, which are now ours.
+
 ### Added — F19d: which track, and where in it
 
 - **The sync port reads position and identity.** rkbx_link's `/master/time`,

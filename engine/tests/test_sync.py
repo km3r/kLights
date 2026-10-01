@@ -15,6 +15,7 @@ Run: python engine/tests/test_sync.py
 import socket
 import struct
 import sys
+import json
 import threading
 import time
 from pathlib import Path
@@ -615,6 +616,35 @@ with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as sink:
 check("and --replay sends exactly those bytes back, in order",
       got_bytes == sent_bytes, f"{len(got_bytes)} of {len(sent_bytes)}")
 cap_file.unlink(missing_ok=True)
+
+
+# -- 7c. what the beat-link-trigger expressions must send ------------------------
+#
+# The Clojure in bridges/prolink/blt/ cannot run here. These golden bytes, built
+# by hand from the OSC spec, are what it must put on the wire; the engine must
+# decode them, and the fake bridge's --blt shape must produce them exactly, so
+# testing with --blt is testing against the real expressions' encoding.
+print("\n7c. beat-link-trigger golden bytes")
+golden = json.loads((REPO / "engine" / "tests" / "data" /
+                     "blt_klights_v1_golden.json").read_text(encoding="utf-8"))
+for msg in golden["messages"]:
+    raw = bytes.fromhex(msg["hex"])
+    check(f"golden {msg['name']} decodes as the expressions intend",
+          syncmod.parse(raw) == msg["decodes_to"], f"{syncmod.parse(raw)}")
+byname = {m["name"]: bytes.fromhex(m["hex"]) for m in golden["messages"]}
+v = golden["messages"][0]["values"]
+check("bridge.py --blt sends the golden position bytes",
+      bridgemod.as_blt({"deck": str(v["deck"]), "playing": True,
+                        "track_time": v["time_s"], "beat_number": v["beat_number"]})
+      == [byname["pos"]])
+v = golden["messages"][1]["values"]
+check("and the golden identity bytes",
+      bridgemod.as_blt({"deck": str(v["deck"]), **{k: v[k] for k in
+                        ("rekordbox_id", "signature", "title", "artist",
+                         "album", "duration")}}) == [byname["track"]])
+check("and the golden tempo and bar-phase bytes",
+      bridgemod.as_blt({"bpm": 126.5}) == [byname["bpm"]]
+      and bridgemod.as_blt({"beat_in_bar": 2.0}) == [byname["beat"]])
 osc_sink.stop()
 
 

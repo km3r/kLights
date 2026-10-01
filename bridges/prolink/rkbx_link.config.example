@@ -1,0 +1,90 @@
+# rkbx_link configuration for kLights
+#
+# Copy over rkbx_link's own `config` file, or merge these settings into it.
+# Only the settings that differ from rkbx_link's shipped defaults matter; each
+# one that does says why. Everything else is left as rkbx_link ships it.
+# See bridges/prolink/README.md, "DDJ-1000 -- rkbx_link".
+
+# == General Settings ==
+app.licensekey evaluation
+# Never auto-update on a show laptop: a new rekordbox build needs new memory
+# offsets, and an update the week of a gig ENDS sync rather than degrading it.
+app.auto_update false
+app.debug false
+app.yes_to_all false
+
+# == Beatkeeper ==
+# Pin rekordbox to this version. 7.2.2's offsets ship with rkbx_link itself;
+# others need a licence. Change both together, on purpose, and re-test with
+# `bridge.py --fake --track --osc` and a capture before it matters.
+keeper.rekordbox_version 7.2.2
+keeper.update_rate 120
+keeper.slow_update_every_nth 10
+# Leave at 0. Latency is set per source in the show folder's show.json
+# ("sources": {"rkbx": {"latency_ms": ...}}), where the engine applies it to
+# position as well -- rkbx_link's own compensation reaches beat and phrase but
+# appears not to reach /time, which would put the two out of step.
+keeper.delay_compensation 0
+# Keep non-master decks warm, so the position is ready the instant a master
+# switch happens.
+keeper.keep_warm true
+keeper.decks 2
+
+# == Live Display ==
+display.enabled false
+display.interval 1.0
+
+# == Ableton Link ==
+# Not used by kLights; off saves a thread.
+link.enabled false
+link.cumulative_error_tolerance 0.05
+
+# == Open Sound Control ==
+osc.enabled true
+osc.source 127.0.0.1:4450
+# The engine's --sync-port. rkbx_link's default, 4460, is not it.
+osc.destination 127.0.0.1:9000
+# 120 Hz / 2 = 60 position messages a second, which is what the engine's
+# transport is tested against.
+osc.send_every_nth 2
+# The engine reads phrase NAMES ("Up 2", "Chorus"). The other formats send a
+# number, which arrives as a phrase called "3".
+osc.phrase_output_format string
+osc.trigger_autorelease false
+
+# Both default to false in rkbx_link's shipped config. Without master/time
+# there is no position at all, and without master/phrase no phrases.
+osc.msg.master/time true
+osc.msg.master/phrase true
+
+# Never the numbered decks: the engine follows the master deck only, and
+# deliberately rejects /1/... and /2/... -- two decks fighting over one clock
+# during a blend.
+osc.msg.n/time false
+osc.msg.n/phrase false
+
+osc.msg.master/beat/subdiv 4
+osc.msg.master/beat/trigger
+
+osc.msg.n/beat/subdiv
+osc.msg.n/beat/trigger
+
+# == Write current track to file ==
+file.enabled false
+file.filename current_track.txt
+
+# == Setlist logging with timestamps ==
+setlist.enabled false
+setlist.separator -
+setlist.filename setlist.txt
+
+# == sACN ==
+# Off: kLights drives the rig itself. rkbx_link must not send DMX too.
+sacn.enabled false
+sacn.source 0.0.0.0
+sacn.targets 0.0.0.0
+sacn.priority 100
+sacn.universe 1
+sacn.start_channel 1
+sacn.mode multicast
+sacn.source_name rkbx_link
