@@ -64,6 +64,24 @@ python scripts/preflight.py
 
 ## Using the console
 
+The console is a **web app the engine serves itself** — no install, no pairing,
+no app store, and nothing to keep in sync. Open the URL the engine prints and
+you are on the desk. It is built for a phone in one hand; on a laptop the tab
+bar becomes a side rail and the panels widen.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/console-show.png" alt="Show tab: the Night cue list on cue 1 of 9, the four independent slots that are up now, and the preset pads"></td>
+<td width="50%"><img src="docs/images/console-color.png" alt="Color tab: the colour look list, filtered by fixture group, with Split Warm/Cool selected"></td>
+</tr>
+<tr align="center"><td><b>Show</b></td><td><b>Color</b></td></tr>
+<tr>
+<td width="50%"><img src="docs/images/console-move.png" alt="Move tab: the plan view with four beams converging on the mirror ball, and the route list below"></td>
+<td width="50%"><img src="docs/images/console-bright.png" alt="Bright tab: level chases with MH Breathe running, and the per-slot rate control"></td>
+</tr>
+<tr align="center"><td><b>Move</b></td><td><b>Bright</b></td></tr>
+</table>
+
 Five tabs, all driven by the same live state.
 
 | tab | what it is for |
@@ -75,6 +93,11 @@ Five tabs, all driven by the same live state.
 | **Setup** | the rig, the room, calibration and the patch editor |
 
 Master and Blackout are in the header on every tab.
+
+**Several people can be on it at once.** Every client sees the same state over a
+WebSocket, and Setup shows who is connected and who last touched what. There is
+no locking and no claiming — you can see each other instead, which is how two
+people on a desk actually works.
 
 **Perform / Design** is in the header too. Perform hides Setup and the read-only
 diagnostics, leaving only what drives the show; Design is everything. It
@@ -147,6 +170,12 @@ python -m engine.patch add --name "Par 5" ...   # one-shot edits
 
 Edits are validated, written atomically, and applied to the running show without
 a restart. A rig that will not load is refused and the old one keeps running.
+
+<img src="docs/images/console-setup.png" alt="Setup tab on a laptop: the patch editor listing six fixtures with their universe, address and tags, above the room's dimensions and crowd head band" width="100%">
+
+*The Setup tab on a laptop — the same console, with the tab bar as a side rail.
+The patch is read-only until you unlock it, because it is load-in work rather
+than something to reach for mid-set.*
 
 ## Building the UI
 

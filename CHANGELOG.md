@@ -83,6 +83,25 @@ the only record of them until a roadmap doc lands.
   works**. It now deletes only its own materials on a rebuild, so it can no
   longer take the app's away.
 
+### Fixed — the rate buttons, and a test that meant two different things
+
+- **The six Rate buttons broke mid-token on a phone.** `overflow-wrap: anywhere`
+  is right for a look called "Split Pink/Green" and wrong for a five-character
+  label: six equal flex children at 420 px are narrower than `0.25×`, so it
+  rendered "hol / d" and "0.25 / ×". They are a six-column auto-fit grid now,
+  with the labels atomic and the *row* giving way instead — six across where
+  they fit, four plus two on a 320 px phone.
+- **`test_server` failed on Linux and passed on Windows**, for the whole
+  repository's history. The stuck-client check sampled presence at a fixed
+  moment ~2.6 s after the client went quiet. But the drop is not on the same
+  clock as the stall: the app queue only fills once the kernel stops absorbing
+  writes, and the buffer that has to fill first is the *server's* send buffer,
+  which Linux auto-tunes into the megabytes — so the same client is dropped in
+  under a second on Windows and after ~5 s on Linux. It now waits for the drop.
+  The behaviour was always correct; the test was measuring the platform.
+  Its first clause also looked for a notice reading `stalls the broadcast`,
+  which no code has ever emitted — dead since it was written.
+
 ### Changed — F18, documentation
 
 - **`README.md` is a user document now.** What it is, screenshots, quick start,
@@ -103,6 +122,11 @@ the only record of them until a roadmap doc lands.
   `events/despacio/NOTES.md`.
 - Screenshots: a real previz render and the console's own plan view, both
   produced by this project rather than mocked up.
+- **The web console is in the README with screenshots** — all four performance
+  tabs on a phone and the Setup tab on a laptop, captured from a live engine
+  running the despacio show rather than staged. Plus what the README never said
+  out loud: the console is served by the engine itself, and several people can
+  be on it at once with no locking.
 
 ### Added — F18, the 60-minute soak
 
