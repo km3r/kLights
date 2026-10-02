@@ -265,7 +265,7 @@ export type LaneSource = "timeline" | "operator" | "idle" | "fallback";
 export interface ProgramState {
   armed: boolean;
   engaged: boolean;
-  mode: "timeline" | "idle" | "fallback";
+  mode: "timeline" | "preview" | "idle" | "fallback";
   /** Why the timeline is not driving: "disarmed", "no track", "matching",
    *  "not in the show folder", "no timeline", "compiling", "paused"... */
   reason: string | null;
@@ -278,6 +278,18 @@ export interface ProgramState {
   first_problem: string | null;
   /** Per source, how far ahead of its position the lights run. */
   latency_ms: Record<string, number>;
+}
+
+/** A designer's preview: who armed it, on which track, playing what. */
+export interface PreviewState {
+  client: string;
+  name: string;
+  track_id: string;
+  /** Playing an unsaved draft rather than the saved timeline. */
+  draft: boolean;
+  playing: boolean;
+  /** Its program has compiled; until then the operator's show runs. */
+  ready: boolean;
 }
 
 /** The show folder the engine is pointed at, in summary. The documents
@@ -336,6 +348,8 @@ export interface EngineState {
   show?: ShowFolderState | null;
   /** Whether the timeline drives the rig (F19i). Null with no show folder. */
   program?: ProgramState | null;
+  /** The designer driving the rig from its own transport (F19j), or null. */
+  preview?: PreviewState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
@@ -438,7 +452,16 @@ export type Command =
   | { type: "follow"; armed: boolean }
   | { type: "program_grab"; slot: Slot }
   | { type: "program_release"; slot?: Slot }
-  | { type: "show_latency"; source: string; ms: number };
+  | { type: "show_latency"; source: string; ms: number }
+  /** The designer (F19j). Drafts and saves are answered from the worker;
+   *  send them with an id and wait for the reply. */
+  | { type: "timeline_draft"; doc: unknown }
+  | { type: "timeline_save"; doc: unknown; base_rev: string }
+  | { type: "routine_save"; doc: unknown; base_rev: string }
+  | { type: "track_link"; track_id: string }
+  | { type: "preview_arm"; track_id: string; force?: boolean }
+  | { type: "preview_transport"; time_s: number; playing: boolean }
+  | { type: "preview_release" };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

@@ -412,6 +412,8 @@ const NOT_DRIVING: Record<string, string> = {
   compiling: "Building this track's show…",
   "no position": "Waiting for the deck's position.",
   "paused (no idle routine)": "Paused, and show.json names no idle routine.",
+  "preview: no timeline yet": "The designer is driving a track with no "
+    + "timeline yet.",
 };
 
 /**
@@ -445,8 +447,9 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
         </div>
       )}
       <div className="small" style={{ marginTop: "0.3rem" }}>
-        {prog.mode === "timeline"
-          ? <>Timeline driving{prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
+        {prog.mode === "timeline" || prog.mode === "preview"
+          ? <>{prog.mode === "preview" ? "The designer is driving" : "Timeline driving"}
+              {prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
           : prog.mode === "idle"
             ? <>Paused — the idle routine is running</>
             : <span className="muted">

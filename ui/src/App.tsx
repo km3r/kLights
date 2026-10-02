@@ -172,6 +172,17 @@ function Banners({ state, status, send, tier }: {
           : "Disconnected — the rig is holding its last frame. Retrying."}
       </Banner>);
   }
+  if (state?.preview) {
+    // On EVERY console: a rig following a designer's scrub bar is the one state
+    // where a DJ playing out and the lights disagree on purpose, and the
+    // operator at the front has to know whose transport the rig is on.
+    banners.push(<Banner key="preview" kind="warn">
+      DESIGNER ({state.preview.name}) is driving the rig on
+      {" "}{state.preview.track_id}{state.preview.draft ? " (unsaved draft)" : ""}.
+      <button className="small" style={{ marginLeft: "auto" }}
+              onClick={() => send({ type: "preview_release" })}>Release</button>
+    </Banner>);
+  }
   if (state?.panicked) {
     banners.push(<Banner key="panic" kind="bad">
       PANIC — zeros are being forced onto the wire and the show is not being

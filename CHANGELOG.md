@@ -11,6 +11,25 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19j: what the designer talks to
+
+- **`GET /api/*`** (`engine/api.py`): the show, tracks, timelines, routines,
+  template sets and waveforms as whole documents with their revs, over HTTP --
+  never in the snapshot. `GET /api/audio/<id>` streams the track's audio with
+  Range requests; it needs the token, and serves only files the track names (or
+  the same file name under `audio_roots` in `klights.local.json`) with an audio
+  extension.
+- **Commands answered from the worker**: `timeline_draft` (validation plus a
+  compile against this rig: errors, warnings, rig problems), `timeline_save`
+  and `routine_save` (with `base_rev`; refused if the file changed since; the
+  folder reloads, the playing track keeps its version until its next play).
+  The reply channel gained deferred answers for these.
+- **Preview**: `preview_arm` puts the designer's transport on the rig through
+  the track's timeline -- its latest draft, else the saved one. Refused while a
+  DJ plays unless forced; every console shows a "DESIGNER is driving the rig"
+  banner with Release; it lets go when the designer's browser does.
+  `preview_transport` moves it; a jump in it is a seek.
+
 ### Added — F19i: the timeline on stage
 
 - **Follow DJ.** With a show folder, a matched track's timeline drives the rig

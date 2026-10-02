@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import __version__
+from . import api as apimod
 from . import auto as autom
 from . import calibrate as calibmod
 from . import config as configmod
@@ -54,12 +55,14 @@ from . import library as libmod
 from . import motion
 from . import patch as patchmod
 from . import playback as playbackmod
+from . import program as programmod
 from . import rig as rigmod
 from . import safety as safetymod
 from . import showfiles
 from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import timeline as timelinemod
 from . import tracks as tracksmod
 from . import transport as transportmod
 from . import venue as venuemod
@@ -72,6 +75,10 @@ REPO = Path(__file__).resolve().parent.parent
 UI_DIST = REPO / "ui" / "dist"
 
 BROADCAST_HZ = 10.0
+
+# What a command handler returns when it will answer later, from the worker
+# (`ShowController._deferred`). Never sent anywhere.
+DEFERRED = object()
 
 # How many snapshots a client may fall behind before it is dropped. Three is a
 # third of a second at BROADCAST_HZ: long enough to ride out a garbage collection
@@ -122,6 +129,10 @@ TIER: dict[str, str] = {
     # the show folder: what is written there outlives the night
     "track_link": "configure", "show_reload": "configure",
     "show_latency": "configure",
+    # the designer: writes the show folder, and can take the stage
+    "timeline_draft": "configure", "timeline_save": "configure",
+    "routine_save": "configure", "preview_arm": "configure",
+    "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
@@ -511,6 +522,8 @@ class ShowController:
                     self.note(f"engine task failed: {exc}")
                 continue
             rid = reply_id(message)
+            # Who to answer, for a handler that answers later (`_deferred`).
+            self._replying = (client, rid, message.get("type", "?"))
             try:
                 result = self.apply(message, client, at)
             except Exception as exc:                        # noqa: BLE001
@@ -524,8 +537,45 @@ class ShowController:
                 else:
                     self.note(f"{message.get('type', '?')} failed: {exc}")
                 continue
+            if result is DEFERRED:
+                continue                   # answered when its work is done
             if rid is not None and client is not None:
                 self._reply(client, rid, ok=True, data=result)
+
+    def _deferred(self) -> Callable[..., None]:
+        """A way to answer the command being applied, later -- for one whose
+        work runs on the worker. Without an id (or a sender) a failure lands
+        in the notices instead, as any other failure would."""
+        client, rid, kind = getattr(self, "_replying", (None, None, "?"))
+
+        def respond(ok: bool, data: Any = None, error: Optional[str] = None):
+            if rid is not None and client is not None:
+                self._reply(client, rid, ok=ok, error=error, data=data)
+            elif not ok:
+                self.note(f"{kind} failed: {error}")
+        return respond
+
+    def _on_worker(self, label: str, fn: Callable[[], Any],
+                   then: Callable[[Any, Callable], None]) -> object:
+        """Run `fn` on the worker and `then(result, respond)` back here; a
+        failure is answered as one. Returns DEFERRED for the handler to return."""
+        respond = self._deferred()
+
+        def job():
+            try:
+                return True, fn()
+            except Exception as exc:                        # noqa: BLE001
+                return False, str(exc)
+
+        def done(outcome) -> None:
+            ok, value = outcome
+            if ok:
+                then(value, respond)
+            else:
+                respond(False, error=value)
+
+        self.worker.submit(job, done, label=label)
+        return DEFERRED
 
     def _reply(self, client: Client, rid: Any, ok: bool,
                error: Optional[str] = None, data: Any = None) -> None:
@@ -1515,6 +1565,143 @@ class ShowController:
                            done=done, label="saving the latency")
         return {"source": source, "ms": ms}
 
+    # the designer (F19j) -----------------------------------------------------
+
+    def _need_library(self):
+        if self.show_library is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        return self.show_library
+
+    def _cmd_timeline_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved timeline: the format's rules, then a compile
+        against THIS rig. Answers with errors, warnings and problems. If the
+        designer is driving the rig on that track, the draft is what plays."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("timeline_draft needs the document as doc")
+        routines = library.folder.routines
+        rigging = self._rigging()
+
+        def work():
+            result = showfiles.validate("timeline", doc)
+            if not result.ok:
+                return result, None
+            timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
+            return result, programmod.compile(
+                timeline, routines, rigging, f"draft of {doc.get('track')}")
+
+        def then(value, respond):
+            result, program = value
+            preview = self.player.preview if self.player else None
+            if (program is not None and preview is not None
+                    and preview.track_id == doc.get("track")):
+                preview.program, preview.draft = program, True
+            respond(True, {"errors": result.errors, "warnings": result.warnings,
+                           "problems": program.problems if program else []})
+
+        return self._on_worker("checking a timeline draft", work, then)
+
+    def _save(self, kind: str, m: dict) -> object:
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError(f"{kind}_save needs the document as doc")
+        if not isinstance(m.get("base_rev"), str):
+            raise ValueError('base_rev is required: the rev you opened, or "" '
+                             "for a new file -- so a save never overwrites a "
+                             "change it has not seen")
+        path = showfiles.path_for(library.root, kind,
+                                  showfiles.doc_ident(kind, doc) or "")
+        base = m["base_rev"]
+
+        def then(rev, respond):
+            respond(True, {"rev": rev, "path": f"{showfiles.SUBDIR[kind]}/{path.name}"})
+            self.reload_library()
+
+        return self._on_worker(f"saving {path.name}",
+                               lambda: showfiles.write_doc(path, doc, kind, base),
+                               then)
+
+    def _cmd_timeline_save(self, m: dict, now: float) -> object:
+        """Write a timeline, refused if the file changed since `base_rev`.
+        It applies to the track from its next play, like any folder change."""
+        return self._save("timeline", m)
+
+    def _cmd_routine_save(self, m: dict, now: float) -> object:
+        return self._save("routine", m)
+
+    def _cmd_preview_arm(self, m: dict, now: float) -> dict:
+        """The designer takes the stage: its transport drives the rig through
+        this track's timeline. Refused while a DJ is playing, unless forced."""
+        library = self._need_library()
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        track_id = m.get("track_id")
+        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+            raise ValueError(f"there is no prepped track {track_id!r}")
+        sample = self.transport.sample(now)
+        if (not m.get("force") and sample.source not in (None, "designer")
+                and sample.state in (transportmod.PLAYING, transportmod.STALLED)):
+            raise ValueError(f"a DJ is playing ({sample.source}); preview with "
+                             f"force to take the rig from them anyway")
+        client, _, _ = getattr(self, "_replying", (None, None, None))
+        cid = client.id if client is not None else "local"
+        name = client.name if client is not None else "designer"
+        preview = playbackmod.Preview(cid, name, track_id,
+                                      library.grids.get(track_id))
+        self.player.start_preview(preview)
+        timeline = library.timelines.get(track_id)
+        if timeline is not None:
+            routines = library.folder.routines
+            rigging = self._rigging()
+
+            def done(program):
+                if self.player.preview is preview and not preview.draft:
+                    preview.program = program
+
+            self.worker.submit(
+                lambda: programmod.compile(timeline, routines, rigging,
+                                           f"timelines/{track_id}.json"),
+                done, label=f"compiling {track_id} for the designer")
+        self.note(f"DESIGNER ({name}) is driving the rig on {track_id}")
+        return {"track_id": track_id}
+
+    def _owned_preview(self):
+        preview = self.player.preview if self.player is not None else None
+        if preview is None:
+            raise ValueError("the designer is not driving the rig; arm a "
+                             "preview first")
+        client, _, _ = getattr(self, "_replying", (None, None, None))
+        if client is not None and client.id != preview.client:
+            raise ValueError(f"{preview.name} is driving the rig, not this "
+                             f"console")
+        return preview
+
+    def _cmd_preview_transport(self, m: dict, now: float) -> None:
+        """Where the designer's audio is, and whether it is playing."""
+        self._owned_preview()
+        time_s = m.get("time_s")
+        if isinstance(time_s, bool) or not isinstance(time_s, (int, float)) \
+                or not -60.0 <= time_s <= 14400.0:
+            raise ValueError("time_s must be seconds into the track")
+        self.player.preview_position(float(time_s), bool(m.get("playing")), now)
+
+    def _cmd_preview_release(self, m: dict, now: float) -> None:
+        preview = self.player.preview if self.player is not None else None
+        if preview is None:
+            return
+        self.player.stop_preview()
+        self.note(f"the designer ({preview.name}) let go of the rig")
+
+    def preview_gone(self, cid: str) -> None:
+        """A console went away. If it was driving the rig, it stops."""
+        preview = self.player.preview if self.player is not None else None
+        if preview is not None and preview.client == cid:
+            self.player.stop_preview()
+            self.note(f"the designer ({preview.name}) disconnected; the rig is "
+                      f"back to the show")
+
     def _cmd_track_link(self, m: dict, now: float) -> dict:
         """This playing track IS that prepped track -- for a guest's copy the
         matcher could not place (a different tag, a different export).
@@ -1903,6 +2090,9 @@ class ShowController:
             "track": _track_status(self),
             "show": _show_status(self),
             "program": _program_status(self),
+            "preview": (self.player.preview.public()
+                        if self.player is not None and self.player.preview
+                        else None),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -2272,6 +2462,11 @@ class ShowServer:
         self._stop = threading.Event()
         self.httpd: Optional[ThreadingHTTPServer] = None
         controller.reply_to = self.send_to
+        # Where this machine keeps music, for /api/audio when the track file
+        # moved (klights.local.json's audio_roots).
+        roots = showfiles.read_local_config().get("audio_roots")
+        self.audio_roots: list[str] = ([r for r in roots if isinstance(r, str)]
+                                       if isinstance(roots, list) else [])
 
     def new_client_id(self) -> str:
         with self._id_lock:
@@ -2362,6 +2557,8 @@ class ShowServer:
     def drop(self, cid: str) -> None:
         conn = self.sockets.pop(cid, None)
         self.controller.clients.pop(cid, None)
+        # A designer that went away must not leave the rig on its transport.
+        self.controller.submit_call(lambda: self.controller.preview_gone(cid))
         if conn is not None:
             conn.close()
 
@@ -2473,7 +2670,46 @@ class ShowServer:
                     self.close_connection = True
                     server.serve_websocket(self.connection, key, tier=tier)
                     return
+                if urlparse(self.path).path.startswith("/api/"):
+                    self.serve_api()
+                    return
                 self.serve_static()
+
+            def serve_api(self):
+                """GET /api/* -- see engine/api.py."""
+                if self.cross_origin():
+                    self.send_error(403, "cross-origin request refused")
+                    return
+                url = urlparse(self.path)
+                supplied = ((parse_qs(url.query).get("token") or [""])[0]
+                            or self.headers.get("X-Klights-Token", ""))
+                token_ok = server.token is None or supplied == server.token
+                try:
+                    resp = apimod.handle(server.controller.show_library, url.path,
+                                         self.headers.get("Range"), token_ok,
+                                         server.audio_roots)
+                except OSError as exc:
+                    resp = apimod.Response(500, json.dumps(
+                        {"error": str(exc)}).encode("utf-8"))
+                self.send_response(resp.status)
+                self.send_header("Content-Type", resp.content_type)
+                for name, value in resp.headers.items():
+                    self.send_header(name, value)
+                length = resp.length if resp.file is not None else len(resp.body)
+                self.send_header("Content-Length", str(length))
+                self.end_headers()
+                if resp.file is None:
+                    self.wfile.write(resp.body)
+                    return
+                with open(resp.file, "rb") as fh:
+                    fh.seek(resp.start)
+                    left = resp.length
+                    while left > 0:
+                        chunk = fh.read(min(65536, left))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        left -= len(chunk)
 
             def serve_static(self):
                 path = self.path.split("?", 1)[0]

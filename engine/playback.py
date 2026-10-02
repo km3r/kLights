@@ -35,6 +35,12 @@ The beat is the TRACK's: the transport's position (latency already applied)
 through the matched track's grid. A loop or hot cue is a jump, and a jump fires
 no hit it skipped.
 
+**The designer** (F19j) can take the stage instead: armed from a configure-tier
+console, it plays its own transport -- the browser's audio position -- through
+the track's grid, running the timeline it is editing (its latest draft, else the
+saved one). It is refused while a DJ is playing unless forced, every console
+shows that it is driving, and it lets go when its browser does.
+
 Runs on the output thread: `choose()` is the runner's hook, and everything it
 does is a reference read, a dictionary lookup or a call into the compiled
 program. Compiling happens on the worker.
@@ -53,6 +59,30 @@ from . import transport as transportmod
 
 POLICIES = ("idle", "freeze", "continue")
 IDLE_LENGTH = 1e7            # beats: an idle clip that never runs out
+PREVIEW_JUMP_S = 0.2         # a designer position this far off is a seek
+
+
+@dataclass
+class Preview:
+    """The designer driving the rig: whose it is, which track, where."""
+    client: str
+    name: str
+    track_id: str
+    grid: object
+    program: Optional[programmod.Program] = None
+    draft: bool = False
+    time_s: float = 0.0
+    at: float = 0.0
+    playing: bool = False
+    jumps: int = 0
+
+    def position(self, now: float) -> float:
+        return self.time_s + ((now - self.at) if self.playing else 0.0)
+
+    def public(self) -> dict:
+        return {"client": self.client, "name": self.name,
+                "track_id": self.track_id, "draft": self.draft,
+                "playing": self.playing, "ready": self.program is not None}
 
 
 @dataclass(frozen=True)
@@ -114,6 +144,9 @@ class TrackPlayer:
         self.status = Status(False, False, "fallback", "disarmed", None, {}, (),
                              self.policy, 0, None)
         self._sample: Optional[transportmod.TrackSample] = None
+        self.preview: Optional[Preview] = None
+        self._preview_jumps = 0
+        self._preview_fresh = False
 
     # -- settings ----------------------------------------------------------
 
@@ -127,6 +160,24 @@ class TrackPlayer:
 
     def arm(self, armed: bool) -> None:
         self.armed = bool(armed)
+
+    # -- the designer ------------------------------------------------------
+
+    def start_preview(self, preview: Preview) -> None:
+        self.preview = preview
+        self._preview_fresh = True          # its first frame is a jump
+
+    def stop_preview(self) -> None:
+        self.preview = None
+        self._seq = None
+
+    def preview_position(self, time_s: float, playing: bool, now: float) -> None:
+        pv = self.preview
+        if pv is None:
+            return
+        if abs(time_s - pv.position(now)) > PREVIEW_JUMP_S:
+            pv.jumps += 1
+        pv.time_s, pv.at, pv.playing = float(time_s), now, bool(playing)
 
     def grab(self, slots) -> None:
         """The operator took these lanes. Only while the timeline drives:
@@ -204,26 +255,43 @@ class TrackPlayer:
     def choose(self, fallback: statemod.Show, sample: transportmod.TrackSample,
                now: float) -> statemod.Show:
         """The Show to put on stage this frame: the program's, or `fallback`."""
-        show, mode, reason, beat = self._decide(fallback, sample, now)
-        self.engaged = mode == "timeline"
-        prog = self.program if mode == "timeline" else (
-            self.idle if mode == "idle" else None)
+        if self.preview is not None:
+            show, mode, reason, beat = self._decide_preview(fallback, now)
+        else:
+            show, mode, reason, beat = self._decide(fallback, sample, now)
+        self.engaged = mode in ("timeline", "preview")
+        prog = (self.preview.program if mode == "preview"
+                else self.program if mode == "timeline"
+                else self.idle if mode == "idle" else None)
         lanes = {}
         for slot in statemod.SLOTS:
             if slot in self.grabbed and self.engaged:
                 lanes[slot] = "operator"
-            elif prog is not None and beat is not None and mode == "timeline" \
+            elif prog is not None and beat is not None \
+                    and mode in ("timeline", "preview") \
                     and prog.timeline.entries(slot, beat):
                 lanes[slot] = "timeline"
             elif mode == "idle":
                 lanes[slot] = "idle"
             else:
                 lanes[slot] = "fallback"
-        problems = self.program.problems if self.program is not None else []
+        shown = prog if prog is not None else self.program
+        problems = shown.problems if shown is not None else []
         self.status = Status(self.armed, self.engaged, mode, reason, beat, lanes,
                              tuple(sorted(self.grabbed)), self.policy,
                              len(problems), problems[0] if problems else None)
         return show
+
+    def _decide_preview(self, fallback, now):
+        pv = self.preview
+        if pv.program is None:
+            return fallback, "fallback", "preview: no timeline yet", None
+        beat = pv.grid.beat_at(pv.position(now))
+        jumped = pv.jumps != self._preview_jumps or self._preview_fresh
+        self._preview_jumps, self._preview_fresh = pv.jumps, False
+        self._seq = None                    # the DJ's next frame is a jump
+        show, _, _, beat = self._run(pv.program, fallback, beat, jumped)
+        return show, "preview", None, beat
 
     def _decide(self, fallback, sample, now):
         pinned = self._pinned()

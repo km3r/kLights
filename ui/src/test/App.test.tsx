@@ -1034,6 +1034,24 @@ describe("follow dj (track card)", () => {
   });
 });
 
+describe("designer preview banner", () => {
+  it("tells every console the designer is driving, and lets it be released", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
+                    draft: true, playing: true, ready: true };
+    })));
+    expect(screen.getByText(/DESIGNER \(laptop\) is driving the rig/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/unsaved draft/)).toBeInTheDocument();
+    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    await user.click(within(banner as HTMLElement).getByRole("button",
+                                                           { name: "Release" }));
+    expect(socket.last()).toEqual({ type: "preview_release" });
+  });
+});
+
 describe("dj sync", () => {
   const driving = (edit: (s: EngineState["sync"]) => void = () => {}) =>
     stateWith((s) => {

@@ -250,6 +250,21 @@ picked while it drives grabs those lanes (`program_grab` / `program_release`,
 operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
+**The designer's side of the wire** ([`api.py`](../engine/api.py)): large reads
+are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
+`routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with
+the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
+streams the track's file with Range (206), needs the token, and only ever serves
+a file the track names (or the same name under this machine's `audio_roots` in
+`klights.local.json`) with an audio extension. Writes are configure-tier
+commands answered from the worker: `timeline_draft {doc}` (the format's rules,
+then a compile against this rig), `timeline_save` and `routine_save {doc,
+base_rev}` (refused if the file changed since). `preview_arm {track_id, force?}`
+puts the designer's transport on the rig -- refused while a DJ plays unless
+forced, shown on every console, released by `preview_release` or by the
+designer's browser going away; `preview_transport {time_s, playing}` moves it,
+and a draft replaces what it plays until saved.
+
 ## Where to look
 
 | question | file |
@@ -270,6 +285,7 @@ operate tier) until released. `follow {armed}` is operate tier;
 | the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
 | what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
 | when the timeline drives, and grabs | [`playback.py`](../engine/playback.py) |
+| the designer's reads and audio | [`api.py`](../engine/api.py) |
 | what the fixtures do on a timeline | [`program.py`](../engine/program.py), [`routines.py`](../engine/routines.py), [`blocks.py`](../engine/blocks.py) |
 
 ## Tests
