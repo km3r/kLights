@@ -11,6 +11,51 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20, the standalone previz
+
+- **`KLightsPreviz.exe`, a packaged previz that needs no editor and no
+  Python.** It asks the running engine for the room and the rig, listens for
+  Art-Net like the rig does, and draws the show: beams, the mirror ball's spray,
+  haze, and a body for every fixture. Build it with `python previz/build.py`;
+  run it beside `python -m engine.server`. See [`previz/README.md`](previz/README.md).
+- **The engine serves the previz scene**: `GET /api/previz/scene` (with ETag,
+  so the app's once-a-second poll is a 304 until something changes) and
+  `GET /api/previz/model/<sha256>.glb`, which serves only files the current
+  scene names. `python -m engine.scene <event>` prints the same thing.
+- **Models.** Venue walls, set pieces, a mirror-ball model and fixture bodies
+  are `.glb` files named in config: the venue's new `previz` block,
+  `shared/fixtures/bodies.json`, and a fixture's `body` in `rig.json`. Moving
+  heads are articulated so the head always points along the beam the show
+  decodes. Conventions and budgets in [`docs/models.md`](docs/models.md).
+- **The engine inspects every model** while it builds the scene: externally
+  referenced files, unsupported extensions, triangle and texture budgets,
+  centimetre exports, and a body the app could not articulate. Each problem is a
+  warning on the app's overlay and in `previz doctor`, never an error that stops
+  the show.
+- **A fixed fixture can be aimed somewhere other than the mirror ball**:
+  `aim: {x, y, z}` on its `rig.json` entry. The default is still the ball.
+- **Hardware ray-traced Lumen.** A model loaded at runtime has no distance
+  field and no Lumen cards, so under software Lumen it is invisible to global
+  illumination. The project now targets SM6 with ray tracing and hit lighting.
+  A GPU without ray tracing falls back to software by itself.
+- **Golden parity vectors**, `engine/tests/data/previz_parity.json`, hold the
+  app's C++ decode, servo and colour to the Python. They are checked by
+  `python previz/build.py test`, and their staleness is checked in CI.
+
+### Changed — F20
+
+- **Previz optics moved into the venue file** (`previz.optics`), and
+  `previz/optics.json` is gone. Despacio's numbers moved with them, unchanged.
+- **The Unreal project is `KLightsPreviz.uproject`** (was `CosmosPrevis`), and
+  has its first C++ module.
+- **`previz.scene.camera_views` and the editor builder confused width and
+  depth** for a room that is not square. The new scene gives the room as
+  `size = [X, Y, Z]` in Unreal's own axes, and its views are tested in non-square
+  rooms both ways round. (The editor path, left as it was, still has it.)
+- The editor-Python previz (`go.py`, `klights_live.py`) is **unchanged and still
+  works**. It now deletes only its own materials on a rebuild, so it can no
+  longer take the app's away.
+
 ### Changed — F18, documentation
 
 - **`README.md` is a user document now.** What it is, screenshots, quick start,

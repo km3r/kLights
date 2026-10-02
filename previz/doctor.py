@@ -169,12 +169,50 @@ def check_artnet(r: Report) -> None:
         sock.close()
 
 
+def check_app(r: Report, engine_url: str) -> None:
+    """The standalone app: is it built, is it current, is there a scene for it?
+
+    Never a failure: the app is one of two ways to run the previz, and an
+    engine that is not running yet is the normal state before a show.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    print("\nstandalone app")
+    exe = REPO / "previz" / "dist" / "Windows" / "KLightsPreviz.exe"
+    if not exe.is_file():
+        r.warn("not built", "python previz/build.py")
+    else:
+        sources = [f for d in ("Source", "Config", "Content/Python")
+                   for f in (REPO / "previz" / "unreal" / d).rglob("*")
+                   if f.is_file() and "__pycache__" not in f.parts]
+        newest = max(sources, key=lambda f: f.stat().st_mtime, default=None)
+        if newest is not None and newest.stat().st_mtime > exe.stat().st_mtime:
+            r.warn("built, but older than its source",
+                   f"{newest.relative_to(REPO)} changed since -- python previz/build.py")
+        else:
+            r.ok("built", str(exe.relative_to(REPO)))
+    try:
+        with urllib.request.urlopen(f"{engine_url}/api/previz/scene", timeout=2) as resp:
+            scene = json.loads(resp.read())
+        r.ok("an engine is serving a scene",
+             f"{scene['event']} in {scene['venue']}, rev {scene['rev']}, at {engine_url}")
+        for warning in scene.get("warnings", []):
+            r.warn("scene", warning)
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        r.warn("no engine answering", f"{engine_url} -- start python -m engine.server, "
+                                      f"or pass --engine-url")
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--event", help="check this event instead of the "
                                         "configured one")
     parser.add_argument("--timeout", type=float, default=3.0,
                         help="how long to wait for an editor (default 3s)")
+    parser.add_argument("--engine-url", default="http://127.0.0.1:8765",
+                        help="where the standalone app will look for the engine")
     args = parser.parse_args(argv)
 
     if args.event:
@@ -186,13 +224,15 @@ def main(argv: list | None = None) -> int:
     check_engine(r)
     check_editor(r, args.timeout)
     check_artnet(r)
+    check_app(r, args.engine_url.rstrip("/"))
 
     print()
     if r.failed:
         print("previz doctor: something needs fixing (above).")
         return 1
-    print("previz doctor: ready. Open the editor, then\n"
-          "  python previz/ue_remote.py previz/unreal/Content/Python/go.py")
+    print("previz doctor: ready. Either open the editor, then\n"
+          "  python previz/ue_remote.py previz/unreal/Content/Python/go.py\n"
+          "or run the standalone app: previz/dist/Windows/KLightsPreviz.exe")
     return 0
 
 
