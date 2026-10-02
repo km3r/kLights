@@ -2055,7 +2055,12 @@ class ShowServer:
                 sha = path[len(prefix):-len(suffix)] if (
                     path.startswith(prefix) and path.endswith(suffix)) else ""
                 if sha in scene.files:
-                    body = scene.files[sha].read_bytes()
+                    body = scene.read_model(sha)
+                    if body is None:
+                        # Changed on disk since it was hashed. The next scene
+                        # names its new hash; the app fetches that instead.
+                        self.send_error(503, "model changed on disk; poll the scene again")
+                        return
                     self.send_response(200)
                     self.send_header("Content-Type", "model/gltf-binary")
                     # Named by its own hash, so it can never change: cache hard.

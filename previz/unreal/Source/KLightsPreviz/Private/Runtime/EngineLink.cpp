@@ -31,6 +31,8 @@ void FKLightsEngineLink::Start(const FString& InBaseUrl)
 	Stop();
 	BaseUrl = InBaseUrl;
 	BaseUrl.RemoveFromEnd(TEXT("/"));
+	Etag.Reset();
+	DeliveredRev.Reset();
 	State = EState::Connecting;
 	Message = TEXT("waiting for the engine");
 	NextPoll = 0.0;
@@ -154,12 +156,17 @@ void FKLightsEngineLink::OnSceneResponse(FHttpResponsePtr Response, bool bConnec
 
 	ToFetch.Reset();
 	MissingModels = 0;
+	Fetched = 0;
 	for (const TPair<FString, FString>& Asset : Scene.AssetNames)
 	{
 		if (!FPaths::FileExists(CachePath(Asset.Key)))
 		{
 			ToFetch.Add(Asset.Key);
 		}
+	}
+	if (Scene.Rev == DeliveredRev && ToFetch.Num() == 0)
+	{
+		return;   // a retry, and every model has turned up some other way
 	}
 	Pending = MoveTemp(Scene);
 	UE_LOG(LogKLights, Display, TEXT("scene %s: %s in %s, %d fixture(s), %d model(s) to fetch"),
@@ -171,7 +178,7 @@ void FKLightsEngineLink::FetchNextModel()
 {
 	if (ToFetch.Num() == 0)
 	{
-		Deliver();
+		Finish();
 		return;
 	}
 	const FString Sha = ToFetch.Pop();
@@ -193,6 +200,7 @@ void FKLightsEngineLink::FetchNextModel()
 				if (FFileHelper::SaveArrayToFile(Response->GetContent(), *Partial)
 					&& IFileManager::Get().Move(*Final, *Partial, true, true))
 				{
+					++Fetched;
 					UE_LOG(LogKLights, Display, TEXT("fetched model %s (%d bytes)"), *Sha.Left(12),
 					       Response->GetContent().Num());
 				}
@@ -214,6 +222,24 @@ void FKLightsEngineLink::FetchNextModel()
 	Request->ProcessRequest();
 }
 
+void FKLightsEngineLink::Finish()
+{
+	if (MissingModels > 0)
+	{
+		// Forget the ETag so the next poll is a full answer, and the models
+		// still missing are asked for again. Not every second: a model that is
+		// failing is usually failing for a reason that takes a while to fix.
+		Etag.Reset();
+		NextPoll = FPlatformTime::Seconds() + RetrySeconds;
+	}
+	if (Pending.IsSet() && Pending->Rev == DeliveredRev && Fetched == 0)
+	{
+		Pending.Reset();   // the same scene with nothing new: rebuilding would only re-home the heads
+		return;
+	}
+	Deliver();
+}
+
 void FKLightsEngineLink::Deliver()
 {
 	if (!Pending.IsSet())
@@ -222,6 +248,7 @@ void FKLightsEngineLink::Deliver()
 	}
 	FKLightsScene Scene = MoveTemp(Pending.GetValue());
 	Pending.Reset();
+	DeliveredRev = Scene.Rev;
 	if (OnScene)
 	{
 		OnScene(Scene);
