@@ -11,6 +11,20 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19k: the show folder in conversation
+
+- **MCP tools** for the show folder, through the new `engine/showtools.py`:
+  `show_status`, `list_tracks` (with rekordbox's phrases and their beats),
+  `get_track`, `list_routines`, `get_routine`/`put_routine`,
+  `get_timeline`/`put_timeline`, `edit_timeline` (small ops: add, update or
+  remove items and lanes, set points, set palettes -- creating the timeline if
+  the track has none), `link_track`, `lint_show` (optionally against an event's
+  rig: looks it lacks, roles with no fixtures), `explain_position` (a track at
+  a beat, and what every fixture does), and the template-set trio.
+- Dry runs unless asked; a write needs the rev it read and is refused if the
+  file changed since. Unlike rig edits they are allowed while a show runs: the
+  engine reloads, and a playing track keeps its version until its next play.
+
 ### Added — F19j: what the designer talks to
 
 - **`GET /api/*`** (`engine/api.py`): the show, tracks, timelines, routines,

@@ -265,6 +265,15 @@ forced, shown on every console, released by `preview_release` or by the
 designer's browser going away; `preview_transport {time_s, playing}` moves it,
 and a draft replaces what it plays until saved.
 
+**In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
+behind the MCP server: status, tracks (with their phrase beats), routines,
+template sets and timelines to read; `put_*` for whole documents and
+`edit_timeline` for small ops (add/update/remove items and lanes, set points or
+palettes); `link_track`; `lint_show` (the folder, and against an event's rig);
+`explain_position` (a track at a beat, and what every fixture does there).
+Writes are dry runs unless asked and quote the rev they read; unlike the rig,
+the folder may be written while a show runs.
+
 ## Where to look
 
 | question | file |

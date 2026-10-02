@@ -155,7 +155,9 @@ python -m engine.patch add --name "Par 5" ...   # one-shot edits
 
 - the **Setup tab** in the console, phone in hand at load-in
 - the **MCP server** (`mcp/klights_mcp.py`), so an assistant can patch and
-  describe the rig
+  describe the rig -- and read, lint, explain and edit the show folder's
+  tracks, timelines, routines and template sets (dry runs unless asked, every
+  write quoting the rev it read)
 - the **CLI** above, which needs no UI
 
 Edits are validated, written atomically, and applied to the running show without
@@ -207,7 +209,7 @@ engine/        the show engine — stdlib only, no dependencies
 ui/            React console; ui/dist is committed so a venue needs no Node
 previz/        Unreal previz — an Art-Net listener, never in the show's path
 bridges/       sidecars: DJ tempo and position, and the rekordbox prep tool
-mcp/           MCP server over stdio, for patching from an assistant
+mcp/           MCP server over stdio: the rig and the show folder, from an assistant
 events/        one directory per show: patch, calibration, looks, cues, presets
 shared/        things that outlive a show: fixtures, venues, inventory, tools
 schemas/       JSON Schema, generated from engine/config.py
