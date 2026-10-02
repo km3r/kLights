@@ -259,6 +259,9 @@ class Program:
         self._master: Optional[float] = None
         self._rest_aims: dict[int, Optional[geo.Aim]] = {}
         self._all = frozenset(f.fid for f in self.rigging.rig.fixtures)
+        # Slots the operator has taken (F19i): the fallback show -- the
+        # operator's own selection -- runs there instead of the timeline.
+        self.grabbed: frozenset[str] = frozenset()
 
     # -- each frame --------------------------------------------------------
 
@@ -355,7 +358,7 @@ class Program:
             fields = self._timeline_fields(ctx, slot)
             entries = self.timeline.entries(slot, self._beat)
             with ctx.scoped(**fields):
-                if not entries:
+                if not entries or slot in self.grabbed:
                     # Nothing on any lane: the fallback has the slot to itself,
                     # run in place, exactly as it would run on its own.
                     for fallback in getattr(self._fallback, FALLBACK_LIST[slot]):

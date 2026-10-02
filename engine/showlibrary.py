@@ -235,6 +235,26 @@ def link(root: Path, track_id: str, title: str, artist: str = "",
     return "+".join(added_parts)
 
 
+def save_latency(root: Path, source: str, ms: float) -> str:
+    """Set one source's latency in show.json, keeping everything else in it.
+    Writes a default show.json if the folder has none. File I/O: call it on
+    the worker."""
+    path = Path(root) / "show.json"
+    if path.exists():
+        result, rev = showfiles.read_doc(path, "show")
+        if not result.ok:
+            raise ValueError(f"show.json cannot be updated: {result.errors[0]}")
+        doc = result.doc
+    else:
+        doc = showfiles.new_doc("show", **json.loads(json.dumps(
+            showfiles.DEFAULT_SHOW)))
+        rev = ""
+    sources = doc.setdefault("sources", {})
+    entry = sources.setdefault(source, {})
+    entry["latency_ms"] = ms
+    return showfiles.write_doc(path, doc, "show", base_rev=rev)
+
+
 # -- noticing changes ---------------------------------------------------------
 
 @dataclass

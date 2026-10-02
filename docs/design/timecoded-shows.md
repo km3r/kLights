@@ -38,6 +38,9 @@ arbitrary, the reason is next to it.
 | Partial clips | A clip drives only the fixtures it uses; **the rest fall through per fixture** to the lanes below, then the template. On a lane that owns the track they rest instead (F19h, with the user). |
 | Rest state | Where nothing drives a slot: movers aim at the venue's **rest point** (`rest_point`, else the ball -- not every room has one), colour white, level **dark** (F19h, with the user). |
 | Past the end | A routine that does not loop, on a clip longer than itself, **keeps running its end**: its last items carry on and its automation holds its final values (F19h, with the user). |
+| Grabs | A look, preset or cue picked while the timeline drives **grabs** its lanes, and a grab lasts **until Release** -- across track changes too. Looks picked while it is not driving grab nothing (F19i, with the user). |
+| Hand-overs | Every hand-over between the timeline and the operator's show is a **cut**: arming, disarming, matched/unmatched tracks, pause into idle and back (F19i, with the user). |
+| Latency | The phone's latency slider applies at once and is **saved to the show folder's show.json** (F19i, with the user). |
 | Fallback chain | timeline → phrase template → grid-based bar-count template → a setting: auto mode or operator-only. Guest DJs' tracks are unknown until they play, so the chain has to carry them. |
 | Phrase vocabulary | rekordbox's labels **as-is**: Intro, Verse 1–6, Up 1–3, Chorus, Down, Bridge, Outro. Templates look up the exact label, then the label without its number, then `*`. rekordbox never says "Build" or "Drop". |
 | Template sets | Several named sets, **switchable live** from the phone (a vibe, not a file). |

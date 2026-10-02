@@ -11,6 +11,27 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19i: the timeline on stage
+
+- **Follow DJ.** With a show folder, a matched track's timeline drives the rig
+  once Follow is armed -- one tap on the new **Track** card (Show tab). It
+  starts disarmed, as show.json's `follow.default` says, and the startup output
+  says so. While disarmed the track is still matched and shown; nothing reaches
+  the rig.
+- **`engine/playback.py`** is the runner's new `choose_show` hook: the program's
+  Show (the same object every frame) while the timeline drives, auto mode's
+  show the moment it stops. Programs compile on the worker when a track is
+  matched, armed or not, so arming is instant. A rig reload rebuilds them.
+- **Pause policies** from show.json: `freeze`, `continue` (keeps moving at the
+  last tempo), `idle` (the idle routine, once the pause outlasts the grace).
+- **Decided with the user:** a look, preset or cue picked while the timeline
+  drives grabs its lanes until Release, across tracks; every hand-over is a cut;
+  the latency slider saves to show.json.
+- Commands: `follow {armed}`, `program_grab {slot}`, `program_release {slot?}`
+  (operate); `show_latency {source, ms}` (configure). Snapshot `program`:
+  armed, mode, why not driving, bar, who has each lane, grabs, problems,
+  latency. A cue GO while the timeline drives grabs instead of swapping it out.
+
 ### Added — F19h: the lights compiler
 
 - **`engine/program.py`** compiles a track's timeline for one rig into a

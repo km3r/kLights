@@ -53,6 +53,7 @@ from . import geometry as geo
 from . import library as libmod
 from . import motion
 from . import patch as patchmod
+from . import playback as playbackmod
 from . import rig as rigmod
 from . import safety as safetymod
 from . import showfiles
@@ -120,6 +121,7 @@ TIER: dict[str, str] = {
     "patch_apply": "configure",
     # the show folder: what is written there outlives the night
     "track_link": "configure", "show_reload": "configure",
+    "show_latency": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
@@ -354,12 +356,25 @@ class ShowController:
         self.grid_check: Optional[tracksmod.GridCheck] = None
         self._check_jump: Optional[int] = None
         self.watcher: Optional[showlibrary.Watcher] = None
+        # Whether the timeline drives the rig this frame (F19i). Only with a
+        # show folder; without one the runner never asks.
+        self.player: Optional[playbackmod.TrackPlayer] = None
+        self._frame_sample: Optional[transportmod.TrackSample] = None
+        self.presets = load_presets(self.event_dir)
         if self.show_dir is not None:
+            self.player = playbackmod.TrackPlayer(
+                self.transport, pinned=lambda: self.pinned,
+                rigging=self._rigging, submit=self.worker.submit,
+                post=self.submit_call, note=self.note,
+                clock_beat=lambda: self.ctx.beat,
+                base_palette=self._base_palette)
+            self.runner.choose_show = self._choose_show
             self._install_library(showlibrary.load(self.show_dir))
+            show = self.show_library.folder.show or {}
+            self.player.arm((show.get("follow") or {}).get("default") == "armed")
             self.watcher = showlibrary.Watcher(
                 self.show_dir, on_change=self._library_changed,
                 report=lambda text: self.submit_call(lambda: self.note(text)))
-        self.presets = load_presets(self.event_dir)
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
         # was one for its whole first run.
@@ -454,7 +469,29 @@ class ShowController:
 
     def _before_frame(self) -> None:
         self._drain()
-        self._track_frame()
+        self._frame_sample = self._track_frame()
+
+    def _choose_show(self, fallback: statemod.Show) -> statemod.Show:
+        """The runner's hook: the timeline's show while it drives, else
+        auto mode's, unchanged."""
+        now = self.runner.now()
+        sample = self._frame_sample or self.transport.sample(now)
+        return self.player.choose(fallback, sample, now)
+
+    def _rigging(self):
+        from . import blocks as blocksmod
+        return blocksmod.Rigging(self.rig, dict(self.by_name),
+                                 tuple(self.presets), self.rig.name)
+
+    def _base_palette(self) -> dict:
+        """The engine's own palette, as roles, for a timeline that has none."""
+        colors = self.palette.colors
+        i = self.palette.index
+        primary = tuple(colors[i % len(colors)]) if colors else (1.0, 1.0, 1.0)
+        secondary = (tuple(colors[(i + 1) % len(colors)]) if colors
+                     else (1.0, 1.0, 1.0))
+        return {"primary": primary, "secondary": secondary,
+                "accent": (1.0, 1.0, 1.0)}
 
     def _drain(self) -> None:
         """Apply every queued command. Runs on the output thread, at the top of
@@ -525,6 +562,9 @@ class ShowController:
             self.grid_check = (tracksmod.GridCheck(pinned.grid)
                                if pinned.grid is not None else None)
             self._check_jump = sample.jump_seq
+            if self.player is not None:
+                # Compile now, armed or not, so arming is instant.
+                self.player.compile_for(pinned)
         return sample
 
     def _check_grid(self, fields: dict, sample: transportmod.TrackSample,
@@ -558,6 +598,9 @@ class ShowController:
         previous = self.show_library
         self.show_library = library
         showlibrary.apply_settings(self.transport, library)
+        if self.player is not None:
+            self.player.configure(library.folder.show)
+            self.player.compile_idle(library)
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -673,6 +716,11 @@ class ShowController:
                 self.slot_entries("color"), self.slot_entries("level"), color)
         self.director.compose = compose
         show = self.director.rebuild()
+        if self.player is not None and self.player.engaged:
+            # The timeline is on stage: the rebuilt show is what the grabbed
+            # lanes read, picked up next frame. Handing it to the runner here
+            # would swap the timeline out for a frame and cut straight back.
+            return
         if fade_beats is not None:
             # `is not None`, not truthiness: a cue with fade 0 is a CUT, and it
             # has to cancel a fade already in flight rather than letting the
@@ -710,6 +758,7 @@ class ShowController:
         if entry.kind == "mixed":
             for group in (entry.groups or ("movers",)):
                 self.slots["color"][group] = name
+        self._grab({slot, "color"} if entry.kind == "mixed" else {slot})
         self._recompose()
 
     def _cmd_clear_slot(self, m: dict, now: float) -> None:
@@ -726,6 +775,7 @@ class ShowController:
             self.slots[slot].clear()
         else:
             self.slots[slot].pop(group, None)
+        self._grab({slot})
         self._recompose()
 
     def _cmd_release(self, m: dict, now: float) -> None:
@@ -733,6 +783,7 @@ class ShowController:
 
     def _cmd_next_look(self, m: dict, now: float) -> None:
         self.setlist.advance()
+        self._grab({"movement"})
         self._recompose()
 
     # presets ---------------------------------------------------------------
@@ -856,6 +907,7 @@ class ShowController:
         if preset.get("master") is not None:
             self.master = max(0.0, min(1.0, float(preset["master"])))
         self.director.held = True
+        self._grab(statemod.SLOTS)
         self._recompose()
 
     def _cmd_preset_delete(self, m: dict, now: float) -> None:
@@ -1277,6 +1329,7 @@ class ShowController:
         if cue.rates is not None:
             self.apply_rates(cue.rates)
 
+        self._grab(statemod.SLOTS)
         self._recompose(fade_beats=cue.fade)
         self.note(f"cue {self.cues.index + 1}/{len(self.cues.cues)}: "
                   f"{cue.name}" + (f" (fade {cue.fade:g} beats)"
@@ -1399,6 +1452,68 @@ class ShowController:
         self.transport.clear()
         self.note(f"took the clock back from {was!r} at "
                   f"{self.clock.bpm:.1f} bpm")
+
+    def _grab(self, slots) -> None:
+        if self.player is not None:
+            self.player.grab(slots)
+
+    def _cmd_follow(self, m: dict, now: float) -> None:
+        """Arm or disarm Follow DJ: whether the timeline may drive the rig."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        armed = m.get("armed")
+        if not isinstance(armed, bool):
+            raise ValueError("follow needs armed: true or false")
+        self.player.arm(armed)
+        self.note("Follow DJ ARMED -- a matched track's timeline drives the rig"
+                  if armed else "Follow DJ SAFE -- the DJ feed drives nothing")
+
+    def _cmd_program_grab(self, m: dict, now: float) -> None:
+        """Take a lane from the timeline without changing what is on it."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        slot = m.get("slot")
+        if slot not in statemod.SLOTS:
+            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
+        if not self.player.engaged:
+            raise ValueError("the timeline is not driving; there is nothing "
+                             "to take a lane from")
+        self.player.grab({slot})
+
+    def _cmd_program_release(self, m: dict, now: float) -> None:
+        """Give a lane (or every lane) back to the timeline."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        slot = m.get("slot")
+        if slot is not None and slot not in statemod.SLOTS:
+            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
+        self.player.release(slot)
+
+    def _cmd_show_latency(self, m: dict, now: float) -> dict:
+        """How far ahead of a source's position the lights run, in ms. Applied
+        at once and saved to the show folder's show.json (decided with the
+        user, F19i), where it follows the show."""
+        library = self.show_library
+        if library is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        source = m.get("source")
+        if not isinstance(source, str) or not source or len(source) > 32:
+            raise ValueError("show_latency needs a source, e.g. \"rkbx\"")
+        ms = m.get("ms")
+        if isinstance(ms, bool) or not isinstance(ms, (int, float)) \
+                or not -2000 <= ms <= 2000:
+            raise ValueError("ms must be a number from -2000 to 2000")
+        self.transport.latency_s = {**self.transport.latency_s,
+                                    source: float(ms) / 1000.0}
+        root = library.root
+
+        def done(_):
+            self.note(f"latency for {source}: {ms:g} ms, saved to show.json")
+            self.reload_library()
+
+        self.worker.submit(lambda: showlibrary.save_latency(root, source, ms),
+                           done=done, label="saving the latency")
+        return {"source": source, "ms": ms}
 
     def _cmd_track_link(self, m: dict, now: float) -> dict:
         """This playing track IS that prepped track -- for a guest's copy the
@@ -1549,6 +1664,13 @@ class ShowController:
         self._prune_targets()
         self._recompose()
         self.pending_patch = False
+        if self.player is not None:
+            # Programs are built against fixtures; the old ones are dropped at
+            # once (the operator's show runs) and rebuilt for the new rig.
+            self.player.idle = None
+            self.player.recompile()
+            if self.show_library is not None:
+                self.player.compile_idle(self.show_library)
 
         if old_heads != new_heads:
             self.note(f"rig reloaded, and the moving heads CHANGED "
@@ -1780,6 +1902,7 @@ class ShowController:
             "sync": self.sync_status(),
             "track": _track_status(self),
             "show": _show_status(self),
+            "program": _program_status(self),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -1965,6 +2088,18 @@ def _track_status(controller: "ShowController") -> dict:
         "grid_warning": (check.warning if current and check is not None
                          else None),
     }
+
+
+def _program_status(controller: "ShowController") -> Optional[dict]:
+    """Whether the timeline drives, and who has each lane -- the phone's Track
+    card. None without a show folder."""
+    player = controller.player
+    if player is None:
+        return None
+    out = player.status.public()
+    out["latency_ms"] = {k: round(v * 1000.0)
+                         for k, v in controller.transport.latency_s.items()}
+    return out
 
 
 def _show_status(controller: "ShowController") -> Optional[dict]:
@@ -2550,6 +2685,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         problems = (f" -- {len(f.errors)} errors, see `python -m "
                     f"engine.showfiles check {library.root}`" if f.errors else "")
         print(f"shows   {library.root}: {library.describe()}{problems}")
+        if controller.player is not None:
+            print("follow  " + ("ARMED -- a matched track's timeline drives the "
+                                "rig" if controller.player.armed else
+                                "DISARMED -- the DJ feed shows but drives "
+                                "nothing until someone arms it on the phone"))
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     if token is None:
         print("access  OPEN -- anyone who can reach this port has full control")

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Banner, Card, Toggle } from "../components";
+import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
-import type { Command, EngineState, Preset, TrackMatch } from "../types";
+import type {
+  Command, EngineState, LaneSource, Preset, Slot, TrackMatch,
+} from "../types";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -19,6 +21,7 @@ export function ShowTab({ state, send }: {
   return (
     <>
       <Cues state={state} send={send} />
+      <Track state={state} send={send} />
       <Now state={state} send={send} />
       <Presets state={state} send={send} />
       <Sync state={state} send={send} />
@@ -391,6 +394,105 @@ const TRACK_STATE: Record<string, string> = {
   playing: "playing", stalled: "packets late", paused: "paused",
   reverse: "scratching",
 };
+
+const LANE_NAMES: Record<Slot, string> = {
+  movement: "Movement", color: "Colour", level: "Level",
+};
+const LANE_SOURCE: Record<LaneSource, string> = {
+  timeline: "timeline", operator: "operator", idle: "idle", fallback: "show",
+};
+/** Why the timeline is not on stage, in the operator's words. */
+const NOT_DRIVING: Record<string, string> = {
+  disarmed: "Follow is SAFE — the DJ feed drives nothing until you arm it.",
+  "no track": "Nothing identified is playing.",
+  matching: "Matching the track…",
+  "not in the show folder": "This track is not in the show folder — the "
+    + "operator's show runs.",
+  "no timeline": "Matched, but nobody has drawn this track a show yet.",
+  compiling: "Building this track's show…",
+  "no position": "Waiting for the deck's position.",
+  "paused (no idle routine)": "Paused, and show.json names no idle routine.",
+};
+
+/**
+ * Follow DJ: whether the matched track's timeline drives the rig, and who has
+ * each lane. Only with a show folder. Arming is one tap and deliberate — the
+ * feed it follows arrives on an unauthenticated port.
+ */
+function Track({ state, send }: { state: EngineState; send: (c: Command) => void }) {
+  const prog = state.program;
+  const [latency, setLatency] = useState<number | null>(null);
+  if (!prog) return null;
+  const track = state.track;
+  const source = track?.source ?? null;
+  const saved = source != null ? (prog.latency_ms[source] ?? 0) : 0;
+  const shown = latency ?? saved;
+  const slots: Slot[] = ["movement", "color", "level"];
+
+  return (
+    <Card title="Track" right={
+      <button className={prog.armed ? "on" : ""}
+              aria-pressed={prog.armed}
+              onClick={() => send({ type: "follow", armed: !prog.armed })}>
+        {prog.armed ? "Follow ARMED" : "Follow SAFE"}
+      </button>
+    }>
+      {track && track.state !== "no_track" && (
+        <div className="small">
+          <b>{track.title}</b>
+          {track.artist && <span className="muted"> — {track.artist}</span>}
+          {track.match && <MatchLine match={track.match} />}
+        </div>
+      )}
+      <div className="small" style={{ marginTop: "0.3rem" }}>
+        {prog.mode === "timeline"
+          ? <>Timeline driving{prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
+          : prog.mode === "idle"
+            ? <>Paused — the idle routine is running</>
+            : <span className="muted">
+                {NOT_DRIVING[prog.reason ?? ""] ?? prog.reason}
+              </span>}
+      </div>
+      {prog.engaged && (
+        <div className="lanes" style={{ marginTop: "0.4rem" }}>
+          {slots.map((slot) => {
+            const who = prog.lanes[slot] ?? "fallback";
+            const grabbed = prog.grabbed.includes(slot);
+            return (
+              <div className="spread small" key={slot}>
+                <span>{LANE_NAMES[slot]} <span className="muted mono">
+                  {LANE_SOURCE[who]}</span></span>
+                {grabbed
+                  ? <button onClick={() => send({ type: "program_release", slot })}>
+                      Release
+                    </button>
+                  : <button onClick={() => send({ type: "program_grab", slot })}>
+                      Grab
+                    </button>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {prog.problems > 0 && (
+        <Banner kind="warn">
+          {prog.problems} problem(s) building this track's show on this rig:
+          {" "}{prog.first_problem}
+        </Banner>
+      )}
+      {source && (
+        <Fader label={`Latency (${source})`} value={(shown + 200) / 400}
+               format={() => `${shown > 0 ? "+" : ""}${shown} ms`}
+               onInput={(v) => setLatency(Math.round((v * 400 - 200) / 5) * 5)}
+               onCommit={(v) => {
+                 const ms = Math.round((v * 400 - 200) / 5) * 5;
+                 setLatency(null);
+                 send({ type: "show_latency", source, ms });
+               }} />
+      )}
+    </Card>
+  );
+}
 
 /** How a track was matched, in the operator's words -- how much to trust it
  *  before arming a show on it. */

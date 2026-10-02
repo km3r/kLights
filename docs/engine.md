@@ -138,7 +138,7 @@ run and embedded in the printed URL.
 | tier | what it covers |
 |---|---|
 | **view** | watch only; every command is refused with a reason |
-| **operate** | drive the show — looks, colour, cues, master, **panic** |
+| **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
 | **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload` |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
@@ -237,6 +237,19 @@ through any rate curves, so a loop lands on the authored frame. `python -m
 engine.program --event DIR --show-dir DIR --track T --beat B` lists what will
 not work on a rig and prints every fixture at a beat.
 
+**When the timeline drives** is [`playback.py`](../engine/playback.py), the
+runner's `choose_show` hook: Follow DJ armed (it starts disarmed, from
+show.json, and says so at startup), the playing track matched a prepped track
+with a timeline, its program compiled (on the worker; the operator's show runs
+meanwhile). Then the Show is the program's, the same object every frame, at the
+track's beat -- the transport's position, latency applied, through the matched
+grid. Paused, the show's policy decides: `freeze` holds, `continue` keeps
+moving at the last tempo, `idle` runs the show's idle routine once the pause
+outlasts the grace period. Every hand-over is a cut. A look, preset or cue
+picked while it drives grabs those lanes (`program_grab` / `program_release`,
+operate tier) until released. `follow {armed}` is operate tier;
+`show_latency {source, ms}` is configure and is saved to show.json.
+
 ## Where to look
 
 | question | file |
@@ -256,6 +269,7 @@ not work on a rig and prints every fixture at a beat.
 | which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |
 | the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
 | what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
+| when the timeline drives, and grabs | [`playback.py`](../engine/playback.py) |
 | what the fixtures do on a timeline | [`program.py`](../engine/program.py), [`routines.py`](../engine/routines.py), [`blocks.py`](../engine/blocks.py) |
 
 ## Tests

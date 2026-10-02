@@ -255,6 +255,31 @@ export interface GridWarning {
   offset_beats: number;
 }
 
+/** Who drives a lane: the track's timeline, the operator (a grab), the
+ *  pause idle routine, or the operator's/auto show because the timeline is not
+ *  driving at all. */
+export type LaneSource = "timeline" | "operator" | "idle" | "fallback";
+
+/** Playback (F19i): whether Follow DJ is armed, whether the timeline is on
+ *  stage, and who has each lane. */
+export interface ProgramState {
+  armed: boolean;
+  engaged: boolean;
+  mode: "timeline" | "idle" | "fallback";
+  /** Why the timeline is not driving: "disarmed", "no track", "matching",
+   *  "not in the show folder", "no timeline", "compiling", "paused"... */
+  reason: string | null;
+  beat: number | null;
+  bar: number | null;
+  lanes: Partial<Record<Slot, LaneSource>>;
+  grabbed: Slot[];
+  policy: "idle" | "freeze" | "continue";
+  problems: number;
+  first_problem: string | null;
+  /** Per source, how far ahead of its position the lights run. */
+  latency_ms: Record<string, number>;
+}
+
 /** The show folder the engine is pointed at, in summary. The documents
  *  themselves are never in the snapshot. */
 export interface ShowFolderState {
@@ -309,6 +334,8 @@ export interface EngineState {
   track?: TrackState;
   /** Null with no show folder; absent from an engine older than F19f. */
   show?: ShowFolderState | null;
+  /** Whether the timeline drives the rig (F19i). Null with no show folder. */
+  program?: ProgramState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
@@ -406,7 +433,12 @@ export type Command =
   | { type: "rate"; reset: true }
   /** Take the clock back from a bridge. Tempo and phase stay put; only who
    *  decides next changes. */
-  | { type: "sync_off" };
+  | { type: "sync_off" }
+  /** Follow DJ (F19i): may the matched track's timeline drive the rig. */
+  | { type: "follow"; armed: boolean }
+  | { type: "program_grab"; slot: Slot }
+  | { type: "program_release"; slot?: Slot }
+  | { type: "show_latency"; source: string; ms: number };
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

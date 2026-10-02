@@ -961,6 +961,79 @@ describe("patch", () => {
  * Every test here is about a failure state, because the success state is a word
  * on a card and the failure states are what decide whether anyone trusts it.
  */
+describe("follow dj (track card)", () => {
+  const program = (edit: (p: NonNullable<EngineState["program"]>) => void = () => {}) =>
+    stateWith((s) => {
+      s.program = {
+        armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+        beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+        problems: 0, first_problem: null, latency_ms: { blt: 0 },
+      };
+      s.track = { state: "playing", title: "synthetic 128", artist: "kLights",
+                  album: "test track", duration: 180, source: "blt", deck: "1",
+                  time: 75, rate: 1, age: 0.02, track_seq: 1, jump_seq: 0,
+                  on_air: true,
+                  match: { track_id: "synth-128", via: "title_artist_album",
+                           candidates: ["synth-128"], stale: false,
+                           has_timeline: true },
+                  grid_warning: null };
+      edit(s.program!);
+    });
+
+  it("is not there without a show folder", () => {
+    mount();
+    expect(screen.queryByText("Track")).toBeNull();
+  });
+
+  it("starts SAFE, says why nothing is driving, and arms with one tap", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.getByText(/drives nothing until you arm it/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Follow SAFE" }));
+    expect(socket.last()).toEqual({ type: "follow", armed: true });
+  });
+
+  it("shows who has each lane, and grabs and releases them", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 161,
+        bar: 41, grabbed: ["color"],
+        lanes: { movement: "timeline", color: "operator", level: "timeline" },
+      });
+    })));
+    expect(screen.getByRole("button", { name: "Follow ARMED" })).toBeInTheDocument();
+    expect(screen.getByText(/Timeline driving/)).toBeInTheDocument();
+    expect(screen.getByText("operator")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Release" }));
+    expect(socket.last()).toEqual({ type: "program_release", slot: "color" });
+    await user.click(screen.getAllByRole("button", { name: "Grab" })[0]!);
+    expect(socket.last()).toEqual({ type: "program_grab", slot: "movement" });
+  });
+
+  it("says when the track's show has problems on this rig", () => {
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, { armed: true, engaged: true, mode: "timeline",
+                         reason: null, problems: 2,
+                         first_problem: "look 'Nope' is not in this rig's library" });
+    })));
+    expect(screen.getByText(/2 problem\(s\) building this track's show/))
+      .toBeInTheDocument();
+  });
+
+  it("sends a latency change for the playing source when the slider is let go", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    const slider = screen.getByRole("slider", { name: "Latency (blt)" });
+    fireEvent.change(slider, { target: { value: "0.6" } });
+    fireEvent.pointerUp(slider);
+    expect(socket.last()).toEqual({ type: "show_latency", source: "blt", ms: 40 });
+  });
+});
+
 describe("dj sync", () => {
   const driving = (edit: (s: EngineState["sync"]) => void = () => {}) =>
     stateWith((s) => {

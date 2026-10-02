@@ -150,10 +150,10 @@
     "bpm": 124.0,
     "effective_bpm": 124.0,
     "speed": 1.0,
-    "beat": 2.067,
-    "bar": 0.517,
-    "phrase": 0.065,
-    "beat_in_bar": 2.067,
+    "beat": 2.015,
+    "bar": 0.504,
+    "phrase": 0.063,
+    "beat_in_bar": 2.015,
     "source": "manual",
     "phrase_measured": false,
     "taps": 0
@@ -185,6 +185,7 @@
     "grid_warning": null
   },
   "show": null,
+  "program": null,
   "auto": {
     "look": "Lazy Circle",
     "held": true,
@@ -2641,13 +2642,13 @@
         "reason": "beam never crosses the head band"
       },
       "aim": {
-        "bearing": -60.09,
-        "elevation": 16.06
+        "bearing": -60.19,
+        "elevation": 16.09
       },
       "lands_on": "canopy",
-      "throw_mm": 5889,
+      "throw_mm": 5878,
       "lands_at": [
-        9068,
+        9083,
         4600,
         9367
       ],
@@ -2682,14 +2683,14 @@
         "reason": "beam clears the crowd head band"
       },
       "aim": {
-        "bearing": -43.17,
-        "elevation": -4.57
+        "bearing": -43.13,
+        "elevation": -4.46
       },
       "lands_on": "wall",
-      "throw_mm": 14744,
+      "throw_mm": 14736,
       "lands_at": [
-        6785,
-        1797,
+        6798,
+        1825,
         18288
       ],
       "jogging": false,
@@ -2723,15 +2724,15 @@
         "reason": "beam core is in the crowd head band (held at 50%)"
       },
       "aim": {
-        "bearing": -60.14,
-        "elevation": -20.59
+        "bearing": -60.04,
+        "elevation": -20.62
       },
       "lands_on": "floor",
-      "throw_mm": 8446,
+      "throw_mm": 8434,
       "lands_at": [
-        10451,
+        10452,
         0,
-        10867
+        10849
       ],
       "jogging": false,
       "captures": 0
@@ -2761,18 +2762,18 @@
       ],
       "safety": {
         "taper": 1.0,
-        "reason": "beam never crosses the head band"
+        "reason": "beam is blocked or leaves the room before eye height"
       },
       "aim": {
-        "bearing": -82.33,
-        "elevation": 0.03
+        "bearing": -82.38,
+        "elevation": -0.07
       },
       "lands_on": "wall",
-      "throw_mm": 14698,
+      "throw_mm": 14692,
       "lands_at": [
         18288,
-        2980,
-        6785
+        2952,
+        6798
       ],
       "jogging": false,
       "captures": 0
