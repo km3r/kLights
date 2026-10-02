@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO))
 
 from engine import config as cfg           # noqa: E402
 from engine import cues as cuesmod         # noqa: E402
+from engine import showfiles               # noqa: E402
 
 OUT = REPO / "schemas"
 
@@ -45,6 +46,26 @@ SCHEMAS = {
                                   "plus a fade and an optional hold, in beats."),
     "inventory": (cfg.INVENTORY, "Hardware actually owned. Events select from "
                                  "this; they never redefine hardware."),
+    # The show folder (F19). These live outside the repo, in a folder the
+    # engine is pointed at; `python -m engine.showfiles init` copies them in.
+    "show": (showfiles.SHOW, "A show folder's settings: which template set, "
+                             "what runs with no timeline, the pause policy, "
+                             "per-source latency."),
+    "track": (showfiles.TRACK, "One prepped track: who it is, its beat grid "
+                               "and rekordbox's phrases. Written by the prep "
+                               "tool."),
+    "timeline": (showfiles.TIMELINE, "The hand-built show for one track: lanes "
+                                     "of routines, looks, snapshots, palette "
+                                     "changes, hits and automation, in beats on "
+                                     "the track's grid."),
+    "routine": (showfiles.ROUTINE, "A reusable routine: rows of building "
+                                   "blocks over N bars, written against roles, "
+                                   "with open parameters."),
+    "template_set": (showfiles.TEMPLATE_SET, "rekordbox phrase label -> "
+                                             "routine, for tracks with no "
+                                             "timeline."),
+    "waveform": (showfiles.WAVEFORM, "A track's waveform, for the designer. "
+                                     "Written by the prep tool."),
 }
 
 _JSON_TYPES = {int: "integer", float: "number", str: "string", bool: "boolean",
@@ -90,6 +111,22 @@ def to_json_schema(spec: cfg.Spec) -> dict:
     if spec.each is not None:
         node["type"] = "array"
         node["items"] = to_json_schema(spec.each)
+    if spec.variants is not None:
+        # A discriminated object: one branch per tag, each naming its tag as a
+        # const so exactly one can match. The common fields stay on the node.
+        key, table = spec.variants
+        node["type"] = "object"
+        node.setdefault("properties", {})[key] = {"enum": list(table)}
+        node["required"] = sorted(set(node.get("required", [])) | {key})
+        branches = []
+        for tag, fields in table.items():
+            props = {key: {"const": tag}}
+            props.update({k: to_json_schema(v) for k, v in fields.items()})
+            branch = {"properties": props,
+                      "required": [key] + [k for k, v in fields.items()
+                                           if v.required]}
+            branches.append(branch)
+        node["oneOf"] = branches
     return node
 
 

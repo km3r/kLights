@@ -11,6 +11,334 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Fixed — F19 review, before merging
+
+A review of the whole F19 branch before it merged. Each fix has a test.
+
+- **One UDP datagram could end DJ sync for the night.** A `/klights/v1/pos`
+  with a NaN or infinite deck number raised inside the decoder, on the
+  listener's thread, and the thread died. Non-finite numbers are refused, and
+  the listener now survives any decoder failure, counting it as a reject.
+- **A typo could hang the worker.** Clip `at`, `len` and `fade` had no upper
+  bound; a long clip under two rate curves asked the compiler for a table of
+  millions of entries. They are capped at 65536 beats (nine hours at 120 bpm),
+  and the table at 8192 beats, past which the clip runs on at its settled rate.
+  A compile that fails anyway is reported once ("could not be built") and the
+  operator's show runs, instead of the track sitting on "compiling".
+- **Audio in the designer**: a file named like `Night Drive [Extended Mix].mp3`
+  was never found under `audio_roots` (the brackets were read as a pattern),
+  and every Range request searched the whole music folder again. Names are
+  matched literally, and where a track's audio is is remembered.
+- **A designer that lost the rig kept talking to it.** When the engine ended a
+  preview -- the socket dropped, a phone pressed Release, another designer
+  forced its way on -- the page went on sending its transport ten times a
+  second, and each one failed into every console's notices. The page now
+  notices and says why; the engine ignores a transport that outlived its
+  preview. A preview that is someone else's is labelled as theirs.
+- The waveform drew nothing on a long track at the closest zoom (a browser's
+  canvas width limit); ids with a trailing newline were accepted (and would have
+  been file names); token checks are constant-time; a view-only phone is no
+  longer offered a Release it cannot do.
+
+### Changed — the designer, after review
+
+- **Automation points** are selected by a click (it used to delete them),
+  dragged to a new beat or value, and edited in the inspector: beat, value, and
+  the curve that arrives at the point (linear, step, ease) -- which the format
+  always had and the designer could not set.
+- **Keys**: Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z or Ctrl+Y, Ctrl/Cmd+S, Space to play,
+  Delete or Backspace to remove what is selected, Escape to let go of it.
+- The playhead pages the lanes along while playing; the routine editor's back
+  link returns to the track it was opened from.
+- README: a "Timecoded shows" section, with the designer pictured.
+
+### Added — F19l: the designer
+
+- **`#designer`**, a desktop page the engine serves with the console, loaded
+  only from that link -- a phone never downloads it (checked against the
+  built bundle). It lists the show folder's tracks and routines.
+- **A track's timeline as lanes** (layout B, picked from the mock-ups): bar
+  ruler, rekordbox's phrases, the waveform, the timeline's rows in order, hits,
+  automation, the VJ lane. Play and scrub with the track's audio from the
+  engine, or a file opened in the browser (never uploaded). **Drive the rig**
+  puts this page's transport on the real rig through the draft being edited.
+  The right panel shows the rig from above and who drives each lane at the
+  playhead.
+- **Editing**: drag clips and hits (snapped to beat, bar or phrase), resize,
+  fades, routine/variation/params with palette role or direct colour, looks,
+  presets, palettes and palette clips, hit type/level/who/envelope, lanes
+  added, reordered, removed, fill-gaps/owns-track per lane, automation points,
+  routines placed from the shelf, **Draft from template**, **Record** pads
+  (flash, strobe, blackout, next scene at the playhead) and a sortable **event
+  list** with nudges. Undo/redo over the whole document. Each change goes to
+  the engine as a draft; its answer (errors, notes, what will not work on this
+  rig) gates Save, which quotes the rev it read. The working copy is kept in
+  the browser until saved.
+- **The routine editor** (`#designer/routine/<id>`, or New routine): its rows
+  on the same lanes in loop mode at a tempo of your choosing, a role per lane,
+  roles, open parameters and their defaults, variations, blocks by slot, and
+  each block's arguments as a value or a `$param`. A rig-bound block (look,
+  snapshot) marks the routine this-rig-only. New command `routine_draft`
+  checks it against this rig, and each variation.
+- The phone's Track card links the matched track to the designer.
+- `engine/tests/dump_designer_fixtures.py` writes the grid vectors and block
+  lists the designer is tested against; `test_api` fails when they are stale.
+
+### Added — F19k: the show folder in conversation
+
+- **MCP tools** for the show folder, through the new `engine/showtools.py`:
+  `show_status`, `list_tracks` (with rekordbox's phrases and their beats),
+  `get_track`, `list_routines`, `get_routine`/`put_routine`,
+  `get_timeline`/`put_timeline`, `edit_timeline` (small ops: add, update or
+  remove items and lanes, set points, set palettes -- creating the timeline if
+  the track has none), `link_track`, `lint_show` (optionally against an event's
+  rig: looks it lacks, roles with no fixtures), `explain_position` (a track at
+  a beat, and what every fixture does), and the template-set trio.
+- Dry runs unless asked; a write needs the rev it read and is refused if the
+  file changed since. Unlike rig edits they are allowed while a show runs: the
+  engine reloads, and a playing track keeps its version until its next play.
+
+### Added — F19j: what the designer talks to
+
+- **`GET /api/*`** (`engine/api.py`): the show, tracks, timelines, routines,
+  template sets and waveforms as whole documents with their revs, over HTTP --
+  never in the snapshot. `GET /api/audio/<id>` streams the track's audio with
+  Range requests; it needs the token, and serves only files the track names (or
+  the same file name under `audio_roots` in `klights.local.json`) with an audio
+  extension.
+- **Commands answered from the worker**: `timeline_draft` (validation plus a
+  compile against this rig: errors, warnings, rig problems), `timeline_save`
+  and `routine_save` (with `base_rev`; refused if the file changed since; the
+  folder reloads, the playing track keeps its version until its next play).
+  The reply channel gained deferred answers for these.
+- **Preview**: `preview_arm` puts the designer's transport on the rig through
+  the track's timeline -- its latest draft, else the saved one. Refused while a
+  DJ plays unless forced; every console shows a "DESIGNER is driving the rig"
+  banner with Release; it lets go when the designer's browser does.
+  `preview_transport` moves it; a jump in it is a seek.
+
+### Added — F19i: the timeline on stage
+
+- **Follow DJ.** With a show folder, a matched track's timeline drives the rig
+  once Follow is armed -- one tap on the new **Track** card (Show tab). It
+  starts disarmed, as show.json's `follow.default` says, and the startup output
+  says so. While disarmed the track is still matched and shown; nothing reaches
+  the rig.
+- **`engine/playback.py`** is the runner's new `choose_show` hook: the program's
+  Show (the same object every frame) while the timeline drives, auto mode's
+  show the moment it stops. Programs compile on the worker when a track is
+  matched, armed or not, so arming is instant. A rig reload rebuilds them.
+- **Pause policies** from show.json: `freeze`, `continue` (keeps moving at the
+  last tempo), `idle` (the idle routine, once the pause outlasts the grace).
+- **Decided with the user:** a look, preset or cue picked while the timeline
+  drives grabs its lanes until Release, across tracks; every hand-over is a cut;
+  the latency slider saves to show.json.
+- Commands: `follow {armed}`, `program_grab {slot}`, `program_release {slot?}`
+  (operate); `show_latency {source, ms}` (configure). Snapshot `program`:
+  armed, mode, why not driving, bar, who has each lane, grabs, problems,
+  latency. A cue GO while the timeline drives grabs instead of swapping it out.
+
+### Added — F19h: the lights compiler
+
+- **`engine/program.py`** compiles a track's timeline for one rig into a
+  `Program` with one stable `Show`: `begin(beat)` each frame, then evaluate it
+  like any show -- safety and the strobe policy still last. F19i puts it on the
+  runner; until then it runs offline, and `python -m engine.program --event DIR
+  --show-dir DIR --track T --beat B` prints every fixture at a beat.
+- **`engine/routines.py`**: a routine bound to a rig -- params (default, then
+  variation, then the use's own), roles bound to tags (an optional role absent
+  on the rig is simply absent), "built for another rig" said out loud.
+- **`engine/blocks.py`**: the parametric blocks -- `orbit`, `pendulum`,
+  `fan_sweep`, `aim_points` (in room fractions, so portable), `solid`,
+  `color_chase`, `chase` (ordered by where fixtures hang), `pulse`, `dim`,
+  `strobe` -- plus the rig-bound `look` and `snapshot` adapters. Colours are a
+  palette role, `#hex`, `[r, g, b]` or a colour look; parameters and colours
+  resolve as they run, so the palette lane and `param.*` automation reach them.
+- **Decided with the user:** a clip drives only the fixtures it uses and the
+  rest fall through per fixture (an owning lane rests them); rest is the
+  venue's new `rest_point` (else the ball), colour white, level dark; a
+  routine that does not loop keeps running its end on a longer clip.
+- Each source runs once per slot on a scratch copy and only its own fixtures
+  are taken, so movement offsets never stack; crossfades blend whole states in
+  parameter space. A clip's phase is a pure function of the beat through the
+  timeline's and the routine's rate curves (exact, or tabulated when both
+  vary), so loops land on the authored frame.
+- Hits: flash raises, strobe opens the shutter, blackout goes last; a routine's
+  own hits fire from inside it. Timeline `size`/`spread`/`center` scale the
+  movement slot; `master` scales everything.
+- `state.offset_aim` is now the one place size and centre apply, for ported
+  looks and blocks alike; `EvalContext.scoped()` runs a source on its own time;
+  `Timeline.entries()` gives the full per-lane stack.
+
+### Added — F19g: what a timeline says at a beat
+
+- **`engine/timeline.py`**, the output-generic core: at any beat, the stack on
+  each channel (clips with weights, ending in blank or the template beneath),
+  each automation value, and the hits firing. Standard library only, so VJ
+  outputs can share it; a test parses its imports.
+- **Decided with the user:** the higher lane wins, scene lanes included; a lane
+  that owns the track is *blank* in its gaps (it no longer "holds its last
+  item"); a clip ending into a gap fades out over its own `fade`.
+- Curves: the curve named on a point shapes the segment arriving at it; `ease`
+  is smoothstep; values hold outside the points; the integral is exact, so a
+  rate curve's phase is a function of the beat and a loop lands on it every
+  pass. Hits are position windows; one shorter than a frame fires once in
+  forward play and never after a jump.
+- The show library compiles each timeline at load; the playing track's is
+  pinned with its match, and `track.match.has_timeline` shows on the Sync card.
+- `python -m engine.showfiles explain TRACK BEAT` prints what a timeline says at
+  a beat. Two automation rows for one target warn that the lower is never
+  heard.
+- The example timeline's movement lane moved above its scene lane, so its look
+  overrides the outro's movement as intended.
+
+### Added — F19f: which prepped track is playing
+
+- **`--show-dir`** points the engine at a show folder (or `$KLIGHTS_SHOW_DIR`,
+  or `show_dir` in `klights.local.json`). Without one nothing below exists.
+- **Matching**, in layers, strongest first: beat-link's signature; a rekordbox
+  id, only where the title agrees (every USB stick numbers from 1); a manual
+  link; title + artist + album; title + artist -- the last three only where the
+  durations could be one file. Two tracks at the deciding layer are
+  *ambiguous* and neither plays. The snapshot's `track.match` says which track
+  and how it knows; the Sync card shows it.
+- **`track_link`** (configure): "this playing track is that prepped track".
+  Saved on the prepped track as an alias, plus the deck's signature when
+  beat-link sent one. It applies from the track's **next play**, never
+  mid-song.
+- **Hot reload that never moves a playing track.** The folder is polled on its
+  own thread, reloaded on the worker, and swapped in by one reference; the
+  playing track keeps the load it was matched against until it changes. A file
+  broken by a half-finished sync keeps its last good version (`Folder.failed`).
+  `show_reload` (configure) reloads at once. `show.json`'s per-source latency,
+  pause grace and track-change limit now reach the transport.
+- **Grid cross-check.** rkbx_link's bar phase, or beat-link's beat count, is
+  compared with the prepped grid; two seconds of disagreement is
+  `track.grid_warning`, with the offset in beats.
+
+### Added — F19e: the wire format, shipped to both sources
+
+- **`bridges/prolink/blt/klights.clj`**: the beat-link-trigger expressions that
+  send the tempo master's position, playing state and identity (`/klights/v1`)
+  and its tempo and bar phase on every beat. Not yet run against a CDJ. A golden
+  fixture holds the exact bytes they must produce: the engine decodes them, and
+  `bridge.py --blt` reproduces them.
+- **`bridges/prolink/rkbx_link.config.example`**: a complete rkbx_link config
+  for kLights, with the two settings its shipped config has off (`master/time`,
+  `master/phrase`) turned on, and every other choice commented with why.
+- The bridge README no longer says beat-link-trigger "emits OSC" with "no code
+  of ours in the path". It sends OSC only from expressions, which are now ours.
+
+### Added — F19d: which track, and where in it
+
+- **The sync port reads position and identity.** rkbx_link's `/master/time`,
+  artist, album and original bpm; our `/klights/v1/pos` and `/track` for
+  beat-link-trigger, decoded strictly at a fixed arity; and the same fields as
+  JSON. Every one is range-checked. Addresses the tools send that we choose not
+  to use (`phrase/next`, `beat/trigger`) are counted as ignored rather than
+  rejected, so healthy rkbx_link traffic no longer reads as unreadable packets.
+- **`engine/transport.py`.** The track's position between packets. It is a
+  smoothed line, so jitter never reads as motion. It detects jumps (loops, hot
+  cues), pauses (including rkbx_link's silence), stalls and scratching. Identity
+  arriving a field at a time waits for the rest, and a jump from such a source
+  waits 30 ms, so a master switch reads as a track change and not as a jump in
+  the old track. Lock-free: one immutable state, swapped by reference.
+- The snapshot has a `track` section: state, title, artist, source, position,
+  rate. Taking the clock back clears it.
+- **The console's DJ sync card names the track and where in it**: position
+  against length, its state, and the DJ's pitch. "Packets late" is shown as
+  such rather than as a stopped deck.
+- **`bridge.py --fake --track`** plays the show-example's synthetic track as a
+  deck: position at 30 Hz, shaped as rkbx_link (`--osc`, silent while paused)
+  or as our beat-link-trigger expressions (`--blt`). `--script` drives the
+  transport: loops, hot cues, pauses, a master switch to a guest track, a
+  scratch. Each shape is tested through the real decoder and transport, and
+  must tell the same story.
+- **`bridges/prolink/capture.py`** records what a source really sends, byte for
+  byte, while forwarding it to the engine; `--replay` sends the bytes back
+  exactly. Venue captures become regression tests.
+
+### Added — F19c: the prep tool
+
+- **[`bridges/rekordbox/prep.py`](bridges/rekordbox/README.md)** reads what
+  rekordbox already knows about a track and writes it into a show folder.
+  Identity and file location come from rekordbox's XML export. Beat grid,
+  phrases, cues and waveform come from its analysis files. The two are joined on
+  the audio path the analysis records, falling back to the file name, which is
+  what makes a USB stick work. Stdlib only; no encrypted database is read.
+- **`bridges/rekordbox/anlz.py`**, a reader for `ANLZ0000.DAT/.EXT`: the grid,
+  phrases (unmasking rekordbox 6+'s XOR mask), named cues, waveforms and the
+  audio path. Phrase labels are rekordbox's own, including high-mood numbering
+  ("Up 3", "Chorus 2").
+- Re-running prep changes nothing. A track renamed in rekordbox keeps its old
+  name as an alias. A re-gridded track is reported along with every timeline
+  drawn on the old grid, and prep never touches a timeline.
+- `engine/tracks.py`: how track names are compared. It forgives accents, case,
+  "&" and "ft.", but never "Original Mix" against "Extended Mix".
+
+### Added — F19b: a track's time, and the show folder
+
+- **`engine/tracktime.py`.** A track's own musical time, from rekordbox's beat
+  grid: beat 0 is the first downbeat, a position in the audio maps to a beat
+  through anchors, and the map is continuous and monotonic by construction
+  across tempo changes. A grid fingerprint (`rev`) lets a timeline notice that
+  its track was re-gridded after it was drawn.
+- **`engine/showfiles.py`: the show folder and its formats.** Show settings,
+  tracks, timelines, routines, template sets and waveforms, each validated for
+  shape and meaning, with errors for what cannot mean anything and warnings
+  for what is merely suspicious. One authoring API for the designer, MCP and
+  the prep tool. Writes are refused if the file changed since it was read;
+  sync-service conflict copies are never loaded; unknown keys survive a round
+  trip. `python -m engine.showfiles init|check`.
+- **Six generated schemas** in `schemas/`, so an editor completes a timeline
+  as it does a rig. `config.Spec` gained discriminated variants, emitted as
+  `oneOf`, and each format has its own version.
+- **[`shared/show-example/`](shared/show-example/)**: a complete show folder
+  around the fake bridge's synthetic track, with one of everything a timeline
+  can hold.
+- `validate` is tested against 4,570 mutated documents and never raises. That
+  sweep found four ways it could.
+
+### Added — F19a: replies, a worker thread, and one validator for sync
+
+- **A command can ask for a reply.** Give it an `id` and the engine answers the
+  sender, and only the sender, with `ok` or the reason it failed. The designer
+  needs to know whether *its* save worked, not scan a notices list shared with
+  every phone. Commands without an id behave exactly as before.
+- **A worker thread for slow work.** Parsing, matching and writes to a shared
+  folder cannot run on the output thread, which already drains every command
+  inside the 25 ms frame. They run on the worker and hand their result back to
+  be installed at a frame boundary. Tested by thread name, because a worker
+  that quietly ran jobs inline would pass every other test.
+- **The WebSocket `sync` command now goes through the UDP port's checks.** It
+  used to take the message as it came: a bpm of 900 reached the clock, and a
+  track title could be any length. Both routes into the clock now share one
+  validator.
+
+### Fixed — a quoted "false" read as true
+
+- `sync.clean` turned `phrase_measured: "false"` into True, because
+  `bool("false")` is. A sender that quoted its booleans claimed a measured
+  phrase by saying it had none. Flags are parsed now, and one that is neither
+  true nor false is refused rather than guessed.
+
+### Changed — the fake bridge speaks rekordbox's phrase vocabulary
+
+- **`bridge.py --fake` used phrase names rekordbox never sends.** Its script said
+  Build and Drop; rekordbox's phrase analysis says Up, Chorus and Down, and
+  numbers repeats ("Verse 1", "Up 2"). Anything keyed on the fake's names would
+  have passed every test and done nothing at a venue. The script is now a
+  three-minute track in rekordbox's own labels, and `test_sync` refuses the two
+  names that can never arrive. The README and roadmap said the same wrong thing
+  and are corrected.
+
+### Added — F19 design record
+
+- [`docs/design/timecoded-shows.md`](docs/design/timecoded-shows.md): shows
+  driven by which track is playing and where in it. The decisions, the designer
+  layout chosen from three clickable mock-ups, and the staged build. Nothing in
+  the engine changes yet.
+
 ### Fixed — the rate buttons, and a test that meant two different things
 
 - **The six Rate buttons broke mid-token on a phone.** `overflow-wrap: anywhere`

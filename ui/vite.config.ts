@@ -9,7 +9,11 @@ export default defineConfig({
   base: "./",
   server: {
     host: true,               // reachable from a phone on the same network
-    proxy: { "/ws": { target: "ws://127.0.0.1:8765", ws: true } },
+    proxy: {
+      "/ws": { target: "ws://127.0.0.1:8765", ws: true },
+      // The designer's document reads and audio (engine/api.py).
+      "/api": { target: "http://127.0.0.1:8765" },
+    },
   },
   build: { outDir: "dist", emptyOutDir: true },
 });

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/show.schema.json",
+  "title": "cosmos show",
+  "description": "A show folder's settings: which template set, what runs with no timeline, the pause policy, per-source latency.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.show"
+      ],
+      "description": "\"klights.show\" -- it says which format the file is"
+    },
+    "template_set": {
+      "type": "string",
+      "description": "the id of a file in templates/"
+    },
+    "fallback": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "operator"
+      ],
+      "description": "what runs when a track has no timeline, no phrases and no grid: today's auto mode, or nothing but the operator"
+    },
+    "pause": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "freeze",
+            "continue"
+          ],
+          "description": "idle: hand over to idle_routine after grace_s. freeze: hold still. continue: keep moving at the last tempo"
+        },
+        "grace_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60,
+          "description": "seconds of silence before a deck counts as paused"
+        },
+        "idle_routine": {
+          "type": "string",
+          "description": "the id of a file in routines/"
+        },
+        "fade_beats": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "description": "per source, e.g. {\"rkbx\": {\"latency_ms\": -15}}"
+    },
+    "follow": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": [
+            "disarmed",
+            "armed"
+          ],
+          "description": "disarmed: the DJ feed shows but drives nothing until someone arms it"
+        },
+        "min_track_change_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60
+        }
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "additionalProperties": true
+}

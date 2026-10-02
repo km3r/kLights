@@ -15,6 +15,8 @@ Run: python engine/tests/test_sync.py
 import socket
 import struct
 import sys
+import json
+import threading
 import time
 from pathlib import Path
 
@@ -147,6 +149,15 @@ check("a string where a number belongs does not poison the whole packet",
 check("a long label is truncated rather than stored whole",
       len(syncmod.parse(b'{"phrase_label": "' + b"x" * 200 + b'"}')
           ["phrase_label"]) == 64)
+# bool("false") is True. A sender that quoted its booleans would otherwise
+# claim a measured phrase by saying it had not one.
+check("a quoted false is false, not a non-empty string",
+      syncmod.clean({"phrase_measured": "false"}) == {"phrase_measured": False}
+      and syncmod.clean({"phrase_measured": "0"}) == {"phrase_measured": False})
+check("a quoted true is true",
+      syncmod.clean({"phrase_measured": "True"}) == {"phrase_measured": True})
+check("and a flag that is neither is refused rather than guessed",
+      syncmod.clean({"phrase_measured": "maybe"}) is None)
 
 
 # -- 5. the wire: OSC ----------------------------------------------------------
@@ -192,17 +203,18 @@ check("an address we do not model is ignored",
 # in "current", so matching the last component alone read a phrase as a tempo.
 print("\n5b. rkbx_link address shapes")
 check("a nested bpm decodes",
-      syncmod.parse(osc("/master/bpm/current", "f", 128.0)) == {"bpm": 128.0})
+      syncmod.parse(osc("/master/bpm/current", "f", 128.0))
+      == {"bpm": 128.0, "source": "rkbx"})
 check("and a phrase sharing its last component does NOT become a bpm",
-      syncmod.parse(osc("/master/phrase/current", "s", "Drop"))
-      == {"phrase_label": "Drop", "phrase_measured": True},
+      syncmod.parse(osc("/master/phrase/current", "s", "Chorus"))
+      == {"phrase_label": "Chorus", "phrase_measured": True, "source": "rkbx"},
       "this is the collision that would have shipped")
 check("a phrase count-in becomes the countdown",
       syncmod.osc_fields("/master/phrase/countin", 12.0)
-      == {"phrase_ends_in": 12.0})
-check("the track title comes through",
-      syncmod.osc_fields("/master/track/title", "Cosmic Slop")
-      == {"track": "Cosmic Slop"})
+      == {"phrase_ends_in": 12.0, "source": "rkbx"})
+check("the track title comes through, as the title and the console's label",
+      syncmod.parse(osc("/master/track/title", "s", "Cosmic Slop"))
+      == {"title": "Cosmic Slop", "track": "Cosmic Slop", "source": "rkbx"})
 
 # A source that STATES the phrase is measuring it. OSC cannot send the flag
 # separately, and without inferring it the rekordbox path would report phrases
@@ -215,7 +227,8 @@ check("a phrase label implies phrase is measured",
 # most useful thing rkbx_link sends. Taking the raw 0..1 would squeeze every
 # downbeat correction into the first beat of the bar.
 check("beat/subdiv scales back up to beats",
-      syncmod.osc_fields("/master/beat/subdiv/4", 0.5) == {"beat_in_bar": 2.0})
+      syncmod.osc_fields("/master/beat/subdiv/4", 0.5)
+      == {"beat_in_bar": 2.0, "source": "rkbx"})
 check("and a divisor of zero is refused rather than dividing the bar by nothing",
       syncmod.osc_fields("/master/beat/subdiv/0", 0.5) is None)
 
@@ -226,7 +239,8 @@ check("only the master deck is followed",
       and syncmod.osc_fields("/2/bpm/current", 174.0) is None,
       "a numeric deck is dropped")
 check("but master itself drives",
-      syncmod.osc_fields("/master/bpm/current", 128.0) == {"bpm": 128.0})
+      syncmod.osc_fields("/master/bpm/current", 128.0)
+      == {"bpm": 128.0, "source": "rkbx"})
 # Dropping them shows up as rejected packets, which is visible; following the
 # last deck that spoke would be invisible and sound like a broken engine.
 check("and beat-link-trigger's flat namespace still works alongside it",
@@ -236,6 +250,95 @@ check("a truncated OSC message is None, not an exception",
 check("an OSC type we do not model is refused rather than misread",
       syncmod.parse(b"/beat-link/bpm\0\0,b\0\0\x00\x00\x00\x01\xff\0\0\0")
       is None)
+
+
+# -- 5c. which track, and where in it (F19d) -----------------------------------
+#
+# These fields can select pre-authored shows, so every one is range-checked and
+# cleaned here rather than trusted downstream.
+print("\n5c. position and identity")
+
+
+def osc_args(address: str, *args) -> bytes:
+    """An OSC message with several arguments: i for int, f for float, d for a
+    double (as ("d", x)), s for str. Independent of the decoder."""
+    def pad(b: bytes) -> bytes:
+        return b + b"\0" * (4 - len(b) % 4)
+    tags, payload = "", b""
+    for a in args:
+        if isinstance(a, tuple) and a[0] == "d":
+            tags += "d"; payload += struct.pack(">d", a[1])
+        elif isinstance(a, str):
+            tags += "s"; payload += pad(a.encode())
+        elif isinstance(a, int):
+            tags += "i"; payload += struct.pack(">i", a)
+        else:
+            tags += "f"; payload += struct.pack(">f", a)
+    return pad(address.encode()) + pad(b"," + tags.encode()) + payload
+
+
+got = syncmod.clean({"track_time": 61.25, "title": "Night\x00 Drive\x1b" + "x" * 300,
+                     "artist": "Ko\u0308lsch", "playing": "false",
+                     "rekordbox_id": 2 ** 33, "signature": "AB" * 20,
+                     "beat_number": 1.5, "duration": -3, "pitch": 1.06})
+check("a position in the track, in seconds", got.get("track_time") == 61.25)
+check("a title has its control characters removed and is bounded",
+      got["title"].startswith("Night Drive") and len(got["title"]) == 200
+      and "\x00" not in got["title"], repr(got["title"][:20]))
+check("and becomes the console's track label too", got["track"] == got["title"][:64])
+check("names are Unicode-normalised, so an o plus a combining umlaut is an \u00f6",
+      got["artist"] == "K\u00f6lsch", repr(got["artist"]))
+check("playing is a parsed flag", got["playing"] is False)
+check("a signature is lower-cased, and a rekordbox id outside 32 bits is dropped",
+      got["signature"] == "ab" * 20 and "rekordbox_id" not in got)
+check("a fractional beat number and a negative duration are dropped",
+      "beat_number" not in got and "duration" not in got, f"{got}")
+check("NaN and infinity never get through",
+      syncmod.clean({"track_time": float("nan"), "bpm_original": float("inf")}) is None)
+check("a signature that is not 40 hex characters is dropped",
+      syncmod.clean({"signature": "not-a-signature", "title": "x"}) == {"title": "x", "track": "x"})
+
+check("rkbx_link's /master/time is the position",
+      syncmod.parse(osc("/master/time", "f", 12.5)) == {"track_time": 12.5, "source": "rkbx"})
+check("its artist, album and original tempo come through",
+      syncmod.parse(osc("/master/track/artist", "s", "Someone"))["artist"] == "Someone"
+      and syncmod.parse(osc("/master/track/album", "s", "EP"))["album"] == "EP"
+      and syncmod.parse(osc("/master/bpm/original", "f", 124.0))["bpm_original"] == 124.0)
+check("phrase/next and beat/trigger are understood and ignored, not rejected",
+      syncmod.parse(osc("/master/phrase/next", "s", "Chorus")) is syncmod.IGNORED
+      and syncmod.parse(osc("/master/beat/trigger/4", "i", 1)) is syncmod.IGNORED)
+
+pos = syncmod.parse(osc_args("/klights/v1/pos", 2, 1, 61.25, 1.02, 129, 1, 0))
+check("/klights/v1/pos decodes, every argument",
+      pos is not None and pos["deck"] == "2" and pos["playing"] is True
+      and pos["track_time"] == 61.25 and abs(pos["pitch"] - 1.02) < 1e-6
+      and pos["beat_number"] == 129 and pos["master"] is True
+      and pos["on_air"] is False and pos["source"] == "blt", f"{pos}")
+check("doubles are read as well as floats",
+      syncmod.parse(osc_args("/klights/v1/pos", 2, 1, ("d", 61.25), 1.0, 129, 1, 1))
+      ["track_time"] == 61.25)
+trk = syncmod.parse(osc_args("/klights/v1/track", 2, 412, "", "Night Drive",
+                             "Someone", "EP", 372.5))
+check("/klights/v1/track decodes, and an empty signature is simply absent",
+      trk["rekordbox_id"] == 412 and trk["title"] == "Night Drive"
+      and trk["duration"] == 372.5 and "signature" not in trk
+      and trk["track"] == "Night Drive", f"{trk}")
+for label, bad in [
+    ("one argument short", osc_args("/klights/v1/pos", 2, 1, 61.25, 1.0, 129, 1)),
+    ("one argument over", osc_args("/klights/v1/pos", 2, 1, 61.25, 1.0, 129, 1, 0, 9)),
+    ("a string where a number belongs",
+     osc_args("/klights/v1/pos", 2, 1, "61.25", 1.0, 129, 1, 0)),
+    ("a number where a title belongs",
+     osc_args("/klights/v1/track", 2, 412, "", 7, "Someone", "EP", 372.5)),
+    ("a kind that does not exist", osc_args("/klights/v1/teleport", 1)),
+    ("a version that does not exist", osc_args("/klights/v2/pos", 2, 1, 61.25, 1.0, 129, 1, 0)),
+    ("a deck that is not a number (NaN)",
+     osc_args("/klights/v1/pos", float("nan"), 1, 61.25, 1.0, 129, 1, 0)),
+    ("an infinite deck", osc_args("/klights/v1/pos", float("inf"), 1, 61.25, 1.0, 129, 1, 0)),
+    ("an infinite rekordbox id",
+     osc_args("/klights/v1/track", 2, ("d", float("inf")), "", "T", "A", "B", 1.0)),
+]:
+    check(f"/klights refuses {label}", syncmod.parse(bad) is None)
 
 
 # -- 6. the listener, over a real socket --------------------------------------
@@ -286,6 +389,31 @@ time.sleep(0.3)
 check("a raising callback does not kill the listener thread",
       boom.thread.is_alive() and boom.rejected == 1, f"{boom.status()}")
 boom.stop()
+
+# The decoder itself raising must not kill it either: a datagram that is
+# rejected costs one datagram. (A NaN deck number used to do exactly this.)
+fragile = syncmod.SyncListener(on_sync=seen.append, port=0, bind="127.0.0.1")
+fragile.start()
+fragile_port = fragile.sock.getsockname()[1]
+real_parse = syncmod.parse
+syncmod.parse = lambda data: (_ for _ in ()).throw(ValueError("decoder bug"))
+try:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.sendto(osc_args("/klights/v1/pos", float("nan"), 1, 1.0, 1.0, 1, 1, 0),
+                 ("127.0.0.1", fragile_port))
+    deadline = time.time() + 2
+    while fragile.rejected < 1 and time.time() < deadline:
+        time.sleep(0.02)
+finally:
+    syncmod.parse = real_parse
+syncmod.send({"bpm": 121.0}, port=fragile_port)
+deadline = time.time() + 2
+while not any(f.get("bpm") == 121.0 for f in seen) and time.time() < deadline:
+    time.sleep(0.02)
+check("a decoder that raises costs one datagram, and the listener reads on",
+      fragile.thread.is_alive() and fragile.rejected == 1
+      and any(f.get("bpm") == 121.0 for f in seen), f"{fragile.status()}")
+fragile.stop()
 
 listener.stop()
 check("stopping releases the socket", listener.sock is None)
@@ -348,11 +476,15 @@ check("and the countdown shrinks bar by bar",
       == sorted((f["phrase_ends_in"] for f in labelled), reverse=True),
       f"{[f['phrase_ends_in'] for f in labelled]}")
 
-# The scripted timeline has to actually reach a Drop, or nothing downstream of
-# a phrase can be tested with it.
+# The scripted timeline has to actually reach a Chorus, or nothing downstream
+# of a phrase can be tested with it -- and it has to speak rekordbox's own
+# vocabulary, because rekordbox never sends "Build" or "Drop" and a fake that
+# did would pass tests that the real decks would fail.
 timeline = [name for name, _ in bridgemod.FAKE_PHRASES]
-check("the scripted night contains the phrases the cue list cares about",
-      {"Build", "Drop", "Outro"} <= set(timeline), f"{timeline}")
+check("the scripted track contains the phrases templates care about",
+      {"Up 1", "Chorus", "Down", "Outro"} <= set(timeline), f"{timeline}")
+check("and none rekordbox would never send",
+      not {"Build", "Drop"} & set(timeline), f"{timeline}")
 
 sink.stop()
 
@@ -398,6 +530,151 @@ check("the fake bridge's OSC round-trips through the engine's decoder",
       f"{merged}")
 check("and nothing it sent was unreadable", osc_sink.rejected == 0,
       f"{osc_sink.status()}")
+
+
+# -- 7b. a scripted deck, through the decoder and the transport -----------------
+#
+# The F19 transport is only as testable as the fake that drives it. Each wire
+# shape -- our JSON, rkbx_link's OSC, our beat-link-trigger OSC -- is run
+# through the engine's real decoder and the real transport on simulated time,
+# and has to see the same story: two loop-backs and a hot cue are three jumps,
+# a pause is not a jump, and a master switch is a track change and NOT a jump.
+print("\n7b. a scripted deck")
+from engine import transport as tpmod      # noqa: E402
+
+# A play after the loop, because a loop-back followed at once by a hot cue
+# never sends a packet from where it looped to -- nothing could see that jump.
+SCRIPT = "play:16,loop:4x2,play:4,hotcue:160,play:8,pause:1s,play:8,switch,play:16"
+
+
+def drive(shape: str):
+    """Run the scripted deck through one wire shape; return the transport and
+    what it looked like during the pause."""
+    t = tpmod.TrackTransport()
+    clock = 0.0
+    seen = {"paused_state": None, "titles": [], "rejected": 0}
+    for dt, fields in bridgemod.deck(128.0, SCRIPT, hz=30.0):
+        if shape == "json":
+            messages = [syncmod.clean(fields)]
+        else:
+            encoder = bridgemod.as_osc if shape == "osc" else bridgemod.as_blt
+            messages = [syncmod.parse(m) for m in encoder(fields)]
+        for m in messages:
+            if m is None:
+                seen["rejected"] += 1
+            elif m is not syncmod.IGNORED:
+                t.ingest(m, clock)
+        if fields.get("playing") is False:
+            seen["paused_state"] = t.sample(clock).state   # the last one wins
+        clock += dt
+        title = t.sample(clock).identity.title
+        if title and (not seen["titles"] or seen["titles"][-1] != title):
+            seen["titles"].append(title)
+        if t.sample(clock).identity.title == "Unknown Guest Tune" \
+                and (t.sample(clock).time_s or 0) > 6.0:
+            break
+    return t.sample(clock), seen
+
+
+for shape in ("json", "osc", "blt"):
+    final, seen = drive(shape)
+    check(f"{shape}: every message the deck sent was readable",
+          seen["rejected"] == 0, f"{seen['rejected']} rejected")
+    check(f"{shape}: two loop-backs and a hot cue are three jumps",
+          final.jump_seq == 3, f"jump_seq={final.jump_seq}")
+    check(f"{shape}: the master switch is a track change, not a jump",
+          seen["titles"] == ["synthetic 128", "Unknown Guest Tune"]
+          and final.track_seq == 2, f"{seen['titles']} track_seq={final.track_seq}")
+    check(f"{shape}: and the new track is playing from where it started",
+          final.state == tpmod.PLAYING and 6.0 < final.time_s < 6.2, f"{final}")
+check("rkbx_link's shape goes silent on pause, which inside the grace period "
+      "is a stall, not a pause", drive("osc")[1]["paused_state"] == tpmod.STALLED)
+check("beat-link-trigger's says so, and the transport pauses at once",
+      drive("blt")[1]["paused_state"] == tpmod.PAUSED)
+paused = {"track_time": 10.0, "playing": False, "deck": "1"}
+check("a paused rkbx_link-shaped packet carries no position at all",
+      not any(m.startswith(b"/master/time") for m in bridgemod.as_osc(paused)))
+for bad in ("dance", "loop:4", "pause:soon", "switch:2"):
+    try:
+        bridgemod.parse_script(bad)
+        check(f"a script step it cannot read is refused: {bad!r}",
+              bad == "loop:4", "accepted")
+    except ValueError:
+        check(f"a script step it cannot read is refused: {bad!r}", True)
+
+# A capture replays byte for byte. Venue captures are the regression tests for
+# the hardware nobody has at a desk, so the bytes are what must survive.
+import capture as capturemod            # noqa: E402
+import socket as socketmod              # noqa: E402
+
+
+def free_port() -> int:
+    with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+cap_port = free_port()
+cap_file = REPO / "engine" / "tests" / "data" / "capture-roundtrip.jsonl"
+recorded: dict = {}
+recorder = threading.Thread(target=lambda: recorded.update(
+    n=capturemod.record(cap_port, cap_file, seconds=1.5)), daemon=True)
+recorder.start()
+time.sleep(0.2)
+sent_bytes: list[bytes] = []
+with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as out:
+    for _, (_, fields) in zip(range(12), bridgemod.deck(128.0, "", hz=60.0)):
+        for message in bridgemod.as_osc(fields):
+            sent_bytes.append(message)
+            out.sendto(message, ("127.0.0.1", cap_port))
+            time.sleep(0.002)
+recorder.join(4)
+check("capture records every datagram",
+      recorded.get("n") == len(sent_bytes) > 10, f"{recorded} of {len(sent_bytes)}")
+sink_port = free_port()
+got_bytes: list[bytes] = []
+with socketmod.socket(socketmod.AF_INET, socketmod.SOCK_DGRAM) as sink:
+    sink.bind(("127.0.0.1", sink_port))
+    sink.settimeout(2.0)
+    bridgemod.run(bridgemod.replay(cap_file), "127.0.0.1", sink_port,
+                  verbose=False)
+    try:
+        while len(got_bytes) < len(sent_bytes):
+            got_bytes.append(sink.recvfrom(4096)[0])
+    except socketmod.timeout:
+        pass
+check("and --replay sends exactly those bytes back, in order",
+      got_bytes == sent_bytes, f"{len(got_bytes)} of {len(sent_bytes)}")
+cap_file.unlink(missing_ok=True)
+
+
+# -- 7c. what the beat-link-trigger expressions must send ------------------------
+#
+# The Clojure in bridges/prolink/blt/ cannot run here. These golden bytes, built
+# by hand from the OSC spec, are what it must put on the wire; the engine must
+# decode them, and the fake bridge's --blt shape must produce them exactly, so
+# testing with --blt is testing against the real expressions' encoding.
+print("\n7c. beat-link-trigger golden bytes")
+golden = json.loads((REPO / "engine" / "tests" / "data" /
+                     "blt_klights_v1_golden.json").read_text(encoding="utf-8"))
+for msg in golden["messages"]:
+    raw = bytes.fromhex(msg["hex"])
+    check(f"golden {msg['name']} decodes as the expressions intend",
+          syncmod.parse(raw) == msg["decodes_to"], f"{syncmod.parse(raw)}")
+byname = {m["name"]: bytes.fromhex(m["hex"]) for m in golden["messages"]}
+v = golden["messages"][0]["values"]
+check("bridge.py --blt sends the golden position bytes",
+      bridgemod.as_blt({"deck": str(v["deck"]), "playing": True,
+                        "track_time": v["time_s"], "beat_number": v["beat_number"]})
+      == [byname["pos"]])
+v = golden["messages"][1]["values"]
+check("and the golden identity bytes",
+      bridgemod.as_blt({"deck": str(v["deck"]), **{k: v[k] for k in
+                        ("rekordbox_id", "signature", "title", "artist",
+                         "album", "duration")}}) == [byname["track"]])
+check("and the golden tempo and bar-phase bytes",
+      bridgemod.as_blt({"bpm": 126.5}) == [byname["bpm"]]
+      and bridgemod.as_blt({"beat_in_bar": 2.0}) == [byname["beat"]])
 osc_sink.stop()
 
 

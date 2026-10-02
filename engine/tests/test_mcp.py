@@ -225,6 +225,117 @@ with tempfile.TemporaryDirectory() as tmp:
           [f["address"] for f in auto["rig"]["fixtures"]] == [1, 12, 23, 34, 40],
           f"{[f['address'] for f in auto['rig']['fixtures']]}")
 
+print("\n6. the show folder (F19k)")
+check("the show tools are listed",
+      {"show_status", "list_tracks", "get_track", "list_routines", "get_routine",
+       "put_routine", "get_timeline", "put_timeline", "edit_timeline",
+       "link_track", "lint_show", "explain_position", "list_template_sets",
+       "get_template_set", "put_template_set"} <= names)
+with tempfile.TemporaryDirectory() as tmp:
+    shows = Path(tmp) / "shows"
+    shutil.copytree(REPO / "shared" / "show-example", shows)
+    sd = str(shows)
+    st, err = server.tool("show_status", show_dir=sd)
+    check("show_status reads the folder", not err and st["tracks"] == ["synth-128"]
+          and st["routines"] == ["build-rise", "fan-drop", "idle-orbit",
+                                 "verse-sweep"], f"{st.get('tracks')}")
+    tracks, err = server.tool("list_tracks", show_dir=sd)
+    check("list_tracks gives phrases with their beats, for writing against",
+          tracks["tracks"][0]["phrases"][3] == "Chorus @160-224",
+          f"{tracks['tracks'][0]['phrases'][:5]}")
+    tl, err = server.tool("get_timeline", show_dir=sd, track="synth-128")
+    rev = tl["rev"]
+    check("get_timeline returns the document and its rev",
+          not err and tl["doc"]["track"] == "synth-128" and rev.startswith("r:"))
+
+    ops = [{"op": "add_item", "row": "hits",
+            "item": {"id": "bo2", "hit": "blackout", "at": 287, "len": 1}},
+           {"op": "update_item", "id": "chorus1", "set": {"fade": 2}}]
+    dry, err = server.tool("edit_timeline", show_dir=sd, track="synth-128", ops=ops)
+    on_disk = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    check("edit_timeline is a dry run unless asked, saying what would change",
+          not err and dry["dry_run"] and not dry["written"]
+          and len(dry["changes"]) == 2 and "bo2" in dry["changes"][0]
+          and not any(i["id"] == "bo2" for r in on_disk["rows"]
+                      for i in r.get("items") or []), f"{dry.get('changes')}")
+    no_rev, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                              ops=ops, write=True)
+    check("writing without base_rev is refused", err and "base_rev is required"
+          in no_rev["errors"][0], f"{no_rev.get('errors')}")
+    stale, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                             ops=ops, write=True, base_rev="r:000000000000")
+    check("and with a stale one", err and "changed since" in stale["errors"][0])
+    done, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                            ops=ops, write=True, base_rev=rev)
+    on_disk = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    check("with the rev it read, it is written",
+          not err and done["written"] and any(
+              i["id"] == "bo2" for r in on_disk["rows"] for i in r.get("items") or []),
+          f"{done.get('errors')}")
+    bad, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                           ops=[{"op": "update_item", "id": "chorus1",
+                                 "set": {"len": 0}}], write=True,
+                           base_rev=done["rev"])
+    check("an edit that makes the timeline invalid is never written",
+          err and not bad["written"] and any("longer than nothing" in e
+                                             for e in bad["errors"]))
+    nope, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                            ops=[{"op": "remove_item", "id": "ghost"}])
+    check("an op that cannot apply says which", err and "no item 'ghost'"
+          in nope["errors"][0])
+
+    routine, _ = server.tool("get_routine", show_dir=sd, id="fan-drop")
+    doc = routine["doc"]
+    doc["variations"]["medium"] = {"width": 40}
+    put, err = server.tool("put_routine", show_dir=sd, doc=doc,
+                           base_rev=routine["rev"], write=True)
+    check("put_routine saves a whole routine", not err and put["written"])
+    doc["rows"][0]["role"] = "lasers"
+    put, err = server.tool("put_routine", show_dir=sd, doc=doc)
+    check("and refuses one that does not validate", err and any(
+        "lasers" in e for e in put["errors"]))
+
+    lint, err = server.tool("lint_show", show_dir=sd, event="despacio")
+    check("lint_show against despacio: nothing wrong", not err and lint["ok"]
+          and lint["rig_problems"] == {}, f"{lint}")
+    edit = [{"op": "update_item", "id": "lazy", "set": {"look": "Not A Look"}}]
+    tl, _ = server.tool("get_timeline", show_dir=sd, track="synth-128")
+    server.tool("edit_timeline", show_dir=sd, track="synth-128", ops=edit,
+                write=True, base_rev=tl["rev"])
+    lint, err = server.tool("lint_show", show_dir=sd, event="despacio")
+    check("and a look the rig does not have is a rig problem",
+          err and any("Not A Look" in p
+                      for p in lint["rig_problems"].get("synth-128", [])),
+          f"{lint.get('rig_problems')}")
+
+    # Beat 162: the edit above gave chorus1 a 2-beat fade from bar 41.
+    ex, err = server.tool("explain_position", show_dir=sd, track="synth-128",
+                          beat=162, event="despacio")
+    check("explain_position: bar 41, the chorus on the scene lane, and what "
+          "the movers do", not err and ex["bar"] == 41
+          and ex["channels"]["color"][0]["item"] == "chorus1"
+          and ex["rig"]["fixtures"]["Moving Head #1"]["color"] == "#ff2d6f",
+          f"{ex.get('channels', {}).get('color')}")
+    link, err = server.tool("link_track", show_dir=sd, track="synth-128",
+                            title="Synth (Guest Edit)", artist="Someone")
+    check("link_track is a dry run first",
+          not err and link["dry_run"] and link["would_add"]["title"]
+          == "Synth (Guest Edit)")
+    link, err = server.tool("link_track", show_dir=sd, track="synth-128",
+                            title="Synth (Guest Edit)", artist="Someone",
+                            write=True)
+    saved = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    check("and saves the alias when asked", link["written"]
+          and saved["aliases"][-1]["title"] == "Synth (Guest Edit)")
+    ts, err = server.tool("get_template_set", show_dir=sd, id="club")
+    ts["doc"]["phrases"]["Bridge"] = {"routine": "idle-orbit"}
+    put, err = server.tool("put_template_set", show_dir=sd, doc=ts["doc"],
+                           base_rev=ts["rev"], write=True)
+    check("template sets edit the same way", not err and put["written"])
+    missing, err = server.tool("get_track", show_dir=sd, id="nope")
+    check("asking for something absent is an error that says so",
+          err and "no track 'nope'" in missing["errors"][0])
+
 stderr = server.close()
 check("nothing was written to stdout that was not JSON-RPC", True)
 check("the server logged no tracebacks", "Traceback" not in stderr,

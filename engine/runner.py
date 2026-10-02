@@ -130,6 +130,12 @@ class Runner:
     # controller re-attach live overrides to a Show that auto mode just rebuilt.
     on_show: Optional[Callable[[statemod.Show], None]] = None
     on_frame: Optional[Callable[[dict[int, statemod.FixtureState]], None]] = None
+    # Called with auto mode's show every frame; returns the show to run
+    # instead. The seam a timeline (F19i) takes the stage through: it returns
+    # the SAME Show object frame after frame while it drives, so `set_show` does
+    # nothing, and auto mode's show again the moment it stops. The runner never
+    # learns what a track is.
+    choose_show: Optional[Callable[[statemod.Show], statemod.Show]] = None
 
     def __post_init__(self) -> None:
         self.applied_timing = install_timing_contract()
@@ -235,9 +241,11 @@ class Runner:
             # rate from anyway.
             self.ctx.set_phase(position.bar)
         else:
-            self.set_show(self.director.update(position,
-                                               self.clock.phrase_measured))
+            show = self.director.update(position, self.clock.phrase_measured)
             self.director.apply(self.ctx)
+            if self.choose_show is not None:
+                show = self.choose_show(show)
+            self.set_show(show)
         if self.on_show is not None:
             self.on_show(self.show)
 

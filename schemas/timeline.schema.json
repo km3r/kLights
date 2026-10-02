@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/timeline.schema.json",
+  "title": "cosmos timeline",
+  "description": "The hand-built show for one track: lanes of routines, looks, snapshots, palette changes, hits and automation, in beats on the track's grid.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.timeline"
+      ],
+      "description": "\"klights.timeline\" -- it says which format the file is"
+    },
+    "track": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the id of the track in tracks/ this timeline belongs to"
+    },
+    "grid_rev": {
+      "type": "string",
+      "description": "the grid rev it was drawn on; set by the designer"
+    },
+    "palettes": {
+      "type": "object",
+      "description": "{\"Cool\": {\"primary\": \"#3b82f6\", \"secondary\": ..., \"accent\": ...}}"
+    },
+    "palette": {
+      "type": "string",
+      "description": "the palette in force wherever no palette clip is"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "clips",
+              "hits",
+              "automation",
+              "external"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "clips"
+              },
+              "target": {
+                "type": "string",
+                "enum": [
+                  "scene",
+                  "movement",
+                  "color",
+                  "level",
+                  "palette"
+                ]
+              },
+              "gap": {
+                "type": "string",
+                "enum": [
+                  "fill",
+                  "exclusive"
+                ],
+                "description": "fill: lanes below, then the template, show through gaps. exclusive: this lane owns the track -- in its gaps nothing drives it"
+              },
+              "role": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "description": "an item on a lane: a routine, a look, a snapshot or a palette change",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": -64,
+                      "maximum": 65536,
+                      "description": "beats from the track's first downbeat, not seconds"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "kind": {
+                      "enum": [
+                        "routine",
+                        "look",
+                        "snapshot",
+                        "palette"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "id",
+                    "kind",
+                    "len"
+                  ],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "routine"
+                        },
+                        "routine": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "variation": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object"
+                        },
+                        "bind": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "routine"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "look"
+                        },
+                        "look": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "groups": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "look"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "snapshot"
+                        },
+                        "preset": {
+                          "type": "string"
+                        },
+                        "movement": {
+                          "type": "object"
+                        },
+                        "color": {
+                          "type": "object"
+                        },
+                        "level": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "palette"
+                        },
+                        "palette": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "palette"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "target",
+              "items"
+            ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "hits"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": -64,
+                      "maximum": 65536,
+                      "description": "beats from the track's first downbeat, not seconds"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "hit": {
+                      "type": "string",
+                      "enum": [
+                        "flash",
+                        "strobe",
+                        "blackout"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "description": "which fixtures; none means all of them"
+                    },
+                    "level": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "envelope": {
+                      "type": "string",
+                      "enum": [
+                        "hold",
+                        "decay"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "len",
+                    "hit"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "automation"
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1
+              },
+              "points": {
+                "type": "array",
+                "description": "[[beat, value], [beat, value, \"ease\"], ...]"
+              }
+            },
+            "required": [
+              "type",
+              "target",
+              "points"
+            ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "external"
+              },
+              "output": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type",
+              "output"
+            ]
+          }
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "track",
+    "rows"
+  ],
+  "additionalProperties": true
+}

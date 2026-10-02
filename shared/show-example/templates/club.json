@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../schemas/template_set.schema.json",
+  "kind": "klights.template_set",
+  "version": 1,
+  "id": "club",
+  "name": "Club",
+  "palettes": {
+    "Cool": {
+      "primary": "#3b82f6",
+      "secondary": "#14b8a6",
+      "accent": "#e2e8f0"
+    },
+    "Hot": {
+      "primary": "#ff2d6f",
+      "secondary": "#ff8a00",
+      "accent": "#ffffff"
+    }
+  },
+  "palette": "Cool",
+  "phrases": {
+    "Intro": {
+      "routine": "idle-orbit"
+    },
+    "Verse": {
+      "routine": "verse-sweep"
+    },
+    "Up": {
+      "routine": "build-rise"
+    },
+    "Chorus": {
+      "routine": "fan-drop",
+      "variation": "wide",
+      "palette": "Hot"
+    },
+    "Down": {
+      "routine": "idle-orbit",
+      "params": {
+        "color": "@secondary"
+      }
+    },
+    "Bridge": {
+      "routine": "verse-sweep",
+      "variation": "wide"
+    },
+    "Outro": {
+      "routine": "idle-orbit"
+    },
+    "*": {
+      "routine": "verse-sweep"
+    }
+  },
+  "bars": {
+    "every": 16,
+    "cycle": [
+      {
+        "routine": "verse-sweep"
+      },
+      {
+        "routine": "fan-drop",
+        "palette": "Hot"
+      }
+    ]
+  },
+  "transition": {
+    "fade_beats": 2
+  }
+}

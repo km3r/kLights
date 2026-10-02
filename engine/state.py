@@ -36,8 +36,9 @@ frames against QLC+ during the parity check), but the engine does not arbitrate.
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Callable, Optional, Sequence
+from typing import Callable, Iterator, Optional, Sequence
 
 from . import geometry as geo
 from . import rig as rigmod
@@ -161,6 +162,26 @@ class EvalContext:
         model.
         """
         self.motion_bar = self.color_bar = self.level_bar = bars
+
+    @contextmanager
+    def scoped(self, **fields) -> Iterator["EvalContext"]:
+        """Set some of the context for the duration of a block, then put it
+        back exactly.
+
+        For a timeline (F19h), where one frame evaluates several sources each
+        on its OWN time: a routine clip runs on its clip-local phase with its
+        own size, while the fallback show under it keeps the show's. Layers
+        read the context, so the context is what has to change -- and it must
+        come back even if a layer raises, or the next source would inherit it.
+        """
+        saved = {name: getattr(self, name) for name in fields}
+        try:
+            for name, value in fields.items():
+                setattr(self, name, value)
+            yield self
+        finally:
+            for name, value in saved.items():
+                setattr(self, name, value)
 
 
 SLOTS = ("movement", "color", "level")
@@ -354,28 +375,33 @@ def move_layer(offset: Callable[[EvalContext, int], tuple[float, float]],
     every effect in the workspace to be rebuilt as relative.
     """
     def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
-        size = ctx.move_size
-        centre_b, centre_e = ctx.move_center
         for f in _targets(ctx, tags):
             state = out[f.fid]
             if state.aim is None or f.head is None:
                 continue
-            d_bearing, d_elev = offset(ctx, f.head)
-            # SIZE scales about zero, and zero is each head's own calibrated
-            # ball aim, because that is what these offsets are relative to. So
-            # size 0 collapses every head onto the ball and size 2 doubles the
-            # excursion -- about the look's own centre, per head, with no extra
-            # geometry. CENTRE then moves the whole thing off the ball, which is
-            # what turns one "Ball Wave" into the "Floor Wave" that used to need
-            # its own entry.
-            #
-            # Applied here rather than in each of the three offset builders
-            # because this is the single point every movement offset passes
-            # through, and three copies of it would be three chances to differ.
-            state.aim = geo.Aim(
-                state.aim.bearing_delta + d_bearing * size + centre_b,
-                state.aim.elev_deg + d_elev * size + centre_e)
+            offset_aim(ctx, state, *offset(ctx, f.head))
     return layer
+
+
+def offset_aim(ctx: EvalContext, state: FixtureState, d_bearing: float,
+               d_elev: float) -> None:
+    """Move one head's aim by an offset, through the shape macros.
+
+    SIZE scales about zero, and zero is each head's own calibrated ball aim,
+    because that is what these offsets are relative to. So size 0 collapses
+    every head onto the ball and size 2 doubles the excursion -- about the
+    look's own centre, per head, with no extra geometry. CENTRE then moves the
+    whole thing off the ball, which is what turns one "Ball Wave" into the
+    "Floor Wave" that used to need its own entry.
+
+    The single point every movement offset passes through -- the ported looks
+    via `move_layer`, the timeline's blocks (F19h) directly -- because two
+    copies of it would be two chances to differ.
+    """
+    centre_b, centre_e = ctx.move_center
+    state.aim = geo.Aim(
+        state.aim.bearing_delta + d_bearing * ctx.move_size + centre_b,
+        state.aim.elev_deg + d_elev * ctx.move_size + centre_e)
 
 
 def intensity_layer(level: Callable[[EvalContext, "rigmod.PatchedFixture"], float],
