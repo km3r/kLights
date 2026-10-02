@@ -46,7 +46,8 @@ python -m engine.server --artnet 255.255.255.255
 ```
 
 Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
-`--no-token`, `--sync-port` (tempo from a DJ). `--help` lists them all.
+`--no-token`, `--sync-port` (tempo from a DJ), `--show-dir` (prepped tracks
+and their timelines). `--help` lists them all.
 
 Before a show, run everything that must be green:
 
@@ -185,7 +186,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 21 suites, no test framework
+python -m engine.tests    # 23 suites, no test framework
 cd ui && npm test         # the console
 ```
 

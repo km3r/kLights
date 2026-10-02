@@ -11,6 +11,30 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19f: which prepped track is playing
+
+- **`--show-dir`** points the engine at a show folder (or `$KLIGHTS_SHOW_DIR`,
+  or `show_dir` in `klights.local.json`). Without one nothing below exists.
+- **Matching**, in layers, strongest first: beat-link's signature; a rekordbox
+  id, only where the title agrees (every USB stick numbers from 1); a manual
+  link; title + artist + album; title + artist -- the last three only where the
+  durations could be one file. Two tracks at the deciding layer are
+  *ambiguous* and neither plays. The snapshot's `track.match` says which track
+  and how it knows; the Sync card shows it.
+- **`track_link`** (configure): "this playing track is that prepped track".
+  Saved on the prepped track as an alias, plus the deck's signature when
+  beat-link sent one. It applies from the track's **next play**, never
+  mid-song.
+- **Hot reload that never moves a playing track.** The folder is polled on its
+  own thread, reloaded on the worker, and swapped in by one reference; the
+  playing track keeps the load it was matched against until it changes. A file
+  broken by a half-finished sync keeps its last good version (`Folder.failed`).
+  `show_reload` (configure) reloads at once. `show.json`'s per-source latency,
+  pause grace and track-change limit now reach the transport.
+- **Grid cross-check.** rkbx_link's bar phase, or beat-link's beat count, is
+  compared with the prepped grid; two seconds of disagreement is
+  `track.grid_warning`, with the offset in beats.
+
 ### Added — F19e: the wire format, shipped to both sources
 
 - **`bridges/prolink/blt/klights.clj`**: the beat-link-trigger expressions that

@@ -1446,6 +1446,274 @@ try:
 finally:
     djs.stop()
 
+# -- 16. the show folder: matching, linking, hot reload (F19f) ----------------
+#
+# Driven by hand rather than by the frame loop: every sync carries the arrival
+# time it would have had, worker jobs are waited for, and their results are
+# installed by calling `_drain` -- exactly what the frame loop does, minus the
+# races. The worker is the real one, on its real thread.
+print("\n16. the show folder: matching, linking, hot reload, the grid check")
+from engine import showlibrary   # noqa: E402
+
+shows_tmp = Path(tempfile.mkdtemp(prefix="klights-shows-"))
+shows = shows_tmp / "shows"
+shutil.copytree(REPO / "shared" / "show-example", shows)
+load_threads: list[str] = []
+real_load = showlibrary.load
+
+
+def spy_load(*args, **kwargs):
+    load_threads.append(threading.current_thread().name)
+    return real_load(*args, **kwargs)
+
+
+showlibrary.load = spy_load
+sc = ShowController(REPO / "events" / "despacio", show_dir=shows)
+sc.worker.start()
+GUEST_SIG = "d" * 40
+
+
+def settle():
+    """Let the worker finish, then install what it handed back."""
+    for _ in range(3):              # a job's result may queue another job
+        assert sc.worker.wait_idle(5.0)
+        sc._drain()
+
+
+def at(t):
+    sc.ctx.time = t                 # runner.now() before start
+    return t
+
+
+def blt_track(t, title, artist="", album="", duration=0.0, rid=1, sig=None):
+    msg = {"type": "sync", "source": "blt", "deck": "1", "title": title,
+           "artist": artist, "album": album, "duration": duration,
+           "rekordbox_id": rid}
+    if sig:
+        msg["signature"] = sig
+    sc.apply(msg, None, at(t))
+
+
+def blt_play(t0, seconds, start_s=10.0, beat_offset=0, hz=25):
+    """beat-link's /klights/v1/pos: position and beat count in one packet,
+    counted on the synthetic track's grid as it is in the folder NOW."""
+    grid = sc.show_library.grids["synth-128"]
+    n = int(seconds * hz)
+    for i in range(n):
+        pos = start_s + i / hz
+        count = int(grid.beat_at(pos) // 1) - int(grid.beats[0]) + 1
+        sc.apply({"type": "sync", "source": "blt", "deck": "1",
+                  "track_time": pos, "playing": True, "pitch": 1.0,
+                  "beat_number": max(0, count + beat_offset)},
+                 None, at(t0 + i / hz))
+    end = t0 + n / hz
+    sc._track_frame(at(end))
+    return end
+
+
+def track_now():
+    return sc.snapshot()["track"]
+
+
+try:
+    plain = ShowController(REPO / "events" / "despacio")
+    check("with no show folder, none of it exists",
+          plain.snapshot()["show"] is None
+          and plain.snapshot()["track"]["match"] is None
+          and plain._track_frame() is None)
+    try:
+        plain.apply({"type": "track_link", "track_id": "synth-128"}, None)
+        refused = False
+    except ValueError as exc:
+        refused = "--show-dir" in str(exc)
+    check("and track_link says to start with --show-dir", refused)
+
+    show = sc.snapshot()["show"]
+    check("the snapshot describes the folder", show["dir"] == str(shows)
+          and show["tracks"] == 1 and show["timelines"] == 1
+          and show["errors"] == 0 and show["rev"].startswith("l:"), f"{show}")
+    check("the first load happens at startup, before anything runs",
+          load_threads == ["MainThread"], f"{load_threads}")
+    check("and show.json's settings are on the transport",
+          sc.transport.min_track_change_s == 2.0 and sc.transport.grace_s == 4.0)
+
+    # The fake deck's first track: bridge.py --fake --blt plays exactly this.
+    t = 100.0
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 3.0)
+    tr_ = track_now()
+    check("the synthetic track matches its prepped file",
+          tr_["match"] is not None and tr_["match"]["track_id"] == "synth-128"
+          and tr_["match"]["via"] == "title_artist_album"
+          and tr_["match"]["stale"] is False, f"{tr_['match']}")
+    check("and its beats agree with the grid: no warning",
+          tr_["grid_warning"] is None, f"{tr_['grid_warning']}")
+    synth_pin = sc.pinned
+
+    # Hot reload, mid-song: the grid moves under a playing track.
+    doc = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    doc["grid"]["segments"] = [[0, 250, 128]]
+    doc["grid"].pop("rev", None)
+    (shows / "tracks" / "synth-128.json").write_text(json.dumps(doc), "utf-8")
+    sc.watcher.poll()
+    sc.watcher.poll()                       # held still for a poll: reload
+    settle()
+    check("an edit is noticed and reloaded on the worker",
+          load_threads[-1:] == ["klights-worker"]
+          and sc.show_library.grids["synth-128"].times[0] == 0.25, f"{load_threads}")
+    t = blt_play(t, 1.0, start_s=13.0)
+    check("but the playing track keeps the grid it started with",
+          sc.pinned is synth_pin and sc.pinned.grid.times[0] == 0.0)
+    check("and the console says the folder changed since it matched",
+          track_now()["match"]["stale"] is True)
+    check("the snapshot's folder rev moves with the reload",
+          sc.snapshot()["show"]["rev"] != show["rev"])
+
+    # A guest's copy of something: unknown here.
+    t += 2.5
+    blt_track(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2, sig=GUEST_SIG)
+    t = blt_play(t, 1.0)
+    tr_ = track_now()
+    check("a guest's track is unmatched, and says so",
+          tr_["match"] == {"track_id": None, "via": "none", "candidates": [],
+                           "stale": False}, f"{tr_['match']}")
+    check("and has no grid to check against", sc.grid_check is None
+          and tr_["grid_warning"] is None)
+
+    # Refusals first.
+    for bad, why in (({"track_id": "nope"}, "no prepped track"),
+                     ({"track_id": "../x"}, "no prepped track"),
+                     ({}, "no prepped track")):
+        try:
+            sc.apply({"type": "track_link", **bad}, None, at(t))
+            refused = False
+        except ValueError as exc:
+            refused = why in str(exc)
+        check(f"track_link refuses {bad}", refused)
+    operator = servermod.Client(id="op", name="op", tier="operate")
+    try:
+        sc.apply({"type": "track_link", "track_id": "synth-128"}, operator, at(t))
+        refused = False
+    except ValueError as exc:
+        refused = "needs configure" in str(exc)
+    check("linking is configure-tier: it writes the show folder", refused)
+
+    reply = sc.apply({"type": "track_link", "track_id": "synth-128"}, None, at(t))
+    check("a link is queued, and says when it applies",
+          reply == {"queued": True, "track_id": "synth-128",
+                    "applies": "next_play"}, f"{reply}")
+    settle()
+    linked = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    check("the guest's description is saved as an alias, with its signature",
+          linked["aliases"][-1]["title"] == "Unknown Guest Tune"
+          and linked["aliases"][-1]["via"] == "manual"
+          and GUEST_SIG in linked["ids"]["blt_signatures"], f"{linked['aliases']}")
+    check("a notice says so, and that it applies from the next play",
+          any("linked 'Unknown Guest Tune' to synth-128" in n
+              and "next play" in n for n in sc.notices), f"{sc.notices[-2:]}")
+    t = blt_play(t, 1.0, start_s=20.0)
+    check("the playing track is NOT re-matched mid-song",
+          track_now()["match"]["via"] == "none"
+          and track_now()["match"]["stale"] is True, f"{track_now()['match']}")
+
+    t += 2.5
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 1.0)
+    check("the next track matches against the new folder, new grid and all",
+          sc.pinned.grid.times[0] == 0.25
+          and track_now()["match"]["stale"] is False)
+    t += 2.5
+    blt_track(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2, sig=GUEST_SIG)
+    t = blt_play(t, 1.0)
+    check("and the guest's track, played again, is linked -- by its signature",
+          track_now()["match"]["track_id"] == "synth-128"
+          and track_now()["match"]["via"] == "signature", f"{track_now()['match']}")
+
+    # rkbx_link sends no signature: the alias is what matches it.
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    for i, (key, value) in enumerate((("title", "Unknown Guest Tune"),
+                                      ("artist", "Guest DJ"), ("album", ""))):
+        sc.apply({"type": "sync", "source": "rkbx", key: value}, None,
+                 at(t + i * 0.002))
+    sc.apply({"type": "sync", "source": "rkbx", "track_time": 30.0}, None,
+             at(t + 0.2))
+    sc._track_frame(at(t + 0.21))
+    check("from rekordbox, the same track matches by the saved alias",
+          track_now()["match"]["via"] == "alias", f"{track_now()['match']}")
+    t += 0.3
+
+    # The grid cross-check, from both sources.
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 3.0, beat_offset=1)
+    check("a beat count one ahead of the grid raises a warning saying so",
+          track_now()["grid_warning"] == {"kind": "number", "offset_beats": 1.0},
+          f"{track_now()['grid_warning']}")
+    t = blt_play(t, 3.0, start_s=13.0)
+    check("and in step again, it clears", track_now()["grid_warning"] is None,
+          f"{track_now()['grid_warning']}")
+
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    for i, (key, value) in enumerate((("title", "synthetic 128"),
+                                      ("artist", "kLights"),
+                                      ("album", "test track"))):
+        sc.apply({"type": "sync", "source": "rkbx", key: value}, None,
+                 at(t + i * 0.002))
+    grid = sc.show_library.grids["synth-128"]
+    for i in range(int(3.0 * 60)):
+        pos = 40.0 + i / 60
+        sc.apply({"type": "sync", "source": "rkbx", "track_time": pos,
+                  "bpm": 128.0, "bpm_original": 128.0}, None, at(t + 0.2 + i / 60))
+        phase = (grid.beat_at(pos) + 0.5) % 4
+        sc.apply({"type": "sync", "source": "rkbx", "beat_in_bar": phase},
+                 None, at(t + 0.2 + i / 60 + 0.001))
+    t += 3.3
+    sc._track_frame(at(t))
+    warning = track_now()["grid_warning"]
+    check("rkbx_link's bar phase half a beat off the grid is caught too",
+          warning is not None and warning["kind"] == "phase"
+          and abs(warning["offset_beats"] - 0.5) < 0.05, f"{warning}")
+
+    # A signature can belong to one track only.
+    other = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    other.update(id="other", aliases=[])
+    other["identity"]["title"] = "Other"
+    other["ids"]["blt_signatures"] = ["e" * 40]
+    (shows / "tracks" / "other.json").write_text(json.dumps(other), "utf-8")
+    sc.apply({"type": "show_reload"}, None, at(t))
+    settle()
+    check("show_reload reads the folder now", sc.snapshot()["show"]["tracks"] == 2)
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    blt_track(t, "Some Copy", "Somebody", "", 200.0, rid=9, sig="e" * 40)
+    t = blt_play(t, 0.5)
+    try:
+        sc.apply({"type": "track_link", "track_id": "synth-128"}, None, at(t))
+        refused = False
+    except ValueError as exc:
+        refused = "already belongs to 'other'" in str(exc)
+    check("a signature already linked elsewhere is not linked twice", refused)
+
+    # A broken edit mid-show keeps the last good version.
+    (shows / "timelines" / "synth-128.json").write_text("{", "utf-8")
+    sc.apply({"type": "show_reload"}, None, at(t))
+    settle()
+    show = sc.snapshot()["show"]
+    check("a timeline broken by a half-finished sync keeps its last good version",
+          "synth-128" in sc.show_library.folder.timelines and show["failed"] == 1
+          and show["errors"] >= 1, f"{show}")
+    check("and the console is told", any("show folder:" in n for n in sc.notices),
+          f"{sc.notices[-2:]}")
+    check("and the problem is in the snapshot, first",
+          "not valid JSON" in show["problems"][0], f"{show['problems'][:1]}")
+finally:
+    showlibrary.load = real_load
+    sc.worker.stop()
+    shutil.rmtree(shows_tmp, ignore_errors=True)
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

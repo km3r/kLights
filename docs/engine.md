@@ -139,7 +139,7 @@ run and embedded in the printed URL.
 |---|---|
 | **view** | watch only; every command is refused with a reason |
 | **operate** | drive the show — looks, colour, cues, master, **panic** |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*` |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload` |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
@@ -190,6 +190,24 @@ beat 0 is the first downbeat, and the grid is the only thing that turns a
 position in the audio into a beat. `python -m engine.showfiles check` validates
 a folder; [`shared/show-example/`](../shared/show-example/) is a complete one.
 
+**In a running engine** ([`showlibrary.py`](../engine/showlibrary.py)) the
+folder is one immutable load: every valid document, the match index, each
+track's grid. A watcher thread polls file sizes and mtimes about once a second
+(no OS notifications: shared-folder mounts are where they fail), the worker
+reloads, and the output thread swaps the new load in by one reference. A file
+broken mid-sync keeps its last good version. **A reload never changes the
+playing track**: its match, grid and (later) timeline are pinned until the
+track changes, so an edit or a manual link applies from the track's next play.
+
+**Which track is playing** ([`tracks.py`](../engine/tracks.py)) is matched in
+layers: signature, rekordbox id (only with an agreeing title), manual alias,
+title + artist + album, title + artist, the last three only where durations
+agree. More than one track at the deciding layer is ambiguous and nothing
+plays. `track_link {track_id}` records the playing description as an alias on
+a prepped track. The deck's own beats are checked against the prepped grid --
+rkbx_link's bar phase to a tenth of a beat, beat-link's count to a whole beat --
+and two seconds of disagreement shows as `track.grid_warning`.
+
 ## Where to look
 
 | question | file |
@@ -206,6 +224,8 @@ a folder; [`shared/show-example/`](../shared/show-example/) is a complete one.
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |
 | DJ tempo ingest | [`sync.py`](../engine/sync.py) |
+| which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |
+| the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
 
 ## Tests
 

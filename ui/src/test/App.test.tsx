@@ -1038,6 +1038,52 @@ describe("dj sync", () => {
     expect(screen.getByText(/1:01 \/ 6:12 · playing · \+6\.0%/)).toBeInTheDocument();
   });
 
+  it("says which prepped track it is, how it knows, and when a change applies", () => {
+    const socket = mount();
+    const playing = (match: object, grid_warning: object | null = null) =>
+      stateWith((s) => {
+        s.sync = { ...s.sync, listening: true, driving: true, age: 0.1 };
+        s.track = { state: "playing", title: "Night Drive", artist: null,
+                    album: null, duration: null, source: "blt", deck: "1",
+                    time: 30, rate: 1, age: 0.02, track_seq: 3, jump_seq: 0,
+                    on_air: true, match: match as never,
+                    grid_warning: grid_warning as never };
+      });
+    act(() => socket.push(playing({ track_id: "night-drive", via: "signature",
+                                    candidates: ["night-drive"], stale: false })));
+    expect(screen.getByText(/· by signature/)).toBeInTheDocument();
+    expect(screen.getByText("night-drive")).toBeInTheDocument();
+
+    // A save or a manual link mid-song is not ignored -- it is waiting.
+    act(() => socket.push(playing({ track_id: "night-drive", via: "title_artist",
+                                    candidates: ["night-drive"], stale: true })));
+    expect(screen.getByText(/folder changed, applies next play/)).toBeInTheDocument();
+
+    act(() => socket.push(playing({ track_id: null, via: "ambiguous",
+                                    candidates: ["dup-1", "dup-2"], stale: false })));
+    expect(screen.getByText(/could be dup-1, dup-2 — not guessing/)).toBeInTheDocument();
+
+    act(() => socket.push(playing({ track_id: null, via: "none", candidates: [],
+                                    stale: false })));
+    expect(screen.getByText("not in the show folder")).toBeInTheDocument();
+  });
+
+  it("warns when the deck's beats disagree with the prepped grid", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.1 };
+      s.track = { state: "playing", title: "Night Drive", artist: null,
+                  album: null, duration: null, source: "rkbx", deck: null,
+                  time: 30, rate: 1, age: 0.02, track_seq: 3, jump_seq: 0,
+                  on_air: null,
+                  match: { track_id: "night-drive", via: "alias",
+                           candidates: ["night-drive"], stale: false },
+                  grid_warning: { kind: "phase", offset_beats: -0.5 } };
+    })));
+    expect(screen.getByText(/puts the beat 0.5 beat\(s\) behind the prepped grid/))
+      .toBeInTheDocument();
+  });
+
   it("says when the packets are late, rather than calling the deck stopped", () => {
     const socket = mount();
     act(() => socket.push(stateWith((s) => {

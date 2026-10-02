@@ -226,6 +226,49 @@ export interface TrackState {
   track_seq: number;
   jump_seq: number;
   on_air: boolean | null;
+  /** Which prepped track this is (F19f). Null with no show folder, or with
+   *  nothing identified playing. Absent from an engine older than F19f. */
+  match?: TrackMatch | null;
+  /** The deck's own beats disagree with the prepped grid. */
+  grid_warning?: GridWarning | null;
+}
+
+/** What the playing track was matched to in the show folder. Fixed for the
+ *  whole play: a change to the folder, a manual link included, applies from
+ *  the track's next play, and `stale` says one is waiting. */
+export interface TrackMatch {
+  track_id: string | null;
+  via: "signature" | "rekordbox_id" | "alias" | "title_artist_album"
+     | "title_artist" | "ambiguous" | "none";
+  /** Every track that fitted; more than one is `ambiguous`. At most five. */
+  candidates: string[];
+  stale: boolean;
+}
+
+/** `offset_beats` is how far AHEAD of the grid the deck puts the beat.
+ *  "phase" is rekordbox's bar phase (blind to whole bars); "number" is a CDJ's
+ *  beat count (whole beats only). */
+export interface GridWarning {
+  kind: "phase" | "number";
+  offset_beats: number;
+}
+
+/** The show folder the engine is pointed at, in summary. The documents
+ *  themselves are never in the snapshot. */
+export interface ShowFolderState {
+  dir: string;
+  /** Changes whenever any loaded document does. */
+  rev: string;
+  tracks: number;
+  timelines: number;
+  routines: number;
+  templates: number;
+  errors: number;
+  warnings: number;
+  /** Files broken since they last loaded, running on their last good version. */
+  failed: number;
+  /** The first few problems, errors first. */
+  problems: string[];
 }
 
 export interface EngineState {
@@ -262,6 +305,8 @@ export interface EngineState {
   sync: SyncState;
   /** Absent from an engine older than F19d. */
   track?: TrackState;
+  /** Null with no show folder; absent from an engine older than F19f. */
+  show?: ShowFolderState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */

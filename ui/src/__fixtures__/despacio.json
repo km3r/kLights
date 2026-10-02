@@ -180,8 +180,11 @@
     "age": null,
     "track_seq": 0,
     "jump_seq": 0,
-    "on_air": null
+    "on_air": null,
+    "match": null,
+    "grid_warning": null
   },
+  "show": null,
   "auto": {
     "look": "Lazy Circle",
     "held": true,

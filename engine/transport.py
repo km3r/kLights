@@ -125,6 +125,10 @@ class TrackSample:
     beat_number: Optional[int] = None
     beat_in_bar: Optional[float] = None
     on_air: Optional[bool] = None
+    # Position at the instant asked about, with NO latency applied -- where the
+    # deck itself is, for comparing against what the deck says about its own
+    # beats (the grid cross-check), which carries the same lack of latency.
+    raw_time_s: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -237,19 +241,24 @@ class TrackTransport:
         if st.p0 is None:
             return TrackSample(state=PAUSED, time_s=None, rate=0.0, **common)
         if st.playing is False:
-            return TrackSample(state=PAUSED, time_s=st.p0, rate=0.0, **common)
+            return TrackSample(state=PAUSED, time_s=st.p0, rate=0.0,
+                               raw_time_s=st.p0, **common)
         if st.scratch_hold is not None and \
                 now - st.back_jumps[-1] < SCRATCH_RELEASE_S:
             return TrackSample(state=REVERSE, time_s=st.scratch_hold, rate=0.0,
-                               **common)
+                               raw_time_s=st.scratch_hold, **common)
         rate = st.rate
         elapsed = min(max(0.0, at - st.t0), st.stall_after)
         time_s = st.p0 + rate * elapsed
+        raw = st.p0 + rate * min(max(0.0, now - st.t0), st.stall_after)
         if age is not None and age > self.grace_s:
-            return TrackSample(state=PAUSED, time_s=time_s, rate=0.0, **common)
+            return TrackSample(state=PAUSED, time_s=time_s, rate=0.0,
+                               raw_time_s=raw, **common)
         if age is not None and age > st.stall_after:
-            return TrackSample(state=STALLED, time_s=time_s, rate=rate, **common)
-        return TrackSample(state=PLAYING, time_s=time_s, rate=rate, **common)
+            return TrackSample(state=STALLED, time_s=time_s, rate=rate,
+                               raw_time_s=raw, **common)
+        return TrackSample(state=PLAYING, time_s=time_s, rate=rate,
+                           raw_time_s=raw, **common)
 
     # -- the rules -----------------------------------------------------------
 

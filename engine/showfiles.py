@@ -725,6 +725,9 @@ class Folder:
     revs: dict[str, str] = field(default_factory=dict)          # rel path -> rev
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # rel path -> why, for files that failed and are running on their last good
+    # version instead (see load_folder's `previous`)
+    failed: dict[str, str] = field(default_factory=dict)
 
 
 _CONFLICT_RE = re.compile(
@@ -801,10 +804,16 @@ def read_doc(path: Path, kind: str) -> tuple[Result, Optional[str]]:
     return result, rev_of(data)
 
 
-def load_folder(root: Path) -> Folder:
+def load_folder(root: Path, previous: Optional[Folder] = None) -> Folder:
     """Read a whole show folder. Invalid files are reported and left out;
     nothing is raised for a bad file, because one bad timeline must not stop
     the other forty loading.
+
+    Given the `previous` load, a file that WAS good and now is not keeps its
+    last good version, and `failed` says so. That is a reload during a show: a
+    timeline half-written by a sync, or saved mid-edit with a stray comma, must
+    not make the track it belongs to go dark. A file that was never good has
+    nothing to keep and is simply left out, as on a first load.
 
     Cross-file problems -- a timeline for a track not in the library, a routine
     clip naming a routine that is not there -- are warnings: in a folder that
@@ -813,6 +822,7 @@ def load_folder(root: Path) -> Folder:
     """
     root = Path(root)
     folder = Folder(root=root)
+    before = _by_rel(previous) if previous is not None else {}
     if not root.is_dir():
         folder.errors.append(f"show folder {root} does not exist; create it "
                              f"with `python -m engine.showfiles init {root}`")
@@ -826,6 +836,9 @@ def load_folder(root: Path) -> Folder:
         if result.ok:
             folder.show = result.doc
             folder.revs["show.json"] = rev
+        elif "show.json" in before:
+            folder.show = before["show.json"][0]
+            _kept(folder, "show.json", before["show.json"][1], result)
 
     targets = {"track": folder.tracks, "timeline": folder.timelines,
                "routine": folder.routines, "template_set": folder.templates}
@@ -853,9 +866,35 @@ def load_folder(root: Path) -> Folder:
             if result.ok:
                 targets[kind][path.stem] = result.doc
                 folder.revs[rel] = rev
+            elif rel in before:
+                targets[kind][path.stem] = before[rel][0]
+                _kept(folder, rel, before[rel][1], result)
 
     _cross_check(folder)
     return folder
+
+
+def _by_rel(folder: Folder) -> dict[str, tuple[dict, str]]:
+    """A loaded folder's documents by relative path, with their revs."""
+    out: dict[str, tuple[dict, str]] = {}
+    if folder.show is not None and "show.json" in folder.revs:
+        out["show.json"] = (folder.show, folder.revs["show.json"])
+    for kind, docs in (("track", folder.tracks), ("timeline", folder.timelines),
+                       ("routine", folder.routines),
+                       ("template_set", folder.templates)):
+        for ident, doc in docs.items():
+            rel = f"{SUBDIR[kind]}/{ident}.json"
+            if rel in folder.revs:
+                out[rel] = (doc, folder.revs[rel])
+    return out
+
+
+def _kept(folder: Folder, rel: str, rev: str, result: Result) -> None:
+    why = result.errors[0] if result.errors else "could not be read"
+    folder.failed[rel] = why
+    folder.revs[rel] = rev
+    folder.warnings.append(f"{rel}: kept the last good version until the "
+                           f"file is fixed")
 
 
 def _cross_check(folder: Folder) -> None:

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Banner, Card, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
-import type { Command, EngineState, Preset } from "../types";
+import type { Command, EngineState, Preset, TrackMatch } from "../types";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -392,6 +392,33 @@ const TRACK_STATE: Record<string, string> = {
   reverse: "scratching",
 };
 
+/** How a track was matched, in the operator's words -- how much to trust it
+ *  before arming a show on it. */
+const MATCH_VIA: Record<string, string> = {
+  signature: "by signature", rekordbox_id: "by rekordbox id",
+  alias: "by manual link", title_artist_album: "by title, artist and album",
+  title_artist: "by title and artist",
+};
+
+function MatchLine({ match }: { match: TrackMatch }) {
+  if (match.track_id) {
+    return (
+      <div className="muted">
+        show <b>{match.track_id}</b> · {MATCH_VIA[match.via] ?? match.via}
+        {match.stale && " · folder changed, applies next play"}
+      </div>
+    );
+  }
+  if (match.via === "ambiguous") {
+    return (
+      <div className="muted">
+        could be {match.candidates.join(", ")} — not guessing
+      </div>
+    );
+  }
+  return <div className="muted">not in the show folder</div>;
+}
+
 function clockTime(seconds: number | null): string {
   if (seconds == null) return "–:––";
   const s = Math.max(0, Math.floor(seconds));
@@ -444,6 +471,15 @@ function Sync({ state, send }: { state: EngineState; send: (c: Command) => void 
             {track.state === "playing" && Math.abs(track.rate - 1) >= 0.0005 &&
               ` · ${track.rate > 1 ? "+" : ""}${((track.rate - 1) * 100).toFixed(1)}%`}
           </div>
+          {track.match && <MatchLine match={track.match} />}
+          {track.grid_warning && (
+            <Banner kind="warn">
+              The deck puts the beat {Math.abs(track.grid_warning.offset_beats)}
+              {" "}beat(s) {track.grid_warning.offset_beats > 0 ? "ahead of" : "behind"}
+              {" "}the prepped grid. Re-gridded since it was prepped, or a
+              different edit — its cues would land off the beat.
+            </Banner>
+          )}
         </div>
       ) : sync.track && (
         <div className="small" style={{ marginTop: "0.3rem" }}>{sync.track}</div>

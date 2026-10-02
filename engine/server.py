@@ -55,8 +55,11 @@ from . import motion
 from . import patch as patchmod
 from . import rig as rigmod
 from . import safety as safetymod
+from . import showfiles
+from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import tracks as tracksmod
 from . import transport as transportmod
 from . import venue as venuemod
 from . import worker as workermod
@@ -115,6 +118,8 @@ TIER: dict[str, str] = {
     "patch_address": "configure", "patch_tags": "configure",
     "patch_position": "configure", "patch_autopatch": "configure",
     "patch_apply": "configure",
+    # the show folder: what is written there outlives the night
+    "track_link": "configure", "show_reload": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
@@ -213,7 +218,8 @@ class ShowController:
     """Owns the engine. Every mutation arrives as a queued command."""
 
     def __init__(self, event_dir: Path, artnet: Optional[str] = None,
-                 fps: float = 40.0, bpm: float = 124.0):
+                 fps: float = 40.0, bpm: float = 124.0,
+                 show_dir: Optional[Path] = None):
         self.event_dir = Path(event_dir)
         self.rig = rigmod.load_rig(self.event_dir)
         errors = self.rig.validate()
@@ -271,7 +277,7 @@ class ShowController:
         self.runner = Runner(
             ctx=self.ctx, show=self.setlist.current().make(self.palette.current()),
             output=self.output, fps=fps, clock=self.clock, director=self.director,
-            before_frame=self._drain, on_show=self._attach_overrides,
+            before_frame=self._before_frame, on_show=self._attach_overrides,
             on_frame=self._publish)
 
         # Each entry is (command dict, sender, arrival time) -- or, from inside
@@ -336,6 +342,23 @@ class ShowController:
         # thread, which is safe because it keeps its state in one immutable
         # value swapped by reference.
         self.transport = transportmod.TrackTransport()
+        # The show folder (F19f): prepped tracks, timelines, routines. Optional
+        # -- with no folder nothing below exists and the engine is exactly what
+        # it was. Loaded here, synchronously, because nothing is running yet;
+        # every later reload happens on the worker.
+        self.show_dir = Path(show_dir) if show_dir is not None else None
+        self.show_library: Optional[showlibrary.Library] = None
+        # What the playing track was matched to, against which load. Replaced
+        # only when the track changes -- see showlibrary.Pinned.
+        self.pinned: Optional[showlibrary.Pinned] = None
+        self.grid_check: Optional[tracksmod.GridCheck] = None
+        self._check_jump: Optional[int] = None
+        self.watcher: Optional[showlibrary.Watcher] = None
+        if self.show_dir is not None:
+            self._install_library(showlibrary.load(self.show_dir))
+            self.watcher = showlibrary.Watcher(
+                self.show_dir, on_change=self._library_changed,
+                report=lambda text: self.submit_call(lambda: self.note(text)))
         self.presets = load_presets(self.event_dir)
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
@@ -409,11 +432,16 @@ class ShowController:
         except OSError:
             pass
         self.worker.start()
+        if self.watcher is not None:
+            self.watcher.start(self.show_library.signature
+                               if self.show_library is not None else None)
         self.runner.start()
 
     def stop(self) -> None:
         if self.sync is not None:
             self.sync.stop()
+        if self.watcher is not None:
+            self.watcher.stop()
         self.runner.stop()
         self.worker.stop()
         self.output.close()
@@ -423,6 +451,10 @@ class ShowController:
             pass
 
     # -- the frame hooks ---------------------------------------------------
+
+    def _before_frame(self) -> None:
+        self._drain()
+        self._track_frame()
 
     def _drain(self) -> None:
         """Apply every queued command. Runs on the output thread, at the top of
@@ -473,6 +505,81 @@ class ShowController:
             # Outside _drain's per-command guard, and on the output thread: a
             # reply that cannot be sent is a notice, never a stopped frame.
             self.note(f"reply to {client.name} failed: {exc}")
+
+    def _track_frame(self, now: Optional[float] = None
+                     ) -> Optional[transportmod.TrackSample]:
+        """Match the playing track when it changes. Every frame, after the
+        commands: a track can change with no command at all -- the settle
+        window closing on a deck loaded while paused.
+
+        The match is PINNED to the track: a reload of the folder mid-song does
+        not touch it, and neither does a manual link. Both apply from the
+        track's next play (showlibrary.Pinned)."""
+        if self.show_dir is None:
+            return None
+        sample = self.transport.sample(self.runner.now() if now is None else now)
+        pinned = self.pinned
+        if pinned is None or pinned.track_seq != sample.track_seq:
+            pinned = showlibrary.pin(self.show_library, sample)
+            self.pinned = pinned
+            self.grid_check = (tracksmod.GridCheck(pinned.grid)
+                               if pinned.grid is not None else None)
+            self._check_jump = sample.jump_seq
+        return sample
+
+    def _check_grid(self, fields: dict, sample: transportmod.TrackSample,
+                    now: float) -> None:
+        """Feed the grid cross-check what the deck says about its own beats."""
+        check = self.grid_check
+        if check is None:
+            return
+        if sample.jump_seq != self._check_jump:
+            # A loop or a hot cue: what was seen before it says nothing about
+            # where the deck is now.
+            check.reset()
+            self._check_jump = sample.jump_seq
+        if "beat_number" in fields and "track_time" in fields:
+            # beat-link: count and position from ONE packet, so no estimate
+            # comes into it and any transport state will do.
+            check.number(fields["beat_number"], fields["track_time"], now)
+        elif ("beat_in_bar" in fields and fields.get("source") == "rkbx"
+              and sample.state == transportmod.PLAYING
+              and sample.raw_time_s is not None):
+            # rkbx_link: bar phase and position arrive as separate messages from
+            # one read of rekordbox's memory, so the estimate at arrival is the
+            # position the phase belongs to. Only rkbx_link's phase is a
+            # continuous ramp; a bridge sending a beat number per beat is not.
+            check.phase(fields["beat_in_bar"], sample.raw_time_s, now)
+
+    def _install_library(self, library: showlibrary.Library) -> None:
+        """Make a freshly loaded folder current. On the output thread, by one
+        reference assignment. The playing track keeps the load it was matched
+        against."""
+        previous = self.show_library
+        self.show_library = library
+        showlibrary.apply_settings(self.transport, library)
+        if self.watcher is not None:
+            # What this load read, so the watcher does not load it again.
+            self.watcher.seen = library.signature
+        if previous is not None:
+            fresh = [e for e in library.folder.errors
+                     if e not in previous.folder.errors]
+            if fresh:
+                more = f" (+{len(fresh) - 1} more)" if len(fresh) > 1 else ""
+                self.note(f"show folder: {fresh[0]}{more}")
+
+    def _library_changed(self) -> None:
+        """The watcher saw the folder change. On the watcher's thread: hand the
+        load to the worker and the install to the output thread."""
+        self.reload_library()
+
+    def reload_library(self) -> None:
+        if self.show_dir is None:
+            return
+        root = self.show_dir
+        self.worker.submit(
+            lambda: showlibrary.load(root, previous=self.show_library),
+            done=self._install_library, label="reloading the show folder")
 
     def _attach_overrides(self, show: statemod.Show) -> None:
         show.master = 0.0 if self.blackout else self.master
@@ -1271,6 +1378,9 @@ class ShowController:
         # transport's line needs: applying it at the frame boundary instead
         # would quantise every position to the 25 ms frame grid.
         self.transport.ingest(fields, now)
+        sample = self._track_frame(now)
+        if sample is not None:
+            self._check_grid(fields, sample, now)
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -1289,6 +1399,59 @@ class ShowController:
         self.transport.clear()
         self.note(f"took the clock back from {was!r} at "
                   f"{self.clock.bpm:.1f} bpm")
+
+    def _cmd_track_link(self, m: dict, now: float) -> dict:
+        """This playing track IS that prepped track -- for a guest's copy the
+        matcher could not place (a different tag, a different export).
+
+        Recorded on the prepped track as an alias, plus the deck's signature
+        when beat-link sent one, so every later play matches by itself. It does
+        NOT re-match the track playing now: like any change to the show
+        folder, it applies from the track's next play. The write is on the
+        worker; the reply says it was queued and a notice says how it went."""
+        library = self.show_library
+        if library is None:
+            raise ValueError("no show folder -- start the engine with "
+                             "--show-dir to link tracks")
+        track_id = m.get("track_id")
+        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+            raise ValueError(f"there is no prepped track {track_id!r} in "
+                             f"{library.root}/tracks")
+        ident = self.transport.sample(now).identity
+        if not ident.title:
+            raise ValueError("nothing identified is playing -- a link needs a "
+                             "track title from the deck")
+        sig = ident.signature
+        if sig:
+            owner = [t for t in library.index.by_signature.get(sig, ())
+                     if t != track_id]
+            if owner:
+                raise ValueError(
+                    f"this deck's signature already belongs to {owner[0]!r}; "
+                    f"remove it from tracks/{owner[0]}.json ids.blt_signatures "
+                    f"first, or both tracks would claim it")
+        root, title = library.root, ident.title
+
+        def done(what: str) -> None:
+            if what == "already":
+                self.note(f"{track_id} already answers to {title!r}")
+            else:
+                self.note(f"linked {title!r} to {track_id}; it applies from "
+                          f"the track's next play")
+            self.reload_library()
+
+        self.worker.submit(
+            lambda: showlibrary.link(root, track_id, ident.title, ident.artist,
+                                     ident.album, sig,
+                                     showlibrary.default_added()),
+            done=done, label=f"linking {title!r} to {track_id}")
+        return {"queued": True, "track_id": track_id, "applies": "next_play"}
+
+    def _cmd_show_reload(self, m: dict, now: float) -> None:
+        """Read the show folder again now, rather than at the next poll."""
+        if self.show_dir is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        self.reload_library()
 
     def _cmd_rate(self, m: dict, now: float) -> None:
         """How fast one slot's chase runs, relative to everything else.
@@ -1616,6 +1779,7 @@ class ShowController:
                       "taps": self.clock.taps},
             "sync": self.sync_status(),
             "track": _track_status(self),
+            "show": _show_status(self),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -1777,6 +1941,11 @@ def _track_status(controller: "ShowController") -> dict:
     """Which track the DJ is playing and where in it, for the console. Small on
     purpose: it rides the 10 Hz snapshot."""
     s = controller.transport.sample(controller.runner.now())
+    pinned, check = controller.pinned, controller.grid_check
+    # Only this track's match: between a track change and the next frame the
+    # pin still describes the last one, and showing it would name the wrong
+    # track for 25 ms.
+    current = pinned is not None and pinned.track_seq == s.track_seq
     return {
         "state": s.state,
         "title": s.identity.title or None,
@@ -1791,7 +1960,25 @@ def _track_status(controller: "ShowController") -> dict:
         "track_seq": s.track_seq,
         "jump_seq": s.jump_seq,
         "on_air": s.on_air,
+        # Which prepped track, and whether its beats agree (F19f).
+        "match": (pinned.public(controller.show_library) if current else None),
+        "grid_warning": (check.warning if current and check is not None
+                         else None),
     }
+
+
+def _show_status(controller: "ShowController") -> Optional[dict]:
+    """The show folder, in a few hundred bytes: where, which load, how many of
+    each, and the first few problems. The documents themselves never ride the
+    snapshot."""
+    library = controller.show_library
+    if library is None:
+        return None
+    f = library.folder
+    return {"dir": str(library.root), "rev": library.rev, **library.counts,
+            "errors": len(f.errors), "warnings": len(f.warnings),
+            "failed": len(f.failed),
+            "problems": showlibrary.describe_problems(library)}
 
 
 def load_presets(event_dir: Path) -> list[dict]:
@@ -2298,6 +2485,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="interface for --sync-port. Loopback by default, "
                              "because the bridge normally runs on this machine "
                              "and the port has no authentication")
+    parser.add_argument("--show-dir", metavar="DIR",
+                        help="the show folder: prepped tracks and their "
+                             "timelines (F19). Default: $KLIGHTS_SHOW_DIR, then "
+                             "show_dir in klights.local.json, else none")
     args = parser.parse_args(argv)
 
     # A token by default, because the alternative default is that anyone who can
@@ -2306,8 +2497,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     # the correct behaviour for a link that grants control of a lighting rig.
     token = None if args.no_token else (args.token or secrets.token_urlsafe(6))
 
+    show_dir = showfiles.resolve_show_dir(args.show_dir)
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
-                                bpm=args.bpm)
+                                bpm=args.bpm, show_dir=show_dir)
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
@@ -2352,6 +2544,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     if controller.sync is not None:
         print(f"sync    tempo ingest on {args.sync_bind}:{args.sync_port} "
               f"(UDP, JSON or OSC, unauthenticated)")
+    library = controller.show_library
+    if library is not None:
+        f = library.folder
+        problems = (f" -- {len(f.errors)} errors, see `python -m "
+                    f"engine.showfiles check {library.root}`" if f.errors else "")
+        print(f"shows   {library.root}: {library.describe()}{problems}")
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     if token is None:
         print("access  OPEN -- anyone who can reach this port has full control")
