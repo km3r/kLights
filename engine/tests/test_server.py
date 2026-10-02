@@ -583,6 +583,13 @@ client.sock.sendall(bytes([0x81, 0x83]) + b"\x00\x00\x00\x00" + b"abc")
 after = client.wait_for(lambda s: s["stats"]["frames"] > after["stats"]["frames"] + 5)
 check("non-JSON text is ignored, connection survives", True)
 
+# Valid JSON that is not an object used to reach `.get` and end the connection.
+client.sock.sendall(bytes([0x81, 0x86]) + b"\x00\x00\x00\x00" + b"[1, 2]")
+client.send({"type": "master", "value": 0.8})
+after = client.wait_for(lambda s: abs(s["master"] - 0.8) < 1e-9)
+check("a JSON array is ignored too, and the connection still takes commands",
+      True)
+
 
 # -- multi-user ---------------------------------------------------------------
 print("\n7. two clients, no locking")
@@ -999,6 +1006,134 @@ for name in ("rated", "unrated"):
     controller.apply({"type": "preset_delete", "name": name}, None)
 
 
+# -- 11d. replies, and work done off the output thread -------------------------
+#
+# F19a. A designer that saves a timeline needs to know whether THAT save worked,
+# not scan a shared notices list for a line that might be someone else's. And
+# anything slow must run on the worker, with its result installed on the output
+# thread -- checked by thread name, because a version that quietly ran the work
+# inline would pass every "did it happen" check and break the DMX clock.
+print("\n11d. replies, submit_call and the worker")
+
+
+def wait_reply(c, rid, timeout=6.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "reply" and msg.get("id") == rid:
+            return msg
+    raise AssertionError(f"no reply {rid!r}")
+
+
+def replies_within(c, seconds):
+    got = []
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "reply":
+            got.append(msg)
+    return got
+
+
+other = Client(port, "other")
+other.recv()                                             # welcome
+other.recv()                                             # first state
+
+client.send({"type": "master", "value": 0.5, "id": "m1"})
+reply = wait_reply(client, "m1")
+check("a command with an id gets a reply", reply["ok"] is True
+      and "error" not in reply, f"{reply}")
+check("and it took effect", abs(controller.master - 0.5) < 1e-9)
+check("the reply went to the sender only, not to everyone",
+      replies_within(other, 0.5) == [])
+
+seen_before = sum("no_such_command failed" in n for n in controller.notices)
+client.send({"type": "no_such_command", "id": 7})
+reply = wait_reply(client, 7)
+check("a failure comes back in the reply, with the reason",
+      reply["ok"] is False and "unknown command" in reply.get("error", ""),
+      f"{reply}")
+client.wait_for(lambda s: True)
+check("and it does not ALSO land in everyone's notices",
+      sum("no_such_command failed" in n for n in controller.notices) <= seen_before,
+      f"{controller.notices[-2:]}")
+
+client.send({"type": "master", "value": 0.6, "id": {"not": "an id"}})
+client.wait_for(lambda s: abs(s["master"] - 0.6) < 1e-9)
+check("an id that is not a short string or an integer means no reply, "
+      "and the command still runs", replies_within(client, 0.4) == [])
+client.send({"type": "master", "value": 0.7, "id": "x" * 65})
+client.wait_for(lambda s: abs(s["master"] - 0.7) < 1e-9)
+check("nor does an id too long to echo back", replies_within(client, 0.4) == [])
+
+where: dict = {}
+ran = threading.Event()
+controller.submit_call(lambda: (where.__setitem__("call", threading.current_thread().name),
+                                ran.set()))
+ran.wait(2.0)
+check("submit_call runs on the output thread, at a frame boundary",
+      where.get("call") == "dmx-output", f"{where}")
+
+finished = threading.Event()
+controller.worker.submit(
+    lambda: threading.current_thread().name,
+    lambda job_thread: (where.update(job=job_thread,
+                                     done=threading.current_thread().name),
+                        finished.set()))
+finished.wait(3.0)
+check("worker jobs run on the worker",
+      where.get("job") == "klights-worker", f"{where}")
+check("and their result is installed on the output thread",
+      where.get("done") == "dmx-output", f"{where}")
+
+
+def parse_show():
+    raise ValueError("timelines/x.json line 3: expected ','")
+
+
+controller.worker.submit(parse_show, label="load timeline")
+after = client.wait_for(lambda s: any("load timeline failed" in n
+                                      for n in s["notices"]))
+check("a failed worker job becomes a notice, not a dead thread",
+      controller.worker.running, f"{after['notices'][-1:]}")
+controller.submit_call(lambda: 1 / 0)
+after = client.wait_for(lambda s: any("engine task failed" in n
+                                      for n in s["notices"]))
+check("and so does a posted call that raises -- the show keeps running",
+      after["stats"]["eval_errors"] == 0, f"{after['notices'][-1:]}")
+
+# The WebSocket route into the clock used to skip the checks the UDP port
+# makes: a bpm of 900 went straight to the clock.
+bpm_before = controller.clock.bpm
+client.send({"type": "sync", "bpm": 900, "id": "s1"})
+reply = wait_reply(client, "s1")
+check("a sync over the WebSocket gets the UDP port's range checks",
+      reply["ok"] is False and abs(controller.clock.bpm - bpm_before) < 1e-9,
+      f"{reply}, bpm {controller.clock.bpm}")
+client.send({"type": "sync", "bpm": 126, "track": "x" * 1000,
+             "phrase_measured": "false", "id": "s2"})
+reply = wait_reply(client, "s2")
+check("the usable fields of a sync are applied",
+      reply["ok"] is True and abs(controller.clock.bpm - 126) < 1e-6,
+      f"{reply}, bpm {controller.clock.bpm}")
+check("a 1000-character title is cut to the port's 64",
+      len(controller.sync_track or "") == 64, f"{len(controller.sync_track or '')}")
+check("and a quoted false is false", controller.clock.phrase_measured is False)
+client.send({"type": "sync_off", "id": "s3"})
+wait_reply(client, "s3")
+
+# A handler whose answer JSON cannot carry must not stop the frame it was sent
+# from -- the reply is built on the output thread.
+controller._cmd_test_unserialisable = lambda m, now: {"when": object()}
+client.send({"type": "test_unserialisable", "id": "u1"})
+reply = wait_reply(client, "u1")
+check("a reply whose data cannot be sent says so, and the show runs on",
+      reply["ok"] is True and "not serialisable" in reply.get("error", ""),
+      f"{reply}")
+del controller._cmd_test_unserialisable
+other.close()
+
+
 client.close()
 server.stop()
 controller.stop()
@@ -1169,16 +1304,26 @@ with tempfile.TemporaryDirectory() as tmp:
               live.pending_patch and len(live.rig.fixtures) == before,
               f"pending={live.pending_patch} fixtures={len(live.rig.fixtures)}")
 
+        applied_at = time.monotonic()
         live.apply({"type": "patch_apply"}, None)
         check("applying it swaps the rig in place",
               len(live.rig.fixtures) == before + 1, f"{len(live.rig.fixtures)}")
         check("and clears the pending flag", not live.pending_patch)
         check("the context sees the new rig too",
               live.ctx.rig is live.rig and len(live.ctx.rig.fixtures) == before + 1)
+        # Not `== 0`: the runner is live, and a frame may already have run since
+        # the reload, moving each value up by one slew step -- the fade-in this
+        # checks for, working. (Asserting the instant raced the frame thread and
+        # failed on a Windows runner.) What must hold is that nothing SNAPPED:
+        # no value is beyond what the slew allows for the time that has passed.
+        slew = live.ctx.taper.slew_per_second
+        bound = slew * (time.monotonic() - applied_at + 0.05)
+        seeded = list(live.ctx._taper_prev.values())
         check("intensity is seeded dark so the safety slew fades it in, "
               "rather than snapping",
-              set(live.ctx._taper_prev.values()) == {0.0},
-              f"{sorted(set(live.ctx._taper_prev.values()))}")
+              bound < 1.0 and len(seeded) == len(live.rig.fixtures)
+              and all(0.0 <= v <= bound for v in seeded),
+              f"bound {bound:.3f}, values {sorted(set(round(v, 3) for v in seeded))}")
 
         # Everything the reload clears is keyed by fixture ID. Trims, colours,
         # flashes, jogs and captures are keyed by NAME, and a patch edit can
@@ -1343,8 +1488,319 @@ try:
     check("the tempo port cannot panic the rig or edit the patch",
           not djs.runner.panicked and len(djs.rig.fixtures) == fixtures_before,
           f"panicked={djs.runner.panicked}, {len(djs.rig.fixtures)} fixtures")
+
+    # -- which track, and where in it (F19d) --------------------------------
+    # rkbx_link's shapes, over the real port: the identity a field at a time,
+    # then position at ~60 Hz. The snapshot is what the console will show.
+    def osc_msg(address: str, tag: str, value) -> bytes:
+        def pad(b: bytes) -> bytes:
+            return b + b"\0" * (4 - len(b) % 4)
+        payload = (struct.pack(">f", value) if tag == "f"
+                   else pad(value.encode()) if tag == "s" else b"")
+        return pad(address.encode()) + pad(b"," + tag.encode()) + payload
+
+    ignored_before = djs.sync.ignored
+    rejected_before = djs.sync.rejected
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        for address, value in (("/master/track/title", "Night Drive"),
+                               ("/master/track/artist", "Someone"),
+                               ("/master/track/album", "EP")):
+            s.sendto(osc_msg(address, "s", value), ("127.0.0.1", sync_port))
+        s.sendto(osc_msg("/master/phrase/next", "s", "Chorus"), ("127.0.0.1", sync_port))
+        started = time.time()
+        for i in range(40):
+            s.sendto(osc_msg("/master/time", "f", 61.0 + i / 60), ("127.0.0.1", sync_port))
+            time.sleep(1 / 60)
+    first = djs.snapshot()["track"]
+    time.sleep(0.1)
+    later = djs.snapshot()["track"]
+    check("the snapshot says which track and where",
+          first["state"] == "playing" and first["title"] == "Night Drive"
+          and first["artist"] == "Someone" and first["source"] == "rkbx"
+          and 61.4 < first["time"] < 62.0, f"{first}")
+    check("and the position keeps moving between snapshots",
+          later["time"] > first["time"], f"{first['time']} -> {later['time']}")
+    check("rkbx_link's phrase/next is counted as ignored, not rejected",
+          djs.sync.ignored == ignored_before + 1
+          and djs.sync.rejected == rejected_before,
+          f"ignored {djs.sync.ignored}, rejected {djs.sync.rejected}")
+    djs.apply({"type": "sync_off"}, None)
+    check("taking the clock back forgets the track too",
+          djs.snapshot()["track"]["state"] == "no_track")
 finally:
     djs.stop()
+
+# -- 16. the show folder: matching, linking, hot reload (F19f) ----------------
+#
+# Driven by hand rather than by the frame loop: every sync carries the arrival
+# time it would have had, worker jobs are waited for, and their results are
+# installed by calling `_drain` -- exactly what the frame loop does, minus the
+# races. The worker is the real one, on its real thread.
+print("\n16. the show folder: matching, linking, hot reload, the grid check")
+from engine import showlibrary   # noqa: E402
+
+shows_tmp = Path(tempfile.mkdtemp(prefix="klights-shows-"))
+shows = shows_tmp / "shows"
+shutil.copytree(REPO / "shared" / "show-example", shows)
+load_threads: list[str] = []
+real_load = showlibrary.load
+
+
+def spy_load(*args, **kwargs):
+    load_threads.append(threading.current_thread().name)
+    return real_load(*args, **kwargs)
+
+
+showlibrary.load = spy_load
+sc = ShowController(REPO / "events" / "despacio", show_dir=shows)
+sc.worker.start()
+GUEST_SIG = "d" * 40
+
+
+def settle():
+    """Let the worker finish, then install what it handed back."""
+    for _ in range(3):              # a job's result may queue another job
+        assert sc.worker.wait_idle(5.0)
+        sc._drain()
+
+
+def at(t):
+    sc.ctx.time = t                 # runner.now() before start
+    return t
+
+
+def blt_track(t, title, artist="", album="", duration=0.0, rid=1, sig=None):
+    msg = {"type": "sync", "source": "blt", "deck": "1", "title": title,
+           "artist": artist, "album": album, "duration": duration,
+           "rekordbox_id": rid}
+    if sig:
+        msg["signature"] = sig
+    sc.apply(msg, None, at(t))
+
+
+def blt_play(t0, seconds, start_s=10.0, beat_offset=0, hz=25):
+    """beat-link's /klights/v1/pos: position and beat count in one packet,
+    counted on the synthetic track's grid as it is in the folder NOW."""
+    grid = sc.show_library.grids["synth-128"]
+    n = int(seconds * hz)
+    for i in range(n):
+        pos = start_s + i / hz
+        count = int(grid.beat_at(pos) // 1) - int(grid.beats[0]) + 1
+        sc.apply({"type": "sync", "source": "blt", "deck": "1",
+                  "track_time": pos, "playing": True, "pitch": 1.0,
+                  "beat_number": max(0, count + beat_offset)},
+                 None, at(t0 + i / hz))
+    end = t0 + n / hz
+    sc._track_frame(at(end))
+    return end
+
+
+def track_now():
+    return sc.snapshot()["track"]
+
+
+try:
+    plain = ShowController(REPO / "events" / "despacio")
+    check("with no show folder, none of it exists",
+          plain.snapshot()["show"] is None
+          and plain.snapshot()["track"]["match"] is None
+          and plain._track_frame() is None)
+    try:
+        plain.apply({"type": "track_link", "track_id": "synth-128"}, None)
+        refused = False
+    except ValueError as exc:
+        refused = "--show-dir" in str(exc)
+    check("and track_link says to start with --show-dir", refused)
+
+    show = sc.snapshot()["show"]
+    check("the snapshot describes the folder", show["dir"] == str(shows)
+          and show["tracks"] == 1 and show["timelines"] == 1
+          and show["errors"] == 0 and show["rev"].startswith("l:"), f"{show}")
+    check("the first load happens at startup, before anything runs",
+          load_threads == ["MainThread"], f"{load_threads}")
+    check("and show.json's settings are on the transport",
+          sc.transport.min_track_change_s == 2.0 and sc.transport.grace_s == 4.0)
+
+    # The fake deck's first track: bridge.py --fake --blt plays exactly this.
+    t = 100.0
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 3.0)
+    tr_ = track_now()
+    check("the synthetic track matches its prepped file",
+          tr_["match"] is not None and tr_["match"]["track_id"] == "synth-128"
+          and tr_["match"]["via"] == "title_artist_album"
+          and tr_["match"]["stale"] is False, f"{tr_['match']}")
+    check("and its timeline comes with it, compiled at load",
+          tr_["match"]["has_timeline"] is True
+          and sc.pinned.timeline is sc.show_library.timelines["synth-128"])
+    check("and its beats agree with the grid: no warning",
+          tr_["grid_warning"] is None, f"{tr_['grid_warning']}")
+    synth_pin = sc.pinned
+
+    # Hot reload, mid-song: the grid moves under a playing track.
+    doc = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    doc["grid"]["segments"] = [[0, 250, 128]]
+    doc["grid"].pop("rev", None)
+    (shows / "tracks" / "synth-128.json").write_text(json.dumps(doc), "utf-8")
+    sc.watcher.poll()
+    sc.watcher.poll()                       # held still for a poll: reload
+    settle()
+    check("an edit is noticed and reloaded on the worker",
+          load_threads[-1:] == ["klights-worker"]
+          and sc.show_library.grids["synth-128"].times[0] == 0.25, f"{load_threads}")
+    t = blt_play(t, 1.0, start_s=13.0)
+    check("but the playing track keeps the grid it started with",
+          sc.pinned is synth_pin and sc.pinned.grid.times[0] == 0.0)
+    check("and the console says the folder changed since it matched",
+          track_now()["match"]["stale"] is True)
+    check("the snapshot's folder rev moves with the reload",
+          sc.snapshot()["show"]["rev"] != show["rev"])
+
+    # A guest's copy of something: unknown here.
+    t += 2.5
+    blt_track(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2, sig=GUEST_SIG)
+    t = blt_play(t, 1.0)
+    tr_ = track_now()
+    check("a guest's track is unmatched, and says so",
+          tr_["match"] == {"track_id": None, "via": "none", "candidates": [],
+                           "has_timeline": False, "stale": False},
+          f"{tr_['match']}")
+    check("and has no grid to check against", sc.grid_check is None
+          and tr_["grid_warning"] is None)
+
+    # Refusals first.
+    for bad, why in (({"track_id": "nope"}, "no prepped track"),
+                     ({"track_id": "../x"}, "no prepped track"),
+                     ({}, "no prepped track")):
+        try:
+            sc.apply({"type": "track_link", **bad}, None, at(t))
+            refused = False
+        except ValueError as exc:
+            refused = why in str(exc)
+        check(f"track_link refuses {bad}", refused)
+    operator = servermod.Client(id="op", name="op", tier="operate")
+    try:
+        sc.apply({"type": "track_link", "track_id": "synth-128"}, operator, at(t))
+        refused = False
+    except ValueError as exc:
+        refused = "needs configure" in str(exc)
+    check("linking is configure-tier: it writes the show folder", refused)
+
+    reply = sc.apply({"type": "track_link", "track_id": "synth-128"}, None, at(t))
+    check("a link is queued, and says when it applies",
+          reply == {"queued": True, "track_id": "synth-128",
+                    "applies": "next_play"}, f"{reply}")
+    settle()
+    linked = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    check("the guest's description is saved as an alias, with its signature",
+          linked["aliases"][-1]["title"] == "Unknown Guest Tune"
+          and linked["aliases"][-1]["via"] == "manual"
+          and GUEST_SIG in linked["ids"]["blt_signatures"], f"{linked['aliases']}")
+    check("a notice says so, and that it applies from the next play",
+          any("linked 'Unknown Guest Tune' to synth-128" in n
+              and "next play" in n for n in sc.notices), f"{sc.notices[-2:]}")
+    t = blt_play(t, 1.0, start_s=20.0)
+    check("the playing track is NOT re-matched mid-song",
+          track_now()["match"]["via"] == "none"
+          and track_now()["match"]["stale"] is True, f"{track_now()['match']}")
+
+    t += 2.5
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 1.0)
+    check("the next track matches against the new folder, new grid and all",
+          sc.pinned.grid.times[0] == 0.25
+          and track_now()["match"]["stale"] is False)
+    t += 2.5
+    blt_track(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2, sig=GUEST_SIG)
+    t = blt_play(t, 1.0)
+    check("and the guest's track, played again, is linked -- by its signature",
+          track_now()["match"]["track_id"] == "synth-128"
+          and track_now()["match"]["via"] == "signature", f"{track_now()['match']}")
+
+    # rkbx_link sends no signature: the alias is what matches it.
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    for i, (key, value) in enumerate((("title", "Unknown Guest Tune"),
+                                      ("artist", "Guest DJ"), ("album", ""))):
+        sc.apply({"type": "sync", "source": "rkbx", key: value}, None,
+                 at(t + i * 0.002))
+    sc.apply({"type": "sync", "source": "rkbx", "track_time": 30.0}, None,
+             at(t + 0.2))
+    sc._track_frame(at(t + 0.21))
+    check("from rekordbox, the same track matches by the saved alias",
+          track_now()["match"]["via"] == "alias", f"{track_now()['match']}")
+    t += 0.3
+
+    # The grid cross-check, from both sources.
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    blt_track(t, "synthetic 128", "kLights", "test track", 180.0)
+    t = blt_play(t, 3.0, beat_offset=1)
+    check("a beat count one ahead of the grid raises a warning saying so",
+          track_now()["grid_warning"] == {"kind": "number", "offset_beats": 1.0},
+          f"{track_now()['grid_warning']}")
+    t = blt_play(t, 3.0, start_s=13.0)
+    check("and in step again, it clears", track_now()["grid_warning"] is None,
+          f"{track_now()['grid_warning']}")
+
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    for i, (key, value) in enumerate((("title", "synthetic 128"),
+                                      ("artist", "kLights"),
+                                      ("album", "test track"))):
+        sc.apply({"type": "sync", "source": "rkbx", key: value}, None,
+                 at(t + i * 0.002))
+    grid = sc.show_library.grids["synth-128"]
+    for i in range(int(3.0 * 60)):
+        pos = 40.0 + i / 60
+        sc.apply({"type": "sync", "source": "rkbx", "track_time": pos,
+                  "bpm": 128.0, "bpm_original": 128.0}, None, at(t + 0.2 + i / 60))
+        phase = (grid.beat_at(pos) + 0.5) % 4
+        sc.apply({"type": "sync", "source": "rkbx", "beat_in_bar": phase},
+                 None, at(t + 0.2 + i / 60 + 0.001))
+    t += 3.3
+    sc._track_frame(at(t))
+    warning = track_now()["grid_warning"]
+    check("rkbx_link's bar phase half a beat off the grid is caught too",
+          warning is not None and warning["kind"] == "phase"
+          and abs(warning["offset_beats"] - 0.5) < 0.05, f"{warning}")
+
+    # A signature can belong to one track only.
+    other = json.loads((shows / "tracks" / "synth-128.json").read_text())
+    other.update(id="other", aliases=[])
+    other["identity"]["title"] = "Other"
+    other["ids"]["blt_signatures"] = ["e" * 40]
+    (shows / "tracks" / "other.json").write_text(json.dumps(other), "utf-8")
+    sc.apply({"type": "show_reload"}, None, at(t))
+    settle()
+    check("show_reload reads the folder now", sc.snapshot()["show"]["tracks"] == 2)
+    sc.apply({"type": "sync_off"}, None, at(t))
+    t += 0.5
+    blt_track(t, "Some Copy", "Somebody", "", 200.0, rid=9, sig="e" * 40)
+    t = blt_play(t, 0.5)
+    try:
+        sc.apply({"type": "track_link", "track_id": "synth-128"}, None, at(t))
+        refused = False
+    except ValueError as exc:
+        refused = "already belongs to 'other'" in str(exc)
+    check("a signature already linked elsewhere is not linked twice", refused)
+
+    # A broken edit mid-show keeps the last good version.
+    (shows / "timelines" / "synth-128.json").write_text("{", "utf-8")
+    sc.apply({"type": "show_reload"}, None, at(t))
+    settle()
+    show = sc.snapshot()["show"]
+    check("a timeline broken by a half-finished sync keeps its last good version",
+          "synth-128" in sc.show_library.folder.timelines and show["failed"] == 1
+          and show["errors"] >= 1, f"{show}")
+    check("and the console is told", any("show folder:" in n for n in sc.notices),
+          f"{sc.notices[-2:]}")
+    check("and the problem is in the snapshot, first",
+          "not valid JSON" in show["problems"][0], f"{show['problems'][:1]}")
+finally:
+    showlibrary.load = real_load
+    sc.worker.stop()
+    shutil.rmtree(shows_tmp, ignore_errors=True)
 
 print()
 if failures:

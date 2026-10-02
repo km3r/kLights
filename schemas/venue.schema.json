@@ -58,6 +58,26 @@
       "minimum": 0,
       "maximum": 90
     },
+    "rest_point": {
+      "type": "object",
+      "description": "where the movers rest when a timeline says nothing about their movement, in millimetres. Defaults to the ball; set it in a room with no ball",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
     "crowd_zone": {
       "type": "object",
       "properties": {

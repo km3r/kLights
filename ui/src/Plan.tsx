@@ -69,9 +69,6 @@ export function PlanView({ state }: { state: EngineState }) {
   }
 
   const placed = state.fixtures.filter((f) => f.position);
-  const ball = v.ball;
-  const crowd = v.crowd;
-  const canopy = v.canopy;
 
   return (
     <Card title="Plan" right={
@@ -79,54 +76,70 @@ export function PlanView({ state }: { state: EngineState }) {
         {(v.width / 1000).toFixed(1)} × {(v.depth / 1000).toFixed(1)} m
       </span>
     }>
-      <svg role="img" aria-label="plan view of the room"
-           className="plan"
-           viewBox={`${-MARGIN_MM} ${-MARGIN_MM} ${v.width + MARGIN_MM * 2} ${v.depth + MARGIN_MM * 2}`}
-           style={{ width: "100%", height: "auto", display: "block" }}>
-        {/* Room first, so everything else sits on top of it. */}
-        <rect x={0} y={0} width={v.width} height={v.depth}
-              fill="var(--panel-2)" stroke="var(--line)" strokeWidth={60} />
-
-        {crowd && (
-          <rect x={crowd.min_x} y={crowd.min_z}
-                width={crowd.max_x - crowd.min_x}
-                height={crowd.max_z - crowd.min_z}
-                fill="rgba(255, 176, 32, 0.10)"
-                stroke="rgba(255, 176, 32, 0.5)" strokeWidth={40}
-                strokeDasharray="240 200">
-            <title>Crowd zone — the taper dims beams that cross head height here</title>
-          </rect>
-        )}
-
-        {canopy?.enabled && ball && (
-          <circle cx={ball[0]} cy={ball[2]} r={canopy.radius}
-                  fill="none" stroke="var(--line)" strokeWidth={40}
-                  strokeDasharray="600 300">
-            <title>Canopy at {(canopy.height / 1000).toFixed(1)} m</title>
-          </circle>
-        )}
-
-        {/* Beams under the fixtures, so a dot is never hidden by its own beam. */}
-        {placed.map((f) => (
-          <Beam key={`beam-${f.id}`} f={f}
-                cap={Math.min(v.width!, v.depth!) * MAX_SPOT} />
-        ))}
-        {placed.map((f) => <Dot key={`dot-${f.id}`} f={f} />)}
-
-        {ball && (
-          <g>
-            <circle cx={ball[0]} cy={ball[2]} r={DOT_MM * 1.1}
-                    fill="none" stroke="var(--text)" strokeWidth={50} />
-            <circle cx={ball[0]} cy={ball[2]} r={DOT_MM * 0.35}
-                    fill="var(--text)" />
-            <title>Mirror ball</title>
-          </g>
-        )}
-      </svg>
+      <PlanSvg state={state} />
 
       <Legend state={state} placed={placed}
               cap={Math.min(v.width!, v.depth!) * MAX_SPOT} />
     </Card>
+  );
+}
+
+/**
+ * The room and every beam, on its own -- what the plan card draws, and what the
+ * designer (F19l) shows beside its timeline as the preview.
+ */
+export function PlanSvg({ state }: { state: EngineState }) {
+  const v = state.venue;
+  if (!v.width || !v.depth) return null;
+  const placed = state.fixtures.filter((f) => f.position);
+  const ball = v.ball;
+  const crowd = v.crowd;
+  const canopy = v.canopy;
+  return (
+    <svg role="img" aria-label="plan view of the room"
+         className="plan"
+         viewBox={`${-MARGIN_MM} ${-MARGIN_MM} ${v.width + MARGIN_MM * 2} ${v.depth + MARGIN_MM * 2}`}
+         style={{ width: "100%", height: "auto", display: "block" }}>
+      {/* Room first, so everything else sits on top of it. */}
+      <rect x={0} y={0} width={v.width} height={v.depth}
+            fill="var(--panel-2)" stroke="var(--line)" strokeWidth={60} />
+
+      {crowd && (
+        <rect x={crowd.min_x} y={crowd.min_z}
+              width={crowd.max_x - crowd.min_x}
+              height={crowd.max_z - crowd.min_z}
+              fill="rgba(255, 176, 32, 0.10)"
+              stroke="rgba(255, 176, 32, 0.5)" strokeWidth={40}
+              strokeDasharray="240 200">
+          <title>Crowd zone — the taper dims beams that cross head height here</title>
+        </rect>
+      )}
+
+      {canopy?.enabled && ball && (
+        <circle cx={ball[0]} cy={ball[2]} r={canopy.radius}
+                fill="none" stroke="var(--line)" strokeWidth={40}
+                strokeDasharray="600 300">
+          <title>Canopy at {(canopy.height / 1000).toFixed(1)} m</title>
+        </circle>
+      )}
+
+      {/* Beams under the fixtures, so a dot is never hidden by its own beam. */}
+      {placed.map((f) => (
+        <Beam key={`beam-${f.id}`} f={f}
+              cap={Math.min(v.width!, v.depth!) * MAX_SPOT} />
+      ))}
+      {placed.map((f) => <Dot key={`dot-${f.id}`} f={f} />)}
+
+      {ball && (
+        <g>
+          <circle cx={ball[0]} cy={ball[2]} r={DOT_MM * 1.1}
+                  fill="none" stroke="var(--text)" strokeWidth={50} />
+          <circle cx={ball[0]} cy={ball[2]} r={DOT_MM * 0.35}
+                  fill="var(--text)" />
+          <title>Mirror ball</title>
+        </g>
+      )}
+    </svg>
   );
 }
 

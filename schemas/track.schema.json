@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/track.schema.json",
+  "title": "cosmos track",
+  "description": "One prepped track: who it is, its beat grid and rekordbox's phrases. Written by the prep tool.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.track"
+      ],
+      "description": "\"klights.track\" -- it says which format the file is"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "lower-case letters, digits, '-' and '_', starting with a letter or digit, at most 64 characters. It is also the file name"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artist": {
+          "type": "string"
+        },
+        "album": {
+          "type": "string"
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 14400
+        },
+        "bpm": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 400,
+          "description": "the track's own tempo, before pitch"
+        }
+      },
+      "required": [
+        "title"
+      ]
+    },
+    "ids": {
+      "type": "object",
+      "properties": {
+        "rekordbox": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "db": {
+                "type": "string",
+                "minLength": 1,
+                "description": "where the id is valid, e.g. \"usb:SANDISK\" -- a rekordbox id means nothing outside its database"
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "db",
+              "id"
+            ]
+          }
+        },
+        "blt_signatures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artist": {
+            "type": "string"
+          },
+          "album": {
+            "type": "string"
+          },
+          "via": {
+            "type": "string"
+          },
+          "added": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    "grid": {
+      "type": "object",
+      "properties": {
+        "rev": {
+          "type": "string"
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "description": "[[beat, time_ms, bpm], ...]; beat 0 is the first downbeat"
+        }
+      },
+      "required": [
+        "segments"
+      ]
+    },
+    "phrases": {
+      "type": "object",
+      "properties": {
+        "mood": {
+          "type": "string",
+          "enum": [
+            "low",
+            "mid",
+            "high"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "description": "[[start_beat, end_beat, \"Label\"], ...] with rekordbox's labels as it shows them"
+        }
+      },
+      "required": [
+        "items"
+      ]
+    },
+    "cues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "beat": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hot",
+              "memory",
+              "loop"
+            ]
+          },
+          "slot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "beat"
+        ]
+      }
+    },
+    "audio": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    "source": {
+      "type": "object"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "id",
+    "identity",
+    "grid"
+  ],
+  "additionalProperties": true
+}

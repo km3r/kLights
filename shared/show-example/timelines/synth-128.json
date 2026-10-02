@@ -1,0 +1,282 @@
+{
+  "$schema": "../../../schemas/timeline.schema.json",
+  "_comment": [
+    "One of each thing a timeline can hold. Positions are beats on",
+    "the track's grid: beat 160 is bar 41, the first Chorus downbeat.",
+    "Rows are lanes, top first, and the higher lane wins: the movement",
+    "lane is above the scene lane so its look overrides the outro",
+    "routine's movement, and only its movement."
+  ],
+  "kind": "klights.timeline",
+  "version": 1,
+  "track": "synth-128",
+  "grid_rev": "g:834af7",
+  "palettes": {
+    "Cool": {
+      "primary": "#3b82f6",
+      "secondary": "#14b8a6",
+      "accent": "#e2e8f0"
+    },
+    "Hot": {
+      "primary": "#ff2d6f",
+      "secondary": "#ff8a00",
+      "accent": "#ffffff"
+    }
+  },
+  "palette": "Cool",
+  "rows": [
+    {
+      "id": "move",
+      "type": "clips",
+      "target": "movement",
+      "gap": "fill",
+      "items": [
+        {
+          "id": "lazy",
+          "kind": "look",
+          "at": 352,
+          "len": 32,
+          "fade": 8,
+          "look": "Lazy Circle"
+        }
+      ]
+    },
+    {
+      "id": "scene",
+      "type": "clips",
+      "target": "scene",
+      "gap": "fill",
+      "items": [
+        {
+          "id": "intro",
+          "kind": "snapshot",
+          "at": 0,
+          "len": 64,
+          "fade": 8,
+          "preset": "Phase a",
+          "movement": {
+            "corner movers": "Ball Wave"
+          },
+          "color": {
+            "corner movers": "Split Pink/Green",
+            "pinspots": "Pin Teal"
+          }
+        },
+        {
+          "id": "verse",
+          "kind": "routine",
+          "at": 64,
+          "len": 64,
+          "fade": 4,
+          "routine": "verse-sweep",
+          "params": {
+            "color": "@secondary"
+          }
+        },
+        {
+          "id": "up1",
+          "kind": "routine",
+          "at": 128,
+          "len": 32,
+          "fade": 2,
+          "routine": "build-rise"
+        },
+        {
+          "id": "chorus1",
+          "kind": "routine",
+          "at": 160,
+          "len": 64,
+          "routine": "fan-drop",
+          "variation": "wide",
+          "params": {
+            "color": "@primary"
+          },
+          "bind": {
+            "pins": "pinspots"
+          }
+        },
+        {
+          "id": "down",
+          "kind": "routine",
+          "at": 224,
+          "len": 32,
+          "fade": 8,
+          "routine": "idle-orbit",
+          "params": {
+            "color": "@secondary"
+          }
+        },
+        {
+          "id": "up2",
+          "kind": "routine",
+          "at": 256,
+          "len": 32,
+          "fade": 2,
+          "routine": "build-rise"
+        },
+        {
+          "id": "chorus2",
+          "kind": "routine",
+          "at": 288,
+          "len": 64,
+          "routine": "fan-drop",
+          "variation": "tight",
+          "params": {
+            "color": "#ff2d6f"
+          }
+        },
+        {
+          "id": "outro",
+          "kind": "routine",
+          "at": 352,
+          "len": 32,
+          "fade": 8,
+          "routine": "idle-orbit"
+        }
+      ]
+    },
+    {
+      "id": "palette",
+      "type": "clips",
+      "target": "palette",
+      "gap": "exclusive",
+      "items": [
+        {
+          "id": "hot1",
+          "kind": "palette",
+          "at": 160,
+          "len": 64,
+          "palette": "Hot"
+        },
+        {
+          "id": "hot2",
+          "kind": "palette",
+          "at": 288,
+          "len": 64,
+          "palette": "Hot"
+        }
+      ]
+    },
+    {
+      "id": "hits",
+      "type": "hits",
+      "items": [
+        {
+          "id": "bo1",
+          "hit": "blackout",
+          "at": 159,
+          "len": 1
+        },
+        {
+          "id": "fl1",
+          "hit": "flash",
+          "at": 160,
+          "len": 2,
+          "role": "movers",
+          "envelope": "decay"
+        },
+        {
+          "id": "st1",
+          "hit": "strobe",
+          "at": 284,
+          "len": 4,
+          "role": "movers",
+          "level": 0.7
+        },
+        {
+          "id": "fl2",
+          "hit": "flash",
+          "at": 288,
+          "len": 2,
+          "role": "movers",
+          "envelope": "decay"
+        }
+      ]
+    },
+    {
+      "id": "master",
+      "type": "automation",
+      "target": "master",
+      "points": [
+        [
+          0,
+          0.6
+        ],
+        [
+          128,
+          0.6
+        ],
+        [
+          160,
+          1.0,
+          "ease"
+        ],
+        [
+          224,
+          0.5
+        ],
+        [
+          256,
+          0.5
+        ],
+        [
+          288,
+          1.0,
+          "ease"
+        ],
+        [
+          352,
+          0.7
+        ],
+        [
+          384,
+          0.4
+        ]
+      ]
+    },
+    {
+      "id": "size",
+      "type": "automation",
+      "target": "size",
+      "points": [
+        [
+          0,
+          1.0
+        ],
+        [
+          150,
+          1.0
+        ],
+        [
+          160,
+          1.8,
+          "ease"
+        ],
+        [
+          224,
+          0.8,
+          "step"
+        ],
+        [
+          256,
+          0.8
+        ],
+        [
+          288,
+          2.0,
+          "ease"
+        ],
+        [
+          352,
+          1.0
+        ]
+      ]
+    },
+    {
+      "id": "vj1",
+      "type": "external",
+      "output": "vj",
+      "label": "VJ layer 1 (milestone 3)"
+    }
+  ]
+}

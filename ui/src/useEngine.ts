@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Command, ConnectionStatus, EngineState, Tier } from "./types";
+import type { Command, ConnectionStatus, EngineState, Reply, Tier } from "./types";
 
 /**
  * The connection to the engine.
@@ -36,6 +36,33 @@ function token(): string {
   return sessionStorage.getItem("klights.token") ?? "";
 }
 
+/**
+ * A URL for the engine's HTTP API, carrying the token. The designer reads whole
+ * documents this way (`GET /api/*`), never through the 10 Hz snapshot; audio
+ * needs the token, the rest only what watching needs.
+ */
+export function apiUrl(path: string): string {
+  const t = token();
+  return `${path}${t ? `${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(t)}` : ""}`;
+}
+
+/** GET a JSON document from the engine's API. Rejects with the engine's own
+ *  words when it answers with an error. */
+/** A refused `/api` read: the engine's own words, and the HTTP status -- 404
+ *  is "not in the show folder", which an editor may take as "start one". */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
+export async function apiFetch<T = unknown>(path: string): Promise<T> {
+  const res = await fetch(apiUrl(path));
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError((body as { error?: string }).error ?? `HTTP ${res.status}`, res.status);
+  }
+  return body as T;
+}
+
 function socketUrl(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const t = token();
@@ -61,12 +88,18 @@ export function useEngine() {
   // and starting pessimistic would grey out a working console for the moment
   // before the frame arrives.
   const [tier, setTier] = useState<Tier>("configure");
+  // This console's id on the engine, from its welcome: how the designer tells
+  // its own preview from another console's.
+  const [clientId, setClientId] = useState<string | null>(null);
   const [name, setNameState] = useState<string>(clientName);
   const socket = useRef<WebSocket | null>(null);
   const backoff = useRef(RECONNECT_MIN);
   const alive = useRef(true);
   const nameRef = useRef(name);
   nameRef.current = name;
+  // Commands sent with an id, waiting for their reply frame.
+  const pending = useRef(new Map<string, (r: Reply) => void>());
+  const nextId = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -90,11 +123,28 @@ export function useEngine() {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") setState(msg as EngineState);
-        else if (msg.type === "welcome" && msg.tier) setTier(msg.tier as Tier);
+        else if (msg.type === "welcome") {
+          if (msg.tier) setTier(msg.tier as Tier);
+          if (typeof msg.id === "string") setClientId(msg.id);
+        }
+        else if (msg.type === "reply") {
+          const done = pending.current.get(String(msg.id));
+          if (done) {
+            pending.current.delete(String(msg.id));
+            done(msg as Reply);
+          }
+        }
       };
       ws.onclose = () => {
         setStatus("closed");
         socket.current = null;
+        // Nothing sent on this socket will be answered now. Say so, rather
+        // than leave a Save button spinning forever.
+        for (const done of pending.current.values()) {
+          done({ type: "reply", id: "", ok: false,
+                 error: "the connection to the engine dropped" });
+        }
+        pending.current.clear();
         if (!alive.current) return;
         // Exponential backoff, capped low. This is a LAN; a long backoff after
         // a two-second wifi blip means staring at a dead console.
@@ -116,6 +166,27 @@ export function useEngine() {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(command));
   }, []);
 
+  /**
+   * Send a command and wait for the engine's answer to THAT command -- for the
+   * few whose result is not visible in the broadcast state: a save's new rev,
+   * a draft's validation, a refusal and its reason.
+   */
+  const request = useCallback((command: Command, timeoutMs = 20000): Promise<Reply> =>
+    new Promise((resolve) => {
+      const ws = socket.current;
+      const id = `r${++nextId.current}`;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        resolve({ type: "reply", id, ok: false, error: "not connected to the engine" });
+        return;
+      }
+      const timer = setTimeout(() => {
+        pending.current.delete(id);
+        resolve({ type: "reply", id, ok: false, error: "the engine did not answer" });
+      }, timeoutMs);
+      pending.current.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      ws.send(JSON.stringify({ ...command, id }));
+    }), []);
+
   const setName = useCallback((next: string) => {
     localStorage.setItem("klights.name", next);
     setNameState(next);
@@ -125,7 +196,7 @@ export function useEngine() {
     }
   }, []);
 
-  return { state, status, send, name, setName, tier };
+  return { state, status, send, request, name, setName, tier, clientId };
 }
 
 /**

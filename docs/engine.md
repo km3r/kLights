@@ -119,6 +119,16 @@ live.
   that locks its screen cannot stall the broadcast for everyone.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
+- A command may carry an `id` (a short string or an integer). It then gets a
+  `{"type": "reply", "id", "ok", "error"?, "data"?}` frame back, **to its sender
+  only**, and a failure goes in that reply rather than in everyone's notices. A
+  command without an id behaves as it always did. The reply is small by
+  contract: anything large is read over HTTP, never pushed.
+- Anything slow — parsing a file, matching a track, an fsync to a shared folder
+  — runs on one **worker thread** ([`worker.py`](../engine/worker.py)) and hands
+  its result back with `submit_call`, so the install still happens on the
+  output thread at a frame boundary. Nothing that touches the show runs on the
+  worker.
 
 ### Access tiers
 
@@ -128,8 +138,8 @@ run and embedded in the printed URL.
 | tier | what it covers |
 |---|---|
 | **view** | watch only; every command is refused with a reason |
-| **operate** | drive the show — looks, colour, cues, master, **panic** |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*` |
+| **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload` |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
@@ -142,7 +152,7 @@ so an editor gives completion and inline errors while you hand-edit at a venue.
 
 | file | what it is |
 |---|---|
-| `shared/venues/<room>.json` | a room — size, ball, crowd zone, canopy, taper and strobe policy |
+| `shared/venues/<room>.json` | a room — size, ball, crowd zone, canopy, taper and strobe policy, and where movers rest when a timeline drives nothing (`rest_point`) |
 | `events/<e>/rig.json` | what is plugged in, and which room it uses |
 | `events/<e>/calibration.json` | what this rig measured in this room on this day |
 | `events/<e>/looks.json` | the look library |
@@ -155,6 +165,134 @@ one, never a truncated one.
 **A venue outlives a show.** `rig.json` names one; a second night in the same
 room is a one-line change rather than a forked copy of the geometry the safety
 taper reads.
+
+### The show folder (F19)
+
+Timecoded shows — prepped tracks, per-track timelines, routines, template sets
+— live in a **show folder outside the repo**, because they move between the
+machine you design on and the show laptop through a shared folder. The engine
+finds it from `--show-dir`, then `$KLIGHTS_SHOW_DIR`, then `show_dir` in a
+gitignored `klights.local.json`; with none of those it runs exactly as before.
+
+| file | what it is |
+|---|---|
+| `show.json` | template set, fallback, pause policy, per-source latency, Follow DJ default |
+| `tracks/<id>.json` | one prepped track: identity, beat grid, rekordbox's phrases |
+| `timelines/<track>.json` | the hand-built show for one track, in beats on its grid |
+| `routines/<id>.json`, `templates/<id>.json` | reusable routines, and phrase → routine template sets |
+
+[`showfiles.py`](../engine/showfiles.py) is the one authoring API: the designer,
+MCP and the prep tool all validate and write through it. Writes carry the
+revision the editor read and are refused if the file changed since — a sync
+from another machine is the normal way that happens. Sync-service conflict
+copies are never loaded. A track's time is [`tracktime.py`](../engine/tracktime.py):
+beat 0 is the first downbeat, and the grid is the only thing that turns a
+position in the audio into a beat. `python -m engine.showfiles check` validates
+a folder; [`shared/show-example/`](../shared/show-example/) is a complete one.
+
+**In a running engine** ([`showlibrary.py`](../engine/showlibrary.py)) the
+folder is one immutable load: every valid document, the match index, each
+track's grid. A watcher thread polls file sizes and mtimes about once a second
+(no OS notifications: shared-folder mounts are where they fail), the worker
+reloads, and the output thread swaps the new load in by one reference. A file
+broken mid-sync keeps its last good version. **A reload never changes the
+playing track**: its match, grid and (later) timeline are pinned until the
+track changes, so an edit or a manual link applies from the track's next play.
+
+**Which track is playing** ([`tracks.py`](../engine/tracks.py)) is matched in
+layers: signature, rekordbox id (only with an agreeing title), manual alias,
+title + artist + album, title + artist, the last three only where durations
+agree. More than one track at the deciding layer is ambiguous and nothing
+plays. `track_link {track_id}` records the playing description as an alias on
+a prepped track. The deck's own beats are checked against the prepped grid --
+rkbx_link's bar phase to a tenth of a beat, beat-link's count to a whole beat --
+and two seconds of disagreement shows as `track.grid_warning`.
+
+**What a timeline says at a beat** is [`timeline.py`](../engine/timeline.py),
+which imports nothing but the standard library so the lights and, later, VJ
+outputs share it. Rows are lanes, top first, and **the higher lane wins** for
+each channel it drives (a scene lane drives movement, colour and level). A fill
+lane lets the lanes below, then the template, show through its gaps; a lane that
+**owns the track** is blank in its gaps. A clip fades in over its `fade` from
+what was under it and, ending into a gap, fades out over the same. Automation
+curves (`linear`, `step`, `ease` -- the curve named on a point shapes the
+segment arriving at it) have an exact integral, so a rate curve gives a phase as
+a function of the beat. Hits are windows: a jump into one shows it, a jump over
+one never fires it. Everything is a pure function of the beat. `python -m
+engine.showfiles explain TRACK BEAT` prints it.
+
+**What the fixtures do** is [`program.py`](../engine/program.py), the only
+place a timeline meets `state.py`. It compiles a track's timeline for one rig --
+routines bound to it ([`routines.py`](../engine/routines.py)), their rows built
+from parametric, role-based [`blocks.py`](../engine/blocks.py) -- into one
+`Program` whose `Show` never changes object; `begin(beat)` each frame, then
+evaluate it like any show, so safety and the strobe policy still run last. Each
+fixture walks the lanes on its own: a clip drives only the fixtures it uses and
+the rest fall through to the lanes below, then the fallback show; a lane that
+owns the track rests them instead -- movers on the venue's `rest_point` (else
+the ball), colour white, level dark. Each source runs once per slot on a scratch
+copy and only its fixtures are taken from it, so two movement sources never add
+their offsets together. A clip's phase is its own, a pure function of the beat
+through any rate curves, so a loop lands on the authored frame. `python -m
+engine.program --event DIR --show-dir DIR --track T --beat B` lists what will
+not work on a rig and prints every fixture at a beat.
+
+**When the timeline drives** is [`playback.py`](../engine/playback.py), the
+runner's `choose_show` hook: Follow DJ armed (it starts disarmed, from
+show.json, and says so at startup), the playing track matched a prepped track
+with a timeline, its program compiled (on the worker; the operator's show runs
+meanwhile). Then the Show is the program's, the same object every frame, at the
+track's beat -- the transport's position, latency applied, through the matched
+grid. Paused, the show's policy decides: `freeze` holds, `continue` keeps
+moving at the last tempo, `idle` runs the show's idle routine once the pause
+outlasts the grace period. Every hand-over is a cut. A look, preset or cue
+picked while it drives grabs those lanes (`program_grab` / `program_release`,
+operate tier) until released. `follow {armed}` is operate tier;
+`show_latency {source, ms}` is configure and is saved to show.json.
+
+**The designer's side of the wire** ([`api.py`](../engine/api.py)): large reads
+are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
+`routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with
+the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
+streams the track's file with Range (206), needs the token, and only ever serves
+a file the track names (or the same name under this machine's `audio_roots` in
+`klights.local.json`) with an audio extension. Writes are configure-tier
+commands answered from the worker: `timeline_draft {doc}` (the format's rules,
+then a compile against this rig), `timeline_save` and `routine_save {doc,
+base_rev}` (refused if the file changed since), and `routine_draft {doc}` (the
+format's rules, then the routine bound to this rig as it is and in each
+variation: roles no fixture carries, blocks with nothing to aim).
+`preview_arm {track_id, force?}`
+puts the designer's transport on the rig -- refused while a DJ plays unless
+forced, shown on every console, released by `preview_release` or by the
+designer's browser going away; `preview_transport {time_s, playing}` moves it,
+and a draft replaces what it plays until saved. A `preview_transport` that
+arrives after its preview has ended is ignored rather than reported: the page
+learns from the snapshot within a tenth of a second and stops sending. Clip
+positions and lengths are capped at `showfiles.MAX_BEATS` (65536), so no
+document can ask the compiler for unbounded work.
+
+**The designer** itself is `ui/src/designer/`, a chunk of its own loaded only
+from `#designer` (`test_api` checks the console's entry script never contains
+it). `#designer` lists the tracks and routines; `#designer/<track>` is layout B
+-- bar ruler, rekordbox's phrases, the waveform, then the timeline's rows (the
+higher lane wins), hits, automation and the VJ lane, with the rig's plan and
+"who drives each lane" at the playhead on the right and the selected clip
+below; `#designer/routine/<id>` edits a routine with the same lanes in loop
+mode, plus its roles, open parameters, variations and blocks. Its beat grid,
+block list and automation targets are copies of the engine's, held to them by
+fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale
+fixture fails `test_api`). Everything else -- whether a document is valid,
+what a routine does on this rig -- it asks the engine.
+
+**In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
+behind the MCP server: status, tracks (with their phrase beats), routines,
+template sets and timelines to read; `put_*` for whole documents and
+`edit_timeline` for small ops (add/update/remove items and lanes, set points or
+palettes); `link_track`; `lint_show` (the folder, and against an event's rig);
+`explain_position` (a track at a beat, and what every fixture does there).
+Writes are dry runs unless asked and quote the rev they read; unlike the rig,
+the folder may be written while a show runs.
 
 ## Where to look
 
@@ -172,6 +310,12 @@ taper reads.
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |
 | DJ tempo ingest | [`sync.py`](../engine/sync.py) |
+| which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |
+| the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
+| what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
+| when the timeline drives, and grabs | [`playback.py`](../engine/playback.py) |
+| the designer's reads and audio | [`api.py`](../engine/api.py) |
+| what the fixtures do on a timeline | [`program.py`](../engine/program.py), [`routines.py`](../engine/routines.py), [`blocks.py`](../engine/blocks.py) |
 
 ## Tests
 

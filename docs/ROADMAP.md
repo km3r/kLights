@@ -94,9 +94,18 @@ Open, in rough priority order.
   tested; nothing talks to real hardware yet. Two routes, both documented in
   [`bridges/prolink/`](../bridges/prolink/README.md): beat-link-trigger for
   CDJs, rkbx_link for rekordbox and a DDJ.
-- **Phrase-driven cues.** `Build` arms the next cue, `Drop` fires it,
-  `Outro` releases to ambient. The data arrives; nothing consumes it yet. This
-  is the thing the APC40 show was doing by hand.
+- **F19, timecoded shows — in progress.** Routines driven by which track is
+  playing and where in it: phrase templates for any track, hand-built timelines
+  for signature tracks, a desktop designer. Milestone 1 (one track end to end:
+  prep, design, play live from either source) is built; it waits on hardware
+  captures from real decks. Milestone 2 (the template runtime, live phrase mode)
+  and 3 (VJ) are next. Design record:
+  [`design/timecoded-shows.md`](design/timecoded-shows.md).
+- **Phrase-driven cues.** An `Up` arms the next cue, the `Chorus` downbeat fires
+  it, `Outro` releases to ambient. The data arrives; nothing consumes it yet.
+  This is the thing the APC40 show was doing by hand, and F19's phrase templates
+  are how it gets built. The labels are rekordbox's own: it says Up, Chorus and
+  Down, never Build or Drop.
 - **The three unmeasured taper inputs.** `beam_deg`, `ball_radius` and the crowd
   head band are estimates. `SAFETY.md` lists the measurement that retires each.
 - **A second venue.** Everything is in place — shared rooms, derived previz

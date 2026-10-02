@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import __version__
+from . import api as apimod
 from . import auto as autom
 from . import calibrate as calibmod
 from . import config as configmod
@@ -53,12 +54,21 @@ from . import geometry as geo
 from . import library as libmod
 from . import motion
 from . import patch as patchmod
+from . import playback as playbackmod
+from . import program as programmod
 from . import rig as rigmod
+from . import routines as routinesmod
 from . import safety as safetymod
 from . import scene as scenemod
+from . import showfiles
+from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import timeline as timelinemod
+from . import tracks as tracksmod
+from . import transport as transportmod
 from . import venue as venuemod
+from . import worker as workermod
 from .output import ArtNetOutput, NullOutput
 from .output.artnet import parse_targets as parse_artnet_targets
 from .runner import Runner
@@ -68,6 +78,10 @@ REPO = Path(__file__).resolve().parent.parent
 UI_DIST = REPO / "ui" / "dist"
 
 BROADCAST_HZ = 10.0
+
+# What a command handler returns when it will answer later, from the worker
+# (`ShowController._deferred`). Never sent anywhere.
+DEFERRED = object()
 
 # How many snapshots a client may fall behind before it is dropped. Three is a
 # third of a second at BROADCAST_HZ: long enough to ride out a garbage collection
@@ -115,6 +129,13 @@ TIER: dict[str, str] = {
     "patch_address": "configure", "patch_tags": "configure",
     "patch_position": "configure", "patch_autopatch": "configure",
     "patch_apply": "configure",
+    # the show folder: what is written there outlives the night
+    "track_link": "configure", "show_reload": "configure",
+    "show_latency": "configure",
+    # the designer: writes the show folder, and can take the stage
+    "timeline_draft": "configure", "timeline_save": "configure",
+    "routine_draft": "configure", "routine_save": "configure",
+    "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
@@ -213,7 +234,8 @@ class ShowController:
     """Owns the engine. Every mutation arrives as a queued command."""
 
     def __init__(self, event_dir: Path, artnet: Optional[str] = None,
-                 fps: float = 40.0, bpm: float = 124.0):
+                 fps: float = 40.0, bpm: float = 124.0,
+                 show_dir: Optional[Path] = None):
         self.event_dir = Path(event_dir)
         self.rig = rigmod.load_rig(self.event_dir)
         errors = self.rig.validate()
@@ -271,11 +293,21 @@ class ShowController:
         self.runner = Runner(
             ctx=self.ctx, show=self.setlist.current().make(self.palette.current()),
             output=self.output, fps=fps, clock=self.clock, director=self.director,
-            before_frame=self._drain, on_show=self._attach_overrides,
+            before_frame=self._before_frame, on_show=self._attach_overrides,
             on_frame=self._publish)
 
-        self.commands: "queue.Queue[tuple[dict, Optional[Client], float]]" = queue.Queue()
+        # Each entry is (command dict, sender, arrival time) -- or, from inside
+        # the engine only, (callable, None, time): see `submit_call`.
+        self.commands: "queue.Queue[tuple[Any, Optional[Client], float]]" = queue.Queue()
         self.clients: dict[str, Client] = {}
+        # How a reply reaches the one client that asked for it. Set by the
+        # ShowServer that owns the sockets; None when there is no server (the
+        # tests that drive a controller directly), and then nothing is sent.
+        self.reply_to: Optional[Callable[[str, dict], None]] = None
+        # Anything slow -- parsing a show file, matching a track, an fsync to a
+        # shared folder -- runs here and posts its result back through
+        # `submit_call`, so it lands on the output thread at a frame boundary.
+        self.worker = workermod.Worker(post=self.submit_call, report=self.note)
         self.master = 0.9
         self.blackout = False
 
@@ -321,7 +353,42 @@ class ShowController:
         # a clock that carried track titles would be a clock with opinions.
         self.sync_deck: Optional[str] = None
         self.sync_track: Optional[str] = None
+        # Which track the DJ is playing and where in it (F19). Fed by the same
+        # `sync` command as the clock; read by the snapshot from another
+        # thread, which is safe because it keeps its state in one immutable
+        # value swapped by reference.
+        self.transport = transportmod.TrackTransport()
+        # The show folder (F19f): prepped tracks, timelines, routines. Optional
+        # -- with no folder nothing below exists and the engine is exactly what
+        # it was. Loaded here, synchronously, because nothing is running yet;
+        # every later reload happens on the worker.
+        self.show_dir = Path(show_dir) if show_dir is not None else None
+        self.show_library: Optional[showlibrary.Library] = None
+        # What the playing track was matched to, against which load. Replaced
+        # only when the track changes -- see showlibrary.Pinned.
+        self.pinned: Optional[showlibrary.Pinned] = None
+        self.grid_check: Optional[tracksmod.GridCheck] = None
+        self._check_jump: Optional[int] = None
+        self.watcher: Optional[showlibrary.Watcher] = None
+        # Whether the timeline drives the rig this frame (F19i). Only with a
+        # show folder; without one the runner never asks.
+        self.player: Optional[playbackmod.TrackPlayer] = None
+        self._frame_sample: Optional[transportmod.TrackSample] = None
         self.presets = load_presets(self.event_dir)
+        if self.show_dir is not None:
+            self.player = playbackmod.TrackPlayer(
+                self.transport, pinned=lambda: self.pinned,
+                rigging=self._rigging, submit=self.worker.submit,
+                post=self.submit_call, note=self.note,
+                clock_beat=lambda: self.ctx.beat,
+                base_palette=self._base_palette)
+            self.runner.choose_show = self._choose_show
+            self._install_library(showlibrary.load(self.show_dir))
+            show = self.show_library.folder.show or {}
+            self.player.arm((show.get("follow") or {}).get("default") == "armed")
+            self.watcher = showlibrary.Watcher(
+                self.show_dir, on_change=self._library_changed,
+                report=lambda text: self.submit_call(lambda: self.note(text)))
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
         # was one for its whole first run.
@@ -393,12 +460,19 @@ class ShowController:
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
         except OSError:
             pass
+        self.worker.start()
+        if self.watcher is not None:
+            self.watcher.start(self.show_library.signature
+                               if self.show_library is not None else None)
         self.runner.start()
 
     def stop(self) -> None:
         if self.sync is not None:
             self.sync.stop()
+        if self.watcher is not None:
+            self.watcher.stop()
         self.runner.stop()
+        self.worker.stop()
         self.output.close()
         try:
             patchmod.lock_path(str(self.event_dir)).unlink(missing_ok=True)
@@ -406,6 +480,32 @@ class ShowController:
             pass
 
     # -- the frame hooks ---------------------------------------------------
+
+    def _before_frame(self) -> None:
+        self._drain()
+        self._frame_sample = self._track_frame()
+
+    def _choose_show(self, fallback: statemod.Show) -> statemod.Show:
+        """The runner's hook: the timeline's show while it drives, else
+        auto mode's, unchanged."""
+        now = self.runner.now()
+        sample = self._frame_sample or self.transport.sample(now)
+        return self.player.choose(fallback, sample, now)
+
+    def _rigging(self):
+        from . import blocks as blocksmod
+        return blocksmod.Rigging(self.rig, dict(self.by_name),
+                                 tuple(self.presets), self.rig.name)
+
+    def _base_palette(self) -> dict:
+        """The engine's own palette, as roles, for a timeline that has none."""
+        colors = self.palette.colors
+        i = self.palette.index
+        primary = tuple(colors[i % len(colors)]) if colors else (1.0, 1.0, 1.0)
+        secondary = (tuple(colors[(i + 1) % len(colors)]) if colors
+                     else (1.0, 1.0, 1.0))
+        return {"primary": primary, "secondary": secondary,
+                "accent": (1.0, 1.0, 1.0)}
 
     def _drain(self) -> None:
         """Apply every queued command. Runs on the output thread, at the top of
@@ -415,12 +515,167 @@ class ShowController:
                 message, client, at = self.commands.get_nowait()
             except queue.Empty:
                 return
+            if callable(message):
+                # Posted from inside the engine by `submit_call` -- a worker
+                # handing a result back. Never reachable from a socket: those
+                # deliver parsed JSON, and JSON has no callables.
+                try:
+                    message()
+                except Exception as exc:                    # noqa: BLE001
+                    self.note(f"engine task failed: {exc}")
+                continue
+            rid = reply_id(message)
+            # Who to answer, for a handler that answers later (`_deferred`).
+            self._replying = (client, rid, message.get("type", "?"))
             try:
-                self.apply(message, client, at)
+                result = self.apply(message, client, at)
             except Exception as exc:                        # noqa: BLE001
                 # One bad command must not stop the others, and must not stop
-                # the show. Record it where the UI can see it.
-                self.note(f"{message.get('type', '?')} failed: {exc}")
+                # the show. A command that asked for a reply gets its failure
+                # there, where the screen that sent it can show it beside the
+                # thing that failed; one that did not is reported where every
+                # console can see it, as it always was.
+                if rid is not None and client is not None:
+                    self._reply(client, rid, ok=False, error=str(exc))
+                else:
+                    self.note(f"{message.get('type', '?')} failed: {exc}")
+                continue
+            if result is DEFERRED:
+                continue                   # answered when its work is done
+            if rid is not None and client is not None:
+                self._reply(client, rid, ok=True, data=result)
+
+    def _deferred(self) -> Callable[..., None]:
+        """A way to answer the command being applied, later -- for one whose
+        work runs on the worker. Without an id (or a sender) a failure lands
+        in the notices instead, as any other failure would."""
+        client, rid, kind = getattr(self, "_replying", (None, None, "?"))
+
+        def respond(ok: bool, data: Any = None, error: Optional[str] = None):
+            if rid is not None and client is not None:
+                self._reply(client, rid, ok=ok, error=error, data=data)
+            elif not ok:
+                self.note(f"{kind} failed: {error}")
+        return respond
+
+    def _on_worker(self, label: str, fn: Callable[[], Any],
+                   then: Callable[[Any, Callable], None]) -> object:
+        """Run `fn` on the worker and `then(result, respond)` back here; a
+        failure is answered as one. Returns DEFERRED for the handler to return."""
+        respond = self._deferred()
+
+        def job():
+            try:
+                return True, fn()
+            except Exception as exc:                        # noqa: BLE001
+                return False, str(exc)
+
+        def done(outcome) -> None:
+            ok, value = outcome
+            if ok:
+                then(value, respond)
+            else:
+                respond(False, error=value)
+
+        self.worker.submit(job, done, label=label)
+        return DEFERRED
+
+    def _reply(self, client: Client, rid: Any, ok: bool,
+               error: Optional[str] = None, data: Any = None) -> None:
+        if self.reply_to is None:
+            return
+        payload: dict = {"type": "reply", "id": rid, "ok": ok}
+        if error is not None:
+            payload["error"] = error
+        if data is not None:
+            payload["data"] = data
+        try:
+            self.reply_to(client.id, payload)
+        except Exception as exc:                            # noqa: BLE001
+            # Outside _drain's per-command guard, and on the output thread: a
+            # reply that cannot be sent is a notice, never a stopped frame.
+            self.note(f"reply to {client.name} failed: {exc}")
+
+    def _track_frame(self, now: Optional[float] = None
+                     ) -> Optional[transportmod.TrackSample]:
+        """Match the playing track when it changes. Every frame, after the
+        commands: a track can change with no command at all -- the settle
+        window closing on a deck loaded while paused.
+
+        The match is PINNED to the track: a reload of the folder mid-song does
+        not touch it, and neither does a manual link. Both apply from the
+        track's next play (showlibrary.Pinned)."""
+        if self.show_dir is None:
+            return None
+        sample = self.transport.sample(self.runner.now() if now is None else now)
+        pinned = self.pinned
+        if pinned is None or pinned.track_seq != sample.track_seq:
+            pinned = showlibrary.pin(self.show_library, sample)
+            self.pinned = pinned
+            self.grid_check = (tracksmod.GridCheck(pinned.grid)
+                               if pinned.grid is not None else None)
+            self._check_jump = sample.jump_seq
+            if self.player is not None:
+                # Compile now, armed or not, so arming is instant.
+                self.player.compile_for(pinned)
+        return sample
+
+    def _check_grid(self, fields: dict, sample: transportmod.TrackSample,
+                    now: float) -> None:
+        """Feed the grid cross-check what the deck says about its own beats."""
+        check = self.grid_check
+        if check is None:
+            return
+        if sample.jump_seq != self._check_jump:
+            # A loop or a hot cue: what was seen before it says nothing about
+            # where the deck is now.
+            check.reset()
+            self._check_jump = sample.jump_seq
+        if "beat_number" in fields and "track_time" in fields:
+            # beat-link: count and position from ONE packet, so no estimate
+            # comes into it and any transport state will do.
+            check.number(fields["beat_number"], fields["track_time"], now)
+        elif ("beat_in_bar" in fields and fields.get("source") == "rkbx"
+              and sample.state == transportmod.PLAYING
+              and sample.raw_time_s is not None):
+            # rkbx_link: bar phase and position arrive as separate messages from
+            # one read of rekordbox's memory, so the estimate at arrival is the
+            # position the phase belongs to. Only rkbx_link's phase is a
+            # continuous ramp; a bridge sending a beat number per beat is not.
+            check.phase(fields["beat_in_bar"], sample.raw_time_s, now)
+
+    def _install_library(self, library: showlibrary.Library) -> None:
+        """Make a freshly loaded folder current. On the output thread, by one
+        reference assignment. The playing track keeps the load it was matched
+        against."""
+        previous = self.show_library
+        self.show_library = library
+        showlibrary.apply_settings(self.transport, library)
+        if self.player is not None:
+            self.player.configure(library.folder.show)
+            self.player.compile_idle(library)
+        if self.watcher is not None:
+            # What this load read, so the watcher does not load it again.
+            self.watcher.seen = library.signature
+        if previous is not None:
+            fresh = [e for e in library.folder.errors
+                     if e not in previous.folder.errors]
+            if fresh:
+                more = f" (+{len(fresh) - 1} more)" if len(fresh) > 1 else ""
+                self.note(f"show folder: {fresh[0]}{more}")
+
+    def _library_changed(self) -> None:
+        """The watcher saw the folder change. On the watcher's thread: hand the
+        load to the worker and the install to the output thread."""
+        self.reload_library()
+
+    def reload_library(self) -> None:
+        if self.show_dir is None:
+            return
+        root = self.show_dir
+        self.worker.submit(
+            lambda: showlibrary.load(root, previous=self.show_library),
+            done=self._install_library, label="reloading the show folder")
 
     def _attach_overrides(self, show: statemod.Show) -> None:
         show.master = 0.0 if self.blackout else self.master
@@ -451,8 +706,21 @@ class ShowController:
         """
         self.commands.put((message, client, self.runner.now()))
 
+    def submit_call(self, fn: Callable[[], None]) -> None:
+        """Run `fn()` on the output thread at the next frame boundary.
+
+        The way back in for work done elsewhere. A worker thread that has parsed
+        a file or compiled a timeline must not install the result itself -- it
+        would be mutating the show from a second thread, mid-evaluation, which
+        is the exact bug the command queue exists to rule out. It posts here
+        instead, and the install happens where every other mutation does.
+
+        Internal only. Nothing a client sends can become a callable.
+        """
+        self.commands.put((fn, None, self.runner.now()))
+
     def apply(self, message: dict, client: Optional[Client],
-              at: Optional[float] = None) -> None:
+              at: Optional[float] = None) -> Any:
         kind = message.get("type")
         now = self.ctx.time if at is None else at
         handler = getattr(self, f"_cmd_{kind}", None)
@@ -467,11 +735,15 @@ class ShowController:
                 f"{kind!r} needs {need} access and this client has "
                 f"{client.tier}. Open the URL the engine printed, including "
                 f"its ?token=, or restart with --no-token")
-        handler(message, now)
+        result = handler(message, now)
         self.rev += 1
         if client is not None and kind != "hello":
             client.last_action = describe(message)
             client.last_action_at = time.time()
+        # Whatever the handler returned rides back in the reply, for the few
+        # commands whose answer is not visible in the broadcast state -- a
+        # validation result, say. Most return None and the reply is just ok.
+        return result
 
     # slots ----------------------------------------------------------------
 
@@ -497,6 +769,11 @@ class ShowController:
                 self.slot_entries("color"), self.slot_entries("level"), color)
         self.director.compose = compose
         show = self.director.rebuild()
+        if self.player is not None and self.player.engaged:
+            # The timeline is on stage: the rebuilt show is what the grabbed
+            # lanes read, picked up next frame. Handing it to the runner here
+            # would swap the timeline out for a frame and cut straight back.
+            return
         if fade_beats is not None:
             # `is not None`, not truthiness: a cue with fade 0 is a CUT, and it
             # has to cancel a fade already in flight rather than letting the
@@ -534,6 +811,7 @@ class ShowController:
         if entry.kind == "mixed":
             for group in (entry.groups or ("movers",)):
                 self.slots["color"][group] = name
+        self._grab({slot, "color"} if entry.kind == "mixed" else {slot})
         self._recompose()
 
     def _cmd_clear_slot(self, m: dict, now: float) -> None:
@@ -550,6 +828,7 @@ class ShowController:
             self.slots[slot].clear()
         else:
             self.slots[slot].pop(group, None)
+        self._grab({slot})
         self._recompose()
 
     def _cmd_release(self, m: dict, now: float) -> None:
@@ -557,6 +836,7 @@ class ShowController:
 
     def _cmd_next_look(self, m: dict, now: float) -> None:
         self.setlist.advance()
+        self._grab({"movement"})
         self._recompose()
 
     # presets ---------------------------------------------------------------
@@ -680,6 +960,7 @@ class ShowController:
         if preset.get("master") is not None:
             self.master = max(0.0, min(1.0, float(preset["master"])))
         self.director.held = True
+        self._grab(statemod.SLOTS)
         self._recompose()
 
     def _cmd_preset_delete(self, m: dict, now: float) -> None:
@@ -1101,6 +1382,7 @@ class ShowController:
         if cue.rates is not None:
             self.apply_rates(cue.rates)
 
+        self._grab(statemod.SLOTS)
         self._recompose(fade_beats=cue.fade)
         self.note(f"cue {self.cues.index + 1}/{len(self.cues.cues)}: "
                   f"{cue.name}" + (f" (fade {cue.fade:g} beats)"
@@ -1173,22 +1455,38 @@ class ShowController:
         tracking -- `MasterClock.sync` says so, and this is the caller it is
         talking about.
         """
+        # The same whitelist and range checks as the UDP port, applied here so
+        # both routes in share one validator. The WebSocket route used to take
+        # the message as it came: a bpm of 900 went straight to the clock, and a
+        # track title was whatever length the sender liked. Cleaning twice is
+        # harmless -- a datagram arrives already clean and comes out the same.
+        fields = syncmod.clean(m)
+        if fields is None:
+            raise ValueError("sync carried no usable fields (bpm must be "
+                             "40-250, beat_in_bar 0-64)")
         self.clock.sync(
             now,
-            bpm=m.get("bpm"),
-            beat=m.get("beat"),
-            beat_in_bar=m.get("beat_in_bar"),
+            bpm=fields.get("bpm"),
+            beat=fields.get("beat"),
+            beat_in_bar=fields.get("beat_in_bar"),
             # The bridge naming itself is what makes the console able to say
             # WHICH thing is driving the clock, rather than just "not you".
-            source=m.get("source", "sync"),
-            phrase_measured=m.get("phrase_measured"),
-            phrase_label=m.get("phrase_label"),
-            phrase_ends_in=m.get("phrase_ends_in"),
+            source=fields.get("source", "sync"),
+            phrase_measured=fields.get("phrase_measured"),
+            phrase_label=fields.get("phrase_label"),
+            phrase_ends_in=fields.get("phrase_ends_in"),
             at=syncmod.now())
-        if "deck" in m:
-            self.sync_deck = m["deck"]
-        if "track" in m:
-            self.sync_track = m["track"]
+        if "deck" in fields:
+            self.sync_deck = fields["deck"]
+        if "track" in fields:
+            self.sync_track = fields["track"]
+        # `now` is when the datagram ARRIVED (see submit), which is what the
+        # transport's line needs: applying it at the frame boundary instead
+        # would quantise every position to the 25 ms frame grid.
+        self.transport.ingest(fields, now)
+        sample = self._track_frame(now)
+        if sample is not None:
+            self._check_grid(fields, sample, now)
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -1204,8 +1502,299 @@ class ShowController:
         was = self.clock.source
         self.clock.unsync()
         self.sync_deck = self.sync_track = None
+        self.transport.clear()
         self.note(f"took the clock back from {was!r} at "
                   f"{self.clock.bpm:.1f} bpm")
+
+    def _grab(self, slots) -> None:
+        if self.player is not None:
+            self.player.grab(slots)
+
+    def _cmd_follow(self, m: dict, now: float) -> None:
+        """Arm or disarm Follow DJ: whether the timeline may drive the rig."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        armed = m.get("armed")
+        if not isinstance(armed, bool):
+            raise ValueError("follow needs armed: true or false")
+        self.player.arm(armed)
+        self.note("Follow DJ ARMED -- a matched track's timeline drives the rig"
+                  if armed else "Follow DJ SAFE -- the DJ feed drives nothing")
+
+    def _cmd_program_grab(self, m: dict, now: float) -> None:
+        """Take a lane from the timeline without changing what is on it."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        slot = m.get("slot")
+        if slot not in statemod.SLOTS:
+            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
+        if not self.player.engaged:
+            raise ValueError("the timeline is not driving; there is nothing "
+                             "to take a lane from")
+        self.player.grab({slot})
+
+    def _cmd_program_release(self, m: dict, now: float) -> None:
+        """Give a lane (or every lane) back to the timeline."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        slot = m.get("slot")
+        if slot is not None and slot not in statemod.SLOTS:
+            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
+        self.player.release(slot)
+
+    def _cmd_show_latency(self, m: dict, now: float) -> dict:
+        """How far ahead of a source's position the lights run, in ms. Applied
+        at once and saved to the show folder's show.json (decided with the
+        user, F19i), where it follows the show."""
+        library = self.show_library
+        if library is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        source = m.get("source")
+        if not isinstance(source, str) or not source or len(source) > 32:
+            raise ValueError("show_latency needs a source, e.g. \"rkbx\"")
+        ms = m.get("ms")
+        if isinstance(ms, bool) or not isinstance(ms, (int, float)) \
+                or not -2000 <= ms <= 2000:
+            raise ValueError("ms must be a number from -2000 to 2000")
+        self.transport.latency_s = {**self.transport.latency_s,
+                                    source: float(ms) / 1000.0}
+        root = library.root
+
+        def done(_):
+            self.note(f"latency for {source}: {ms:g} ms, saved to show.json")
+            self.reload_library()
+
+        self.worker.submit(lambda: showlibrary.save_latency(root, source, ms),
+                           done=done, label="saving the latency")
+        return {"source": source, "ms": ms}
+
+    # the designer (F19j) -----------------------------------------------------
+
+    def _need_library(self):
+        if self.show_library is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        return self.show_library
+
+    def _cmd_timeline_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved timeline: the format's rules, then a compile
+        against THIS rig. Answers with errors, warnings and problems. If the
+        designer is driving the rig on that track, the draft is what plays."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("timeline_draft needs the document as doc")
+        routines = library.folder.routines
+        rigging = self._rigging()
+
+        def work():
+            result = showfiles.validate("timeline", doc)
+            if not result.ok:
+                return result, None
+            timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
+            return result, programmod.compile(
+                timeline, routines, rigging, f"draft of {doc.get('track')}")
+
+        def then(value, respond):
+            result, program = value
+            preview = self.player.preview if self.player else None
+            if (program is not None and preview is not None
+                    and preview.track_id == doc.get("track")):
+                preview.program, preview.draft = program, True
+            respond(True, {"errors": result.errors, "warnings": result.warnings,
+                           "problems": program.problems if program else []})
+
+        return self._on_worker("checking a timeline draft", work, then)
+
+    def _save(self, kind: str, m: dict) -> object:
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError(f"{kind}_save needs the document as doc")
+        if not isinstance(m.get("base_rev"), str):
+            raise ValueError('base_rev is required: the rev you opened, or "" '
+                             "for a new file -- so a save never overwrites a "
+                             "change it has not seen")
+        path = showfiles.path_for(library.root, kind,
+                                  showfiles.doc_ident(kind, doc) or "")
+        base = m["base_rev"]
+
+        def then(rev, respond):
+            respond(True, {"rev": rev, "path": f"{showfiles.SUBDIR[kind]}/{path.name}"})
+            self.reload_library()
+
+        return self._on_worker(f"saving {path.name}",
+                               lambda: showfiles.write_doc(path, doc, kind, base),
+                               then)
+
+    def _cmd_timeline_save(self, m: dict, now: float) -> object:
+        """Write a timeline, refused if the file changed since `base_rev`.
+        It applies to the track from its next play, like any folder change."""
+        return self._save("timeline", m)
+
+    def _cmd_routine_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved routine: the format's rules, then the routine bound
+        to THIS rig as it is -- and in each of its variations -- for what will
+        not work here (a role no fixture carries, a block with nothing to aim)."""
+        self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("routine_draft needs the document as doc")
+        rigging = self._rigging()
+
+        def work():
+            result = showfiles.validate("routine", doc)
+            if not result.ok:
+                return result, []
+            where = f"routine {doc.get('id')!r}"
+            problems = routinesmod.instantiate(doc, {}, rigging, where).problems
+            for name in sorted(doc.get("variations") or {}):
+                label = f"{where} variation {name!r}"
+                for p in routinesmod.instantiate(
+                        doc, {"variation": name}, rigging, label).problems:
+                    # only what the variation adds: the rest is said above
+                    if p.replace(label, where, 1) not in problems:
+                        problems.append(p)
+            return result, problems
+
+        def then(value, respond):
+            result, problems = value
+            respond(True, {"errors": result.errors, "warnings": result.warnings,
+                           "problems": problems})
+
+        return self._on_worker("checking a routine draft", work, then)
+
+    def _cmd_routine_save(self, m: dict, now: float) -> object:
+        return self._save("routine", m)
+
+    def _cmd_preview_arm(self, m: dict, now: float) -> dict:
+        """The designer takes the stage: its transport drives the rig through
+        this track's timeline. Refused while a DJ is playing, unless forced."""
+        library = self._need_library()
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        track_id = m.get("track_id")
+        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+            raise ValueError(f"there is no prepped track {track_id!r}")
+        sample = self.transport.sample(now)
+        if (not m.get("force") and sample.source not in (None, "designer")
+                and sample.state in (transportmod.PLAYING, transportmod.STALLED)):
+            raise ValueError(f"a DJ is playing ({sample.source}); preview with "
+                             f"force to take the rig from them anyway")
+        client, _, _ = getattr(self, "_replying", (None, None, None))
+        cid = client.id if client is not None else "local"
+        name = client.name if client is not None else "designer"
+        preview = playbackmod.Preview(cid, name, track_id,
+                                      library.grids.get(track_id))
+        self.player.start_preview(preview)
+        timeline = library.timelines.get(track_id)
+        if timeline is not None:
+            routines = library.folder.routines
+            rigging = self._rigging()
+
+            def done(program):
+                if self.player.preview is preview and not preview.draft:
+                    preview.program = program
+
+            self.worker.submit(
+                lambda: programmod.compile(timeline, routines, rigging,
+                                           f"timelines/{track_id}.json"),
+                done, label=f"compiling {track_id} for the designer")
+        self.note(f"DESIGNER ({name}) is driving the rig on {track_id}")
+        return {"track_id": track_id}
+
+    def _owned_preview(self):
+        preview = self.player.preview if self.player is not None else None
+        if preview is None:
+            raise ValueError("the designer is not driving the rig; arm a "
+                             "preview first")
+        client, _, _ = getattr(self, "_replying", (None, None, None))
+        if client is not None and client.id != preview.client:
+            raise ValueError(f"{preview.name} is driving the rig, not this "
+                             f"console")
+        return preview
+
+    def _cmd_preview_transport(self, m: dict, now: float) -> None:
+        """Where the designer's audio is, and whether it is playing."""
+        if self.player is None or self.player.preview is None:
+            # A stream outliving its preview -- released from a phone, or the
+            # designer reconnected -- for the tenth of a second until the page
+            # sees it. Ten failures a second in every console's notices would
+            # bury the one that said why; the release already said it.
+            return
+        self._owned_preview()
+        time_s = m.get("time_s")
+        if isinstance(time_s, bool) or not isinstance(time_s, (int, float)) \
+                or not -60.0 <= time_s <= 14400.0:
+            raise ValueError("time_s must be seconds into the track")
+        self.player.preview_position(float(time_s), bool(m.get("playing")), now)
+
+    def _cmd_preview_release(self, m: dict, now: float) -> None:
+        preview = self.player.preview if self.player is not None else None
+        if preview is None:
+            return
+        self.player.stop_preview()
+        self.note(f"the designer ({preview.name}) let go of the rig")
+
+    def preview_gone(self, cid: str) -> None:
+        """A console went away. If it was driving the rig, it stops."""
+        preview = self.player.preview if self.player is not None else None
+        if preview is not None and preview.client == cid:
+            self.player.stop_preview()
+            self.note(f"the designer ({preview.name}) disconnected; the rig is "
+                      f"back to the show")
+
+    def _cmd_track_link(self, m: dict, now: float) -> dict:
+        """This playing track IS that prepped track -- for a guest's copy the
+        matcher could not place (a different tag, a different export).
+
+        Recorded on the prepped track as an alias, plus the deck's signature
+        when beat-link sent one, so every later play matches by itself. It does
+        NOT re-match the track playing now: like any change to the show
+        folder, it applies from the track's next play. The write is on the
+        worker; the reply says it was queued and a notice says how it went."""
+        library = self.show_library
+        if library is None:
+            raise ValueError("no show folder -- start the engine with "
+                             "--show-dir to link tracks")
+        track_id = m.get("track_id")
+        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+            raise ValueError(f"there is no prepped track {track_id!r} in "
+                             f"{library.root}/tracks")
+        ident = self.transport.sample(now).identity
+        if not ident.title:
+            raise ValueError("nothing identified is playing -- a link needs a "
+                             "track title from the deck")
+        sig = ident.signature
+        if sig:
+            owner = [t for t in library.index.by_signature.get(sig, ())
+                     if t != track_id]
+            if owner:
+                raise ValueError(
+                    f"this deck's signature already belongs to {owner[0]!r}; "
+                    f"remove it from tracks/{owner[0]}.json ids.blt_signatures "
+                    f"first, or both tracks would claim it")
+        root, title = library.root, ident.title
+
+        def done(what: str) -> None:
+            if what == "already":
+                self.note(f"{track_id} already answers to {title!r}")
+            else:
+                self.note(f"linked {title!r} to {track_id}; it applies from "
+                          f"the track's next play")
+            self.reload_library()
+
+        self.worker.submit(
+            lambda: showlibrary.link(root, track_id, ident.title, ident.artist,
+                                     ident.album, sig,
+                                     showlibrary.default_added()),
+            done=done, label=f"linking {title!r} to {track_id}")
+        return {"queued": True, "track_id": track_id, "applies": "next_play"}
+
+    def _cmd_show_reload(self, m: dict, now: float) -> None:
+        """Read the show folder again now, rather than at the next poll."""
+        if self.show_dir is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        self.reload_library()
 
     def _cmd_rate(self, m: dict, now: float) -> None:
         """How fast one slot's chase runs, relative to everything else.
@@ -1303,6 +1892,13 @@ class ShowController:
         self._prune_targets()
         self._recompose()
         self.pending_patch = False
+        if self.player is not None:
+            # Programs are built against fixtures; the old ones are dropped at
+            # once (the operator's show runs) and rebuilt for the new rig.
+            self.player.idle = None
+            self.player.recompile()
+            if self.show_library is not None:
+                self.player.compile_idle(self.show_library)
 
         if old_heads != new_heads:
             self.note(f"rig reloaded, and the moving heads CHANGED "
@@ -1532,6 +2128,12 @@ class ShowController:
                       "phrase_measured": self.clock.phrase_measured,
                       "taps": self.clock.taps},
             "sync": self.sync_status(),
+            "track": _track_status(self),
+            "show": _show_status(self),
+            "program": _program_status(self),
+            "preview": (self.player.preview.public()
+                        if self.player is not None and self.player.preview
+                        else None),
             "auto": self.director.status(),
             # `kind` and `slot` let the UI put each look on the tab that owns it
             # and group within that -- a flat list of 200 is exactly why only a
@@ -1689,6 +2291,62 @@ def _sync_status(controller: "ShowController") -> dict:
     }
 
 
+def _track_status(controller: "ShowController") -> dict:
+    """Which track the DJ is playing and where in it, for the console. Small on
+    purpose: it rides the 10 Hz snapshot."""
+    s = controller.transport.sample(controller.runner.now())
+    pinned, check = controller.pinned, controller.grid_check
+    # Only this track's match: between a track change and the next frame the
+    # pin still describes the last one, and showing it would name the wrong
+    # track for 25 ms.
+    current = pinned is not None and pinned.track_seq == s.track_seq
+    return {
+        "state": s.state,
+        "title": s.identity.title or None,
+        "artist": s.identity.artist or None,
+        "album": s.identity.album or None,
+        "duration": s.identity.duration,
+        "source": s.source,
+        "deck": s.deck,
+        "time": None if s.time_s is None else round(s.time_s, 3),
+        "rate": round(s.rate, 4),
+        "age": None if s.age is None else round(s.age, 2),
+        "track_seq": s.track_seq,
+        "jump_seq": s.jump_seq,
+        "on_air": s.on_air,
+        # Which prepped track, and whether its beats agree (F19f).
+        "match": (pinned.public(controller.show_library) if current else None),
+        "grid_warning": (check.warning if current and check is not None
+                         else None),
+    }
+
+
+def _program_status(controller: "ShowController") -> Optional[dict]:
+    """Whether the timeline drives, and who has each lane -- the phone's Track
+    card. None without a show folder."""
+    player = controller.player
+    if player is None:
+        return None
+    out = player.status.public()
+    out["latency_ms"] = {k: round(v * 1000.0)
+                         for k, v in controller.transport.latency_s.items()}
+    return out
+
+
+def _show_status(controller: "ShowController") -> Optional[dict]:
+    """The show folder, in a few hundred bytes: where, which load, how many of
+    each, and the first few problems. The documents themselves never ride the
+    snapshot."""
+    library = controller.show_library
+    if library is None:
+        return None
+    f = library.folder
+    return {"dir": str(library.root), "rev": library.rev, **library.counts,
+            "errors": len(f.errors), "warnings": len(f.warnings),
+            "failed": len(f.failed),
+            "problems": showlibrary.describe_problems(library)}
+
+
 def load_presets(event_dir: Path) -> list[dict]:
     path = Path(event_dir) / "presets.json"
     if not path.exists():
@@ -1739,6 +2397,27 @@ def venue_summary(venue) -> dict:
             "canopy": None if venue.canopy is None else {
                 "enabled": venue.canopy.enabled, "height": venue.canopy.height,
                 "radius": venue.canopy.radius}}
+
+
+def reply_id(message: dict) -> Optional[Any]:
+    """The id a command wants its reply tagged with, or None for no reply.
+
+    Only a short string or a plain integer. Anything else is treated as no id at
+    all rather than an error: the id is the sender's bookkeeping, and a command
+    that did its job should not fail because its label was odd. Bounded, because
+    it is echoed back and a client should not be able to make the engine send it
+    a megabyte.
+    """
+    if not isinstance(message, dict):
+        return None
+    rid = message.get("id")
+    if isinstance(rid, bool):
+        return None
+    if isinstance(rid, int) and abs(rid) < 2 ** 53:
+        return rid
+    if isinstance(rid, str) and 0 < len(rid) <= 64:
+        return rid
+    return None
 
 
 def describe(message: dict) -> str:
@@ -1823,6 +2502,20 @@ class ShowServer:
         self._id_lock = threading.Lock()
         self._stop = threading.Event()
         self.httpd: Optional[ThreadingHTTPServer] = None
+        controller.reply_to = self.send_to
+        # Where this machine keeps music, for /api/audio when the track file
+        # moved (klights.local.json's audio_roots).
+        roots = showfiles.read_local_config().get("audio_roots")
+        self.audio_roots: list[str] = ([r for r in roots if isinstance(r, str)]
+                                       if isinstance(roots, list) else [])
+
+    def token_matches(self, supplied: str) -> bool:
+        """Whether a request carries the token -- in constant time, so how
+        long a wrong guess takes says nothing about how close it was."""
+        if self.token is None:
+            return True
+        return secrets.compare_digest(supplied.encode("utf-8"),
+                                      self.token.encode("utf-8"))
 
     def new_client_id(self) -> str:
         with self._id_lock:
@@ -1899,9 +2592,36 @@ class ShowServer:
                     f"snapshots behind and not reading")
                 self.drop(cid)
 
+    def send_to(self, cid: str, payload: dict) -> None:
+        """One message to one client. Never blocks, because it is called from
+        the output thread with a frame waiting.
+
+        A full queue means this client is already `QUEUE_DEPTH` snapshots behind
+        and the broadcast loop is about to drop it; the reply is skipped rather
+        than dropping it from here, because closing a socket can wait on the
+        network and the output thread cannot.
+        """
+        conn = self.sockets.get(cid)
+        if conn is None:
+            return
+        try:
+            text = json.dumps(payload)
+        except (TypeError, ValueError) as exc:
+            # A handler returned something JSON cannot carry. The sender still
+            # learns the command ran; the data is what is lost, and says so.
+            text = json.dumps({"type": "reply", "id": payload.get("id"),
+                               "ok": payload.get("ok"),
+                               "error": f"reply data not serialisable: {exc}"})
+        try:
+            conn.queue.put_nowait(text)
+        except queue.Full:
+            pass
+
     def drop(self, cid: str) -> None:
         conn = self.sockets.pop(cid, None)
         self.controller.clients.pop(cid, None)
+        # A designer that went away must not leave the rig on its transport.
+        self.controller.submit_call(lambda: self.controller.preview_gone(cid))
         if conn is not None:
             conn.close()
 
@@ -1928,6 +2648,11 @@ class ShowServer:
                 try:
                     message = json.loads(text)
                 except json.JSONDecodeError:
+                    continue
+                # Valid JSON that is not an object -- `[1, 2]`, `"go"`, `7` --
+                # used to reach `.get` below and end this client's connection.
+                # It is not a command; ignore it like any other junk.
+                if not isinstance(message, dict):
                     continue
                 if message.get("type") == "hello":
                     client.name = str(message.get("name", "someone"))[:40]
@@ -1996,8 +2721,8 @@ class ShowServer:
                     # should not be one at a load-in.
                     query = parse_qs(urlparse(self.path).query)
                     supplied = (query.get("token") or [""])[0]
-                    tier = ("configure" if server.token is None
-                            or supplied == server.token else "view")
+                    tier = ("configure" if server.token_matches(supplied)
+                            else "view")
                     from .websocket import handshake_response
                     self.wfile.write(handshake_response(key))
                     self.wfile.flush()
@@ -2008,8 +2733,13 @@ class ShowServer:
                     self.close_connection = True
                     server.serve_websocket(self.connection, key, tier=tier)
                     return
+                # The previz app's two reads first: /api/previz/ is under /api/
+                # but is not engine/api.py's -- see serve_previz.
                 if urlparse(self.path).path.startswith("/api/previz/"):
                     self.serve_previz(urlparse(self.path).path)
+                    return
+                if urlparse(self.path).path.startswith("/api/"):
+                    self.serve_api()
                     return
                 self.serve_static()
 
@@ -2023,6 +2753,11 @@ class ShowServer:
                 cannot be used to fetch an arbitrary file, and a model that has
                 not changed is never downloaded twice.
                 """
+                # Refused cross-origin like the rest of /api/. The app sends no
+                # Origin, so this only ever stops a browser page elsewhere.
+                if self.cross_origin():
+                    self.send_error(403, "cross-origin request refused")
+                    return
                 try:
                     scene = server.previz_scene()
                 except Exception as exc:                # noqa: BLE001
@@ -2070,6 +2805,42 @@ class ShowServer:
                     self.wfile.write(body)
                     return
                 self.send_error(404, "not part of the current previz scene")
+
+            def serve_api(self):
+                """GET /api/* -- see engine/api.py."""
+                if self.cross_origin():
+                    self.send_error(403, "cross-origin request refused")
+                    return
+                url = urlparse(self.path)
+                supplied = ((parse_qs(url.query).get("token") or [""])[0]
+                            or self.headers.get("X-Klights-Token", ""))
+                token_ok = server.token_matches(supplied)
+                try:
+                    resp = apimod.handle(server.controller.show_library, url.path,
+                                         self.headers.get("Range"), token_ok,
+                                         server.audio_roots)
+                except OSError as exc:
+                    resp = apimod.Response(500, json.dumps(
+                        {"error": str(exc)}).encode("utf-8"))
+                self.send_response(resp.status)
+                self.send_header("Content-Type", resp.content_type)
+                for name, value in resp.headers.items():
+                    self.send_header(name, value)
+                length = resp.length if resp.file is not None else len(resp.body)
+                self.send_header("Content-Length", str(length))
+                self.end_headers()
+                if resp.file is None:
+                    self.wfile.write(resp.body)
+                    return
+                with open(resp.file, "rb") as fh:
+                    fh.seek(resp.start)
+                    left = resp.length
+                    while left > 0:
+                        chunk = fh.read(min(65536, left))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        left -= len(chunk)
 
             def serve_static(self):
                 path = self.path.split("?", 1)[0]
@@ -2222,6 +2993,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="stop cleanly when this file appears. For a "
                              "launcher, which cannot send Ctrl-C to a process "
                              "with no console -- see launcher/")
+    parser.add_argument("--show-dir", metavar="DIR",
+                        help="the show folder: prepped tracks and their "
+                             "timelines (F19). Default: $KLIGHTS_SHOW_DIR, then "
+                             "show_dir in klights.local.json, else none")
     args = parser.parse_args(argv)
     if args.artnet:
         try:
@@ -2239,8 +3014,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     # the correct behaviour for a link that grants control of a lighting rig.
     token = None if args.no_token else (args.token or secrets.token_urlsafe(6))
 
+    show_dir = showfiles.resolve_show_dir(args.show_dir)
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
-                                bpm=args.bpm)
+                                bpm=args.bpm, show_dir=show_dir)
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
@@ -2285,6 +3061,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     if controller.sync is not None:
         print(f"sync    tempo ingest on {args.sync_bind}:{args.sync_port} "
               f"(UDP, JSON or OSC, unauthenticated)")
+    library = controller.show_library
+    if library is not None:
+        f = library.folder
+        problems = (f" -- {len(f.errors)} errors, see `python -m "
+                    f"engine.showfiles check {library.root}`" if f.errors else "")
+        print(f"shows   {library.root}: {library.describe()}{problems}")
+        if controller.player is not None:
+            print("follow  " + ("ARMED -- a matched track's timeline drives the "
+                                "rig" if controller.player.armed else
+                                "DISARMED -- the DJ feed shows but drives "
+                                "nothing until someone arms it on the phone"))
     print(f"ui      {'bundle at ' + str(args.ui) if Path(args.ui).is_dir() else 'not built -- see the page for how'}")
     if token is None:
         print("access  OPEN -- anyone who can reach this port has full control")

@@ -82,6 +82,12 @@ class Spec:
     each: Optional["Spec"] = None                 # every element of a list
     non_empty: bool = False
     fix: str = ""
+    # A discriminated object: `(key, {value: {field: Spec}})`. The object's
+    # `key` picks which extra fields apply, on top of anything in `of`. A
+    # timeline item is a routine clip, a look or a snapshot, and each needs
+    # different fields -- one flat spec would have to make all of them
+    # optional and so check none of them.
+    variants: Optional[tuple[str, dict[str, dict[str, "Spec"]]]] = None
 
     def describe(self) -> str:
         if self.choices:
@@ -134,6 +140,19 @@ def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
     if spec.of is not None and isinstance(value, dict):
         _check_object(value, spec.of, where, out)
 
+    if spec.variants is not None and isinstance(value, dict):
+        key, table = spec.variants
+        tag = value.get(key)
+        # A list or object as the tag cannot be looked up -- it is unhashable --
+        # and is simply not one of the choices.
+        if not isinstance(tag, (str, int, float)) or tag not in table:
+            out.append(f"{where}.{key} must be one of "
+                       + ", ".join(repr(t) for t in table)
+                       + f", got {tag!r}"
+                       + (f"\n      fix: {spec.fix}" if spec.fix else ""))
+        else:
+            _check_object(value, table[tag], where, out)
+
     if spec.each is not None and isinstance(value, list):
         for i, item in enumerate(value):
             _check(item, spec.each, f"{where}[{i}]", out)
@@ -151,7 +170,8 @@ def _check_object(cfg: dict, schema: dict[str, Spec], prefix: str,
         _check(cfg[key], spec, where, out)
 
 
-def validate(cfg: Any, schema: dict[str, Spec], path: Path) -> None:
+def validate(cfg: Any, schema: dict[str, Spec], path: Path,
+             current: int = CURRENT_VERSION) -> None:
     """Raise ConfigError listing everything wrong with `cfg`.
 
     Unknown keys are allowed on purpose. Every one of these files carries
@@ -164,13 +184,16 @@ def validate(cfg: Any, schema: dict[str, Spec], path: Path) -> None:
         raise ConfigError(path, [f"the file must contain an object, "
                                  f"got {_type_name(cfg)}"])
 
-    version = cfg.get("version", CURRENT_VERSION)
+    # `current` is per format. Show files are versioned independently of the
+    # rig and venue: a timeline format change must not force a bump on every
+    # venue.json in every checkout.
+    version = cfg.get("version", current)
     if not isinstance(version, int) or isinstance(version, bool):
         problems.append(f"version must be a whole number, got {version!r}")
-    elif version > CURRENT_VERSION:
+    elif version > current:
         problems.append(
             f"version {version} is newer than this engine understands "
-            f"({CURRENT_VERSION})\n      fix: update the engine, or remove the "
+            f"({current})\n      fix: update the engine, or remove the "
             f"key if the file was hand-copied from a newer checkout")
 
     _check_object(cfg, schema, "", problems)
@@ -253,6 +276,10 @@ VENUE = {
                             "big -- see docs/SAFETY.md"),
     "apex_height": Spec(Number, min=1),
     "elev_extreme_deg": Spec(Number, min=0, max=90),
+    "rest_point": Spec(dict, of=_POINT,
+                       fix="where the movers rest when a timeline says nothing "
+                           "about their movement, in millimetres. Defaults to "
+                           "the ball; set it in a room with no ball"),
     "crowd_zone": Spec(dict, of={
         "min_x": Spec(Number, required=True), "max_x": Spec(Number, required=True),
         "min_z": Spec(Number, required=True), "max_z": Spec(Number, required=True),
