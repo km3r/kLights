@@ -1230,16 +1230,26 @@ with tempfile.TemporaryDirectory() as tmp:
               live.pending_patch and len(live.rig.fixtures) == before,
               f"pending={live.pending_patch} fixtures={len(live.rig.fixtures)}")
 
+        applied_at = time.monotonic()
         live.apply({"type": "patch_apply"}, None)
         check("applying it swaps the rig in place",
               len(live.rig.fixtures) == before + 1, f"{len(live.rig.fixtures)}")
         check("and clears the pending flag", not live.pending_patch)
         check("the context sees the new rig too",
               live.ctx.rig is live.rig and len(live.ctx.rig.fixtures) == before + 1)
+        # Not `== 0`: the runner is live, and a frame may already have run since
+        # the reload, moving each value up by one slew step -- the fade-in this
+        # checks for, working. (Asserting the instant raced the frame thread and
+        # failed on a Windows runner.) What must hold is that nothing SNAPPED:
+        # no value is beyond what the slew allows for the time that has passed.
+        slew = live.ctx.taper.slew_per_second
+        bound = slew * (time.monotonic() - applied_at + 0.05)
+        seeded = list(live.ctx._taper_prev.values())
         check("intensity is seeded dark so the safety slew fades it in, "
               "rather than snapping",
-              set(live.ctx._taper_prev.values()) == {0.0},
-              f"{sorted(set(live.ctx._taper_prev.values()))}")
+              bound < 1.0 and len(seeded) == len(live.rig.fixtures)
+              and all(0.0 <= v <= bound for v in seeded),
+              f"bound {bound:.3f}, values {sorted(set(round(v, 3) for v in seeded))}")
 
         # Everything the reload clears is keyed by fixture ID. Trims, colours,
         # flashes, jogs and captures are keyed by NAME, and a patch edit can
