@@ -10,11 +10,13 @@ Run: python engine/tests/test_server.py
 """
 
 import base64
+import errno
 import json
 import os
 import shutil
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -168,6 +170,43 @@ server.start()
 port = server.httpd.server_address[1]
 controller.start()
 time.sleep(0.3)
+
+# A second engine on this port must be refused, not join it. http.server sets
+# SO_REUSEADDR, which on Windows lets a second socket bind a port another
+# process is LISTENING on -- silently, so two engines answer one port and which
+# one a phone reaches is luck.
+second = ShowServer(controller, port=port)
+try:
+    second.start()
+    refused = None
+except OSError as exc:
+    refused = exc
+finally:
+    second.stop()
+check("a second server on a taken port is refused",
+      refused is not None and refused.errno == errno.EADDRINUSE,
+      repr(refused) if refused else "the second bind succeeded")
+
+# And the engine itself says so and leaves before it touches the rig: no
+# traceback, and the lock the running engine wrote is neither rewritten nor
+# deleted by the one that lost.
+from engine import patch as patchmod  # noqa: E402
+lock = patchmod.lock_path(str(controller.event_dir))
+lock_before = lock.stat().st_mtime_ns if lock.exists() else None
+try:
+    run = subprocess.run(
+        [sys.executable, "-m", "engine.server", "--port", str(port), "--no-token",
+         "--event", str(controller.event_dir)],
+        cwd=REPO, capture_output=True, text=True, errors="replace", timeout=30)
+    code, output = run.returncode, run.stdout + run.stderr
+except subprocess.TimeoutExpired:
+    code, output = None, "still running after 30 s"
+check("a second engine on a taken port exits saying why",
+      code not in (0, None) and f"port {port} is already in use" in output
+      and "Traceback" not in output, f"exit {code}: {output.strip()[-300:]}")
+check("... before touching the rig: the running engine's lock is untouched",
+      lock_before is not None and lock.exists()
+      and lock.stat().st_mtime_ns == lock_before)
 
 client = Client(port)
 check("server returned 101", "101" in client.status, client.status)

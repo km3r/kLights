@@ -1804,6 +1804,34 @@ def default_palette() -> autom.Palette:
 
 # ------------------------------------------------------------------- server --
 
+class ExclusiveHTTPServer(ThreadingHTTPServer):
+    """A ThreadingHTTPServer that refuses a port something else is listening on.
+
+    http.server turns on SO_REUSEADDR. On POSIX that only lets a restart bind
+    past connections still in TIME_WAIT. On Windows it means something else
+    entirely: a second socket may bind a port another process is already
+    LISTENING on, the bind succeeds silently, and two engines answer one port
+    -- which one a phone reaches is luck. So on Windows the flag is off and
+    SO_EXCLUSIVEADDRUSE is on, which also stops anything that does set
+    SO_REUSEADDR from taking the port out from under a running show. Windows
+    rebinds a listener over TIME_WAIT without help, so a quick restart still
+    works: checked on Windows 11 with connections the server closed first,
+    which is what `stop` does to every phone.
+
+    SO_REUSEPORT is pinned off whatever the base class says: on Linux it is
+    the deliberate form of the same thing, two listeners on one port.
+    """
+
+    # Only Windows has the option, so its presence is the platform test.
+    allow_reuse_address = not hasattr(socket, "SO_EXCLUSIVEADDRUSE")
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class ShowServer:
     """HTTP for the UI bundle, WebSocket for everything live."""
 
@@ -2132,7 +2160,8 @@ class ShowServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-        self.httpd = ThreadingHTTPServer((self.bind, self.port), Handler)
+        # Binds here, so a taken port raises before any thread starts.
+        self.httpd = ExclusiveHTTPServer((self.bind, self.port), Handler)
         self.httpd.daemon_threads = True
         threading.Thread(target=self.httpd.serve_forever, name="http",
                          daemon=True).start()
@@ -2187,6 +2216,7 @@ def local_addresses(port: int) -> list[str]:
 
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
+    import errno
 
     parser = argparse.ArgumentParser(description="Run the show engine and its UI")
     parser.add_argument("--event", type=Path, default=REPO / "events" / "despacio")
@@ -2239,11 +2269,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
+    # The port before anything touches the rig. controller.start() writes the
+    # event's lock and starts sending Art-Net, so a second engine that got that
+    # far before finding its port taken would flash the rig, and on its way out
+    # delete the lock that belongs to the engine already running.
+    try:
+        server.start()
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            raise SystemExit(f"port {args.port} is already in use -- "
+                             f"is another engine running?")
+        raise SystemExit(f"cannot listen on {args.bind}:{args.port}: "
+                         f"{exc.strerror or exc}")
+
     if args.sync_port:
         controller.enable_sync(args.sync_port, args.sync_bind)
 
     controller.start()
-    server.start()
 
     print(f"event   {controller.rig.name}  "
           f"({len(controller.rig.fixtures)} fixtures, universes {controller.rig.universes})")
