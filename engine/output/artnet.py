@@ -24,7 +24,10 @@ ARTNET_PROT_VER = 14
 def build_artdmx(universe: int, data: bytes, sequence: int = 0) -> bytes:
     """One ArtDmx packet. `data` is padded or truncated to 512 channels."""
     payload = bytes(data[:512]).ljust(512, b"\x00")
-    sub_uni = ((universe >> 4) & 0xF0) | (universe & 0x0F)
+    # The 15-bit Port-Address is Net:SubNet:Universe, 7:4:4 bits. SubUni is its
+    # low byte whole. This was once ((universe >> 4) & 0xF0) | ..., which drops
+    # the SubNet: universe 16 went out as universe 0.
+    sub_uni = universe & 0xFF
     net = (universe >> 8) & 0x7F
     return (
         b"Art-Net\x00"
@@ -37,21 +40,54 @@ def build_artdmx(universe: int, data: bytes, sequence: int = 0) -> bytes:
     )
 
 
+def parse_targets(spec: str, default_port: int = ARTNET_PORT) -> list[tuple[str, int]]:
+    """`--artnet`'s value: one or more `host[:port]`, comma separated.
+
+    More than one because a show laptop is usually two destinations at once --
+    the rig's node and the previz on this same machine. Broadcast reaches both,
+    but it reaches everything else on the network too, and on Windows two
+    listeners on one machine do NOT both get a unicast packet: only one of them
+    does. Sending each its own copy is the way to feed the rig and a previz, or
+    two previz listeners on different ports, without flooding the venue LAN.
+
+    Raises ValueError on anything malformed, so a typo stops the engine at
+    startup instead of sending a show to nowhere.
+    """
+    targets: list[tuple[str, int]] = []
+    for part in (p.strip() for p in spec.split(",")):
+        if not part:
+            continue
+        host, sep, port_text = part.rpartition(":")
+        if not sep:
+            host, port = part, default_port
+        else:
+            if not host or not port_text.isdigit() or not 0 < int(port_text) < 65536:
+                raise ValueError(f"Art-Net target {part!r}: expected host or host:port")
+            port = int(port_text)
+        if (host, port) not in targets:
+            targets.append((host, port))
+    if not targets:
+        raise ValueError(f"no Art-Net target in {spec!r}")
+    return targets
+
+
 class ArtNetOutput:
-    """UDP sender, one socket for all universes.
+    """UDP sender, one socket for all universes and every target.
 
     Sequence numbers are per universe and wrap 1..255 (0 means "sequencing
     disabled" in the spec, so it is skipped). Nodes use them to drop packets
     that arrive out of order, which UDP permits and which shows up as a head
-    twitching back a frame.
+    twitching back a frame. Every target gets the same packet, sequence and
+    all: they are copies of one frame, not separate streams.
     """
 
     def __init__(self, target: str = "255.255.255.255", port: int = ARTNET_PORT,
                  bind: str = "0.0.0.0") -> None:
         self.target = target
+        self.targets = parse_targets(target, port)
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        if target.endswith(".255") or target == "<broadcast>":
+        if any(host.endswith(".255") or host == "<broadcast>" for host, _ in self.targets):
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.sock.bind((bind, 0))
         self._sequence: dict[int, int] = {}
@@ -59,7 +95,9 @@ class ArtNetOutput:
     def send(self, universe: int, frame: bytes) -> None:
         seq = self._sequence.get(universe, 0) % 255 + 1
         self._sequence[universe] = seq
-        self.sock.sendto(build_artdmx(universe, frame, seq), (self.target, self.port))
+        packet = build_artdmx(universe, frame, seq)
+        for address in self.targets:
+            self.sock.sendto(packet, address)
 
     def close(self) -> None:
         self.sock.close()

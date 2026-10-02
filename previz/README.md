@@ -42,7 +42,10 @@ automation tests (the C++ decode held to the Python one), and packages
 `previz/dist/Windows/KLightsPreviz.exe`. `python previz/build.py test` runs the
 tests alone.
 
-**Run it:**
+**Run it** from the launcher (`kLights.pyw`, or `python -m launcher`): Start
+engine, then Launch previz. It points the app at the engine, warns when the
+engine's Art-Net would not reach this machine, and builds the app when it is
+missing or older than its source. Or by hand:
 
 ```bash
 python -m engine.server --event events/despacio --artnet 127.0.0.1
@@ -63,18 +66,29 @@ warning about the scene or its models.
 | `-At=X,Y,Z -LookAt=X,Y,Z` | with `-Snapshot`, stand somewhere else (Unreal cm) |
 | `-SnapshotHud` | keep the overlay in the still |
 
-**One listener per machine, unless the engine broadcasts.** The app and the
-editor driver both listen on 6454, and when the engine sends to one address
-(`--artnet 127.0.0.1`) Windows hands each packet to only ONE of them — the other
-goes quietly dark while reporting itself healthy. To run both at once, have the
-engine broadcast (`--artnet 255.255.255.255`, or your subnet's broadcast
-address), which every listener hears.
-
-**Comparing the two.** Run the engine broadcasting, then both: the editor path
-below with its usual viewport, and the app with the same view —
+**One listener per port.** The app and the editor driver both listen on 6454,
+and when the engine sends to one address (`--artnet 127.0.0.1`) Windows hands
+each packet to only ONE of them — the other goes quietly dark while reporting
+itself healthy. To run both at once, give the app its own port and send the
+engine's frames to both:
 
 ```bash
-previz/dist/Windows/KLightsPreviz.exe -Snapshot=renders/app_overview.png -View=overview
+python -m engine.server --artnet 127.0.0.1,127.0.0.1:6455
+previz/dist/Windows/KLightsPreviz.exe -ArtNetPort=6455
+```
+
+(In the launcher: Art-Net to `127.0.0.1,127.0.0.1:6455`, previz Art-Net port
+6455.) Broadcasting (`--artnet 255.255.255.255`) also reaches every listener,
+but it reaches everything else on the venue network too. `--artnet` takes any
+list of `host` or `host:port`, so the same trick feeds the rig's node and a
+previz on the show laptop: `--artnet 10.0.0.50,127.0.0.1`.
+
+**Comparing the two.** Run the engine sending to both ports as above, then
+both: the editor path below with its usual viewport, and the app with the same
+view —
+
+```bash
+previz/dist/Windows/KLightsPreviz.exe -ArtNetPort=6455 -Snapshot=renders/app_overview.png -View=overview
 ```
 
 — against `renders/previz_overview.png` from `snapshot.py`. Known, deliberate

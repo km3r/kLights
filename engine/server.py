@@ -60,6 +60,7 @@ from . import state as statemod
 from . import sync as syncmod
 from . import venue as venuemod
 from .output import ArtNetOutput, NullOutput
+from .output.artnet import parse_targets as parse_artnet_targets
 from .runner import Runner
 from .websocket import WebSocket, WebSocketClosed, WebSocketError
 
@@ -2191,7 +2192,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--event", type=Path, default=REPO / "events" / "despacio")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--artnet", metavar="IP",
-                        help="send Art-Net here (e.g. 127.0.0.1 or a broadcast address)")
+                        help="send Art-Net here (e.g. 127.0.0.1 or a broadcast "
+                             "address). Several: comma separated, each host or "
+                             "host:port, e.g. 10.0.0.50,127.0.0.1")
     parser.add_argument("--fps", type=float, default=40.0)
     parser.add_argument("--bpm", type=float, default=124.0)
     parser.add_argument("--ui", type=Path, default=UI_DIST)
@@ -2210,7 +2213,20 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="interface for --sync-port. Loopback by default, "
                              "because the bridge normally runs on this machine "
                              "and the port has no authentication")
+    parser.add_argument("--stop-file", type=Path, metavar="PATH",
+                        help="stop cleanly when this file appears. For a "
+                             "launcher, which cannot send Ctrl-C to a process "
+                             "with no console -- see launcher/")
     args = parser.parse_args(argv)
+    if args.artnet:
+        try:
+            parse_artnet_targets(args.artnet)
+        except ValueError as exc:
+            parser.error(str(exc))
+    # A stop request older than this engine is not addressed to it: it is what
+    # an engine that died before it could tidy up left behind.
+    if args.stop_file is not None:
+        args.stop_file.unlink(missing_ok=True)
 
     # A token by default, because the alternative default is that anyone who can
     # reach the port can re-address the rig. Regenerated every run: there is
@@ -2274,16 +2290,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     suffix = "" if token is None else f"?token={token}"
     for url in local_addresses(args.port):
         print(f"open    {url}{suffix}")
-    print("\nCtrl-C to stop.")
+    print("\nCtrl-C to stop." if args.stop_file is None
+          else f"\nCtrl-C, or create {args.stop_file}, to stop.", flush=True)
 
     try:
         while True:
             time.sleep(0.5)
+            if args.stop_file is not None and args.stop_file.exists():
+                print("\nstop requested...", flush=True)
+                break
     except KeyboardInterrupt:
         print("\nstopping...")
     finally:
         server.stop()
         controller.stop()
+        if args.stop_file is not None:
+            args.stop_file.unlink(missing_ok=True)
     return 0
 
 

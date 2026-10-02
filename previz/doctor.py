@@ -179,20 +179,16 @@ def check_app(r: Report, engine_url: str) -> None:
     import urllib.error
     import urllib.request
 
+    from previz import build
+
     print("\nstandalone app")
-    exe = REPO / "previz" / "dist" / "Windows" / "KLightsPreviz.exe"
-    if not exe.is_file():
+    state, detail = build.freshness()
+    if state == "missing":
         r.warn("not built", "python previz/build.py")
+    elif state == "stale":
+        r.warn("built, but older than its source", f"{detail} -- python previz/build.py")
     else:
-        sources = [f for d in ("Source", "Config", "Content/Python")
-                   for f in (REPO / "previz" / "unreal" / d).rglob("*")
-                   if f.is_file() and "__pycache__" not in f.parts]
-        newest = max(sources, key=lambda f: f.stat().st_mtime, default=None)
-        if newest is not None and newest.stat().st_mtime > exe.stat().st_mtime:
-            r.warn("built, but older than its source",
-                   f"{newest.relative_to(REPO)} changed since -- python previz/build.py")
-        else:
-            r.ok("built", str(exe.relative_to(REPO)))
+        r.ok(detail, str(build.EXE.relative_to(REPO)))
     try:
         with urllib.request.urlopen(f"{engine_url}/api/previz/scene", timeout=2) as resp:
             scene = json.loads(resp.read())

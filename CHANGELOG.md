@@ -11,6 +11,33 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — the launcher
+
+- **`kLights.pyw`, one window for show setup** (`python -m launcher`). Pick the
+  event, start and stop the engine, open the console or straight to its Setup
+  tab, copy the phone link, launch, close or build the previz, and read the
+  engine's output. Stdlib Tk, like everything else. The engine runs as its own
+  process, so closing the launcher never stops a show, and reopening it finds
+  the engine again. It refuses to start an engine on a port that is already
+  answering, says when an event is locked by another engine, and warns when the
+  engine's Art-Net would not reach the previz on this machine.
+- **`--artnet` takes a list**: `--artnet 10.0.0.50,127.0.0.1` sends every frame
+  to the rig's node and to a previz on the same laptop, and `host:port` gives a
+  second local listener its own port (`127.0.0.1,127.0.0.1:6455`). Broadcast
+  was the only way to reach two listeners before, and it reaches everything else
+  on the network too.
+- **`engine.server --stop-file PATH`** stops the engine cleanly when the file
+  appears: how the launcher stops it, since a program with no console cannot be
+  sent Ctrl-C.
+
+### Fixed
+
+- **Art-Net universes 16 and up went out as the wrong universe.** The packet's
+  SubUni byte dropped the SubNet, so universe 16 was sent as universe 0. Every
+  receiver here already decoded it correctly; only the engine's sender and
+  `shared/tools/artnet_sender.py` were wrong. Universes 0-15, which is every
+  rig so far, are byte for byte unchanged.
+
 ### Added — F20, the standalone previz
 
 - **`KLightsPreviz.exe`, a packaged previz that needs no editor and no

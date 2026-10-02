@@ -32,6 +32,31 @@ LOGS = REPO / "previz" / "unreal" / "Saved" / "Logs"
 DIST = REPO / "previz" / "dist"
 EXE = DIST / "Windows" / "KLightsPreviz.exe"
 STEPS = ("editor", "assets", "test", "package")
+# What the packaged app is built from. Of the Python under Content/Python only
+# build_assets.py reaches it: the editor path's scripts beside it never do, so
+# editing klights_live.py must not make the app look out of date.
+BUILT_FROM = ("KLightsPreviz.uproject", "Source", "Config", "Content/Python/build_assets.py")
+
+
+def freshness() -> tuple[str, str]:
+    """Is the packaged app there, and newer than everything it is built from?
+
+    ("missing", how to build) | ("stale", what changed since) | ("built", when).
+    By modification time, so a file touched without changing reads as stale --
+    the safe direction to be wrong in. Shared by previz/doctor.py and the
+    launcher, so they cannot disagree about whether a rebuild is due.
+    """
+    if not EXE.is_file():
+        return "missing", "not built -- python previz/build.py"
+    built = EXE.stat().st_mtime
+    root = PROJECT.parent
+    sources = [f for name in BUILT_FROM for f in
+               ([root / name] if (root / name).is_file() else (root / name).rglob("*"))
+               if f.is_file() and "__pycache__" not in f.parts]
+    newest = max(sources, key=lambda f: f.stat().st_mtime, default=None)
+    if newest is not None and newest.stat().st_mtime > built:
+        return "stale", f"{newest.relative_to(REPO).as_posix()} changed since it was built"
+    return "built", time.strftime("built %Y-%m-%d %H:%M", time.localtime(built))
 
 
 def engine_root() -> Path:

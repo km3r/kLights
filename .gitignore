@@ -33,6 +33,10 @@ events/*/backups/
 # clone arrived believing a show was already running.
 events/*/.engine.lock
 
+# The launcher's settings, the log of the engine it started, and that engine's
+# stop file. Per machine.
+.launcher/
+
 # Scratch. Untracked AND unignored is the dangerous combination: it survives
 # every `git status` unnoticed until one `git add .` puts megabytes of stale
 # duplicates into history. Anything in here is disposable by definition.
