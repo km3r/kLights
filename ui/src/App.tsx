@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useEngine, useWakeLock } from "./useEngine";
 import { ModeProvider, useMode } from "./mode";
 import { Banner, BeatDots, Fader } from "./components";
@@ -30,8 +30,42 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+// The designer (F19l), split into its own chunk: only a desk that opens
+// #designer downloads it -- a phone never does.
+const Designer = lazy(() => import("./designer/Designer"));
+
+/** `#designer` or `#designer/<track>`, or null for the console. */
+/** `#designer`, `#designer/<track>` or `#designer/routine/<id>`. */
+function designerRoute(): { track: string | null; routine: string | null } | null {
+  const hash = location.hash.slice(1);
+  if (hash !== "designer" && !hash.startsWith("designer/")) return null;
+  const parts = hash.split("/");
+  if (parts[1] === "routine") return { track: null, routine: parts[2] || null };
+  return { track: parts[1] || null, routine: null };
+}
+
 export default function App() {
-  const { state, status, send, name, setName, tier } = useEngine();
+  const engine = useEngine();
+  // Decided BEFORE the console's tab effects run: they rewrite the hash to the
+  // current tab, which would throw a fresh #designer link straight back to Show.
+  const [route, setRoute] = useState(designerRoute);
+  useEffect(() => {
+    const onHash = () => setRoute(designerRoute());
+    addEventListener("hashchange", onHash);
+    return () => removeEventListener("hashchange", onHash);
+  }, []);
+  if (route) {
+    return (
+      <Suspense fallback={<p className="muted" style={{ padding: 16 }}>Loading the designer…</p>}>
+        <Designer engine={engine} track={route.track} routine={route.routine} />
+      </Suspense>
+    );
+  }
+  return <Console engine={engine} />;
+}
+
+function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
+  const { state, status, send, name, setName, tier } = engine;
   const [mode, setMode] = useMode();
   const [tab, setTab] = useState<TabId>("show");
   // Local only while a finger is down; see Fader's comment.
@@ -147,7 +181,7 @@ export default function App() {
  * silently disables the safety taper, which is the one state nobody should be
  * in without knowing.
  */
-function Banners({ state, status, send, tier }: {
+export function Banners({ state, status, send, tier }: {
   state: EngineState | null; status: string; send: (c: Command) => void;
   tier: Tier;
 }) {

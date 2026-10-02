@@ -88,7 +88,10 @@ Open, in rough priority order.
   CDJs, rkbx_link for rekordbox and a DDJ.
 - **F19, timecoded shows — in progress.** Routines driven by which track is
   playing and where in it: phrase templates for any track, hand-built timelines
-  for signature tracks, a desktop designer. Design record:
+  for signature tracks, a desktop designer. Milestone 1 (one track end to end:
+  prep, design, play live from either source) is built; it waits on hardware
+  captures from real decks. Milestone 2 (the template runtime, live phrase mode)
+  and 3 (VJ) are next. Design record:
   [`design/timecoded-shows.md`](design/timecoded-shows.md).
 - **Phrase-driven cues.** An `Up` arms the next cue, the `Chorus` downbeat fires
   it, `Outro` releases to ambient. The data arrives; nothing consumes it yet.

@@ -994,6 +994,13 @@ describe("follow dj (track card)", () => {
     expect(socket.last()).toEqual({ type: "follow", armed: true });
   });
 
+  it("links the matched track to the designer", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.getByRole("link", { name: "Open this track in the designer" }))
+      .toHaveAttribute("href", "#designer/synth-128");
+  });
+
   it("shows who has each lane, and grabs and releases them", async () => {
     const user = userEvent.setup();
     const socket = mount();

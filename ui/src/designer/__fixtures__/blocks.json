@@ -1,0 +1,113 @@
+{
+ "slots": {
+  "orbit": "movement",
+  "pendulum": "movement",
+  "fan_sweep": "movement",
+  "aim_points": "movement",
+  "solid": "color",
+  "color_chase": "color",
+  "chase": "level",
+  "pulse": "level",
+  "dim": "level",
+  "strobe": "level",
+  "look": null,
+  "snapshot": null
+ },
+ "numeric": {
+  "orbit": [
+   "radius",
+   "bars",
+   "elongation",
+   "spread"
+  ],
+  "pendulum": [
+   "width",
+   "bars",
+   "spread"
+  ],
+  "fan_sweep": [
+   "width",
+   "bars",
+   "sweep",
+   "spread",
+   "rate"
+  ],
+  "aim_points": [
+   "bars"
+  ],
+  "color_chase": [
+   "bars",
+   "spread",
+   "fade"
+  ],
+  "chase": [
+   "bars",
+   "width"
+  ],
+  "pulse": [
+   "depth",
+   "bars",
+   "spread"
+  ],
+  "dim": [
+   "level"
+  ],
+  "strobe": [
+   "level"
+  ]
+ },
+ "orders": [
+  "x",
+  "-x",
+  "y",
+  "-y",
+  "z",
+  "-z",
+  "index"
+ ],
+ "easings": [
+  "linear",
+  "ease_in_out",
+  "ease_out"
+ ],
+ "automation": {
+  "master": [
+   0.0,
+   1.0
+  ],
+  "size": [
+   0.0,
+   3.0
+  ],
+  "spread": [
+   -1.0,
+   1.0
+  ],
+  "center.bearing": [
+   -180.0,
+   180.0
+  ],
+  "center.elevation": [
+   -90.0,
+   90.0
+  ],
+  "rate.movement": [
+   0.0,
+   8.0
+  ],
+  "rate.color": [
+   0.0,
+   8.0
+  ],
+  "rate.level": [
+   0.0,
+   8.0
+  ]
+ },
+ "param_types": [
+  "color",
+  "number",
+  "rate",
+  "look"
+ ]
+}

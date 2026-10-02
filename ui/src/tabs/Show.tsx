@@ -493,6 +493,11 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
                  send({ type: "show_latency", source, ms });
                }} />
       )}
+      <div className="small muted" style={{ marginTop: "0.4rem" }}>
+        <a href={track?.match?.track_id ? `#designer/${track.match.track_id}` : "#designer"}>
+          {track?.match?.track_id ? "Open this track in the designer" : "Open the designer"}</a>
+        {" "}· on a computer
+      </div>
     </Card>
   );
 }

@@ -11,6 +11,7 @@ Run: python engine/tests/test_api.py
 """
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -202,6 +203,27 @@ try:
     check("routines save the same way", r["ok"] and json.loads(
         (shows / "routines" / "idle-orbit.json").read_text())["name"]
         == "Idle orbit, edited", f"{r}")
+    r = ask({"type": "routine_draft", "doc": routine, "id": 11})
+    check("a routine draft is checked the same way: clean",
+          r and r["ok"] and r["data"] == {"errors": [], "warnings": [],
+                                          "problems": []}, f"{r}")
+    lost = json.loads(json.dumps(routine))
+    first = next(iter(lost["roles"]))
+    lost["roles"][first] = {"default": "no-such-tag"}
+    lost["variations"] = {"loud": {}}
+    r = ask({"type": "routine_draft", "doc": lost, "id": 12})
+    check("and says what will not work on this rig, once, not per variation",
+          r["ok"] and r["data"]["errors"] == []
+          and sum("no-such-tag" in p for p in r["data"]["problems"]) == 1,
+          f"{r}")
+    lost["bars"] = 0
+    r = ask({"type": "routine_draft", "doc": lost, "id": 13})
+    check("a broken routine draft lists its errors and nothing compiles",
+          r["ok"] and r["data"]["errors"] and r["data"]["problems"] == [],
+          f"{r}")
+    r = ask({"type": "routine_draft", "doc": routine, "id": 14}, client=viewer)
+    check("routine drafts are configure-tier too",
+          r and r["ok"] is False and "needs configure" in r["error"])
     r = ask({"type": "routine_save", "doc": {**routine, "id": "../escape"},
              "base_rev": "", "id": 10})
     check("and an id that is not a file name is refused before anything runs",
@@ -264,6 +286,29 @@ finally:
     srv.stop()
     sc.worker.stop()
     shutil.rmtree(tmp, ignore_errors=True)
+
+# -- 5. the designer's side of the bargain -----------------------------------
+print("\n5. what the designer agrees with, and what a phone downloads")
+sys.path.insert(0, str(REPO / "engine" / "tests"))
+import dump_designer_fixtures  # noqa: E402
+
+fixtures = REPO / "ui" / "src" / "designer" / "__fixtures__"
+stale = [name for name, text in dump_designer_fixtures.render().items()
+         if not (fixtures / name).is_file()
+         or (fixtures / name).read_text(encoding="utf-8") != text]
+check("the designer's fixtures are what the engine says today (else run "
+      "engine/tests/dump_designer_fixtures.py)", not stale, f"stale: {stale}")
+
+dist = REPO / "ui" / "dist"
+html = (dist / "index.html").read_text(encoding="utf-8")
+entries = re.findall(r'<script[^>]*\bsrc="\.?/?([^"]+\.js)"', html)
+marker = b"klights-designer"
+check("the console page loads exactly one entry script", len(entries) == 1, f"{entries}")
+check("and a phone never downloads the designer: its marker is not in the entry",
+      entries and marker not in (dist / entries[0]).read_bytes(), f"{entries}")
+check("it is in a chunk of its own, loaded only from #designer",
+      any(marker in js.read_bytes() for js in (dist / "assets").glob("*.js")
+          if js.name != Path(entries[0]).name) if entries else False)
 
 
 print()

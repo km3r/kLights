@@ -259,11 +259,27 @@ a file the track names (or the same name under this machine's `audio_roots` in
 `klights.local.json`) with an audio extension. Writes are configure-tier
 commands answered from the worker: `timeline_draft {doc}` (the format's rules,
 then a compile against this rig), `timeline_save` and `routine_save {doc,
-base_rev}` (refused if the file changed since). `preview_arm {track_id, force?}`
+base_rev}` (refused if the file changed since), and `routine_draft {doc}` (the
+format's rules, then the routine bound to this rig as it is and in each
+variation: roles no fixture carries, blocks with nothing to aim).
+`preview_arm {track_id, force?}`
 puts the designer's transport on the rig -- refused while a DJ plays unless
 forced, shown on every console, released by `preview_release` or by the
 designer's browser going away; `preview_transport {time_s, playing}` moves it,
 and a draft replaces what it plays until saved.
+
+**The designer** itself is `ui/src/designer/`, a chunk of its own loaded only
+from `#designer` (`test_api` checks the console's entry script never contains
+it). `#designer` lists the tracks and routines; `#designer/<track>` is layout B
+-- bar ruler, rekordbox's phrases, the waveform, then the timeline's rows (the
+higher lane wins), hits, automation and the VJ lane, with the rig's plan and
+"who drives each lane" at the playhead on the right and the selected clip
+below; `#designer/routine/<id>` edits a routine with the same lanes in loop
+mode, plus its roles, open parameters, variations and blocks. Its beat grid,
+block list and automation targets are copies of the engine's, held to them by
+fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale
+fixture fails `test_api`). Everything else -- whether a document is valid,
+what a routine does on this rig -- it asks the engine.
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
 behind the MCP server: status, tracks (with their phrase beats), routines,

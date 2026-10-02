@@ -57,6 +57,7 @@ from . import patch as patchmod
 from . import playback as playbackmod
 from . import program as programmod
 from . import rig as rigmod
+from . import routines as routinesmod
 from . import safety as safetymod
 from . import showfiles
 from . import showlibrary
@@ -131,8 +132,8 @@ TIER: dict[str, str] = {
     "show_latency": "configure",
     # the designer: writes the show folder, and can take the stage
     "timeline_draft": "configure", "timeline_save": "configure",
-    "routine_save": "configure", "preview_arm": "configure",
-    "preview_transport": "configure", "preview_release": "configure",
+    "routine_draft": "configure", "routine_save": "configure",
+    "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
 }
@@ -1627,6 +1628,38 @@ class ShowController:
         """Write a timeline, refused if the file changed since `base_rev`.
         It applies to the track from its next play, like any folder change."""
         return self._save("timeline", m)
+
+    def _cmd_routine_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved routine: the format's rules, then the routine bound
+        to THIS rig as it is -- and in each of its variations -- for what will
+        not work here (a role no fixture carries, a block with nothing to aim)."""
+        self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("routine_draft needs the document as doc")
+        rigging = self._rigging()
+
+        def work():
+            result = showfiles.validate("routine", doc)
+            if not result.ok:
+                return result, []
+            where = f"routine {doc.get('id')!r}"
+            problems = routinesmod.instantiate(doc, {}, rigging, where).problems
+            for name in sorted(doc.get("variations") or {}):
+                label = f"{where} variation {name!r}"
+                for p in routinesmod.instantiate(
+                        doc, {"variation": name}, rigging, label).problems:
+                    # only what the variation adds: the rest is said above
+                    if p.replace(label, where, 1) not in problems:
+                        problems.append(p)
+            return result, problems
+
+        def then(value, respond):
+            result, problems = value
+            respond(True, {"errors": result.errors, "warnings": result.warnings,
+                           "problems": problems})
+
+        return self._on_worker("checking a routine draft", work, then)
 
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)

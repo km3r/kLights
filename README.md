@@ -49,6 +49,12 @@ Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
 `--no-token`, `--sync-port` (tempo from a DJ), `--show-dir` (prepped tracks
 and their timelines). `--help` lists them all.
 
+With a show folder, the engine also serves **the designer** at the same URL
+with `#designer` on the end: a desktop page for drawing a track's light show
+on lanes against its waveform and phrases, with "Drive the rig" to play it on
+the real rig while you edit, and an editor for the routines its clips play. A
+phone never downloads it.
+
 Before a show, run everything that must be green:
 
 ```bash
@@ -177,7 +183,8 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 115 tests against a fixture captured from a real engine
+npm test         # 151 tests: the console against a fixture captured from a
+                 # real engine, the designer against the example show folder
 npm run build    # writes ui/dist/
 ```
 
@@ -189,7 +196,7 @@ nearly did.
 
 ```bash
 python -m engine.tests    # 27 suites, no test framework
-cd ui && npm test         # the console
+cd ui && npm test         # the console and the designer
 ```
 
 Engine suites are standalone scripts — run one directly with
@@ -206,7 +213,7 @@ library, and requires every differing channel to fall into a category that was
 
 ```
 engine/        the show engine — stdlib only, no dependencies
-ui/            React console; ui/dist is committed so a venue needs no Node
+ui/            React console and designer; ui/dist is committed so a venue needs no Node
 previz/        Unreal previz — an Art-Net listener, never in the show's path
 bridges/       sidecars: DJ tempo and position, and the rekordbox prep tool
 mcp/           MCP server over stdio: the rig and the show folder, from an assistant

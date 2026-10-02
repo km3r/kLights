@@ -11,6 +11,38 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19l: the designer
+
+- **`#designer`**, a desktop page the engine serves with the console, loaded
+  only from that link -- a phone never downloads it (checked against the
+  built bundle). It lists the show folder's tracks and routines.
+- **A track's timeline as lanes** (layout B, picked from the mock-ups): bar
+  ruler, rekordbox's phrases, the waveform, the timeline's rows in order, hits,
+  automation, the VJ lane. Play and scrub with the track's audio from the
+  engine, or a file opened in the browser (never uploaded). **Drive the rig**
+  puts this page's transport on the real rig through the draft being edited.
+  The right panel shows the rig from above and who drives each lane at the
+  playhead.
+- **Editing**: drag clips and hits (snapped to beat, bar or phrase), resize,
+  fades, routine/variation/params with palette role or direct colour, looks,
+  presets, palettes and palette clips, hit type/level/who/envelope, lanes
+  added, reordered, removed, fill-gaps/owns-track per lane, automation points,
+  routines placed from the shelf, **Draft from template**, **Record** pads
+  (flash, strobe, blackout, next scene at the playhead) and a sortable **event
+  list** with nudges. Undo/redo over the whole document. Each change goes to
+  the engine as a draft; its answer (errors, notes, what will not work on this
+  rig) gates Save, which quotes the rev it read. The working copy is kept in
+  the browser until saved.
+- **The routine editor** (`#designer/routine/<id>`, or New routine): its rows
+  on the same lanes in loop mode at a tempo of your choosing, a role per lane,
+  roles, open parameters and their defaults, variations, blocks by slot, and
+  each block's arguments as a value or a `$param`. A rig-bound block (look,
+  snapshot) marks the routine this-rig-only. New command `routine_draft`
+  checks it against this rig, and each variation.
+- The phone's Track card links the matched track to the designer.
+- `engine/tests/dump_designer_fixtures.py` writes the grid vectors and block
+  lists the designer is tested against; `test_api` fails when they are stale.
+
 ### Added — F19k: the show folder in conversation
 
 - **MCP tools** for the show folder, through the new `engine/showtools.py`:

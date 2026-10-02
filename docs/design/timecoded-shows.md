@@ -5,7 +5,9 @@ a desktop designer and played back live from the DJ's own decks. This is the
 design record: what was decided, with whom, and why. The staged build is at the
 end; the commit log carries the detail of each stage.
 
-**Status:** designed, not built. Milestone 1 is in progress.
+**Status:** Milestone 1 (F19a–F19l) is built and tested end to end with the
+fake bridge; it has not yet run against real decks (see "Things to verify on
+hardware" below). Milestones 2 and 3 are designed, not built.
 
 ---
 
@@ -143,7 +145,7 @@ bridge and no hardware:
 | F19i | Playback: the runner seam, pause policies, grab/release, Follow DJ, the phone card |
 | F19j | The authoring API: reads, audio, draft/save/link/preview |
 | F19k | MCP tools |
-| F19l | The designer, layout B |
+| F19l | The designer, layout B, and the routine editor |
 
 **Milestone 2:** template runtime and live phrase mode for unmatched tracks, the
 bar-count fallback, the template-set switcher, routines on preset pads.

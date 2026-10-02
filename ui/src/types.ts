@@ -457,11 +457,21 @@ export type Command =
    *  send them with an id and wait for the reply. */
   | { type: "timeline_draft"; doc: unknown }
   | { type: "timeline_save"; doc: unknown; base_rev: string }
+  | { type: "routine_draft"; doc: unknown }
   | { type: "routine_save"; doc: unknown; base_rev: string }
   | { type: "track_link"; track_id: string }
   | { type: "preview_arm"; track_id: string; force?: boolean }
   | { type: "preview_transport"; time_s: number; playing: boolean }
   | { type: "preview_release" };
+
+/** The engine's answer to a command sent with an id (`useEngine.request`). */
+export interface Reply {
+  type: "reply";
+  id: string | number;
+  ok: boolean;
+  error?: string;
+  data?: unknown;
+}
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
