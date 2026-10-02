@@ -109,6 +109,8 @@ refused("a version newer than the engine",
 
 refused("track: an id that cannot be a file name",
         "track", edit(TRACK, lambda d: d.update(id="Fan Drop")), "not usable")
+refused("routine: an id with a newline on the end (it would be the file name)",
+        "routine", edit(FAN, lambda d: d.update(id="fan-drop\n")), "not usable")
 refused("track: a grid that runs backwards",
         "track", edit(TRACK, lambda d: d["grid"].update(
             segments=[[0, 1000, 128], [64, 900, 128]])), "backwards")
@@ -123,6 +125,12 @@ refused("track: a string where a bpm belongs",
 warned("track: a stated rev that no longer matches its segments warns",
        "track", edit(TRACK, lambda d: d["grid"].update(rev="g:000000")), "hand-edited")
 
+refused("timeline: a clip a thousand times longer than any track (a typo)",
+        "timeline", edit(TIMELINE, lambda d: scene_items(d)[0].update(len=3200000)),
+        "at most")
+refused("timeline: a clip placed past nine hours",
+        "timeline", edit(TIMELINE, lambda d: scene_items(d)[0].update(at=1e9)),
+        "at most")
 refused("timeline: a palette change on the scene lane",
         "timeline", edit(TIMELINE, lambda d: scene_items(d).append(
             {"id": "p9", "kind": "palette", "at": 0, "len": 4, "palette": "Hot"})),

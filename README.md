@@ -47,13 +47,8 @@ python -m engine.server --artnet 255.255.255.255
 
 Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
 `--no-token`, `--sync-port` (tempo from a DJ), `--show-dir` (prepped tracks
-and their timelines). `--help` lists them all.
-
-With a show folder, the engine also serves **the designer** at the same URL
-with `#designer` on the end: a desktop page for drawing a track's light show
-on lanes against its waveform and phrases, with "Drive the rig" to play it on
-the real rig while you edit, and an editor for the routines its clips play. A
-phone never downloads it.
+and their timelines -- see [Timecoded shows](#timecoded-shows)). `--help`
+lists them all.
 
 Before a show, run everything that must be green:
 
@@ -148,6 +143,60 @@ are a *read*, not a derivation, so everything that knows what a CDJ is lives in
 a sidecar. CDJs via beat-link-trigger; a DDJ-1000 via rkbx_link, since a DDJ is
 USB and never speaks Pro DJ Link at all. Both emit OSC and the engine reads
 both. See [`bridges/prolink/README.md`](bridges/prolink/README.md).
+
+## Timecoded shows
+
+For a signature track, the lights can follow **which track is playing and where
+in it**, not just the tempo: a show drawn bar by bar against the track, played
+back on the night from the DJ's own position.
+
+<img src="docs/images/designer.png" alt="The designer: a bar ruler, rekordbox's phrase bands and the timeline's lanes -- scene clips, a palette lane, hit diamonds and master and size automation curves -- with the rig from above and who drives each lane at the playhead on the right" width="100%">
+
+*The designer on the example show: rekordbox's phrases across the top, the
+timeline's lanes below (the higher lane wins), the rig from above and "who
+drives each lane" at the playhead on the right.*
+
+```bash
+python -m engine.showfiles init shows/              # a show folder (or use shared/show-example)
+python bridges/rekordbox/prep.py --show-dir shows/ xml rekordbox.xml --anlz-root E:/PIONEER/USBANLZ
+python -m engine.server --show-dir shows/ --sync-port 9000
+```
+
+1. **Prep** reads what rekordbox already knows -- identity, beat grid, phrases,
+   cues, waveform -- from an XML export and its analysis files, into the show
+   folder ([`bridges/rekordbox/`](bridges/rekordbox/README.md)). No audio
+   analysis of our own.
+2. **Design** at the engine's URL with `#designer` on the end, on a computer (a
+   phone never downloads it). Each track is a set of lanes against its waveform
+   and phrases: scene, movement, colour, level and palette lanes holding
+   routines, looks and presets; hits (flash, strobe, blackout); automation of
+   master, size, spread, centre and rate. Draft a first pass from a template
+   set, tap hits in with the Record pads, or edit the list. **Drive the rig**
+   plays the draft you are editing on the real rig, from the page's own audio.
+   Routines -- reusable rows on roles (movers, pinspots), with open parameters
+   and variations -- have their own editor. Undo, Ctrl+S, Space and Delete work
+   as you would expect; every save quotes the version it opened, so a change made
+   elsewhere is never overwritten.
+3. **Play.** The engine matches the DJ's track against the folder (CDJs via
+   beat-link-trigger, a DDJ via rkbx_link -- see
+   [`bridges/prolink/`](bridges/prolink/README.md)). On the phone's **Track**
+   card, arm **Follow** and the matched track's timeline drives the rig;
+   picking a look grabs that lane back until you release it.
+
+What is safe by default: Follow starts **disarmed** every time, because the DJ
+feed arrives on an unauthenticated port; writing to the show folder and taking
+the rig from the designer need the token; the audio endpoint serves only files
+a track names, and only with the token; safety and the strobe policy run after
+the timeline exactly as they run after everything else. The folder can live on
+Dropbox or a NAS and is reloaded when it changes -- but never under a track
+that is playing.
+
+An assistant can read, lint, explain and edit the same folder through the MCP
+server. The design record, with every decision and why, is
+[`docs/design/timecoded-shows.md`](docs/design/timecoded-shows.md); the
+example folder is [`shared/show-example/`](shared/show-example/README.md).
+**Not yet run against real decks** -- the hardware checklist is in the design
+record.
 
 ## Editing the rig
 
@@ -244,6 +293,7 @@ safety taper reads.
 | [`docs/engine.md`](docs/engine.md) | how the engine works, for changing it |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | what was built, why, and what is not |
 | [`docs/pipeline.md`](docs/pipeline.md) | Art-Net architecture; the QLC+ era |
+| [`docs/design/timecoded-shows.md`](docs/design/timecoded-shows.md) | timecoded shows: decisions, formats, stages |
 | [`docs/design/`](docs/design/) | working notes and measurements |
 | [`CHANGELOG.md`](CHANGELOG.md) | notable changes, newest first |
 

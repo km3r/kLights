@@ -6,7 +6,10 @@ import {
   RIG_BOUND, SLOTS, barBeat, blocksFor, findItem,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
-import { AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, uniqueId, useHistory } from "./edit";
+import {
+  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, parsePointId, uniqueId,
+  useEditorKeys, useHistory,
+} from "./edit";
 import type { History } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import "./designer.css";
@@ -80,6 +83,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [zoom, setZoom] = useState(16);
   const [bpm, setBpm] = useState(128);
   const [selected, setSelected] = useState<string | null>(null);
+  const [back] = useState(backHash);
 
   useEffect(() => {
     setSnap("beat");
@@ -96,6 +100,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
   const length = (doc?.bars ?? 4) * BEATS_PER_BAR;
   const loop = useLoop(length, bpm);
+  useEditorKeys({ history, selected, setSelected,
+                  playPause: () => loop.setPlaying(!loop.playing) });
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;
@@ -118,11 +124,15 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const width = totalBeats * zoom;
   const roles = Object.keys(doc.roles);
   const rigBound = usesRig(doc);
+  const selectedPoint = parsePointId(selected);
+  const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
 
   return (
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
-        <a className="d-link" href="#designer" title="All tracks and routines">◂</a>
+        <a className="d-link" href={back}
+           title={back === "#designer" ? "All tracks and routines"
+             : `Back to ${back.slice("#designer/".length)}`}>◂</a>
         <button className={loop.playing ? "on" : ""} onClick={() => loop.setPlaying(!loop.playing)}>
           {loop.playing ? "Stop" : "Play"}</button>
         <span className="mono" aria-label="position">bar {barBeat(loop.beat)} of {doc.bars}</span>
@@ -178,8 +188,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
       {history.listView
         ? <Editor.EventList history={history} />
-        : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
-                          onDeleted={() => setSelected(null)} />}
+        : selectedPoint && pointRow
+          ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
+                                   onSelect={setSelected} />
+          : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
+                            onDeleted={() => setSelected(null)} />}
     </div>
   );
 }

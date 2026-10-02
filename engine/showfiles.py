@@ -75,7 +75,9 @@ SUBDIR = {"track": "tracks", "timeline": "timelines", "routine": "routines",
 # File names are ids. Lower case, so two machines with different
 # case-sensitivity cannot disagree about whether "Fan-Drop" and "fan-drop" are
 # one routine or two.
-ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# `\Z`, not `$`: `$` also matches before a trailing newline, and "fan\n" would
+# pass as an id -- and become a file name with a newline in it.
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 ID_FIX = ("lower-case letters, digits, '-' and '_', starting with a letter or "
           "digit, at most 64 characters. It is also the file name")
 
@@ -128,8 +130,8 @@ COLOR_FIX = ('a palette role ("@primary", "@secondary", "@accent"), a hex '
              'colour like "#ff2d6f", [r, g, b] from 0 to 1, or a colour look '
              'name')
 
-_SIGNATURE_RE = re.compile(r"^[0-9a-f]{40}$")
-_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_SIGNATURE_RE = re.compile(r"^[0-9a-f]{40}\Z")
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}\Z")
 
 
 def _kind(k: str) -> S:
@@ -204,12 +206,17 @@ TRACK = {
     "source": S(dict),
 }
 
+# The longest a timeline reaches, in beats: nine hours at 120 bpm. No track is
+# that long; the bound is there so a typo ("len": 3200000) is refused with a
+# reason instead of asking the compiler to build a clip that long.
+MAX_BEATS = 65536
+
 _ITEM = {
     "id": S(str, required=True, non_empty=True),
-    "at": S(N, required=True, min=-64,
+    "at": S(N, required=True, min=-64, max=MAX_BEATS,
             fix="beats from the track's first downbeat, not seconds"),
-    "len": S(N, required=True, min=0, fix="length in beats"),
-    "fade": S(N, min=0, fix="beats to fade in over, not seconds"),
+    "len": S(N, required=True, min=0, max=MAX_BEATS, fix="length in beats"),
+    "fade": S(N, min=0, max=MAX_BEATS, fix="beats to fade in over, not seconds"),
 }
 
 _CLIP = S(dict, of=_ITEM, variants=("kind", {

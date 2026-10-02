@@ -266,7 +266,11 @@ variation: roles no fixture carries, blocks with nothing to aim).
 puts the designer's transport on the rig -- refused while a DJ plays unless
 forced, shown on every console, released by `preview_release` or by the
 designer's browser going away; `preview_transport {time_s, playing}` moves it,
-and a draft replaces what it plays until saved.
+and a draft replaces what it plays until saved. A `preview_transport` that
+arrives after its preview has ended is ignored rather than reported: the page
+learns from the snapshot within a tenth of a second and stops sending. Clip
+positions and lengths are capped at `showfiles.MAX_BEATS` (65536), so no
+document can ask the compiler for unbounded work.
 
 **The designer** itself is `ui/src/designer/`, a chunk of its own loaded only
 from `#designer` (`test_api` checks the console's entry script never contains

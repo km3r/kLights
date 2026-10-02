@@ -88,6 +88,9 @@ export function useEngine() {
   // and starting pessimistic would grey out a working console for the moment
   // before the frame arrives.
   const [tier, setTier] = useState<Tier>("configure");
+  // This console's id on the engine, from its welcome: how the designer tells
+  // its own preview from another console's.
+  const [clientId, setClientId] = useState<string | null>(null);
   const [name, setNameState] = useState<string>(clientName);
   const socket = useRef<WebSocket | null>(null);
   const backoff = useRef(RECONNECT_MIN);
@@ -120,7 +123,10 @@ export function useEngine() {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") setState(msg as EngineState);
-        else if (msg.type === "welcome" && msg.tier) setTier(msg.tier as Tier);
+        else if (msg.type === "welcome") {
+          if (msg.tier) setTier(msg.tier as Tier);
+          if (typeof msg.id === "string") setClientId(msg.id);
+        }
         else if (msg.type === "reply") {
           const done = pending.current.get(String(msg.id));
           if (done) {
@@ -190,7 +196,7 @@ export function useEngine() {
     }
   }, []);
 
-  return { state, status, send, request, name, setName, tier };
+  return { state, status, send, request, name, setName, tier, clientId };
 }
 
 /**

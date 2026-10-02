@@ -11,6 +11,7 @@ Run: python engine/tests/test_api.py
 """
 
 import json
+import pathlib
 import re
 import shutil
 import sys
@@ -22,6 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import api as apimod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import showfiles  # noqa: E402
 from engine import state as statemod  # noqa: E402
@@ -125,6 +127,26 @@ try:
     status, _, _ = get("/api/audio/synth-128", token="tok",
                        headers={"Range": f"bytes={len(AUDIO) + 5}-"})
     check("a range past the end is a 416", status == 416)
+    odd = music / "crate" / "Night Drive [Extended Mix].mp3"
+    odd.parent.mkdir()
+    odd.write_bytes(AUDIO)
+    named = {"audio": [{"path": "D:\\Music\\Night Drive [Extended Mix].mp3"}]}
+    check("a file name with [brackets] is found by name, not read as a pattern",
+          apimod.find_audio(named, [str(music)]) == odd,
+          f"{apimod.find_audio(named, [str(music)])}")
+    searched: list[str] = []
+    real_rglob = pathlib.Path.rglob
+    pathlib.Path.rglob = lambda self, pat: (searched.append(pat), real_rglob(self, pat))[1]
+    try:
+        for _ in range(5):
+            apimod.find_audio(named, [str(music)])
+    finally:
+        pathlib.Path.rglob = real_rglob
+    check("and found once: a player's Range requests do not each search the "
+          "music folder again", searched == [], f"{searched}")
+    odd.unlink()
+    check("a remembered file that has gone is looked for again, not served",
+          apimod.find_audio(named, [str(music)]) is None)
     track["audio"] = [{"path": str(music / "notes.txt")}]
     (music / "notes.txt").write_text("not audio")
     track_path.write_text(json.dumps(track, indent=2))
@@ -282,6 +304,13 @@ try:
     check("the designer's browser going away lets go of the rig",
           sc.player.preview is None and sc.snapshot()["preview"] is None)
     check("and says so", any("disconnected" in n for n in sc.notices))
+    before = list(sc.notices)
+    for _ in range(5):
+        sc.submit({"type": "preview_transport", "time_s": 80.0, "playing": True},
+                  designer)
+    sc._drain()
+    check("its transport arriving after that is ignored, not five notices",
+          list(sc.notices) == before, f"{list(sc.notices)[len(before):]}")
 finally:
     srv.stop()
     sc.worker.stop()

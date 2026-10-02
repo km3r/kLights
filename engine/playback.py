@@ -134,6 +134,10 @@ class TrackPlayer:
         self.program: Optional[programmod.Program] = None
         self._program_for: Optional[tuple] = None      # (track_seq, timeline id)
         self._compiling_for: Optional[tuple] = None
+        # A compile that raised -- a bug, since compile reports problems
+        # rather than raising. Remembered so it is said once and not retried
+        # every frame; a new load of the folder or the rig tries again.
+        self._failed_for: Optional[tuple] = None
         self.idle: Optional[programmod.Program] = None
         self._beat: Optional[float] = None
         self._seq: Optional[int] = None
@@ -197,7 +201,7 @@ class TrackPlayer:
         if pinned is None or pinned.timeline is None:
             return
         key = (pinned.track_seq, id(pinned.timeline))
-        if key in (self._program_for, self._compiling_for):
+        if key in (self._program_for, self._compiling_for, self._failed_for):
             return
         self._compiling_for = key
         timeline = pinned.timeline
@@ -206,12 +210,20 @@ class TrackPlayer:
         track = (pinned.match.track_id if pinned.match else "?")
 
         def build():
-            return programmod.compile(timeline, routines, rigging,
-                                      f"timelines/{track}.json")
+            try:
+                return programmod.compile(timeline, routines, rigging,
+                                          f"timelines/{track}.json")
+            except Exception as exc:                        # noqa: BLE001
+                return exc
 
-        def done(prog: programmod.Program) -> None:
+        def done(prog) -> None:
             if self._compiling_for == key:
                 self._compiling_for = None
+            if isinstance(prog, Exception):
+                self._failed_for = key
+                self._note(f"{track}: its show could not be built ({prog}); "
+                           f"the operator's show runs")
+                return
             current = self._pinned()
             if current is None or (current.track_seq, id(current.timeline)) != key:
                 return
@@ -248,6 +260,7 @@ class TrackPlayer:
     def recompile(self) -> None:
         """The rig changed under the programs: build them again."""
         self.program, self._program_for, self._compiling_for = None, None, None
+        self._failed_for = None
         self.compile_for(self._pinned())
 
     # -- each frame, on the output thread ------------------------------------
@@ -308,6 +321,8 @@ class TrackPlayer:
             return fallback, "fallback", "no timeline", None
         key = (pinned.track_seq, id(pinned.timeline))
         if self._program_for != key:
+            if self._failed_for == key:
+                return fallback, "fallback", "compile failed", None
             self.compile_for(pinned)
             return fallback, "fallback", "compiling", None
         prog = self.program

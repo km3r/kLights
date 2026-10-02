@@ -262,6 +262,30 @@ try:
             ok = True
         check(f"refuses {bad}", ok)
 
+    # -- 5b. a show that cannot be built --------------------------------------
+    print("\n5b. a show that cannot be built")
+    attempts: list[int] = []
+
+    def broken_compile(*args, **kwargs):
+        attempts.append(1)
+        raise RuntimeError("a bug in the compiler")
+
+    programmod.compile = broken_compile
+    sc.player.recompile()
+    play(190, 0.4)
+    settle()
+    play(191, 0.4)
+    check("a compile that raises is said once, and the operator's show runs",
+          status()["mode"] == "fallback" and status()["reason"] == "compile failed"
+          and any("could not be built" in n for n in sc.notices), f"{status()}")
+    check("and it is not retried every frame", len(attempts) == 1, f"{len(attempts)}")
+    programmod.compile = spy_compile
+    sc.player.recompile()
+    settle()
+    play(192, 0.4)
+    check("a rig or folder reload tries again", status()["mode"] == "timeline",
+          f"{status()}")
+
     # -- 6. without a show folder --------------------------------------------
     print("\n6. without a show folder")
     plain = servermod.ShowController(REPO / "events" / "despacio")

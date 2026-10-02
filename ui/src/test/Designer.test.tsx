@@ -185,6 +185,39 @@ describe("designer", () => {
     expect(socket.sent.some((c) => c.type === "preview_release")).toBe(true);
   });
 
+  it("stops driving when the engine lets go of its preview, or another console takes it", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "welcome", id: "c9",
+                                                          tier: "configure" }) }));
+    await screen.findByRole("region", { name: "lanes" });
+    const ours = { client: "c9", name: "desk", track_id: "synth-128", draft: false,
+                   playing: false, ready: true };
+
+    await user.click(screen.getByRole("button", { name: "Drive the rig" }));
+    reply(socket, "preview_arm", true, { track_id: "synth-128" });
+    expect(await screen.findByRole("button", { name: "Release the rig" })).toBeInTheDocument();
+    act(() => socket.push(stateWith((s) => { s.preview = ours; })));
+    // a phone pressed Release on its banner
+    act(() => socket.push(stateWith((s) => { s.preview = null; })));
+    expect(await screen.findByText(/released from another console/)).toBeInTheDocument();
+    const after = socket.sent.length;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(socket.sent.slice(after).some((c) => c.type === "preview_transport")).toBe(false);
+    expect(screen.getByRole("button", { name: "Drive the rig" })).toBeInTheDocument();
+
+    // and again, until another designer forces its way on
+    await user.click(screen.getByRole("button", { name: "Drive the rig" }));
+    reply(socket, "preview_arm", true, { track_id: "synth-128" });
+    await screen.findByRole("button", { name: "Release the rig" });
+    act(() => socket.push(stateWith((s) => { s.preview = ours; })));
+    act(() => socket.push(stateWith((s) => {
+      s.preview = { ...ours, client: "c2", name: "laptop" };
+    })));
+    expect(await screen.findByText("laptop took the rig.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Release laptop's preview" })).toBeInTheDocument();
+  });
+
   it("keeps the rig, and keeps checking drafts, while the engine's snapshots stream in", async () => {
     const user = userEvent.setup();
     const socket = await open();
@@ -329,16 +362,64 @@ describe("designer", () => {
     expect(within(lanes).getAllByLabelText("fan-drop at bar 41.1").length).toBeGreaterThan(0);
   });
 
-  it("adds automation lanes and points", async () => {
+  it("adds automation lanes and points, and edits a point's value and curve", async () => {
     const user = userEvent.setup();
-    await open();
+    const socket = await open();
     const lanes = await screen.findByRole("region", { name: "lanes" });
     await user.selectOptions(within(lanes).getByLabelText("add automation"), "spread");
     const spread = within(lanes).getByLabelText("automation spread");
     fireEvent.click(spread, { clientX: 6 * 32, clientY: 10 });
-    expect(within(spread).getByLabelText(/point at bar 9.1/)).toBeInTheDocument();
-    fireEvent.click(within(spread).getByLabelText(/point at bar 9.1/));
-    expect(within(spread).queryByLabelText(/point at bar 9.1/)).toBeNull();
+    const point = within(spread).getByLabelText(/point at bar 9.1/);
+    // a new point is selected, and the inspector edits it
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/automation point on spread/)).toBeInTheDocument();
+    await user.click(within(inspector).getByRole("button", { name: "ease" }));
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "-0.5" } });
+    expect(within(spread).getByLabelText("point at bar 9.1: -0.5")).toBeInTheDocument();
+
+    // dragged a bar later (6 px a beat), as one edit
+    fireEvent.pointerDown(within(spread).getByLabelText(/point at bar 9.1/), { clientX: 192, clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(spread, { clientX: 192 + 24, clientY: 20, pointerId: 1 });
+    fireEvent.pointerUp(spread, { clientX: 192 + 24, clientY: 20, pointerId: 1 });
+    expect(within(spread).getByLabelText("point at bar 10.1: -0.5")).toBeInTheDocument();
+    expect(point).toBeTruthy();
+
+    // Delete removes what is selected; Ctrl+Z brings it back
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    expect(within(spread).queryByLabelText(/point at bar 10.1/)).toBeNull();
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+    expect(within(spread).getByLabelText("point at bar 10.1: -0.5")).toBeInTheDocument();
+
+    // and the curve went into the document
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    const draft = [...socket.sent].reverse().find((c) => c.type === "timeline_draft") as
+      unknown as { doc: TimelineDoc };
+    const row = draft.doc.rows.find((r) => r.target === "spread")!;
+    expect(row.points).toContainEqual([36, -0.5, "ease"]);
+  });
+
+  it("answers the editing keys: Space plays, Ctrl+S saves, Escape lets go", async () => {
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    fireEvent.keyDown(document.body, { key: " " });
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: " " });
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    expect(screen.getByRole("contentinfo", { name: "inspector" })).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("contentinfo", { name: "inspector" })).toBeNull();
+
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(within(lanes).queryByLabelText("fan-drop at bar 41.1")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "s", metaKey: true });
+    const save = reply(socket, "timeline_save", true, { rev: "r:k" }) as unknown as
+      { doc: TimelineDoc; base_rev: string };
+    expect(save.doc.rows.find((r) => r.id === "scene")!.items!.some((i) => i.id === "chorus1"))
+      .toBe(false);
   });
 
   it("flips a lane between filling gaps and owning the track", async () => {
@@ -353,6 +434,16 @@ describe("designer", () => {
 
 describe("routine editor", () => {
   type Saved = { doc: RoutineDoc; base_rev: string };
+
+  it("goes back to the track it was opened from", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    await user.click(screen.getByRole("link", { name: /Open routine/ }));
+    await screen.findByLabelText("fan_sweep at bar 1.1");
+    expect(screen.getByTitle("Back to synth-128")).toHaveAttribute("href", "#designer/synth-128");
+  });
 
   it("is reached from the picker, and lays a routine out as lanes on roles", async () => {
     const user = userEvent.setup();

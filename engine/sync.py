@@ -51,6 +51,7 @@ perfectly capable of reading.
 from __future__ import annotations
 
 import json
+import math
 import re
 import socket
 import struct
@@ -202,6 +203,11 @@ def klights_fields(parts: list[str], args: list) -> Optional[dict]:
     for want, arg in zip(shape, args):
         number = isinstance(arg, (int, float)) and not isinstance(arg, bool)
         if (want == "n") != number or (want == "s" and not isinstance(arg, str)):
+            return None
+        # A float argument can be NaN or infinite, and `int(deck)` below
+        # would raise on either -- on the listener's thread, ending it. One
+        # datagram must never be able to do that.
+        if number and not math.isfinite(arg):
             return None
     if parts[0] == "pos":
         deck, playing, time_s, pitch, beat_number, master, on_air = args
@@ -427,7 +433,15 @@ class SyncListener:
                 if self.running:
                     continue
                 return
-            fields = parse(data)
+            try:
+                fields = parse(data)
+            except Exception as exc:          # noqa: BLE001 -- see below
+                # A decoder bug must cost one datagram, never the listener:
+                # this port is unauthenticated, and a thread that dies here
+                # takes the DJ feed with it for the rest of the night.
+                self.rejected += 1
+                self.last_reject = f"{addr[0]}: {type(exc).__name__}: {exc}"
+                continue
             if fields is IGNORED:
                 self.ignored += 1
                 continue

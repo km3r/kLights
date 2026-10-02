@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
   BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub,
 } from "./model";
-import type { Item, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
+import type { Item, Point, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
 
 /**
  * Editing a timeline: an undo/redo history over the whole document, and the
@@ -123,6 +123,80 @@ export function uniqueId(doc: RowsDoc, stem: string): string {
   return id;
 }
 
+// -- going between pages ----------------------------------------------------------
+
+const BACK_KEY = "klights.designer.back";
+
+/** Remember this page, so the routine editor's back link returns to it. */
+export function rememberBack(): void {
+  try { sessionStorage.setItem(BACK_KEY, location.hash); } catch { /* fine */ }
+}
+
+/** Where the routine editor's back link goes: the track it was opened from,
+ *  else the list of everything. */
+export function backHash(): string {
+  try {
+    const h = sessionStorage.getItem(BACK_KEY);
+    if (h && /^#designer\/(?!routine\/)[a-z0-9][a-z0-9_-]*$/.test(h)) return h;
+  } catch { /* fine */ }
+  return "#designer";
+}
+
+// -- keys ----------------------------------------------------------------------
+
+/** Whether a key went to something being typed in, where it is the field's. */
+export function typing(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT"
+    || el.isContentEditable;
+}
+
+/** A keydown listener on the page that always runs the latest `handler`. */
+export function useKeys(handler: (e: KeyboardEvent) => void): void {
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => ref.current(e);
+    addEventListener("keydown", on);
+    return () => removeEventListener("keydown", on);
+  }, []);
+}
+
+/** The designer's plain keys, the same in both editors: Space plays and
+ *  stops, Delete (or Backspace) removes what is selected, Escape lets go of it. */
+export function useEditorKeys({ history, selected, setSelected, playPause }: {
+  history: Edits; selected: string | null; setSelected: (id: string | null) => void;
+  playPause: () => void;
+}): void {
+  useKeys((e) => {
+    if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (e.key === " " && tag !== "BUTTON" && tag !== "A") {
+      e.preventDefault();
+      playPause();
+    } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+      e.preventDefault();
+      const id = selected;
+      history.apply((d) => removeSelected(d, id));
+      setSelected(null);
+    } else if (e.key === "Escape" && selected) {
+      setSelected(null);
+    }
+  });
+}
+
+/** Remove an item, or an automation point, by its selection id. */
+export function removeSelected(d: RowsDoc, id: string): void {
+  const pt = parsePointId(id);
+  if (pt) {
+    const r = rowOf(d, pt.row);
+    if (r) r.points = (r.points ?? []).filter((q) => q[0] !== pt.beat);
+    return;
+  }
+  for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== id);
+}
+
 function rowOf(doc: RowsDoc, id: string): Row | undefined {
   return doc.rows.find((r) => r.id === id);
 }
@@ -191,6 +265,23 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     }, 500);
     return () => clearTimeout(timer);
   }, [doc, request, connected, history.dirty, key, rev, kind, kept]);
+
+  // Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z or Ctrl+Y, Ctrl/Cmd+S. Undo in a text field
+  // is the field's own; Save is the page's wherever the cursor is, and the
+  // browser's "save this page" never is.
+  const errorCount = check?.errors.length ?? 0;
+  useKeys((e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "s") {
+      e.preventDefault();
+      if (history.dirty && !saving && errorCount === 0) void save();
+      return;
+    }
+    if (typing(e)) return;
+    if (k === "z" && !e.shiftKey) { e.preventDefault(); history.undo(); }
+    else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); history.redo(); }
+  });
 
   const restore = () => {
     const copy = kept?.doc;
@@ -373,25 +464,96 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
   );
 }
 
-function AutoSvg({ row, x, width, history }: {
+/** A point's selection id: points have no ids of their own, so the row and
+ *  the beat name one. */
+export function pointId(rowId: string, beat: number): string {
+  return `pt:${rowId}:${beat}`;
+}
+
+export function parsePointId(id: string | null): { row: string; beat: number } | null {
+  const m = id ? /^pt:(.+):(-?[\d.]+(?:e-?\d+)?)$/.exec(id) : null;
+  return m ? { row: m[1]!, beat: Number(m[2]) } : null;
+}
+
+const CURVES = ["linear", "step", "ease"] as const;
+
+/**
+ * An automation lane. Click empty space to add a point there; click a point to
+ * select it (the inspector edits its value and the curve that arrives at it);
+ * drag a point to move it -- across to another beat, up and down to another
+ * value -- as one edit when it is let go.
+ */
+function AutoSvg({ row, x, width, history, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number; history: Edits;
+  selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
   const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
   const points = row.points ?? [];
+  const perBeat = x(1) - x(0);
   const y = (v: number) => LANE_H - 3 - ((v - lo) / (hi - lo)) * (LANE_H - 6);
+  const [drag, setDrag] = useState<{ beat: number; x0: number; y0: number; v0: number | null;
+                                     dBeat: number; value: number | null } | null>(null);
+
+  // What is drawn: the points as they are, or as the drag has them.
+  const shown: Point[] = drag
+    ? points.map((p) => (p[0] === drag.beat
+      ? [p[0] + drag.dBeat, drag.value ?? p[1], ...(p.length > 2 ? [p[2]] : [])] as Point
+      : p)).sort((a, b) => a[0] - b[0])
+    : points;
   const samples: string[] = [];
-  const last = points.length ? points[points.length - 1]![0] : 0;
-  for (let b = 0; b <= Math.max(last + 8, 16); b += 0.5) {
-    const v = curveValue(points, b);
-    if (v != null) samples.push(`${x(b)},${y(v)}`);
+  if (shown.length) {
+    const first = shown[0]![0];
+    const last = shown[shown.length - 1]![0];
+    const lead = curveValue(shown, first);
+    if (lead != null) samples.push(`${x(Math.min(0, first))},${y(lead)}`);
+    for (let b = first; b <= last; b += 0.5) {
+      const v = curveValue(shown, b);
+      if (v != null) samples.push(`${x(b)},${y(v)}`);
+    }
+    // After the last point the value holds, to the end of the lane.
+    const tail = curveValue(shown, last);
+    if (tail != null) samples.push(`${x(last)},${y(tail)}`, `${width},${y(tail)}`);
   }
+
+  const begin = (e: React.PointerEvent, p: Point) => {
+    e.stopPropagation();
+    onSelect?.(pointId(row.id, p[0]));
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const v0 = typeof p[1] === "number" ? p[1] : null;
+    setDrag({ beat: p[0], x0: e.clientX, y0: e.clientY, v0, dBeat: 0, value: v0 });
+  };
+  const move = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const beat = history.snapBeat(drag.beat + (e.clientX - drag.x0) / perBeat);
+    const value = drag.v0 == null ? null : Math.round(Math.max(lo, Math.min(hi,
+      drag.v0 - ((e.clientY - drag.y0) / (LANE_H - 6)) * (hi - lo))) * 100) / 100;
+    setDrag({ ...drag, dBeat: beat - drag.beat, value });
+  };
+  const end = () => {
+    if (!drag) return;
+    const { beat, dBeat, value, v0 } = drag;
+    setDrag(null);
+    if (!dBeat && value === v0) return;
+    const to = beat + dBeat;
+    history.apply((d) => {
+      const target = rowOf(d, row.id);
+      const pt = target?.points?.find((q) => q[0] === beat);
+      if (!target || !pt) return;
+      const moved = [to, value ?? pt[1], ...(pt.length > 2 ? [pt[2]] : [])] as Point;
+      target.points = [...(target.points ?? []).filter((q) => q[0] !== beat && q[0] !== to), moved]
+        .sort((a, b) => a[0] - b[0]);
+    });
+    onSelect?.(pointId(row.id, to));
+  };
+
   return (
     <svg width={width} height={LANE_H} className="d-lane d-auto-svg"
          aria-label={`automation ${row.target}`}
+         onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target !== e.currentTarget) return;
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-           const beat = history.snapBeat((e.clientX - r.left) / (x(1) - x(0)));
+           const beat = history.snapBeat((e.clientX - r.left) / perBeat);
            const frac = 1 - (e.clientY - r.top - 3) / (LANE_H - 6);
            const value = Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
            history.apply((d) => {
@@ -402,21 +564,95 @@ function AutoSvg({ row, x, width, history }: {
              pts.sort((a, b) => a[0] - b[0]);
              target.points = pts;
            });
+           onSelect?.(pointId(row.id, beat));
          }}>
       <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />
-      {points.map((p) => (
-        <circle key={p[0]} cx={x(p[0])} cy={typeof p[1] === "number" ? y(p[1]) : LANE_H / 2}
-                r={4} className="d-point" role="button"
-                aria-label={`point at bar ${barBeat(p[0])}: ${String(p[1])}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  history.apply((d) => {
-                    const target = rowOf(d, row.id);
-                    if (target) target.points = (target.points ?? []).filter((q) => q[0] !== p[0]);
-                  });
-                }} />
-      ))}
+      {shown.map((p, i) => {
+        const id = pointId(row.id, drag && p[0] === drag.beat + drag.dBeat ? drag.beat : p[0]);
+        return (
+          <circle key={i} cx={x(p[0])} cy={typeof p[1] === "number" ? y(p[1]) : LANE_H / 2}
+                  r={selected === id ? 6 : 4}
+                  className={`d-point${selected === id ? " sel" : ""}`} role="button"
+                  aria-label={`point at bar ${barBeat(p[0])}: ${String(p[1])}`}
+                  onPointerDown={(e) => begin(e, p)}
+                  onClick={(e) => e.stopPropagation()} />
+        );
+      })}
     </svg>
+  );
+}
+
+/** The selected automation point: its place, its value, and the curve that
+ *  arrives at it (it shapes the segment from the point before). */
+function PointInspector({ row, beat, history, onSelect }: {
+  row: Row; beat: number; history: Edits; onSelect: (id: string | null) => void;
+}) {
+  const pt = row.points?.find((p) => p[0] === beat);
+  if (!pt) return null;
+  const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
+  const curve = (pt[2] as string | undefined) ?? "linear";
+  const set = (to: Point) => {
+    history.apply((d) => {
+      const target = rowOf(d, row.id);
+      if (!target) return;
+      target.points = [...(target.points ?? []).filter((q) => q[0] !== beat && q[0] !== to[0]), to]
+        .sort((a, b) => a[0] - b[0]);
+    });
+    onSelect(pointId(row.id, to[0]));
+  };
+  const withCurve = (b: number, v: number | string, c: string): Point =>
+    (c === "linear" ? [b, v] : [b, v, c]);
+  return (
+    <footer className="d-inspector" aria-label="inspector">
+      <div className="d-insp-head">
+        <b>{row.target === "master" ? "Master" : row.target}</b>
+        <span className="muted"> · automation point on {row.id} · bar {barBeat(beat)}</span>
+        <span className="grow" />
+        <button onClick={() => {
+          history.apply((d) => {
+            const target = rowOf(d, row.id);
+            if (target) target.points = (target.points ?? []).filter((q) => q[0] !== beat);
+          });
+          onSelect(null);
+        }}>Delete</button>
+      </div>
+      <div className="d-insp-grid">
+        <label className="small">Beat{" "}
+          <input type="number" step={1} value={beat} aria-label="point beat" style={{ width: 70 }}
+                 onChange={(e) => {
+                   if (e.target.value === "") return;
+                   set(withCurve(Number(e.target.value), pt[1], curve));
+                 }} />
+        </label>
+        {typeof pt[1] === "number" ? (
+          <label className="small">Value{" "}
+            <input type="number" min={lo} max={hi} step={(hi - lo) / 100} value={pt[1]}
+                   aria-label="point value" style={{ width: 70 }}
+                   onChange={(e) => {
+                     const v = Number(e.target.value);
+                     if (e.target.value !== "" && v >= lo && v <= hi) set(withCurve(beat, v, curve));
+                   }} />
+            <span className="muted"> {lo} to {hi}</span>
+          </label>
+        ) : (
+          <label className="small">Value{" "}
+            <input value={String(pt[1])} aria-label="point value"
+                   onChange={(e) => set(withCurve(beat, e.target.value, curve))} />
+          </label>
+        )}
+        <div>
+          <span className="small muted">Arrives by</span>
+          <div className="d-chips">
+            {CURVES.map((c) => (
+              <button key={c} className={curve === c ? "on" : ""}
+                      title={c === "step" ? "holds the value before until this point"
+                        : c === "ease" ? "eases out of the point before and into this one"
+                          : "a straight line from the point before"}
+                      onClick={() => set(withCurve(beat, pt[1], c))}>{c}</button>))}
+          </div>
+        </div>
+      </div>
+    </footer>
   );
 }
 
@@ -772,7 +1008,8 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
                      }} />
             ))}
             {routine && (
-              <a className="small d-link" href={`#designer/routine/${routine.id}`}>
+              <a className="small d-link" href={`#designer/routine/${routine.id}`}
+                 onClick={() => rememberBack()}>
                 Open routine · {routine.bars} bars{routine.loop ? ", loops" : ""}</a>)}
           </>
         )}
@@ -913,4 +1150,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
+  PointInspector,
 };

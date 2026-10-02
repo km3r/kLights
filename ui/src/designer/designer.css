@@ -94,7 +94,8 @@
 .d-hit-span { fill: rgba(255, 182, 72, 0.25); }
 .d-hit.sel path { stroke: var(--text); stroke-width: 2; }
 .d-curve { fill: none; stroke: var(--good); stroke-width: 1.5; }
-.d-point { fill: var(--good); cursor: pointer; }
+.d-point { fill: var(--good); cursor: grab; }
+.d-point.sel { stroke: var(--text); stroke-width: 2; }
 .d-auto-svg { cursor: crosshair; }
 .d-loop-end {
   position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--accent);
@@ -113,7 +114,9 @@
 .d-who td { padding: 2px 0; }
 .d-shelf, .d-pads, .d-chips, .d-templates { display: flex; flex-wrap: wrap; gap: 4px; }
 .d-palette { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
-.d-palette label { flex: 1; }
+.d-palette label { flex: 1; display: flex; align-items: center; gap: 4px; }
+.d-palette input[type="radio"], .d-form input[type="checkbox"] { width: auto; margin: 0; }
+.d-templates h3, .d-palettes h3 { width: 100%; }
 .d-palette input[type="color"] { width: 28px; height: 22px; padding: 0; }
 
 .d-inspector {

@@ -64,32 +64,40 @@ export function Phrases({ track, x, width }: { track: TrackDoc; x: (b: number) =
   );
 }
 
+/** Browsers refuse a canvas wider than about 32k pixels -- a long track at the
+ *  closest zoom is wider than that, and would draw nothing at all. Past this,
+ *  the canvas keeps this many pixels and is stretched to the lane's width. */
+export const MAX_CANVAS_PX = 16384;
+
 export function WaveLane({ wave, grid, duration, x, width }: {
   wave: Wave | null; grid: Grid; duration: number; x: (b: number) => number; width: number;
 }) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
+  const pixels = Math.max(1, Math.min(Math.round(width), MAX_CANVAS_PX));
   useEffect(() => {
     const el = canvas.current;
     // Null-safe: jsdom has no 2D context, and a browser can refuse one.
     const ctx = el?.getContext?.("2d") ?? null;
     if (!el || !ctx || !wave) return;
     ctx.clearRect(0, 0, el.width, el.height);
+    const k = el.width / Math.max(1, width);
     const n = wave.heights.length;
     const secondsPer = wave.rate ? 1 / wave.rate : (duration || 1) / n;
     const mid = el.height / 2;
     for (let i = 0; i < n; i++) {
-      const px = x(grid.beatAt(i * secondsPer));
+      const px = x(grid.beatAt(i * secondsPer)) * k;
       const h = wave.heights[i]! * mid;
       const c = wave.colors?.[i];
       ctx.fillStyle = c ? `rgb(${c[0] * 255},${c[1] * 255},${c[2] * 255})` : "#5aa9ff";
-      ctx.fillRect(px, mid - h, Math.max(1, x(grid.beatAt((i + 1) * secondsPer)) - px), h * 2);
+      ctx.fillRect(px, mid - h, Math.max(1, x(grid.beatAt((i + 1) * secondsPer)) * k - px), h * 2);
     }
   }, [wave, grid, duration, x, width]);
   return (
     <div className="d-row d-wave">
       <div className="d-head">Audio <span className="muted small">waveform</span></div>
       {wave
-        ? <canvas ref={canvas} width={width} height={40} aria-label="waveform" />
+        ? <canvas ref={canvas} width={pixels} height={40} aria-label="waveform"
+                  style={{ width, height: 40 }} />
         : <div className="d-empty muted small" style={{ width }}>
             no waveform -- prep the track from rekordbox to see one</div>}
     </div>
@@ -113,7 +121,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   roles?: string[];
 }) {
   if (row.type === "automation") {
-    return <AutoLane row={row} x={x} width={width} history={history} beat={beat} />;
+    return <AutoLane row={row} x={x} width={width} history={history} beat={beat}
+                     selected={selected} onSelect={onSelect} />;
   }
   if (row.type === "external") {
     return (
@@ -153,9 +162,10 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   );
 }
 
-export function AutoLane({ row, x, width, history, beat }: {
+export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number;
   history: Edits; beat: number;
+  selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
   const now = curveValue(row.points ?? [], beat);
   return (
@@ -165,7 +175,8 @@ export function AutoLane({ row, x, width, history, beat }: {
           <span className="muted small mono"> {now == null ? "" : now.toFixed(2)}</span></span>
         <Editor.LaneMenu row={row} index={-1} history={history} />
       </div>
-      <Editor.AutoSvg row={row} x={x} width={width} history={history} />
+      <Editor.AutoSvg row={row} x={x} width={width} history={history}
+                      selected={selected} onSelect={onSelect} />
     </div>
   );
 }

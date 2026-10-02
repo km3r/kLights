@@ -410,6 +410,8 @@ const NOT_DRIVING: Record<string, string> = {
     + "operator's show runs.",
   "no timeline": "Matched, but nobody has drawn this track a show yet.",
   compiling: "Building this track's show…",
+  "compile failed": "This track's show could not be built — see the notices. "
+    + "The operator's show runs.",
   "no position": "Waiting for the deck's position.",
   "paused (no idle routine)": "Paused, and show.json names no idle routine.",
   "preview: no timeline yet": "The designer is driving a track with no "

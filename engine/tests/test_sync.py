@@ -332,6 +332,11 @@ for label, bad in [
      osc_args("/klights/v1/track", 2, 412, "", 7, "Someone", "EP", 372.5)),
     ("a kind that does not exist", osc_args("/klights/v1/teleport", 1)),
     ("a version that does not exist", osc_args("/klights/v2/pos", 2, 1, 61.25, 1.0, 129, 1, 0)),
+    ("a deck that is not a number (NaN)",
+     osc_args("/klights/v1/pos", float("nan"), 1, 61.25, 1.0, 129, 1, 0)),
+    ("an infinite deck", osc_args("/klights/v1/pos", float("inf"), 1, 61.25, 1.0, 129, 1, 0)),
+    ("an infinite rekordbox id",
+     osc_args("/klights/v1/track", 2, ("d", float("inf")), "", "T", "A", "B", 1.0)),
 ]:
     check(f"/klights refuses {label}", syncmod.parse(bad) is None)
 
@@ -384,6 +389,31 @@ time.sleep(0.3)
 check("a raising callback does not kill the listener thread",
       boom.thread.is_alive() and boom.rejected == 1, f"{boom.status()}")
 boom.stop()
+
+# The decoder itself raising must not kill it either: a datagram that is
+# rejected costs one datagram. (A NaN deck number used to do exactly this.)
+fragile = syncmod.SyncListener(on_sync=seen.append, port=0, bind="127.0.0.1")
+fragile.start()
+fragile_port = fragile.sock.getsockname()[1]
+real_parse = syncmod.parse
+syncmod.parse = lambda data: (_ for _ in ()).throw(ValueError("decoder bug"))
+try:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.sendto(osc_args("/klights/v1/pos", float("nan"), 1, 1.0, 1.0, 1, 1, 0),
+                 ("127.0.0.1", fragile_port))
+    deadline = time.time() + 2
+    while fragile.rejected < 1 and time.time() < deadline:
+        time.sleep(0.02)
+finally:
+    syncmod.parse = real_parse
+syncmod.send({"bpm": 121.0}, port=fragile_port)
+deadline = time.time() + 2
+while not any(f.get("bpm") == 121.0 for f in seen) and time.time() < deadline:
+    time.sleep(0.02)
+check("a decoder that raises costs one datagram, and the listener reads on",
+      fragile.thread.is_alive() and fragile.rejected == 1
+      and any(f.get("bpm") == 121.0 for f in seen), f"{fragile.status()}")
+fragile.stop()
 
 listener.stop()
 check("stopping releases the socket", listener.sock is None)

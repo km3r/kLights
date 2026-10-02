@@ -1057,6 +1057,18 @@ describe("designer preview banner", () => {
                                                            { name: "Release" }));
     expect(socket.last()).toEqual({ type: "preview_release" });
   });
+
+  it("tells a view-only phone too, without offering a Release it cannot do", () => {
+    const socket = mount();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "welcome", id: "v1",
+                                                          tier: "view" }) }));
+    act(() => socket.push(stateWith((s) => {
+      s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
+                    draft: false, playing: true, ready: true };
+    })));
+    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    expect(within(banner as HTMLElement).queryByRole("button", { name: "Release" })).toBeNull();
+  });
 });
 
 describe("dj sync", () => {

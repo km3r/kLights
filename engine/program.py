@@ -75,6 +75,10 @@ PHASE_FIELD = {"movement": "motion_bar", "color": "color_bar", "level": "level_b
 FALLBACK_LIST = {"movement": "movement", "color": "color", "level": "fx"}
 BAR = float(tracktime.BEATS_PER_BAR)
 TABLE_STEP = 1.0 / 16.0           # beats, for a rate warp with two curves
+# How far such a table reaches. Past it the warp runs on at its last rate --
+# exact once both curves have settled, which a curve does after its last
+# point. Bounded so one long clip cannot ask for millions of entries.
+TABLE_MAX_BEATS = 8192.0
 ROLES = showfiles.PALETTE_ROLES
 WHITE = blocksmod.WHITE
 
@@ -100,7 +104,7 @@ class Warp:
         self.loop_len = loop_len if loop_len and loop_len > 0 else None
         self._table: Optional[list[float]] = None
         if self.T is not None and self.R is not None:
-            self._build(max(horizon, 1.0))
+            self._build(min(max(horizon, 1.0), TABLE_MAX_BEATS))
 
     def _r(self, x: float) -> float:
         if self.loop_len is not None:

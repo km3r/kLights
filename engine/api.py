@@ -32,8 +32,10 @@ and the library is immutable, so nothing here can disturb the output thread.
 
 from __future__ import annotations
 
+import glob
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -155,11 +157,40 @@ def _track_line(library, tid: str, doc: dict) -> dict:
             "rev": folder.revs.get(f"tracks/{tid}.json")}
 
 
+# Where each track's audio turned out to be. A browser playing a file asks for
+# it in Range requests, several a second while it buffers and seeks, and each
+# one would otherwise search every audio root -- a whole music library -- again.
+# Keyed by everything the answer depends on. A hit is re-checked on disk before
+# it is trusted; a miss is remembered for MISS_TTL_S, so a file copied in
+# afterwards is found without a restart. Shared by the HTTP threads: a dict
+# get or set is one step, and the worst a race costs is one extra search.
+_FOUND: dict[tuple, tuple[Optional[Path], float]] = {}
+MISS_TTL_S = 30.0
+
+
 def find_audio(doc: dict, audio_roots: Sequence[str] = ()) -> Optional[Path]:
-    """The track's audio file on this machine: a path the track document
-    names, if it is there; else the same file name under one of this machine's
-    `audio_roots` -- a library moved to another drive, or the design machine's
-    copy of the show laptop's music. Only files with an audio extension."""
+    """The track's audio file on this machine, remembered (see `_FOUND`)."""
+    key = (json.dumps(doc.get("audio"), sort_keys=True, default=str),
+           tuple(audio_roots))
+    hit = _FOUND.get(key)
+    if hit is not None:
+        path, at = hit
+        if path is not None and path.is_file():
+            return path
+        if path is None and time.monotonic() - at < MISS_TTL_S:
+            return None
+    found = _search_audio(doc, audio_roots)
+    if len(_FOUND) > 256:
+        _FOUND.clear()
+    _FOUND[key] = (found, time.monotonic())
+    return found
+
+
+def _search_audio(doc: dict, audio_roots: Sequence[str]) -> Optional[Path]:
+    """A path the track document names, if it is there; else the same file
+    name under one of this machine's `audio_roots` -- a library moved to
+    another drive, or the design machine's copy of the show laptop's music.
+    Only files with an audio extension."""
     names = []
     for entry in doc.get("audio") or ():
         raw = entry.get("path") if isinstance(entry, dict) else None
@@ -179,7 +210,10 @@ def find_audio(doc: dict, audio_roots: Sequence[str] = ()) -> Optional[Path]:
             direct = base / name
             if direct.is_file():
                 return direct
-            for hit in base.rglob(name):
+            # A NAME, not a pattern: "Night Drive [Extended Mix].mp3" has a
+            # glob character class in it, which would match anything but
+            # itself.
+            for hit in base.rglob(glob.escape(name)):
                 if hit.is_file() and hit.suffix.lower() in AUDIO_TYPES:
                     return hit
     return None

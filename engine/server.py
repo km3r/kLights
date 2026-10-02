@@ -1713,6 +1713,12 @@ class ShowController:
 
     def _cmd_preview_transport(self, m: dict, now: float) -> None:
         """Where the designer's audio is, and whether it is playing."""
+        if self.player is None or self.player.preview is None:
+            # A stream outliving its preview -- released from a phone, or the
+            # designer reconnected -- for the tenth of a second until the page
+            # sees it. Ten failures a second in every console's notices would
+            # bury the one that said why; the release already said it.
+            return
         self._owned_preview()
         time_s = m.get("time_s")
         if isinstance(time_s, bool) or not isinstance(time_s, (int, float)) \
@@ -2501,6 +2507,14 @@ class ShowServer:
         self.audio_roots: list[str] = ([r for r in roots if isinstance(r, str)]
                                        if isinstance(roots, list) else [])
 
+    def token_matches(self, supplied: str) -> bool:
+        """Whether a request carries the token -- in constant time, so how
+        long a wrong guess takes says nothing about how close it was."""
+        if self.token is None:
+            return True
+        return secrets.compare_digest(supplied.encode("utf-8"),
+                                      self.token.encode("utf-8"))
+
     def new_client_id(self) -> str:
         with self._id_lock:
             self._next_id += 1
@@ -2691,8 +2705,8 @@ class ShowServer:
                     # should not be one at a load-in.
                     query = parse_qs(urlparse(self.path).query)
                     supplied = (query.get("token") or [""])[0]
-                    tier = ("configure" if server.token is None
-                            or supplied == server.token else "view")
+                    tier = ("configure" if server.token_matches(supplied)
+                            else "view")
                     from .websocket import handshake_response
                     self.wfile.write(handshake_response(key))
                     self.wfile.flush()
@@ -2716,7 +2730,7 @@ class ShowServer:
                 url = urlparse(self.path)
                 supplied = ((parse_qs(url.query).get("token") or [""])[0]
                             or self.headers.get("X-Klights-Token", ""))
-                token_ok = server.token is None or supplied == server.token
+                token_ok = server.token_matches(supplied)
                 try:
                     resp = apimod.handle(server.controller.show_library, url.path,
                                          self.headers.get("Range"), token_ok,

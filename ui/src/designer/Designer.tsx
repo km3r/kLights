@@ -9,7 +9,7 @@ import {
 import type {
   RoutineSummary, TimelineDoc, TrackDoc, TrackLine, Wave,
 } from "./model";
-import { Editor, useHistory } from "./edit";
+import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import "./designer.css";
@@ -41,6 +41,8 @@ export interface Engine {
   send: (c: Command) => void;
   request: (c: Command, timeoutMs?: number) => Promise<Reply>;
   tier: Tier;
+  /** This console's id on the engine, once it has said hello. */
+  clientId?: string | null;
 }
 
 const HEADER_W = 170;
@@ -249,6 +251,28 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
     setDriving(false);
     engine.send({ type: "preview_release" });
   };
+  // The engine can end this page's preview without being asked: the socket
+  // dropped (it lets go of a designer that disconnects), another console
+  // pressed Release, or another designer took the rig. Stop driving then --
+  // a page that went on sending its transport would be talking to nobody, and
+  // say so in every console's notices ten times a second.
+  const seenMine = useRef(false);
+  const mine = preview != null && engine.clientId != null && preview.client === engine.clientId;
+  useEffect(() => {
+    if (!driving) { seenMine.current = false; return; }
+    if (engine.status !== "open") {
+      setDriving(false);
+      setDriveError("The connection to the engine dropped, so the rig went back to the show.");
+    } else if (preview && engine.clientId && preview.client !== engine.clientId) {
+      setDriving(false);
+      setDriveError(`${preview.name} took the rig.`);
+    } else if (mine) {
+      seenMine.current = true;
+    } else if (!preview && seenMine.current) {
+      setDriving(false);
+      setDriveError("The rig was released from another console.");
+    }
+  }, [driving, preview, mine, engine.status, engine.clientId]);
   useEffect(() => {
     if (!driving) return;
     const push = () => send({ type: "preview_transport",
@@ -268,6 +292,21 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   }, [transport.playing]);
   useEffect(() => () => { if (driving) send({ type: "preview_release" }); },
             [driving, send]);
+
+  useEditorKeys({ history, selected, setSelected,
+                  playPause: () => transport.play(!transport.playing) });
+
+  // While playing, keep the playhead in view: page the lanes along when it
+  // reaches the right edge, so it does not run off the screen.
+  const lanesRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = lanesRef.current;
+    if (!el || !transport.playing) return;
+    const at = HEADER_W + beat * zoom;
+    if (at > el.scrollLeft + el.clientWidth - 40 || at < el.scrollLeft + HEADER_W) {
+      el.scrollLeft = Math.max(0, at - HEADER_W - 40);
+    }
+  }, [beat, zoom, transport.playing]);
 
   const seekBeat = (b: number) => {
     if (!grid) return;
@@ -293,6 +332,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const width = totalBeats * zoom;
   const drivers = whoDrives(doc, beat);
   const selectedItem = findItem(doc, selected);
+  const selectedPoint = parsePointId(selected);
+  const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
 
@@ -326,10 +367,14 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         </label>
         <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="timeline" ident={trackId} />
-        {driving || preview?.client
+        {driving
           ? <button className="on" onClick={release}>Release the rig</button>
-          : <button onClick={() => void arm(false)}
-                    title="Put this page's transport on the real rig">Drive the rig</button>}
+          : preview
+            ? <button onClick={release}
+                      title={`${preview.name} is driving the rig on ${preview.track_id}`}>
+                Release {preview.name}'s preview</button>
+            : <button onClick={() => void arm(false)}
+                      title="Put this page's transport on the real rig">Drive the rig</button>}
       </header>
       {driveError && (
         <div className="d-banner">
@@ -365,7 +410,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       )}
 
       <div className="d-body">
-        <div className="d-lanes" role="region" aria-label="lanes">
+        <div className="d-lanes" role="region" aria-label="lanes" ref={lanesRef}>
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={seekBeat} />
             <Phrases track={track} x={x} width={width} />
@@ -387,10 +432,12 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             {engine.state ? <PlanSvg state={engine.state} />
               : <p className="muted small">Not connected.</p>}
             <p className="small muted">
-              {driving || preview
+              {driving
                 ? "This page is driving the rig. Every console shows it."
-                : "The rig is on the live show. Drive the rig to put this "
-                  + "page's transport on it."}
+                : preview
+                  ? `${preview.name} is driving the rig on ${preview.track_id}.`
+                  : "The rig is on the live show. Drive the rig to put this "
+                    + "page's transport on it."}
             </p>
           </section>
           <section>
@@ -414,8 +461,11 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         </aside>
       </div>
 
-      <Editor.Inspector history={history} item={selectedItem} routines={routines}
-                        engine={engine} onDeleted={() => setSelected(null)} />
+      {selectedPoint && pointRow && !history.listView
+        ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
+                                 onSelect={setSelected} />
+        : <Editor.Inspector history={history} item={selectedItem} routines={routines}
+                            engine={engine} onDeleted={() => setSelected(null)} />}
     </div>
   );
 }

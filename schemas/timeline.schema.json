@@ -94,16 +94,19 @@
                     "at": {
                       "type": "number",
                       "minimum": -64,
+                      "maximum": 65536,
                       "description": "beats from the track's first downbeat, not seconds"
                     },
                     "len": {
                       "type": "number",
                       "minimum": 0,
+                      "maximum": 65536,
                       "description": "length in beats"
                     },
                     "fade": {
                       "type": "number",
                       "minimum": 0,
+                      "maximum": 65536,
                       "description": "beats to fade in over, not seconds"
                     },
                     "kind": {
@@ -231,16 +234,19 @@
                     "at": {
                       "type": "number",
                       "minimum": -64,
+                      "maximum": 65536,
                       "description": "beats from the track's first downbeat, not seconds"
                     },
                     "len": {
                       "type": "number",
                       "minimum": 0,
+                      "maximum": 65536,
                       "description": "length in beats"
                     },
                     "fade": {
                       "type": "number",
                       "minimum": 0,
+                      "maximum": 65536,
                       "description": "beats to fade in over, not seconds"
                     },
                     "hit": {

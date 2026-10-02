@@ -407,6 +407,22 @@ check("a block aimed into the crowd is tapered by safety, which still runs last"
       f"{[round(safe[f.fid].intensity, 2) for f in MOVERS]}")
 
 
+# -- 7b. a long clip under two rate curves -------------------------------------
+print("\n7b. bounded work for a long clip")
+T = tl.Curve.from_points([[0, 1.0], [64, 2.0]])
+R = tl.Curve.from_points([[0, 1.0], [16, 0.5]])
+started = time.perf_counter()
+long_warp = programmod.Warp(0.0, T, R, None, horizon=float(sf.MAX_BEATS))
+built_in = time.perf_counter() - started
+check("the warp table stops at TABLE_MAX_BEATS however long the clip",
+      len(long_warp._table) <= programmod.TABLE_MAX_BEATS / programmod.TABLE_STEP + 2
+      and built_in < 2.0, f"{len(long_warp._table)} entries in {built_in:.2f} s")
+edge = programmod.TABLE_MAX_BEATS
+step = long_warp(edge + 10) - long_warp(edge)
+check("and past it the warp runs on at the curves' settled rate (2 x 0.5)",
+      abs(step - 10 * 1.0) < 1e-6, f"{step}")
+
+
 # -- 8. cost ------------------------------------------------------------------
 print("\n8. cost")
 ctx = ctx_for()

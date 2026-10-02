@@ -11,6 +11,47 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Fixed — F19 review, before merging
+
+A review of the whole F19 branch before it merged. Each fix has a test.
+
+- **One UDP datagram could end DJ sync for the night.** A `/klights/v1/pos`
+  with a NaN or infinite deck number raised inside the decoder, on the
+  listener's thread, and the thread died. Non-finite numbers are refused, and
+  the listener now survives any decoder failure, counting it as a reject.
+- **A typo could hang the worker.** Clip `at`, `len` and `fade` had no upper
+  bound; a long clip under two rate curves asked the compiler for a table of
+  millions of entries. They are capped at 65536 beats (nine hours at 120 bpm),
+  and the table at 8192 beats, past which the clip runs on at its settled rate.
+  A compile that fails anyway is reported once ("could not be built") and the
+  operator's show runs, instead of the track sitting on "compiling".
+- **Audio in the designer**: a file named like `Night Drive [Extended Mix].mp3`
+  was never found under `audio_roots` (the brackets were read as a pattern),
+  and every Range request searched the whole music folder again. Names are
+  matched literally, and where a track's audio is is remembered.
+- **A designer that lost the rig kept talking to it.** When the engine ended a
+  preview -- the socket dropped, a phone pressed Release, another designer
+  forced its way on -- the page went on sending its transport ten times a
+  second, and each one failed into every console's notices. The page now
+  notices and says why; the engine ignores a transport that outlived its
+  preview. A preview that is someone else's is labelled as theirs.
+- The waveform drew nothing on a long track at the closest zoom (a browser's
+  canvas width limit); ids with a trailing newline were accepted (and would have
+  been file names); token checks are constant-time; a view-only phone is no
+  longer offered a Release it cannot do.
+
+### Changed — the designer, after review
+
+- **Automation points** are selected by a click (it used to delete them),
+  dragged to a new beat or value, and edited in the inspector: beat, value, and
+  the curve that arrives at the point (linear, step, ease) -- which the format
+  always had and the designer could not set.
+- **Keys**: Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z or Ctrl+Y, Ctrl/Cmd+S, Space to play,
+  Delete or Backspace to remove what is selected, Escape to let go of it.
+- The playhead pages the lanes along while playing; the routine editor's back
+  link returns to the track it was opened from.
+- README: a "Timecoded shows" section, with the designer pictured.
+
 ### Added — F19l: the designer
 
 - **`#designer`**, a desktop page the engine serves with the console, loaded

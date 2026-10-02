@@ -34,8 +34,8 @@ type TabId = (typeof TABS)[number]["id"];
 // #designer downloads it -- a phone never does.
 const Designer = lazy(() => import("./designer/Designer"));
 
-/** `#designer` or `#designer/<track>`, or null for the console. */
-/** `#designer`, `#designer/<track>` or `#designer/routine/<id>`. */
+/** `#designer`, `#designer/<track>` or `#designer/routine/<id>`; null for
+ *  the console. */
 function designerRoute(): { track: string | null; routine: string | null } | null {
   const hash = location.hash.slice(1);
   if (hash !== "designer" && !hash.startsWith("designer/")) return null;
@@ -213,8 +213,11 @@ export function Banners({ state, status, send, tier }: {
     banners.push(<Banner key="preview" kind="warn">
       DESIGNER ({state.preview.name}) is driving the rig on
       {" "}{state.preview.track_id}{state.preview.draft ? " (unsaved draft)" : ""}.
-      <button className="small" style={{ marginLeft: "auto" }}
-              onClick={() => send({ type: "preview_release" })}>Release</button>
+      {/* Releasing is configure-tier; a view-only phone is told, not offered
+          a button that can only fail. */}
+      {tier === "configure" && (
+        <button className="small" style={{ marginLeft: "auto" }}
+                onClick={() => send({ type: "preview_release" })}>Release</button>)}
     </Banner>);
   }
   if (state?.panicked) {
