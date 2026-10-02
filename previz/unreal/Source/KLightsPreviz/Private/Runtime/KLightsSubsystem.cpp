@@ -325,6 +325,7 @@ void UKLightsSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	const double Now = FPlatformTime::Seconds();
+	FrameMs = FrameMs <= 0.0 ? DeltaTime * 1000.0 : FMath::Lerp(FrameMs, DeltaTime * 1000.0, 0.05);
 	Link.Tick(Now);
 	WindowPackets += ArtNet.Drain();
 	if (Now - WindowStart >= 1.0)
@@ -425,6 +426,8 @@ void UKLightsSubsystem::TickSnapshot(double Now)
 	if (GFrameCounter >= SnapshotFrame)
 	{
 		FScreenshotRequest::RequestScreenshot(SnapshotPath, /*bShowUI=*/ false, /*bAddFilenameSuffix=*/ false);
+		UE_LOG(LogKLights, Display, TEXT("frame time at the snapshot: %.1f ms (%.0f fps)"), FrameMs,
+		       FrameMs > 0.0 ? 1000.0 / FrameMs : 0.0);
 		QuitAt = Now + 1.5;
 	}
 }

@@ -64,7 +64,8 @@ void AKLightsHUD::DrawHUD()
 	};
 
 	const FKLightsScene* Scene = Previz->GetScene();
-	Line(Scene ? FString::Printf(TEXT("kLights previz   %s in %s   scene %s"), *Scene->Event, *Scene->Venue, *Scene->Rev)
+	Line(Scene ? FString::Printf(TEXT("kLights previz   %s in %s   scene %s   %.0f fps"), *Scene->Event, *Scene->Venue,
+	                             *Scene->Rev, Previz->GetFrameMs() > 0.0 ? 1000.0 / Previz->GetFrameMs() : 0.0)
 	           : FString(TEXT("kLights previz   no scene yet")), Normal);
 
 	const FKLightsEngineLink& Link = Previz->GetLink();
@@ -111,6 +112,10 @@ void AKLightsHUD::DrawHUD()
 	if (!Previz->GetProblem().IsEmpty())
 	{
 		Line(Previz->GetProblem(), Bad);
+	}
+	for (const FString& ModelProblem : Previz->GetModelProblems())
+	{
+		Line(ModelProblem, Bad);
 	}
 	if (Scene)
 	{

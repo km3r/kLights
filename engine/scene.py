@@ -63,6 +63,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import struct
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -277,11 +278,177 @@ def _contained(path: Path) -> bool:
     return False
 
 
+# ---------------------------------------------------------------- inspection --
+#
+# The engine's half of loading a model: everything that can be known about a
+# .glb without Unreal, checked while the scene is built, so a problem is a line
+# in the scene's warnings -- on the app's overlay and in `previz doctor` --
+# rather than a model that silently fails to load, or a moving head whose body
+# quietly stops following its beam.
+
+# Not limits: a heavier model still loads. It loads SLOWLY -- a colliding mesh
+# has its collision cooked on the game thread, a hitch while the room builds --
+# and the warning says which one.
+MODEL_TRIANGLE_BUDGET = 500_000
+MODEL_TEXTURE_BUDGET = 4096                  # pixels, either side
+# glTF is metres. Outside this, a model was almost certainly exported in
+# centimetres (100x too big) or millimetres (1000x).
+MODEL_EXTENT_M = (0.01, 250.0)
+BODY_EXTENT_M = 3.0
+# Extensions Unreal's runtime glTF reader (GLTFCore) understands. A model that
+# REQUIRES anything else will not load as intended.
+SUPPORTED_EXTENSIONS = frozenset({
+    "KHR_draco_mesh_compression", "KHR_mesh_quantization", "KHR_texture_transform",
+    "KHR_materials_emissive_strength", "KHR_materials_unlit", "KHR_lights_punctual",
+    "KHR_materials_variants", "KHR_materials_ior", "KHR_materials_specular",
+    "KHR_materials_transmission", "KHR_materials_clearcoat", "KHR_materials_sheen",
+})
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    """What a .glb holds, as far as the previz cares."""
+    triangles: int
+    extent_m: float                                       # largest side of any mesh, metres
+    nodes: dict[str, tuple[Optional[str], bool]]          # name -> (parent's name, rotated at rest)
+    problems: tuple[str, ...]
+
+
+_INSPECTED: dict[tuple[str, int, int], ModelInfo] = {}
+
+
+def _image_size(blob: bytes) -> Optional[tuple[int, int]]:
+    """(width, height) of a PNG or JPEG, from its header alone."""
+    if blob[:8] == b"\x89PNG\r\n\x1a\n" and len(blob) >= 24:
+        return struct.unpack(">II", blob[16:24])
+    if blob[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(blob):
+            if blob[i] != 0xFF:
+                i += 1
+                continue
+            marker = blob[i + 1]
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                height, width = struct.unpack(">HH", blob[i + 5:i + 9])
+                return width, height
+            i += 2 + struct.unpack(">H", blob[i + 2:i + 4])[0]
+    return None
+
+
+def inspect_glb(path: Path) -> ModelInfo:
+    """Read a .glb's header and JSON and say what is wrong with it, if anything.
+
+    Cached on (path, mtime, size), like the hash: the scene is rebuilt on every
+    poll and a model is only re-read when it changes.
+    """
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key in _INSPECTED:
+        return _INSPECTED[key]
+
+    def done(info: ModelInfo) -> ModelInfo:
+        _INSPECTED[key] = info
+        return info
+
+    data = path.read_bytes()
+    if len(data) < 20 or data[:4] != b"glTF":
+        return done(ModelInfo(0, 0.0, {}, ("is not a binary glTF -- export it as a single .glb",)))
+    problems: list[str] = []
+    if struct.unpack_from("<I", data, 4)[0] != 2:
+        problems.append("is not glTF 2.0")
+    json_length, json_type = struct.unpack_from("<I4s", data, 12)
+    if json_type != b"JSON":
+        return done(ModelInfo(0, 0.0, {}, ("has no JSON chunk where a .glb must have one",)))
+    try:
+        doc = json.loads(data[20:20 + json_length])
+    except (ValueError, UnicodeDecodeError):
+        return done(ModelInfo(0, 0.0, {}, ("has a JSON chunk that is not JSON",)))
+    bin_start = 20 + json_length
+    blob = b""
+    if bin_start + 8 <= len(data):
+        bin_length, bin_type = struct.unpack_from("<I4s", data, bin_start)
+        if bin_type == b"BIN\x00":
+            blob = data[bin_start + 8:bin_start + 8 + bin_length]
+
+    for kind in ("buffers", "images"):
+        for entry in doc.get(kind, []):
+            uri = entry.get("uri")
+            if uri and not uri.startswith("data:"):
+                problems.append(f"refers to a separate file ({uri}), which the app is never sent "
+                                f"-- export with everything embedded")
+    missing = set(doc.get("extensionsRequired", [])) - SUPPORTED_EXTENSIONS
+    if missing:
+        problems.append(f"requires {', '.join(sorted(missing))}, which Unreal's runtime reader "
+                        f"does not support")
+
+    accessors = doc.get("accessors", [])
+
+    def count(index) -> int:
+        return accessors[index].get("count", 0) if isinstance(index, int) and index < len(accessors) else 0
+
+    per_mesh, extent, skipped = [], 0.0, 0
+    for mesh in doc.get("meshes", []):
+        triangles = 0
+        for primitive in mesh.get("primitives", []):
+            mode = primitive.get("mode", 4)
+            position = primitive.get("attributes", {}).get("POSITION")
+            n = count(primitive["indices"]) if "indices" in primitive else count(position)
+            if mode == 4:
+                triangles += n // 3
+            elif mode in (5, 6):
+                triangles += max(0, n - 2)
+            else:
+                skipped += 1                          # points and lines
+            if isinstance(position, int) and position < len(accessors):
+                lo, hi = accessors[position].get("min"), accessors[position].get("max")
+                if lo and hi:
+                    extent = max(extent, *(b - a for a, b in zip(lo, hi)))
+        per_mesh.append(triangles)
+    if skipped:
+        problems.append(f"has {skipped} point or line primitive(s); only triangles are drawn")
+
+    nodes_json = doc.get("nodes", [])
+    parent_of = {child: i for i, node in enumerate(nodes_json) for child in node.get("children", [])}
+    names = [node.get("name") or f"node{i}" for i, node in enumerate(nodes_json)]
+    nodes: dict[str, tuple[Optional[str], bool]] = {}
+    total = 0
+    for i, node in enumerate(nodes_json):
+        rotation = node.get("rotation")
+        rotated = "matrix" in node or (rotation is not None and
+                                       any(abs(a - b) > 1e-6 for a, b in zip(rotation, (0, 0, 0, 1))))
+        nodes[names[i]] = (names[parent_of[i]] if i in parent_of else None, rotated)
+        mesh = node.get("mesh")
+        if isinstance(mesh, int) and mesh < len(per_mesh):
+            total += per_mesh[mesh]
+    if total > MODEL_TRIANGLE_BUDGET:
+        problems.append(f"has {total:,} triangles (budget {MODEL_TRIANGLE_BUDGET:,}): it will load, "
+                        f"slowly, and a colliding one hitches the room while it builds")
+    if extent and not (MODEL_EXTENT_M[0] <= extent <= MODEL_EXTENT_M[1]):
+        unit = "centimetres or millimetres" if extent > MODEL_EXTENT_M[1] else "the wrong unit"
+        problems.append(f"is {extent:g} across -- glTF is metres, so this was probably "
+                        f"exported in {unit}")
+    if doc.get("skins") or doc.get("animations"):
+        problems.append("is skinned or animated; it is drawn in its rest pose")
+
+    views = doc.get("bufferViews", [])
+    for i, image in enumerate(doc.get("images", [])):
+        view = image.get("bufferView")
+        if not isinstance(view, int) or view >= len(views):
+            continue
+        start = views[view].get("byteOffset", 0)
+        size = _image_size(blob[start:start + views[view].get("byteLength", 0)])
+        if size and max(size) > MODEL_TEXTURE_BUDGET:
+            problems.append(f"has a {size[0]}x{size[1]} texture (image {i}); above "
+                            f"{MODEL_TEXTURE_BUDGET} it costs memory the previz does not need")
+    return done(ModelInfo(total, extent, nodes, tuple(problems)))
+
+
 @dataclass
 class _Models:
     """Every model file the manifest names, by hash."""
     files: dict[str, Path] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    info: dict[str, ModelInfo] = field(default_factory=dict)
 
     def resolve(self, name: Any, base: Path, where: str) -> Optional[str]:
         """The sha256 of the model `name` names, or None with a warning.
@@ -306,6 +473,11 @@ class _Models:
                                          f"events/ and shared/, so it is not served")
                     return None
                 sha = _sha256(resolved)
+                if sha not in self.info:
+                    # Once per model, however many fixtures use it.
+                    self.info[sha] = inspect_glb(resolved)
+                    self.warnings.extend(f"{where}: {resolved.name} {problem}"
+                                         for problem in self.info[sha].problems)
                 self.files[sha] = resolved
                 return sha
         self.warnings.append(f"{where}: no such model {name} (looked in "
@@ -464,7 +636,30 @@ def _body(fixture: rigmod.PatchedFixture, bodies: dict, models: _Models,
         warnings.append(f"{where}.nodes should be an object")
     if "rotation" in entry:
         out["rotation"] = _rotation(entry["rotation"], f"{where}.rotation", warnings)
+    if out["model"] is not None:
+        _check_body(fixture, out, models.info[out["model"]], models.files[out["model"]].name, warnings)
     return out
+
+
+def _check_body(fixture: rigmod.PatchedFixture, body: dict, info: ModelInfo, name: str,
+                warnings: list[str]) -> None:
+    """Will the app be able to pose this body? Said here, before it tries."""
+    where = f"{fixture.name}.body"
+    if info.extent_m > BODY_EXTENT_M:
+        warnings.append(f"{where}: {name} is {info.extent_m:g} m across -- a fixture, so "
+                        f"probably exported in centimetres or millimetres")
+    if fixture.head is None:
+        return                                        # a fixed fixture is posed whole
+    yoke, head = body["nodes"]["yoke"], body["nodes"]["head"]
+    if yoke not in info.nodes or head not in info.nodes:
+        warnings.append(f"{where}: {name} has no '{yoke}' and '{head}' nodes, so the head will "
+                        f"not follow its beam (docs/models.md, 'Fixture bodies')")
+    elif info.nodes[head][0] != yoke:
+        warnings.append(f"{where}: in {name}, '{head}' must be a child of '{yoke}' for the "
+                        f"head to tilt on the yoke")
+    elif info.nodes[yoke][1] or info.nodes[head][1]:
+        warnings.append(f"{where}: in {name}, '{yoke}' or '{head}' is rotated at rest; the body "
+                        f"convention needs them unrotated, or the head points off its beam")
 
 
 def build(rig: rigmod.Rig, event_dir: Path) -> Scene:

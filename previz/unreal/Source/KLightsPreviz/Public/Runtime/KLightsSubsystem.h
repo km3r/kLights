@@ -46,6 +46,8 @@ public:
 	const FKLightsEngineLink& GetLink() const { return Link; }
 	const FArtNetReceiver& GetArtNet() const { return ArtNet; }
 	double GetPacketsPerSecond() const { return PacketsPerSecond; }
+	/** Smoothed frame time, ms: the whole frame, render included. */
+	double GetFrameMs() const { return FrameMs; }
 	const FString& GetProblem() const { return Problem; }
 	const TArray<FString>& GetModelProblems() const { return ModelProblems; }
 	int32 GetViewIndex() const { return View; }
@@ -101,6 +103,7 @@ private:
 	double WindowStart = 0.0;
 	uint64 WindowPackets = 0;
 	double PacketsPerSecond = 0.0;
+	double FrameMs = 0.0;
 
 	/** -Snapshot: a still of one view, for docs and for comparing builds. */
 	void TickSnapshot(double Now);

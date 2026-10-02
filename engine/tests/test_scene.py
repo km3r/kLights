@@ -242,7 +242,65 @@ before = scene.build_for(DESPACIO).rev
 after = warned({"optics": {"fog_density": 0.5}})["rev"]
 check("the revision changes when the look does", before != after)
 
-print("\n5. generated files are current")
+print("\n5. the engine inspects every model before the app loads it")
+import struct  # noqa: E402
+
+sys.path.insert(0, str(REPO / "shared" / "tools"))
+import gen_models  # noqa: E402
+
+
+def glb(doc: dict, blob: bytes = b"") -> Path:
+    """A .glb from a JSON document and a binary chunk, written to a temp file."""
+    text = json.dumps(doc).encode()
+    text += b" " * (-len(text) % 4)
+    blob += b"\0" * (-len(blob) % 4)
+    body = struct.pack("<I", len(text)) + b"JSON" + text
+    if blob:
+        body += struct.pack("<I", len(blob)) + b"BIN\0" + blob
+    path = Path(tempfile.mkdtemp(prefix="klights-glb-")) / "model.glb"
+    path.write_bytes(b"glTF" + struct.pack("<II", 2, 12 + len(body)) + body)
+    return path
+
+
+def problems_of(path: Path) -> str:
+    return " | ".join(scene.inspect_glb(path).problems)
+
+
+for name in ("generic_moving_head.glb", "generic_can.glb"):
+    info = scene.inspect_glb(REPO / "shared" / "models" / "fixtures" / name)
+    check(f"{name} is clean", not info.problems, str(info.problems))
+check("the moving head is a yoke > head chain",
+      scene.inspect_glb(REPO / "shared" / "models" / "fixtures" / "generic_moving_head.glb").nodes["head"] == ("yoke", False))
+
+big = gen_models.Glb()
+big.node("stage", big.mesh("stage", [(gen_models.Geometry().box((400.0, 60.0, 300.0)), big.material("m"))]), root=True)
+path = Path(tempfile.mkdtemp(prefix="klights-glb-")) / "cm.glb"
+path.write_bytes(big.bytes())
+check("a model exported in centimetres is called out", "centimetres" in problems_of(path), problems_of(path))
+check("an external buffer is called out",
+      "separate file" in problems_of(glb({"asset": {"version": "2.0"}, "buffers": [{"uri": "stage.bin", "byteLength": 4}]})))
+check("an extension the runtime reader lacks is called out",
+      "KHR_texture_basisu" in problems_of(glb({"asset": {"version": "2.0"}, "extensionsRequired": ["KHR_texture_basisu"]})))
+png_header = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 8192, 8192) + b"\x08\x02\0\0\0"
+check("a huge texture is called out",
+      "8192x8192" in problems_of(glb({"asset": {"version": "2.0"}, "bufferViews": [{"buffer": 0, "byteLength": len(png_header)}],
+                                      "images": [{"bufferView": 0, "mimeType": "image/png"}]}, png_header)))
+heavy = {"asset": {"version": "2.0"}, "accessors": [{"count": 3_000_000, "type": "SCALAR", "componentType": 5125},
+                                                     {"count": 10, "type": "VEC3", "componentType": 5126,
+                                                      "min": [0, 0, 0], "max": [1, 1, 1]}],
+         "meshes": [{"primitives": [{"attributes": {"POSITION": 1}, "indices": 0}]}], "nodes": [{"mesh": 0}]}
+check("a model over the triangle budget is called out", "1,000,000 triangles" in problems_of(glb(heavy)), problems_of(glb(heavy)))
+check("something that is not a .glb at all is called out",
+      "not a binary glTF" in problems_of(Path(tempfile.mkstemp(suffix=".glb")[1])))
+
+got = warned(extra={"Moving Head #1": {"body": {"model": "test/axes.glb"}}})
+check("a mover whose body has no yoke and head is warned about",
+      any("Moving Head #1.body" in w and "will not follow its beam" in w for w in got["warnings"]), str(got["warnings"]))
+got = warned(extra={"Pinspot #1": {"body": {"model": "test/axes.glb"}}})
+check("...but a fixed fixture's body needs none",
+      not any("Pinspot #1.body" in w for w in got["warnings"]), str(got["warnings"]))
+
+print("\n6. generated files are current")
 import subprocess  # noqa: E402
 for tool in ("gen_previz_parity.py", "gen_models.py"):
     result = subprocess.run([sys.executable, str(REPO / "shared" / "tools" / tool), "--check"],
