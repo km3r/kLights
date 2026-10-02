@@ -152,7 +152,7 @@ so an editor gives completion and inline errors while you hand-edit at a venue.
 
 | file | what it is |
 |---|---|
-| `shared/venues/<room>.json` | a room — size, ball, crowd zone, canopy, taper and strobe policy |
+| `shared/venues/<room>.json` | a room — size, ball, crowd zone, canopy, taper and strobe policy, and where movers rest when a timeline drives nothing (`rest_point`) |
 | `events/<e>/rig.json` | what is plugged in, and which room it uses |
 | `events/<e>/calibration.json` | what this rig measured in this room on this day |
 | `events/<e>/looks.json` | the look library |
@@ -221,6 +221,22 @@ a function of the beat. Hits are windows: a jump into one shows it, a jump over
 one never fires it. Everything is a pure function of the beat. `python -m
 engine.showfiles explain TRACK BEAT` prints it.
 
+**What the fixtures do** is [`program.py`](../engine/program.py), the only
+place a timeline meets `state.py`. It compiles a track's timeline for one rig --
+routines bound to it ([`routines.py`](../engine/routines.py)), their rows built
+from parametric, role-based [`blocks.py`](../engine/blocks.py) -- into one
+`Program` whose `Show` never changes object; `begin(beat)` each frame, then
+evaluate it like any show, so safety and the strobe policy still run last. Each
+fixture walks the lanes on its own: a clip drives only the fixtures it uses and
+the rest fall through to the lanes below, then the fallback show; a lane that
+owns the track rests them instead -- movers on the venue's `rest_point` (else
+the ball), colour white, level dark. Each source runs once per slot on a scratch
+copy and only its fixtures are taken from it, so two movement sources never add
+their offsets together. A clip's phase is its own, a pure function of the beat
+through any rate curves, so a loop lands on the authored frame. `python -m
+engine.program --event DIR --show-dir DIR --track T --beat B` lists what will
+not work on a rig and prints every fixture at a beat.
+
 ## Where to look
 
 | question | file |
@@ -240,6 +256,7 @@ engine.showfiles explain TRACK BEAT` prints it.
 | which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |
 | the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
 | what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
+| what the fixtures do on a timeline | [`program.py`](../engine/program.py), [`routines.py`](../engine/routines.py), [`blocks.py`](../engine/blocks.py) |
 
 ## Tests
 

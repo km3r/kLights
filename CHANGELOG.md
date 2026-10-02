@@ -11,6 +11,38 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19h: the lights compiler
+
+- **`engine/program.py`** compiles a track's timeline for one rig into a
+  `Program` with one stable `Show`: `begin(beat)` each frame, then evaluate it
+  like any show -- safety and the strobe policy still last. F19i puts it on the
+  runner; until then it runs offline, and `python -m engine.program --event DIR
+  --show-dir DIR --track T --beat B` prints every fixture at a beat.
+- **`engine/routines.py`**: a routine bound to a rig -- params (default, then
+  variation, then the use's own), roles bound to tags (an optional role absent
+  on the rig is simply absent), "built for another rig" said out loud.
+- **`engine/blocks.py`**: the parametric blocks -- `orbit`, `pendulum`,
+  `fan_sweep`, `aim_points` (in room fractions, so portable), `solid`,
+  `color_chase`, `chase` (ordered by where fixtures hang), `pulse`, `dim`,
+  `strobe` -- plus the rig-bound `look` and `snapshot` adapters. Colours are a
+  palette role, `#hex`, `[r, g, b]` or a colour look; parameters and colours
+  resolve as they run, so the palette lane and `param.*` automation reach them.
+- **Decided with the user:** a clip drives only the fixtures it uses and the
+  rest fall through per fixture (an owning lane rests them); rest is the
+  venue's new `rest_point` (else the ball), colour white, level dark; a
+  routine that does not loop keeps running its end on a longer clip.
+- Each source runs once per slot on a scratch copy and only its own fixtures
+  are taken, so movement offsets never stack; crossfades blend whole states in
+  parameter space. A clip's phase is a pure function of the beat through the
+  timeline's and the routine's rate curves (exact, or tabulated when both
+  vary), so loops land on the authored frame.
+- Hits: flash raises, strobe opens the shutter, blackout goes last; a routine's
+  own hits fire from inside it. Timeline `size`/`spread`/`center` scale the
+  movement slot; `master` scales everything.
+- `state.offset_aim` is now the one place size and centre apply, for ported
+  looks and blocks alike; `EvalContext.scoped()` runs a source on its own time;
+  `Timeline.entries()` gives the full per-lane stack.
+
 ### Added — F19g: what a timeline says at a beat
 
 - **`engine/timeline.py`**, the output-generic core: at any beat, the stack on

@@ -152,6 +152,15 @@ Layer = Union[Clip, _Blank]
 
 
 @dataclass(frozen=True)
+class Entry:
+    """One row's say at a beat: its clip, the clip held under it during a
+    crossfade, and whether the row owns its channel."""
+    clip: Clip
+    under: Optional[Clip]
+    exclusive: bool
+
+
+@dataclass(frozen=True)
 class Channel:
     """What drives one channel at one beat: a stack, top first. `rest` means
     the template or fallback show is underneath; a stack ending in BLANK means
@@ -499,24 +508,43 @@ class Timeline:
 
     # -- asking ------------------------------------------------------------
 
-    def channel(self, channel: str, beat: float) -> Channel:
-        """What drives `channel` at `beat`, top layer first."""
-        layers: list[Layer] = []
+    def entries(self, channel: str, beat: float) -> tuple[Entry, ...]:
+        """EVERY row with something to say about `channel` at `beat`, top
+        first, ending at the first BLANK -- nothing below a blank matters.
+
+        `channel()` stops at the first opaque clip, which is the whole answer
+        when a clip covers the whole channel. A caller whose clips cover only
+        PART of it -- the lights, where a routine may drive the movers' colour
+        and not the pinspots' -- needs the rows underneath too, for whatever
+        the top one leaves uncovered. This is that list."""
+        out: list[Entry] = []
         for row in self._rows_for.get(channel, ()):
             hit = row.at(beat)
             if hit is None:
                 continue                         # a fill gap: ask the next row
             if hit is BLANK:
+                out.append(BLANK)
+                break
+            clip, under = hit
+            out.append(Entry(clip, under, row.exclusive))
+        return tuple(out)
+
+    def channel(self, channel: str, beat: float) -> Channel:
+        """What drives `channel` at `beat`, top layer first, as far down as
+        anything shows through."""
+        layers: list[Layer] = []
+        for entry in self.entries(channel, beat):
+            if entry is BLANK:
                 layers.append(BLANK)
                 return Channel(tuple(layers), rest=False)
-            clip, under = hit
+            clip = entry.clip
             layers.append(clip)
             if clip.weight >= 1.0:
                 return Channel(tuple(layers), rest=False)
-            if under is not None:                # crossfading from the clip before
-                layers.append(under)
+            if entry.under is not None:          # crossfading from the clip before
+                layers.append(entry.under)
                 return Channel(tuple(layers), rest=False)
-            if row.exclusive:                    # fading to or from nothing
+            if entry.exclusive:                  # fading to or from nothing
                 layers.append(BLANK)
                 return Channel(tuple(layers), rest=False)
         return Channel(tuple(layers), rest=True)

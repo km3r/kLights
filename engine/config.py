@@ -276,6 +276,10 @@ VENUE = {
                             "big -- see docs/SAFETY.md"),
     "apex_height": Spec(Number, min=1),
     "elev_extreme_deg": Spec(Number, min=0, max=90),
+    "rest_point": Spec(dict, of=_POINT,
+                       fix="where the movers rest when a timeline says nothing "
+                           "about their movement, in millimetres. Defaults to "
+                           "the ball; set it in a room with no ball"),
     "crowd_zone": Spec(dict, of={
         "min_x": Spec(Number, required=True), "max_x": Spec(Number, required=True),
         "min_z": Spec(Number, required=True), "max_z": Spec(Number, required=True),
