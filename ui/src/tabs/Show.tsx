@@ -405,6 +405,8 @@ function MatchLine({ match }: { match: TrackMatch }) {
     return (
       <div className="muted">
         show <b>{match.track_id}</b> · {MATCH_VIA[match.via] ?? match.via}
+        {match.has_timeline != null &&
+          (match.has_timeline ? " · timeline" : " · no timeline")}
         {match.stale && " · folder changed, applies next play"}
       </div>
     );

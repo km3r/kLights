@@ -186,7 +186,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 23 suites, no test framework
+python -m engine.tests    # 24 suites, no test framework
 cd ui && npm test         # the console
 ```
 

@@ -1050,9 +1050,16 @@ describe("dj sync", () => {
                     grid_warning: grid_warning as never };
       });
     act(() => socket.push(playing({ track_id: "night-drive", via: "signature",
-                                    candidates: ["night-drive"], stale: false })));
-    expect(screen.getByText(/· by signature/)).toBeInTheDocument();
+                                    candidates: ["night-drive"], stale: false,
+                                    has_timeline: true })));
+    expect(screen.getByText(/· by signature · timeline/)).toBeInTheDocument();
     expect(screen.getByText("night-drive")).toBeInTheDocument();
+
+    // Matched, but nobody has drawn it a show yet: worth knowing before arming.
+    act(() => socket.push(playing({ track_id: "night-drive", via: "signature",
+                                    candidates: ["night-drive"], stale: false,
+                                    has_timeline: false })));
+    expect(screen.getByText(/· by signature · no timeline/)).toBeInTheDocument();
 
     // A save or a manual link mid-song is not ignored -- it is waiting.
     act(() => socket.push(playing({ track_id: "night-drive", via: "title_artist",

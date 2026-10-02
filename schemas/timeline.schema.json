@@ -76,7 +76,7 @@
                   "fill",
                   "exclusive"
                 ],
-                "description": "fill: the template shows through gaps. exclusive: this lane owns the track and holds its last item"
+                "description": "fill: lanes below, then the template, show through gaps. exclusive: this lane owns the track -- in its gaps nothing drives it"
               },
               "role": {
                 "type": "string"

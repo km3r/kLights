@@ -6,7 +6,8 @@ swapped in whole, and never swapped under a playing track.
 This is the part that lives inside a running show:
 
 - **`Library`** is one load of the folder -- every valid document, the match
-  index over its tracks, and each track's grid, built ONCE. It is frozen: the
+  index over its tracks, each track's grid and its timeline compiled for
+  querying (`timeline.py`), built ONCE. It is frozen: the
   output thread, the 10 Hz snapshot and a future HTTP read can all hold one at
   the same time, because nobody can change it. A reload builds a new one.
 
@@ -47,6 +48,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from . import showfiles
+from . import timeline as timelinemod
 from . import tracks as tracksmod
 from . import tracktime
 
@@ -65,6 +67,7 @@ class Library:
     index: tracksmod.TrackIndex
     grids: Mapping[str, tracktime.Grid]
     rev: str                         # changes when any loaded document does
+    timelines: Mapping[str, timelinemod.Timeline] = field(default_factory=dict)
     signature: Signature = ()        # the files as they were when loading began
 
     @property
@@ -115,11 +118,20 @@ def load(root: Path, previous: Optional[Library] = None) -> Library:
             grids[track_id] = tracktime.Grid.from_segments(doc["grid"]["segments"])
         except (tracktime.GridError, KeyError, TypeError):
             pass                        # validated already; belt and braces
+    timelines: dict[str, timelinemod.Timeline] = {}
+    for track_id, doc in folder.timelines.items():
+        try:
+            timelines[track_id] = timelinemod.Timeline.from_doc(
+                doc, showfiles.timeline_channels)
+        except timelinemod.TimelineError as exc:
+            # Validated already, so this is a bug between the two modules
+            # rather than a bad file -- reported where a bad file would be.
+            folder.errors.append(f"timelines/{track_id}.json: {exc}")
     canon = json.dumps(sorted(folder.revs.items())).encode("utf-8")
     return Library(root=root, folder=folder,
                    index=tracksmod.TrackIndex.build(folder.tracks),
                    grids=grids, rev="l:" + hashlib.sha1(canon).hexdigest()[:8],
-                   signature=signature)
+                   signature=signature, timelines=timelines)
 
 
 def transport_settings(library: Optional[Library]) -> dict:
@@ -157,11 +169,13 @@ class Pinned:
     library: Optional[Library]
     track: Optional[Mapping] = None          # the prepped track document
     grid: Optional[tracktime.Grid] = None
+    timeline: Optional[timelinemod.Timeline] = None   # None: templates only
 
     def public(self, current: Optional[Library]) -> Optional[dict]:
         if self.match is None:
             return None
         out = self.match.public()
+        out["has_timeline"] = self.timeline is not None
         # The folder has changed since this track was matched. Nothing about
         # the playing track changes until its next play -- said, so a save that
         # "did nothing" is not a mystery.
@@ -184,7 +198,8 @@ def pin(library: Optional[Library], sample) -> Pinned:
         return Pinned(sample.track_seq, match, library)
     return Pinned(sample.track_seq, match, library,
                   library.folder.tracks.get(match.track_id),
-                  library.grids.get(match.track_id))
+                  library.grids.get(match.track_id),
+                  library.timelines.get(match.track_id))
 
 
 # -- linking by hand ----------------------------------------------------------

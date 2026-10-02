@@ -2,7 +2,10 @@
   "$schema": "../../../schemas/timeline.schema.json",
   "_comment": [
     "One of each thing a timeline can hold. Positions are beats on",
-    "the track's grid: beat 160 is bar 41, the first Chorus downbeat."
+    "the track's grid: beat 160 is bar 41, the first Chorus downbeat.",
+    "Rows are lanes, top first, and the higher lane wins: the movement",
+    "lane is above the scene lane so its look overrides the outro",
+    "routine's movement, and only its movement."
   ],
   "kind": "klights.timeline",
   "version": 1,
@@ -22,6 +25,22 @@
   },
   "palette": "Cool",
   "rows": [
+    {
+      "id": "move",
+      "type": "clips",
+      "target": "movement",
+      "gap": "fill",
+      "items": [
+        {
+          "id": "lazy",
+          "kind": "look",
+          "at": 352,
+          "len": 32,
+          "fade": 8,
+          "look": "Lazy Circle"
+        }
+      ]
+    },
     {
       "id": "scene",
       "type": "clips",
@@ -113,22 +132,6 @@
           "len": 32,
           "fade": 8,
           "routine": "idle-orbit"
-        }
-      ]
-    },
-    {
-      "id": "move",
-      "type": "clips",
-      "target": "movement",
-      "gap": "fill",
-      "items": [
-        {
-          "id": "lazy",
-          "kind": "look",
-          "at": 352,
-          "len": 32,
-          "fade": 8,
-          "look": "Lazy Circle"
         }
       ]
     },

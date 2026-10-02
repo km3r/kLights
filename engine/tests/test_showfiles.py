@@ -67,8 +67,14 @@ def edit(doc, fn):
     return d
 
 
+def row(d, ident):
+    """A timeline or routine row by id -- never by position, which moves
+    whenever the example's lanes are reordered."""
+    return next(r for r in d["rows"] if r["id"] == ident)
+
+
 def scene_items(d):
-    return next(r for r in d["rows"] if r["id"] == "scene")["items"]
+    return row(d, "scene")["items"]
 
 
 # -----------------------------------------------------------------------------
@@ -122,7 +128,7 @@ refused("timeline: a palette change on the scene lane",
             {"id": "p9", "kind": "palette", "at": 0, "len": 4, "palette": "Hot"})),
         "cannot go on the scene lane")
 refused("timeline: a snapshot on a slot lane",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][1]["items"].append(
+        "timeline", edit(TIMELINE, lambda d: row(d, "move")["items"].append(
             {"id": "s9", "kind": "snapshot", "at": 0, "len": 4,
              "movement": {"corner movers": "Ball Wave"}})),
         "belongs on the scene lane")
@@ -139,7 +145,7 @@ refused("timeline: two items with one id",
         "timeline", edit(TIMELINE, lambda d: scene_items(d)[1].update(id="intro")),
         "share the id")
 refused("timeline: two rows with one id",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][1].update(id="scene")),
+        "timeline", edit(TIMELINE, lambda d: row(d, "move").update(id="scene")),
         "share the id")
 refused("timeline: a routine clip with no routine",
         "timeline", edit(TIMELINE, lambda d: scene_items(d)[1].pop("routine")),
@@ -150,20 +156,24 @@ refused("timeline: an item kind that does not exist",
 refused("timeline: a row type that does not exist",
         "timeline", edit(TIMELINE, lambda d: d["rows"].append(
             {"id": "x", "type": "lasers", "items": []})), "type must be one of")
+warned("timeline: a second automation row for one target is never heard",
+       "timeline", edit(TIMELINE, lambda d: d["rows"].append(
+           {"id": "master2", "type": "automation", "target": "master",
+            "points": [[0, 0.2]]})), "never heard")
 refused("timeline: automation that goes back in time",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][4]["points"].append([10, 0.5])),
+        "timeline", edit(TIMELINE, lambda d: row(d, "master")["points"].append([10, 0.5])),
         "not after the previous point")
 refused("timeline: a master above 1",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][4]["points"].append([400, 1.5])),
+        "timeline", edit(TIMELINE, lambda d: row(d, "master")["points"].append([400, 1.5])),
         "from 0 to 1")
 refused("timeline: automating something that cannot be automated",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][4].update(target="gobo")),
+        "timeline", edit(TIMELINE, lambda d: row(d, "master").update(target="gobo")),
         "not something that can be automated")
 refused("timeline: a curve that does not exist",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][4]["points"].append(
+        "timeline", edit(TIMELINE, lambda d: row(d, "master")["points"].append(
             [400, 0.2, "bounce"])), "curve")
 refused("timeline: a palette change to a palette it never defined",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][2]["items"][0].update(
+        "timeline", edit(TIMELINE, lambda d: row(d, "palette")["items"][0].update(
             palette="Ultraviolet")), "not defined")
 refused("timeline: a palette whose colour is itself a role",
         "timeline", edit(TIMELINE, lambda d: d["palettes"]["Hot"].update(
@@ -175,12 +185,12 @@ refused("timeline: a palette role that does not exist",
         "timeline", edit(TIMELINE, lambda d: scene_items(d)[1]["params"].update(
             color="@tertiary")), "not a palette role")
 refused("timeline: a hit that is not a hit",
-        "timeline", edit(TIMELINE, lambda d: d["rows"][3]["items"][0].update(hit="laser")),
+        "timeline", edit(TIMELINE, lambda d: row(d, "hits")["items"][0].update(hit="laser")),
         "hit must be")
 warned("timeline: two clips overlapping on one lane is a warning, not an error",
        "timeline", edit(TIMELINE, lambda d: scene_items(d)[1].update(at=60)), "overlap")
 check("timeline: an external row may carry anything -- it is another output's",
-      sf.validate("timeline", edit(TIMELINE, lambda d: d["rows"][6].update(
+      sf.validate("timeline", edit(TIMELINE, lambda d: row(d, "vj1").update(
           clips=[{"whatever": True}], layer=3))).ok)
 
 refused("routine: a $param it never declared",

@@ -80,6 +80,12 @@ try:
           set(lib.grids) == {"synth-128"}
           and abs(lib.grids["synth-128"].beat_at(60.0) - 128.0) < 1e-9)
     check("and the match index over its tracks", len(lib.index) == 1)
+    check("and each timeline, compiled for querying, with the scene lane "
+          "driving all three slots",
+          set(lib.timelines) == {"synth-128"}
+          and set(lib.timelines["synth-128"].channels)
+          == {"movement", "color", "level", "palette"},
+          f"{lib.timelines}")
     check("the rev is stable across loads of unchanged files",
           sl.load(root).rev == lib.rev, f"{lib.rev}")
     check("the signature lists every document the load read",
@@ -229,12 +235,15 @@ try:
     root = fresh("pin")
     lib = sl.load(root)
     p = sl.pin(lib, sample_of("synthetic 128", "kLights", "test track"))
-    check("a known track pins its match, document and grid",
+    check("a known track pins its match, document, grid and timeline",
           p.match.track_id == "synth-128" and p.track["id"] == "synth-128"
-          and p.grid is lib.grids["synth-128"] and p.library is lib, f"{p.match}")
+          and p.grid is lib.grids["synth-128"] and p.library is lib
+          and p.timeline is lib.timelines["synth-128"]
+          and p.public(lib)["has_timeline"] is True, f"{p.match}")
     p2 = sl.pin(lib, sample_of("Unknown Guest Tune", "Guest DJ"))
-    check("an unknown track pins 'none', with no grid",
-          p2.match.via == tr.NONE and p2.grid is None and p2.track is None)
+    check("an unknown track pins 'none', with no grid and no timeline",
+          p2.match.via == tr.NONE and p2.grid is None and p2.track is None
+          and p2.timeline is None and p2.public(lib)["has_timeline"] is False)
     p3 = sl.pin(lib, sample_of())
     check("no identity pins no match at all", p3.match is None
           and p3.public(lib) is None)

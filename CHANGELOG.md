@@ -11,6 +11,28 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F19g: what a timeline says at a beat
+
+- **`engine/timeline.py`**, the output-generic core: at any beat, the stack on
+  each channel (clips with weights, ending in blank or the template beneath),
+  each automation value, and the hits firing. Standard library only, so VJ
+  outputs can share it; a test parses its imports.
+- **Decided with the user:** the higher lane wins, scene lanes included; a lane
+  that owns the track is *blank* in its gaps (it no longer "holds its last
+  item"); a clip ending into a gap fades out over its own `fade`.
+- Curves: the curve named on a point shapes the segment arriving at it; `ease`
+  is smoothstep; values hold outside the points; the integral is exact, so a
+  rate curve's phase is a function of the beat and a loop lands on it every
+  pass. Hits are position windows; one shorter than a frame fires once in
+  forward play and never after a jump.
+- The show library compiles each timeline at load; the playing track's is
+  pinned with its match, and `track.match.has_timeline` shows on the Sync card.
+- `python -m engine.showfiles explain TRACK BEAT` prints what a timeline says at
+  a beat. Two automation rows for one target warn that the lower is never
+  heard.
+- The example timeline's movement lane moved above its scene lane, so its look
+  overrides the outro's movement as intended.
+
 ### Added — F19f: which prepped track is playing
 
 - **`--show-dir`** points the engine at a show folder (or `$KLIGHTS_SHOW_DIR`,

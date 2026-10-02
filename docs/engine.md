@@ -208,6 +208,19 @@ a prepped track. The deck's own beats are checked against the prepped grid --
 rkbx_link's bar phase to a tenth of a beat, beat-link's count to a whole beat --
 and two seconds of disagreement shows as `track.grid_warning`.
 
+**What a timeline says at a beat** is [`timeline.py`](../engine/timeline.py),
+which imports nothing but the standard library so the lights and, later, VJ
+outputs share it. Rows are lanes, top first, and **the higher lane wins** for
+each channel it drives (a scene lane drives movement, colour and level). A fill
+lane lets the lanes below, then the template, show through its gaps; a lane that
+**owns the track** is blank in its gaps. A clip fades in over its `fade` from
+what was under it and, ending into a gap, fades out over the same. Automation
+curves (`linear`, `step`, `ease` -- the curve named on a point shapes the
+segment arriving at it) have an exact integral, so a rate curve gives a phase as
+a function of the beat. Hits are windows: a jump into one shows it, a jump over
+one never fires it. Everything is a pure function of the beat. `python -m
+engine.showfiles explain TRACK BEAT` prints it.
+
 ## Where to look
 
 | question | file |
@@ -226,6 +239,7 @@ and two seconds of disagreement shows as `track.grid_warning`.
 | DJ tempo ingest | [`sync.py`](../engine/sync.py) |
 | which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |
 | the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
+| what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
 
 ## Tests
 

@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from . import config as configmod
+from . import timeline as timelinemod
 from . import tracktime
 
 REPO = Path(__file__).resolve().parent.parent
@@ -80,7 +81,7 @@ ID_FIX = ("lower-case letters, digits, '-' and '_', starting with a letter or "
 
 PALETTE_ROLES = ("primary", "secondary", "accent")
 HITS = ("flash", "strobe", "blackout")
-CURVES = ("linear", "step", "ease")
+CURVES = timelinemod.CURVES
 PARAM_TYPES = ("color", "number", "rate", "look")
 SLOTS = ("movement", "color", "level")
 
@@ -88,6 +89,16 @@ SLOTS = ("movement", "color", "level")
 # which fill all three slots; the slot lanes take one slot each; `palette` is
 # where the palette changes.
 CLIP_TARGETS = ("scene",) + SLOTS + ("palette",)
+
+
+def timeline_channels(row: Mapping) -> tuple[str, ...]:
+    """The channels a timeline clips row drives, for `timeline.Timeline`: a
+    scene lane drives all three slots, any other lane its own target. With the
+    higher lane winning, a movement lane ABOVE a scene lane overrides the
+    scene's movement and leaves its colour and level alone; below it, it only
+    shows where the scene lane has nothing."""
+    target = row["target"]
+    return SLOTS if target == "scene" else (target,)
 
 # Continuous values a timeline can automate, and their ranges. The macro
 # ranges are the ones `ShowController._cmd_macro` clamps to, and rate is
@@ -227,8 +238,9 @@ _ROW_COMMON = {"id": S(str, required=True, non_empty=True), "label": S(str)}
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "clips": {"target": S(str, required=True, choices=CLIP_TARGETS),
               "gap": S(str, choices=("fill", "exclusive"),
-                       fix="fill: the template shows through gaps. exclusive: "
-                           "this lane owns the track and holds its last item"),
+                       fix="fill: lanes below, then the template, show "
+                           "through gaps. exclusive: this lane owns the track "
+                           "-- in its gaps nothing drives it"),
               "role": S(str),
               "items": S(list, required=True, each=_CLIP)},
     "hits": {"items": S(list, required=True, each=_HIT)},
@@ -415,6 +427,23 @@ def _unique_ids(rows: list, result: Result, what: str) -> None:
             seen_items.add(item["id"])
 
 
+def _shadowed_automation(rows: list, result: Result) -> None:
+    """Two automation rows for one target: legal, but only the higher one is
+    ever heard, which is worth saying."""
+    first: dict[str, str] = {}
+    for row in rows:
+        if row["type"] != "automation" or not isinstance(row.get("target"), str):
+            continue
+        target = row["target"]
+        if target in first:
+            result.warnings.append(
+                f"row {row['id']!r} automates {target}, as {first[target]!r} "
+                f"above it already does; the higher row wins, so this one is "
+                f"never heard")
+        else:
+            first[target] = row["id"]
+
+
 def _check_items(row: dict, result: Result, where: str) -> None:
     """Length, fade, and overlap within one row of items."""
     spans = []
@@ -536,6 +565,7 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
     palettes = doc.get("palettes") or {}
     rows = doc["rows"]
     _unique_ids(rows, result, "timeline")
+    _shadowed_automation(rows, result)
     for row in rows:
         where = f"row {row['id']!r}"
         kind = row["type"]
@@ -618,6 +648,7 @@ def _semantic_routine(doc: dict, result: Result) -> None:
 
     rows = doc["rows"]
     _unique_ids(rows, result, "routine")
+    _shadowed_automation(rows, result)
     length = doc["bars"] * tracktime.BEATS_PER_BAR
     rig_bound = False
     for row in rows:
@@ -1104,6 +1135,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_check = sub.add_parser("check", help="validate every file in a folder")
     p_check.add_argument("dir", nargs="?",
                          help="defaults to the configured show folder")
+    p_explain = sub.add_parser(
+        "explain", help="what a track's timeline says at a beat")
+    p_explain.add_argument("track", help="the track id")
+    p_explain.add_argument("beat", type=float,
+                           help="beats from the first downbeat (bar n starts "
+                                "at beat 4*(n-1))")
+    p_explain.add_argument("--dir", help="defaults to the configured show "
+                                         "folder")
     args = parser.parse_args(argv)
 
     if args.cmd == "init":
@@ -1117,6 +1156,17 @@ def main(argv: Optional[list[str]] = None) -> int:
               "show_dir in klights.local.json", file=sys.stderr)
         return 2
     folder = load_folder(root)
+    if args.cmd == "explain":
+        doc = folder.timelines.get(args.track)
+        if doc is None:
+            print(f"no valid timeline for {args.track!r} in {root}/timelines",
+                  file=sys.stderr)
+            for e in folder.errors:
+                print(f"  ERROR  {e}", file=sys.stderr)
+            return 1
+        timeline = timelinemod.Timeline.from_doc(doc, timeline_channels)
+        print(json.dumps(timeline.explain(args.beat), indent=2))
+        return 0
     print(f"{root}: {len(folder.tracks)} tracks, {len(folder.timelines)} "
           f"timelines, {len(folder.routines)} routines, "
           f"{len(folder.templates)} template sets")

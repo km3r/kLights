@@ -1546,6 +1546,9 @@ try:
           tr_["match"] is not None and tr_["match"]["track_id"] == "synth-128"
           and tr_["match"]["via"] == "title_artist_album"
           and tr_["match"]["stale"] is False, f"{tr_['match']}")
+    check("and its timeline comes with it, compiled at load",
+          tr_["match"]["has_timeline"] is True
+          and sc.pinned.timeline is sc.show_library.timelines["synth-128"])
     check("and its beats agree with the grid: no warning",
           tr_["grid_warning"] is None, f"{tr_['grid_warning']}")
     synth_pin = sc.pinned
@@ -1576,7 +1579,8 @@ try:
     tr_ = track_now()
     check("a guest's track is unmatched, and says so",
           tr_["match"] == {"track_id": None, "via": "none", "candidates": [],
-                           "stale": False}, f"{tr_['match']}")
+                           "has_timeline": False, "stale": False},
+          f"{tr_['match']}")
     check("and has no grid to check against", sc.grid_check is None
           and tr_["grid_warning"] is None)
 

@@ -242,6 +242,8 @@ export interface TrackMatch {
      | "title_artist" | "ambiguous" | "none";
   /** Every track that fitted; more than one is `ambiguous`. At most five. */
   candidates: string[];
+  /** The matched track has a hand-built timeline (F19g). Absent before F19g. */
+  has_timeline?: boolean;
   stale: boolean;
 }
 

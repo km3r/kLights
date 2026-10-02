@@ -32,7 +32,9 @@ arbitrary, the reason is next to it.
 | topic | decision |
 |---|---|
 | Authoring model | **Phrase templates** run on any analysed track. Signature tracks get a hand-built **per-track timeline** that layers over the template *per lane*. |
-| Timeline gaps | Per-lane option: **template fills gaps** (per time region), or **lane owns the track** (exclusive, holds the last item). |
+| Timeline gaps | Per-lane option: **template fills gaps** (per time region), or **lane owns the track** (exclusive): in its gaps, before its first clip and after its last, **nothing drives that lane** -- not the lanes below, not the template (F19g, with the user). A blank palette lane shows the timeline's default palette. |
+| Lane precedence | **The higher lane wins**, scene lanes included: a movement lane overrides a scene routine's movement only if it sits above the scene lane, and then only its movement (F19g, with the user). |
+| Clip exit | A clip that ends into a gap **fades out over its own fade**, in its last beats; `fade: 0` cuts on the end beat. A clip followed directly by another crossfades on the next one's fade-in (F19g, with the user). |
 | Fallback chain | timeline → phrase template → grid-based bar-count template → a setting: auto mode or operator-only. Guest DJs' tracks are unknown until they play, so the chain has to carry them. |
 | Phrase vocabulary | rekordbox's labels **as-is**: Intro, Verse 1–6, Up 1–3, Chorus, Down, Bridge, Outro. Templates look up the exact label, then the label without its number, then `*`. rekordbox never says "Build" or "Drop". |
 | Template sets | Several named sets, **switchable live** from the phone (a vibe, not a file). |
