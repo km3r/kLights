@@ -19,12 +19,15 @@ the show.
     /api/templates[/<id>]     template sets
     /api/waveforms/<id>       a track's waveform, read from disk on request
     /api/audio/<id>           the track's audio file, with Range (206)
+    /api/rekordbox            the DJ's rekordbox collection: playlists and
+                              tracks to prep from (?refresh=1 re-reads now)
 
 JSON reads need nothing more than watching the show does. **Audio needs the
 token**: it reads a file off this machine's disk and streams megabytes, so it is
 for the operator's own designer, not for anyone who opened the view URL. It is
 only ever a file the track document (or an `audio_roots` search) names, with an
-audio extension -- never a path a request supplies.
+audio extension -- never a path a request supplies. **So does the rekordbox
+collection**: it is the whole of someone's music library, not the show.
 
 Runs on the HTTP server's threads. Reads the library by one reference load,
 and the library is immutable, so nothing here can disturb the output thread.
@@ -40,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from . import collection as collectionmod
 from . import showfiles
 
 AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff",
@@ -48,7 +52,7 @@ AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff",
 
 _ID = r"[a-z0-9][a-z0-9_-]{0,63}"
 _ROUTE = re.compile(rf"^/api/(show|tracks|timelines|routines|templates|waveforms"
-                    rf"|audio)(?:/({_ID}))?/?$")
+                    rf"|audio|rekordbox)(?:/({_ID}))?/?$")
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
@@ -74,7 +78,9 @@ def _error(status: int, text: str) -> Response:
 
 def handle(library, path: str, range_header: Optional[str] = None,
            token_ok: bool = True,
-           audio_roots: Sequence[str] = ()) -> Response:
+           audio_roots: Sequence[str] = (),
+           collection: Optional["collectionmod.Collection"] = None,
+           query: str = "") -> Response:
     """Answer one GET. `library` is the controller's current
     `showlibrary.Library`, or None without a show folder."""
     match = _ROUTE.match(path)
@@ -84,6 +90,23 @@ def handle(library, path: str, range_header: Optional[str] = None,
         return _error(503, "no show folder -- start the engine with --show-dir")
     what, ident = match.group(1), match.group(2)
     folder = library.folder
+
+    if what == "rekordbox":
+        if ident is not None:
+            return _error(404, "/api/rekordbox takes no id")
+        if not token_ok:
+            return _error(401, "the rekordbox collection needs the engine's "
+                               "token: open the designer from the URL the "
+                               "engine printed")
+        if collection is None:
+            return _error(503, "this engine has no rekordbox bridge")
+        try:
+            body = collection.catalogue(refresh="refresh=1" in query.split("&"))
+        except collectionmod.CollectionError as exc:
+            return _error(503, str(exc))
+        # The bridge's bytes as they came: parsing a megabyte here would hold
+        # the GIL the DMX clock needs (engine/collection.py).
+        return Response(200, body, headers={"Cache-Control": "no-store"})
 
     if what == "show":
         return _json({"dir": str(library.root), "rev": library.rev,
@@ -154,6 +177,11 @@ def _track_line(library, tid: str, doc: dict) -> dict:
             "has_waveform": tid in folder.waveforms,
             "has_audio": bool(doc.get("audio")),
             "phrases": len((doc.get("phrases") or {}).get("items") or ()),
+            # Which rekordbox rows this is, so the collection browser can say
+            # "in the show" -- and how many CDJ signatures it answers to.
+            "rekordbox": [{"db": r.get("db"), "id": r.get("id")}
+                          for r in (doc.get("ids") or {}).get("rekordbox") or ()],
+            "signatures": len((doc.get("ids") or {}).get("blt_signatures") or ()),
             "rev": folder.revs.get(f"tracks/{tid}.json")}
 
 

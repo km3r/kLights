@@ -1,5 +1,9 @@
 """Prep tracks into a show folder: identity, beat grid, phrases, cues, waveform.
 
+    python bridges/rekordbox/prep.py db --playlist Friday
+    python bridges/rekordbox/prep.py db --search "night drive"
+    python bridges/rekordbox/prep.py db                       # lists the playlists
+    python bridges/rekordbox/prep.py catalogue                # the collection, as JSON
     python bridges/rekordbox/prep.py xml rekordbox.xml --anlz-root "<USBANLZ>"
     python bridges/rekordbox/prep.py xml rekordbox.xml --anlz-root E:/PIONEER/USBANLZ --playlist Friday
     python bridges/rekordbox/prep.py synthetic
@@ -8,25 +12,37 @@
 The show folder comes from --show-dir, $KLIGHTS_SHOW_DIR or klights.local.json,
 exactly as for the engine.
 
-**What it reads.** rekordbox's XML export (File > Export Collection in xml
-format) for who each track is and where its file lives, joined to rekordbox's
-analysis files (ANLZ0000.DAT/.EXT) for the beat grid, the phrases and the
-waveform. The join is on the audio path the analysis file records (PPTH), and
-falls back to the file name, which is what makes a USB stick work: its
-analysis files say `/Contents/Artist/track.mp3`, not the path on the laptop.
+**What it reads.** Two routes to the same tracks:
 
-  - the local collection: `--anlz-root` is rekordbox's own analysis folder,
-    `%APPDATA%/Pioneer/rekordbox/share/PIONEER/USBANLZ` on Windows;
-  - a USB export: `--anlz-root E:/PIONEER/USBANLZ`, with the XML exported from
-    the rekordbox that made the stick.
+  - `db`: rekordbox's own database, master.db (masterdb.py), with no export
+    step. Each track names its analysis file, and its cues are read from the
+    database, which is the only place a collection keeps them. The database is
+    encrypted: this route needs the `sqlcipher3` package and the key (see
+    masterdb.py). It is the only part of this tool that needs a package, and
+    it is only imported when the encrypted file is opened.
+  - `xml`: rekordbox's XML export (File > Export Collection in xml format),
+    joined to the analysis files on the audio path each records (PPTH), and
+    failing that on the file name -- which is what makes a USB stick work: its
+    analysis files say `/Contents/Artist/track.mp3`, not the path on the
+    laptop. Stdlib only. `--anlz-root` is rekordbox's analysis folder,
+    `%APPDATA%/Pioneer/rekordbox/share/PIONEER/USBANLZ`, or a stick's
+    `E:/PIONEER/USBANLZ` with the XML from the rekordbox that made it.
 
-Neither needs the encrypted master.db or any package: this is stdlib, like the
-engine. Reading a stick's export.pdb directly, for a stick with no rekordbox
-machine to hand, is not built.
+Reading a stick's export.pdb directly, for a stick with no rekordbox machine
+to hand, is not built.
+
+**Who it is, to every deck.** A prepped track carries what each source can
+match it by (engine/tracks.py): rkbx_link sends title, artist and album; CDJs
+loading over the network from this rekordbox send this database's id; CDJs
+playing a USB stick send an id that means nothing outside the stick, but also
+beat-link-trigger's signature -- a hash of the analysis, which an export
+copies unchanged. Prep computes that signature itself (`blt_signature`), so a
+track is matched exactly on its first play from any stick exported from this
+collection, rather than only after it has been linked once at a gig.
 
 A track with no analysis file still gets the XML's beat grid and its cues,
 without phrases -- the timeline still works, and templates fall back to
-counting bars.
+counting bars. The db route has no grid but the analysis's, so it skips one.
 
 **What it writes.** `tracks/<id>.json` and `waveforms/<id>.json`, through
 engine/showfiles.py, so a prepped track is validated by the same rules the
@@ -43,7 +59,10 @@ import argparse
 import base64
 import copy
 import datetime as dt
+import hashlib
+import json
 import socket
+import struct
 import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -57,6 +76,7 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(HERE))
 
 import anlz  # noqa: E402
+import masterdb  # noqa: E402
 from engine import config as configmod  # noqa: E402
 from engine import showfiles as sf  # noqa: E402
 from engine import tracks as tracksmod  # noqa: E402
@@ -90,6 +110,7 @@ class Prepared:
     waveform: Optional[dict] = None
     notes: list = field(default_factory=list)
     fixed_id: Optional[str] = None      # synthetic tracks have a known id
+    signature: Optional[str] = None     # beat-link-trigger's, computed here
 
 
 # -- grids --------------------------------------------------------------------
@@ -213,6 +234,43 @@ def waveform_from(analysis: anlz.Analysis) -> Optional[dict]:
         doc["detail"] = {"format": analysis.detail_format, "rate": DETAIL_RATE,
                          "data": base64.b64encode(analysis.detail).decode("ascii")}
     return doc
+
+
+NO_ARTIST = "[no artist]"
+
+
+def blt_signature(title: str, artist: Optional[str], duration_s: Optional[float],
+                  analysis: anlz.Analysis) -> Optional[str]:
+    """beat-link-trigger's track signature, as a CDJ playing this track will
+    report it -- or None when the analysis lacks what it hashes.
+
+    beat-link 8's `SignatureFinder.computeTrackSignature`, byte for byte: SHA-1
+    over the title in UTF-8, a zero byte, the artist (or "[no artist]" for a
+    track with none), a zero byte, the duration in whole seconds, the colour
+    detail waveform's entries (`PWV5`, which beat-link 8 always uses whatever
+    style it displays), then each beat of the grid as its position in the bar
+    and its time in milliseconds -- integers four bytes big-endian.
+
+    Everything hashed is copied unchanged by a USB export, which is the point:
+    a stick's track ids are its own, but its signature is this collection's.
+    It changes when the track is re-gridded or retitled, and so does this.
+    Checked against beat-link's source, not yet against a CDJ.
+    """
+    if (analysis.detail_format != "pwv5" or analysis.detail is None
+            or not analysis.beats or duration_s is None or not title):
+        return None
+    digest = hashlib.sha1()
+    digest.update(title.encode("utf-8", errors="replace"))
+    digest.update(b"\0")
+    digest.update((NO_ARTIST if artist is None else artist)
+                  .encode("utf-8", errors="replace"))
+    digest.update(b"\0")
+    digest.update(struct.pack(">I", int(duration_s) & 0xFFFFFFFF))
+    digest.update(analysis.detail)
+    for beat in analysis.beats:
+        digest.update(struct.pack(">II", beat.number & 0xFFFFFFFF,
+                                  beat.time_ms & 0xFFFFFFFF))
+    return digest.hexdigest()
 
 
 # -- rekordbox XML ------------------------------------------------------------
@@ -360,11 +418,130 @@ def prepare_xml_track(xt: XmlTrack, index: AnlzIndex, db: str, host: str,
     ids = []
     if xt.track_id.isdigit():
         ids.append({"db": db, "id": int(xt.track_id)})
+    # The XML writes Artist="" for a track with no artist; a CDJ hashes those
+    # as "[no artist]".
+    signature = (blt_signature(xt.identity["title"], xt.identity["artist"] or None,
+                               xt.identity.get("duration_s"), analysis)
+                 if analysis is not None else None)
     return Prepared(identity=xt.identity, segments=segments, phrases=phrases,
                     cues=cues, audio=audio, rekordbox_ids=ids,
                     source={"from": "xml", "file": xml_name, "tool": TOOL},
                     waveform=waveform_from(analysis) if analysis else None,
-                    notes=notes)
+                    notes=notes, signature=signature)
+
+
+# -- rekordbox's database -----------------------------------------------------
+
+def prepare_db_track(t: masterdb.Track, coll: masterdb.Collection, db: str,
+                     host: str) -> Prepared:
+    """One track of master.db. The grid is the analysis's or nothing: unlike
+    the XML, the database holds no tempo marks of its own."""
+    if not t.title:
+        raise PrepError("it has no title, which is what a deck sends first")
+    dat = coll.analysis_file(t)
+    if dat is None:
+        raise PrepError("rekordbox has not analysed it: analyse it there first")
+    if not dat.is_file():
+        raise PrepError(f"its analysis file is missing ({dat})")
+    analysis = anlz.read_files(*anlz.siblings(dat))
+    if not analysis.beats:
+        raise PrepError("its analysis has no beat grid")
+    notes: list[str] = []
+    segments, downbeat = grid_from_beats(analysis.beats)
+    phrases = phrases_from(analysis, downbeat, notes)
+    if phrases is None and not notes:
+        notes.append("no phrase analysis in rekordbox for this track")
+    grid = tracktime.Grid.from_segments(segments)
+    # One file imported twice is two rows and one track here, whichever row was
+    # asked for: every row's id, and every row's cues -- often only one row has
+    # any. A collection keeps its cues in the database; its analysis files' cue
+    # lists are empty. A USB export is the other way round.
+    copies = coll.copies(t)
+    source_cues = (list(dict.fromkeys((c.time_ms, c.hot, c.loop, c.name)
+                                      for row in copies
+                                      for c in coll.cues.get(row.id, ())))
+                   or [(c.time_ms, c.hot, c.loop, c.name) for c in analysis.cues])
+    cues = sorted((cue_entry(grid, *c) for c in source_cues),
+                  key=lambda c: c["beat"])
+    identity = {"title": t.title, "artist": t.artist or "", "album": t.album}
+    if t.duration_s:
+        identity["duration_s"] = float(t.duration_s)
+    if t.bpm and 20 <= t.bpm <= 400:
+        identity["bpm"] = t.bpm
+    audio = []
+    if t.local:
+        audio = [{"host": host, "path": t.path}]
+        if t.size:
+            audio[0]["size"] = t.size
+    else:
+        notes.append("a streaming track: there is no file for the designer to play")
+    signature = blt_signature(t.title, t.artist, t.duration_s, analysis)
+    if signature is None:
+        notes.append("no colour waveform in its analysis, so no beat-link "
+                     "signature: a CDJ playing it from a stick matches it by name")
+    return Prepared(identity=identity, segments=segments, phrases=phrases,
+                    cues=cues, audio=audio,
+                    rekordbox_ids=[{"db": db, "id": row.id} for row in copies],
+                    source={"from": "master.db", "tool": TOOL},
+                    waveform=waveform_from(analysis), notes=notes,
+                    signature=signature)
+
+
+def select_db(coll: masterdb.Collection, playlists: list[str], ids: list[int],
+              search: Optional[str], everything: bool) -> list[masterdb.Track]:
+    """The tracks the command line names, in playlist order, each once.
+    Playlists and ids add tracks; a search on its own searches the whole
+    collection, and alongside them narrows what they chose."""
+    chosen: dict[int, masterdb.Track] = {}
+    for name in playlists:
+        for t in coll.in_playlist(coll.find_playlist(name)):
+            chosen.setdefault(t.id, t)
+    missing = [i for i in ids if i not in coll.tracks]
+    if missing:
+        raise PrepError(f"no track with id {', '.join(map(str, missing))} in "
+                        f"{coll.db_path.name}")
+    for i in ids:
+        chosen.setdefault(i, coll.tracks[i])
+    if not playlists and not ids:
+        chosen = dict(coll.tracks) if (everything or search) else {}
+    if search:
+        hits = {t.id for t in coll.search(search)}
+        chosen = {i: t for i, t in chosen.items() if i in hits}
+    return list(chosen.values())
+
+
+def catalogue(coll: masterdb.Collection, db: str) -> dict:
+    """The collection as the designer browses it: every playlist in tree
+    order, and every track once. Small fields only -- no paths, no analysis --
+    so 6,500 tracks are about a megabyte."""
+    return {
+        "kind": "klights.rekordbox_catalogue", "db": db,
+        "path": str(coll.db_path), "rekordbox": coll.version,
+        "read_at": dt.datetime.now().replace(microsecond=0).isoformat(),
+        "playlists": [{"id": p.id, "name": p.name, "parent": p.parent,
+                       "kind": p.kind, "tracks": list(p.tracks)}
+                      for p in coll.playlists],
+        "tracks": [{"id": t.id, "title": t.title, "artist": t.artist or "",
+                    "album": t.album, "genre": t.genre, "key": t.key,
+                    "bpm": t.bpm, "duration_s": t.duration_s,
+                    "local": t.local, "analysed": bool(t.analysis),
+                    "added": t.added}
+                   for t in coll.tracks.values()],
+    }
+
+
+def playlist_tree(coll: masterdb.Collection) -> list[str]:
+    by_id = {p.id: p for p in coll.playlists}
+    lines = []
+    for p in coll.playlists:
+        depth, at = 0, p.parent
+        while at is not None and at in by_id and depth < 32:
+            depth, at = depth + 1, by_id[at].parent
+        what = {"folder": "", "smart": "smart playlist, not read"}.get(
+            p.kind, f"{len(p.tracks)} track{'' if len(p.tracks) == 1 else 's'}")
+        name = p.name + ("/" if p.kind == "folder" else "")
+        lines.append(f"  {'  ' * depth}{name:<{max(1, 40 - 2 * depth)}} {what}")
+    return lines
 
 
 # -- the synthetic track ------------------------------------------------------
@@ -411,7 +588,15 @@ def _track_doc(tid: str, p: Prepared, base: Optional[dict] = None) -> dict:
     for rid in p.rekordbox_ids:
         if rid not in known:
             known.append(rid)
-    ids.setdefault("blt_signatures", [])
+    sigs = ids.setdefault("blt_signatures", [])
+    # Prep's own signature from last time is replaced: it hashed a grid or a
+    # title that has since changed. Signatures learned at a gig are kept --
+    # they are a stick someone really played.
+    previous = ((base or {}).get("source") or {}).get("signature")
+    if previous and previous != p.signature and previous in sigs:
+        sigs.remove(previous)
+    if p.signature and p.signature not in sigs:
+        sigs.append(p.signature)
     doc.setdefault("aliases", [])
     doc["grid"] = {"rev": grid.rev, "segments": p.segments}
     # What the analysis says now, including "no phrases". Old phrases are not
@@ -427,6 +612,8 @@ def _track_doc(tid: str, p: Prepared, base: Optional[dict] = None) -> dict:
                   if a.get("host") != p.audio[0].get("host")]
         doc["audio"] = others + p.audio
     doc["source"] = dict(p.source)
+    if p.signature:
+        doc["source"]["signature"] = p.signature
     return doc
 
 
@@ -439,10 +626,16 @@ def _without_stamp(doc: Optional[dict]) -> Optional[dict]:
 
 
 def find_existing(tracks: dict, p: Prepared) -> Optional[str]:
-    """The track already in the folder that `p` describes, if any: by
-    rekordbox id first, then by title, artist, album and duration."""
+    """The track already in the folder that `p` describes, if any: by its
+    signature, then rekordbox id, then title, artist, album and duration.
+    One signature is one analysis of one file, so a track rekordbox holds
+    twice (the same file imported twice) is one track here, with both ids."""
     if p.fixed_id and p.fixed_id in tracks:
         return p.fixed_id
+    if p.signature:
+        for tid, doc in tracks.items():
+            if p.signature in ((doc.get("ids") or {}).get("blt_signatures") or ()):
+                return tid
     for tid, doc in tracks.items():
         known = (doc.get("ids") or {}).get("rekordbox") or []
         if any(rid in known for rid in p.rekordbox_ids):
@@ -457,12 +650,30 @@ def find_existing(tracks: dict, p: Prepared) -> Optional[str]:
 
 
 def apply(root: Path, prepared: list[Prepared], dry_run: bool = False,
-          today: Optional[str] = None) -> list[str]:
-    """Match, merge and write. Returns one line per track."""
+          today: Optional[str] = None,
+          outcomes: Optional[list] = None) -> list[str]:
+    """Match, merge and write. Returns one line per track; `outcomes`, when
+    given, gets the same as a dict per track, for a caller that is a program
+    (the engine, preparing what the designer picked)."""
     folder = sf.load_folder(root)
     tracks = dict(folder.tracks)
+    # Revs as this run leaves them: one run can write a track twice -- the
+    # same file imported into rekordbox twice is two rows and one track.
+    revs = dict(folder.revs)
     stamp = today or dt.datetime.now().replace(microsecond=0).isoformat()
     lines: list[str] = []
+
+    def record(status: str, tid: str, p: Prepared, extra: str = "") -> None:
+        if outcomes is not None:
+            outcomes.append({
+                "status": status, "track_id": tid,
+                "rekordbox_ids": [r["id"] for r in p.rekordbox_ids],
+                "title": p.identity.get("title", ""),
+                "artist": p.identity.get("artist", ""),
+                "signature": p.signature is not None,
+                "notes": list(p.notes) + [s.strip() for s in extra.split("\n")
+                                          if s.strip()]})
+
     for p in prepared:
         tid = find_existing(tracks, p)
         base = tracks.get(tid) if tid else None
@@ -484,6 +695,7 @@ def apply(root: Path, prepared: list[Prepared], dry_run: bool = False,
                 sf.write_doc(sf.path_for(root, "waveform", tid), wave, "waveform")
                 note += "\n      waveform was missing; rewritten"
             lines.append(f"  unchanged  {tid}  ({title}){note}")
+            record("unchanged", tid, p)
             continue
         if p.source.get("from") != "synthetic":
             doc["source"]["prepped"] = stamp
@@ -499,14 +711,15 @@ def apply(root: Path, prepared: list[Prepared], dry_run: bool = False,
         if not dry_run:
             path = sf.path_for(root, "track", tid)
             rel = f"tracks/{tid}.json"
-            sf.write_doc(path, doc, "track",
-                         base_rev=folder.revs.get(rel, "") if base else "")
+            revs[rel] = sf.write_doc(path, doc, "track",
+                                     base_rev=revs.get(rel, "") if base else "")
             if p.waveform is not None:
                 wave = sf.new_doc("waveform", track=tid, **p.waveform)
                 sf.write_doc(sf.path_for(root, "waveform", tid), wave, "waveform")
         tracks[tid] = doc
         lines.append(f"  {'would ' + verb.rstrip('d') if dry_run else verb}"
                      f"  {tid}  ({title}){extra}{note}")
+        record(verb if not dry_run else "would " + verb.rstrip("d"), tid, p, extra)
     return lines
 
 
@@ -523,10 +736,11 @@ def report(root: Path) -> list[str]:
             tl = "timeline" + ("" if timeline.get("grid_rev") in
                                (None, doc["grid"].get("rev"))
                                else " ON AN OLD GRID")
+        sigs = len((doc.get("ids") or {}).get("blt_signatures") or ())
         lines.append(f"  {tid:<32} {ident.get('artist', '')} - {ident['title']}"
                      f"\n  {'':<32} {anchors} grid anchor(s), {phrases} phrases, "
                      f"{'waveform' if tid in folder.waveforms else 'no waveform'}, "
-                     f"{tl}")
+                     f"{sigs} CDJ signature(s), {tl}")
     lines += [f"  ERROR  {e}" for e in folder.errors]
     lines += [f"  warn   {w}" for w in folder.warnings]
     return lines
@@ -534,7 +748,36 @@ def report(root: Path) -> list[str]:
 
 # -- command line -------------------------------------------------------------
 
+def _db_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--master-db", help="the database; default rekordbox_db in "
+                                       "klights.local.json, else rekordbox's own")
+    p.add_argument("--key", help=f"its key; better set ${masterdb.KEY_ENV} or "
+                                 f"rekordbox_key in klights.local.json, so it "
+                                 f"is not in your shell history")
+    p.add_argument("--anlz-root", type=Path,
+                   help="the folder AnalysisDataPath is under; default where "
+                        "the database says, else share/ beside it")
+    p.add_argument("--db", help="name for the database these rekordbox ids "
+                                "belong to (default collection:<host>)")
+
+
+def _emit(doc: dict) -> None:
+    """One JSON document on stdout, ASCII-only so no console code page can
+    mangle a title on its way to the engine."""
+    sys.stdout.write(json.dumps(doc, ensure_ascii=True, separators=(",", ":")))
+    sys.stdout.write("\n")
+
+
+def _open_collection(args) -> masterdb.Collection:
+    path, key = masterdb.resolve(args.master_db, args.key, sf.read_local_config())
+    return masterdb.read(path, key, args.anlz_root)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        # A title in kana must not kill a run whose output is piped.
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(
         prog="prep.py", description=__doc__.split("\n")[0])
     parser.add_argument("--show-dir", help="defaults to $KLIGHTS_SHOW_DIR or "
@@ -542,6 +785,26 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="say what would change and write nothing")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    p_db = sub.add_parser("db", help="tracks from rekordbox's own database "
+                                     "(master.db); with nothing chosen, lists "
+                                     "the playlists")
+    _db_args(p_db)
+    p_db.add_argument("--playlist", action="append", default=[],
+                      help='a playlist or folder, by name or path ("Gigs/Friday"); '
+                           'repeatable')
+    p_db.add_argument("--id", type=int, action="append", default=[], dest="ids",
+                      help="a track's rekordbox id; repeatable")
+    p_db.add_argument("--search", help="tracks whose title, artist and album "
+                                       "hold every word of this")
+    p_db.add_argument("--all", action="store_true",
+                      help="every track in the collection")
+    p_db.add_argument("--list", action="store_true",
+                      help="say which tracks were chosen, and prep nothing")
+    p_db.add_argument("--json", action="store_true",
+                      help="a JSON summary on stdout, for a program")
+    p_cat = sub.add_parser("catalogue", help="the collection's playlists and "
+                                             "tracks, as JSON, for the designer")
+    _db_args(p_cat)
     p_xml = sub.add_parser("xml", help="tracks from a rekordbox XML export")
     p_xml.add_argument("xml", type=Path)
     p_xml.add_argument("--anlz-root", type=Path, action="append", default=[],
@@ -554,12 +817,52 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_syn.add_argument("--bpm", type=float, default=128.0)
     sub.add_parser("report", help="what is in the folder")
     args = parser.parse_args(argv)
+    host = socket.gethostname()
+    as_json = getattr(args, "json", False)
+
+    def fail(text: str, code: int = 1) -> int:
+        if as_json:
+            _emit({"error": text})
+        else:
+            print(text, file=sys.stderr)
+        return code
+
+    coll = chosen = None
+    if args.cmd in ("db", "catalogue"):
+        try:
+            coll = _open_collection(args)
+            if args.cmd == "catalogue":
+                _emit(catalogue(coll, args.db or f"collection:{host}"))
+                return 0
+            if args.playlist or args.ids or args.search or args.all:
+                chosen = select_db(coll, args.playlist, args.ids, args.search,
+                                   args.all)
+        except (masterdb.DbError, PrepError) as exc:
+            return fail(f"{args.cmd} failed: {exc}")
+        if chosen is None:
+            if as_json:
+                return fail("choose tracks with --playlist, --search, --id or --all", 2)
+            print(f"{coll.db_path}  (rekordbox {coll.version or 'version unknown'}, "
+                  f"{len(coll.tracks)} tracks)")
+            for line in playlist_tree(coll):
+                print(line)
+            print("choose tracks with --playlist, --search, --id or --all; "
+                  "--list shows them without prepping", file=sys.stderr)
+            return 2
+        if args.list:
+            for t in chosen:
+                length = (f"{t.duration_s // 60}:{t.duration_s % 60:02d}"
+                          if t.duration_s else "?")
+                flags = "" if t.analysis else "  [not analysed]"
+                print(f"  {t.id:>10}  {t.artist or ''} - {t.title}  "
+                      f"({t.bpm or '?'} bpm, {length}){flags}")
+            print(f"  {len(chosen)} track(s)")
+            return 0
 
     root = sf.resolve_show_dir(args.show_dir)
     if root is None:
-        print("no show folder: pass --show-dir, set KLIGHTS_SHOW_DIR, or set "
-              "show_dir in klights.local.json", file=sys.stderr)
-        return 2
+        return fail("no show folder: pass --show-dir, set KLIGHTS_SHOW_DIR, or "
+                    "set show_dir in klights.local.json", 2)
     if args.cmd != "report" and not args.dry_run and not root.is_dir():
         sf.init(root)
 
@@ -568,10 +871,29 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(line)
         return 0
 
-    host = socket.gethostname()
     try:
         if args.cmd == "synthetic":
             prepared = [synthetic(args.bpm)]
+        elif args.cmd == "db":
+            db = args.db or f"collection:{host}"
+            prepared, skipped, covered = [], [], set()
+            for t in chosen:
+                if t.id in covered:
+                    continue                # a copy of a row already prepped
+                covered.update(row.id for row in coll.copies(t))
+                try:
+                    prepared.append(prepare_db_track(t, coll, db, host))
+                except (PrepError, anlz.AnlzError, tracktime.GridError) as exc:
+                    skipped.append({"rekordbox_id": t.id, "title": t.title,
+                                    "artist": t.artist or "", "reason": str(exc)})
+                    if not as_json:
+                        print(f"  skipped    {t.artist or ''} - {t.title}: {exc}")
+            if as_json:
+                outcomes: list = []
+                apply(root, prepared, args.dry_run, outcomes=outcomes)
+                _emit({"results": outcomes, "skipped": skipped,
+                       "show_dir": str(root)})
+                return 0
         else:
             tracks, playlists = parse_xml(args.xml)
             if args.playlist is not None:
@@ -600,8 +922,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         for line in apply(root, prepared, args.dry_run):
             print(line)
     except (PrepError, configmod.ConfigError, sf.StaleEdit) as exc:
-        print(f"prep failed: {exc}", file=sys.stderr)
-        return 1
+        return fail(f"prep failed: {exc}")
     return 0
 
 
