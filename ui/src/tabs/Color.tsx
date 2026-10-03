@@ -75,7 +75,15 @@ export function ColorTab({ state, send }: {
         </details>
       </Card>
 
-      <Card title="Quick palette" right={
+      {/* The long-press is the one gesture in the console with nothing on
+          screen to suggest it exists, so it is the first thing the help says. */}
+      <Card title="Quick palette" help={<>
+        <p>Tap a swatch to colour whatever's selected under <b>Applies to</b>.</p>
+        <p><b>Long-press</b> (or right-click) to set the palette's current colour
+          instead. Looks and auto rotation use that one; the dot marks it.</p>
+        <p><b>Clear</b> removes the hand-picked colour from the selected
+          target.</p>
+      </>} right={
         // Present always, disabled with nothing overridden. Appearing the
         // instant a swatch is tapped, it made the heading taller and pushed the
         // palette down — out from under the finger that had just tapped it.

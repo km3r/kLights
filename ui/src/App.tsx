@@ -1,7 +1,9 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useEngine, useWakeLock } from "./useEngine";
 import { ModeProvider, useMode } from "./mode";
 import { Banner, BeatDots, Fader } from "./components";
+import { GuideView, Welcome, guideFromHash, readWelcomed, writeWelcomed } from "./Guide";
+import type { GuideId } from "./guideContent";
 import { ShowTab } from "./tabs/Show";
 import { ColorTab } from "./tabs/Color";
 import { MoveTab } from "./tabs/Move";
@@ -64,10 +66,29 @@ export default function App() {
   return <Console engine={engine} />;
 }
 
+/** The tab a hash names, if this mode has a button for it. Checked against the
+ *  tabs THIS mode has, not all of them: a phone that was last on Setup and
+ *  reopens in Perform would otherwise restore a tab with no button in the bar
+ *  and no way back to it. */
+function tabFromHash(hash: string, mode: string): TabId | null {
+  const tab = TABS.find((t) => t.id === hash);
+  return tab && (mode === "design" || !("design" in tab)) ? tab.id : null;
+}
+
 function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
   const { state, status, send, name, setName, tier } = engine;
   const [mode, setMode] = useMode();
-  const [tab, setTab] = useState<TabId>("show");
+  // Keep the tab in the URL hash so a reload, or a phone waking up, comes back
+  // where it was rather than to the front page mid-set. Read when the state is
+  // created rather than in an effect: an effect ran after the first write of
+  // the hash, and the hashchange that write queued could land after the
+  // restore and undo it.
+  const [tab, setTab] = useState<TabId>(
+    () => tabFromHash(location.hash.slice(1), mode) ?? "show");
+  // A guide open over the tab, which stays underneath for Back to return to.
+  const [guide, setGuide] = useState<GuideId | null>(
+    () => guideFromHash(location.hash.slice(1)));
+  const [welcomed, setWelcomed] = useState(readWelcomed);
   // Local only while a finger is down; see Fader's comment.
   const [masterDrag, setMasterDrag] = useState<number | null>(null);
 
@@ -75,21 +96,42 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
 
   const tabs = TABS.filter((t) => mode === "design" || !("design" in t));
 
-  // Keep the tab in the URL hash so a reload, or a phone waking up, comes back
-  // where it was rather than to the front page mid-set.
+  useEffect(() => { location.hash = guide ? `guide/${guide}` : tab; }, [tab, guide]);
+  // And follow it. The On now rows and the guides navigate with plain links,
+  // which change the hash and, until this listened, changed nothing else.
   useEffect(() => {
-    const fromHash = location.hash.slice(1) as TabId;
-    // Checked against the tabs THIS mode has, not against all of them: a phone
-    // that was last on Setup and reopens in Perform would otherwise restore a
-    // tab with no button in the bar and no way back to it.
-    if (tabs.some((t) => t.id === fromHash)) setTab(fromHash);
-  }, []);
-  useEffect(() => { location.hash = tab; }, [tab]);
+    const follow = () => {
+      const hash = location.hash.slice(1);
+      const named = guideFromHash(hash);
+      if (named) { setGuide(named); return; }
+      const next = tabFromHash(hash, mode);
+      if (next) { setTab(next); setGuide(null); }
+    };
+    addEventListener("hashchange", follow);
+    return () => removeEventListener("hashchange", follow);
+  }, [mode]);
   // Dropping to Perform while standing on Setup would otherwise leave the tab
   // rendered with no way back to it in the bar.
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("show");
   }, [mode]);
+
+  // A guide starts at its top. The main column keeps its scroll across
+  // renders, so one opened from halfway down a tab would open halfway down.
+  const mainRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (guide && mainRef.current) mainRef.current.scrollTop = 0;
+  }, [guide]);
+
+  const openGuide = (id: GuideId) => {
+    setGuide(id);
+    // Opening any guide answers the first-run card's question.
+    if (!welcomed) { writeWelcomed(); setWelcomed(true); }
+  };
+  const openTab = (id: TabId) => {
+    setTab(id);
+    setGuide(null);
+  };
 
   const master = masterDrag ?? state?.master ?? 0;
 
@@ -104,6 +146,15 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
             {state && <> · <span className="mono">{state.clock.effective_bpm.toFixed(1)}</span> bpm</>}
           </span>
           {state && <BeatDots beatInBar={state.clock.beat_in_bar} />}
+          {/* The guide to whatever tab is up. In the header because it is the
+              one place on screen on every tab, and a "?" because the
+              explanation is the button's whole job. */}
+          <button className={guide ? "small on" : "small"} aria-label="Guide"
+                  aria-pressed={guide != null}
+                  title="How this tab works"
+                  onClick={() => (guide ? setGuide(null) : openGuide(tab))}>
+            ?
+          </button>
           {/* Always one tap from the other mode, and never a lock: someone who
               needs the patch editor mid-set needs it now, not after finding a
               setting. */}
@@ -142,8 +193,22 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
         <Banners state={state} status={status} send={send} tier={tier} />
       </header>
 
-      <main className="main">
-        {!state ? (
+      <main className="main" ref={mainRef}>
+        {!welcomed && !guide && (
+          <Welcome onTour={() => openGuide("start")}
+                   onDismiss={() => { writeWelcomed(); setWelcomed(true); }} />
+        )}
+        {/* Before the state check: a guide needs nothing from the engine, and
+            "the engine is not answering" is exactly when someone reaches for
+            one. */}
+        {guide ? (
+          <GuideView id={guide} mode={mode} back={tab}
+                     onPick={openGuide} onClose={() => setGuide(null)}
+                     onOpenTab={(id) => {
+                       if (id === "setup" && mode !== "design") setMode("design");
+                       openTab(id as TabId);
+                     }} />
+        ) : !state ? (
           <p className="muted">Waiting for the engine…</p>
         ) : tab === "show" ? (
           <ShowTab state={state} send={send} />
@@ -160,8 +225,8 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
 
       <nav className="tabbar">
         {tabs.map((t) => (
-          <button key={t.id} className={tab === t.id ? "on" : ""}
-                  onClick={() => setTab(t.id)}>
+          <button key={t.id} className={tab === t.id && !guide ? "on" : ""}
+                  onClick={() => openTab(t.id)}>
             <span className="glyph">{t.glyph}</span>
             <span>{t.label}</span>
           </button>

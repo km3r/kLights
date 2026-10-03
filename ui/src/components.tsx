@@ -1,3 +1,4 @@
+import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import type { Command, EngineState, RGB, Slot } from "./types";
 
@@ -7,12 +8,67 @@ export function rgbCss(c: RGB | undefined, fallback = "#333"): string {
   return `rgb(${to255(c[0])}, ${to255(c[1])}, ${to255(c[2])})`;
 }
 
-export function Card({ title, right, children }: {
-  title?: string; right?: ReactNode; children: ReactNode;
+/**
+ * A "?" that opens an explanation in place, for the controls whose label does
+ * not say what they do.
+ *
+ * A tap, not a tooltip. The console had a few `title` tooltips and a phone has
+ * no hover, so on the surface this is built for they did not exist. Opened in
+ * the flow of the card rather than floated over it, so it never covers the
+ * control it is explaining.
+ *
+ * Closed by default and remembered only while mounted: help that reopened
+ * itself on every reload would be clutter on the fortieth night to save one tap
+ * on the first.
+ */
+export function useHelp(topic: string) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return {
+    button: (
+      <button type="button" className="help-btn" aria-expanded={open}
+              aria-controls={id} aria-label={`Help: ${topic}`}
+              title="What this does" onClick={() => setOpen(!open)}>
+        ?
+      </button>
+    ),
+    panel: (children: ReactNode) => open
+      ? <div className="help" id={id} role="note">{children}</div>
+      : null,
+  };
+}
+
+/** A heading with a "?" after it, for the designer's side panels -- the same
+ *  explanation as a card's, under a plain heading. */
+export function HelpHeading({ topic, help, children }: {
+  topic: string; help: ReactNode; children: ReactNode;
 }) {
+  const explain = useHelp(topic);
+  return (
+    <>
+      <h3>{children}{explain.button}</h3>
+      {explain.panel(help)}
+    </>
+  );
+}
+
+export function Card({ title, right, help, children }: {
+  title?: string; right?: ReactNode;
+  /** An explanation behind a "?" by the title, for a card whose controls do
+   *  not explain themselves. */
+  help?: ReactNode;
+  children: ReactNode;
+}) {
+  const explain = useHelp(title ?? "");
   return (
     <section className="card">
-      {title && <h2><span className="grow">{title}</span>{right}</h2>}
+      {title && (
+        <h2>
+          <span className="grow">{title}{help != null && explain.button}</span>
+          {right}
+        </h2>
+      )}
+      {help != null && explain.panel(help)}
       {children}
     </section>
   );

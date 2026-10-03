@@ -71,6 +71,9 @@ says so in a banner rather than silently ignoring you.
 The phone defaults to **Perform** mode: cue list, presets, master, tempo,
 blackout, panic. Switch to **Design** in the header for setup and diagnostics.
 
+Handing the phone to someone new? The **?** in the header opens a guide to
+whichever tab is up, and works even while the engine is not answering.
+
 ### 4. Calibrate
 
 The heads get nudged. Overnight, in transit, by someone leaning on the truss.

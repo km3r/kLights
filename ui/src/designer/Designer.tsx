@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Command, EngineState, Reply, Tier } from "../types";
 import { apiFetch, apiUrl } from "../useEngine";
+import { HelpHeading } from "../components";
 import { PlanSvg } from "../Plan";
 import {
   BEATS_PER_BAR, DESIGNER_CHUNK, Grid, barBeat, clock, decodeWave, findItem, itemName,
@@ -12,6 +13,7 @@ import type {
 import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
+import { useDesignerGuide } from "./guide";
 import "./designer.css";
 
 /**
@@ -61,6 +63,7 @@ function TrackPicker({ engine }: { engine: Engine }) {
   const [routines, setRoutines] = useState<RoutineSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newId, setNewId] = useState("");
+  const guide = useDesignerGuide("designer");
   useEffect(() => {
     apiFetch<{ tracks: TrackLine[] }>("/api/tracks")
       .then((r) => setTracks(r.tracks)).catch((e: Error) => setError(e.message));
@@ -74,7 +77,11 @@ function TrackPicker({ engine }: { engine: Engine }) {
       <header className="d-top">
         <b>kLights designer</b>
         <a className="d-link" href="#show">Back to the console</a>
+        <span className="grow" />
+        {guide.button}
       </header>
+      {guide.banner}
+      <div className="d-picker-body">
       <main className="d-picker">
         <h2>Tracks</h2>
         {error && <p className="d-error">{error}</p>}
@@ -123,6 +130,8 @@ function TrackPicker({ engine }: { engine: Engine }) {
         </form>
         {engine.status !== "open" && <p className="d-error">Not connected to the engine.</p>}
       </main>
+      {guide.drawer}
+      </div>
     </div>
   );
 }
@@ -199,6 +208,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [selected, setSelected] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(apiUrl(`/api/audio/${trackId}`));
   const [audioState, setAudioState] = useState<"loading" | "ok" | "none">("loading");
+  const guide = useDesignerGuide("designer");
 
   useEffect(() => {
     apiFetch<{ doc: TrackDoc }>(`/api/tracks/${trackId}`)
@@ -375,6 +385,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                 Release {preview.name}'s preview</button>
             : <button onClick={() => void arm(false)}
                       title="Put this page's transport on the real rig">Drive the rig</button>}
+        {guide.button}
       </header>
       {driveError && (
         <div className="d-banner">
@@ -383,6 +394,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             <button onClick={() => void arm(true)}>Take the rig anyway</button>)}
         </div>
       )}
+      {guide.banner}
       {audioState === "none" && (
         <div className="d-banner">
           No audio for this track from the engine. Open the file from this machine
@@ -409,7 +421,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                onError={() => setAudioState("none")} />
       )}
 
-      <div className="d-body">
+      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
         <div className="d-lanes" role="region" aria-label="lanes" ref={lanesRef}>
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={seekBeat} />
@@ -441,7 +453,13 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             </p>
           </section>
           <section>
-            <h3>At the playhead · bar {barBeat(beat)}</h3>
+            <HelpHeading topic="At the playhead" help={<>
+              <p>Which lane drives each slot right now. Higher lanes win: a movement
+                lane above the scene lane only overrides the scene's movement.</p>
+              <p><b>rest</b> means the lane that owns this slot is empty here, so
+                nothing drives it. <b>template / show</b> means no lane has anything
+                here.</p>
+            </>}>At the playhead · bar {barBeat(beat)}</HelpHeading>
             <table className="d-who">
               <tbody>
                 {drivers.map((d) => (
@@ -459,6 +477,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
           </section>
           <Editor.Shelf history={history} routines={routines} beat={beat} track={track} />
         </aside>
+        {guide.drawer}
       </div>
 
       {selectedPoint && pointRow && !history.listView
