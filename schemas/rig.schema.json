@@ -111,6 +111,12 @@
           },
           "notes": {
             "type": "string"
+          },
+          "aim": {
+            "description": "where a fixture that cannot move points, {x, y, z} in millimetres. The mirror ball if left out"
+          },
+          "body": {
+            "description": "the model the previz draws for this unit: {model: file.glb, nodes: {...}, rotation: {...}}"
           }
         },
         "required": [

@@ -10,9 +10,9 @@ Millimetres throughout, y up, origin at the front-left floor corner.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from . import config as configmod
 
@@ -124,6 +124,12 @@ class Venue:
     truss: Optional[Truss] = None
     elev_extreme_deg: float = 90.0
     rest_point: Optional[tuple[float, float, float]] = None
+    # The `previz` block, RAW: models placed in the room, the mirror ball's look
+    # and motor, how the room renders. Only engine.scene reads it, and it turns
+    # anything malformed into a warning rather than an error, because nothing a
+    # previz draws is allowed to stop the show loading. Kept out of equality so
+    # two venues that differ only in how they are drawn compare equal.
+    previz: Any = field(default_factory=dict, compare=False)
 
     @property
     def room(self) -> Box:
@@ -186,4 +192,5 @@ def load_venue(path: Path) -> Venue:
         elev_extreme_deg=float(cfg.get("elev_extreme_deg", 90.0)),
         rest_point=(None if "rest_point" not in cfg else
                     (float(cfg["rest_point"]["x"]), float(cfg["rest_point"]["y"]),
-                     float(cfg["rest_point"]["z"]))))
+                     float(cfg["rest_point"]["z"]))),
+        previz=cfg.get("previz", {}))

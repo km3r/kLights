@@ -36,7 +36,10 @@ failures: list[str] = []
 def check(label, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
     if not ok:
-        failures.append(label)
+        # With the detail: `python -m engine.tests` (and so CI) shows only the
+        # tail of a failing suite, which is this list -- a label alone says
+        # which check failed but not by how much.
+        failures.append(label + (f"  -- {detail}" if detail else ""))
 
 
 # -- an independent client ----------------------------------------------------
@@ -677,6 +680,80 @@ except urllib.error.HTTPError as exc:
     # console and an obscure error instead of an obvious one.
     check("a missing asset is a 404, not the app", exc.code == 404,
           f"{exc.code} {exc.reason}")
+
+
+# -- the previz app's reads ---------------------------------------------------
+print("\n8b. the standalone previz's scene and models")
+from dataclasses import replace as dc_replace  # noqa: E402
+from engine import scene as scenemod  # noqa: E402
+
+with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/previz/scene", timeout=5) as resp:
+    scene_body = resp.read()
+    etag = resp.headers.get("ETag", "")
+manifest = json.loads(scene_body)
+check("GET /api/previz/scene is the manifest",
+      resp.status == 200 and manifest["format"] == scenemod.FORMAT
+      and manifest["event"] == "despacio", f"{resp.status} {manifest.get('format')}")
+check("it describes the rig this engine is driving",
+      len(manifest["fixtures"]) == sum(1 for f in controller.rig.fixtures if f.position))
+check("its ETag is the scene's revision", etag == f'"{manifest["rev"]}"', etag)
+
+request = urllib.request.Request(f"http://127.0.0.1:{port}/api/previz/scene",
+                                 headers={"If-None-Match": etag})
+try:
+    urllib.request.urlopen(request, timeout=5)
+    check("an unchanged scene is a 304", False, "it sent the body again")
+except urllib.error.HTTPError as exc:
+    # The app polls once a second; this is what makes that free.
+    check("an unchanged scene is a 304", exc.code == 304, f"{exc.code}")
+
+# A live edit is what the poll exists to notice. `previz` is the one venue
+# field nothing in the show reads, so changing it here disturbs nothing else.
+live_venue = controller.rig.venue
+controller.rig.venue = dc_replace(live_venue, previz={"optics": {"fog_density": 0.9}})
+try:
+    with urllib.request.urlopen(request, timeout=5) as resp:
+        edited = json.loads(resp.read())
+    check("a live venue edit changes the scene", edited["optics"]["fog_density"] == 0.9
+          and edited["rev"] != manifest["rev"])
+except urllib.error.HTTPError as exc:
+    check("a live venue edit changes the scene", False, f"{exc.code}")
+finally:
+    controller.rig.venue = live_venue
+
+# Models are served by hash, and only the ones the current scene names. The
+# despacio room has none, so this uses the test sample event's scene.
+sample = scenemod.build_for(REPO / "engine" / "tests" / "data" / "events" / "sample")
+real_scene = server.previz_scene
+server.previz_scene = lambda: sample
+try:
+    sha, path = next(iter(sample.files.items()))
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/previz/model/{sha}.glb",
+                                timeout=5) as resp:
+        model_bytes = resp.read()
+        model_cache = resp.headers.get("Cache-Control", "")
+    check("a named model is served, byte for byte", model_bytes == path.read_bytes()
+          and resp.headers.get("Content-Type") == "model/gltf-binary")
+    check("...and cached hard, since its name is its hash", "immutable" in model_cache)
+    for bad in ("0" * 64 + ".glb", "../../rig.json", f"{sha}.gltf", sha):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/previz/model/{bad}", timeout=5)
+            check(f"model route refuses {bad[:20]}", False, "it served something")
+        except urllib.error.HTTPError as exc:
+            check(f"model route refuses {bad[:20]}", exc.code == 404, f"{exc.code}")
+
+    def broken():
+        raise ValueError("simulated")
+    server.previz_scene = broken
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/previz/scene", timeout=5)
+        check("a scene that cannot be built is a 503", False)
+    except urllib.error.HTTPError as exc:
+        check("a scene that cannot be built is a 503", exc.code == 503, f"{exc.code}")
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as resp:
+        check("...and the console is still served", resp.status == 200)
+finally:
+    server.previz_scene = real_scene
 
 
 # -- venue and taper editing --------------------------------------------------

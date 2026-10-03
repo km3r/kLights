@@ -50,10 +50,18 @@ every one of those four points is a thing the engine now does differently.
 | **F16** | Tempo from the DJ | A `sync` seam and a UDP port speaking JSON and OSC. **No analysis is written here** — beat position and rekordbox's phrase labels are a *read*. |
 | **F17** | Previz, generic | A plan view that needs no GPU; an Unreal path that does not know the word "despacio"; optics as config. |
 | **F18** | Docs and the soak | This file, [`engine.md`](engine.md), [`runbook.md`](runbook.md), and the 60-minute soak F2 asked for — **passed**: 148 802 frames, zero drops, and the predicted GC outlier did not appear. |
+| **F20** | The standalone previz | `KLightsPreviz.exe` needs no editor and no Python: it gets the room from the engine (`/api/previz/scene`), DMX from Art-Net, and models, set pieces and articulated fixture bodies from `.glb` files named in config ([`models.md`](models.md)). Its C++ decode is held to the Python one by golden vectors, exactly. The editor-Python path still works beside it. A launcher window (`kLights.pyw`) starts the engine and the app, and links into the console's Setup tab. |
 
 ## Decisions worth knowing
 
 Things that look arbitrary and are not.
+
+**The previz app is told the calibration, never derives it.** The engine ships
+each moving head's *resolved* aim frame — mount facing, elevation offset, which
+channel carries what — so the C++ decode is two linear maps and a sine, and the
+traps that live in backing a calibration out of a hand-aimed reading stay in one
+place, in Python. The parity file proves the two decodes agree to the bit, for
+heads in every mount mode, not just despacio's.
 
 **The engine is stdlib-only, permanently.** A show laptop at a venue with no
 internet must not be one `pip` away from working. Anything needing a library

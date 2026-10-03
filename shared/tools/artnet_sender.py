@@ -7,7 +7,7 @@ Art-Net primer:
   - Universe 0 = QLC+ Universe 1 (both BlenderDMX and QLC+ use 0-indexed Art-Net)
   - ArtDmx packet: 8-byte header "Art-Net\\0", OpCode 0x5000 (LE),
     ProtVer 14 (BE), Sequence, Physical, SubUni, Net, Length (BE), 512 bytes data
-  - SubUni = (subnet << 4) | (universe & 0x0F); Net = (universe >> 8) & 0x7F
+  - SubUni = universe & 0xFF (SubNet << 4 | Universe); Net = (universe >> 8) & 0x7F
 
 Usage examples:
   # Turn all channels off (blackout)
@@ -47,7 +47,7 @@ ARTNET_PROT_VER = 14
 def build_artdmx(universe: int, data: bytes) -> bytes:
     """Build an Art-Net ArtDmx UDP packet for the given universe and DMX data."""
     dmx = (data + b"\x00" * 512)[:512]  # pad/truncate to exactly 512 bytes
-    sub_uni = ((universe >> 4) & 0xF0) | (universe & 0x0F)
+    sub_uni = universe & 0xFF             # SubNet << 4 | Universe: the low byte
     net = (universe >> 8) & 0x7F
     return (
         ARTNET_HEADER

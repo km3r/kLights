@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-PROJECT = REPO / "previz" / "unreal" / "CosmosPrevis.uproject"
+PROJECT = REPO / "previz" / "unreal" / "KLightsPreviz.uproject"
 
 REMOTE_EXEC_RELPATH = Path(
     "Engine/Plugins/Experimental/PythonScriptPlugin/Content/Python/remote_execution.py")

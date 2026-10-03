@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "WHICH MODEL THE PREVIZ DRAWS FOR WHICH FIXTURE PROFILE. Previz only: nothing",
+    "in the show reads this, and a mistake here is a warning in the previz, never",
+    "an error that stops the engine.",
+    "",
+    "Keyed \"Manufacturer/Model\" exactly as the .qxf declares them. 'file' is a",
+    "binary glTF (.glb), relative to this folder, then shared/models/. A rig.json",
+    "fixture's own `body` overrides its profile's entry here.",
+    "",
+    "A moving head's model must follow the body convention in docs/models.md --",
+    "nodes base > yoke > head > lens, pan about +Y, tilt about +X, the beam out of",
+    "the lens along +Z -- or name its own nodes under 'nodes'. A profile with no",
+    "entry is drawn as a box sized from the .qxf's <Dimensions>."
+  ],
+  "MingJie/MJ-OS-018 60W Beam": {"file": "fixtures/generic_moving_head.glb"},
+  "UKing/ZQ-B93 Pinspot RGBW": {"file": "fixtures/generic_can.glb"},
+  "UKing/Par 36 Custom": {"file": "fixtures/generic_can.glb"}
+}

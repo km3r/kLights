@@ -74,19 +74,28 @@ def check_event(r: Report) -> None:
     for warning in spec.warnings:
         r.warn("rig", warning)
 
+    # The standalone app's scene, which is also where the room's optics are
+    # checked: every bad optics key, model or aim is one of its warnings.
+    from engine import scene as engine_scene
+    from engine import rig as engine_rig
     try:
-        previz_config.optics(spec.venue)
-    except ValueError as exc:
-        r.bad("optics.json", str(exc))
+        manifest = engine_scene.build_for(Path(info["event_dir"])).manifest
+    except Exception as exc:                     # noqa: BLE001
+        r.bad("the previz app's scene builds", f"{type(exc).__name__}: {exc}")
         return
-    if previz_config.has_profile(spec.venue):
-        r.ok("optics", f"{spec.venue} has its own profile")
+    r.ok("the previz app's scene builds",
+         f"rev {manifest['rev']}, {len(manifest['models'])} model(s)")
+    for warning in manifest["warnings"]:
+        r.warn("scene", warning)
+    venue = engine_rig.load_rig(Path(info["event_dir"])).venue
+    if isinstance(venue.previz, dict) and venue.previz.get("optics"):
+        r.ok("optics", f"{spec.venue} has its own")
     else:
         # Not a failure: inherited optics render, they just render like
         # somewhere else. Worth saying once, because the alternative is
         # wondering for an hour why the fog looks wrong.
-        r.warn("optics", f"{spec.venue} has no profile, so it inherits numbers "
-                         f"eyeballed in a different room. previz/optics.json "
+        r.warn("optics", f"{spec.venue} has no previz.optics, so it inherits "
+                         f"numbers eyeballed in a different room. docs/models.md "
                          f"has the re-sweep procedure")
 
 
@@ -160,12 +169,46 @@ def check_artnet(r: Report) -> None:
         sock.close()
 
 
+def check_app(r: Report, engine_url: str) -> None:
+    """The standalone app: is it built, is it current, is there a scene for it?
+
+    Never a failure: the app is one of two ways to run the previz, and an
+    engine that is not running yet is the normal state before a show.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    from previz import build
+
+    print("\nstandalone app")
+    state, detail = build.freshness()
+    if state == "missing":
+        r.warn("not built", "python previz/build.py")
+    elif state == "stale":
+        r.warn("built, but older than its source", f"{detail} -- python previz/build.py")
+    else:
+        r.ok(detail, str(build.EXE.relative_to(REPO)))
+    try:
+        with urllib.request.urlopen(f"{engine_url}/api/previz/scene", timeout=2) as resp:
+            scene = json.loads(resp.read())
+        r.ok("an engine is serving a scene",
+             f"{scene['event']} in {scene['venue']}, rev {scene['rev']}, at {engine_url}")
+        for warning in scene.get("warnings", []):
+            r.warn("scene", warning)
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        r.warn("no engine answering", f"{engine_url} -- start python -m engine.server, "
+                                      f"or pass --engine-url")
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--event", help="check this event instead of the "
                                         "configured one")
     parser.add_argument("--timeout", type=float, default=3.0,
                         help="how long to wait for an editor (default 3s)")
+    parser.add_argument("--engine-url", default="http://127.0.0.1:8765",
+                        help="where the standalone app will look for the engine")
     args = parser.parse_args(argv)
 
     if args.event:
@@ -177,13 +220,15 @@ def main(argv: list | None = None) -> int:
     check_engine(r)
     check_editor(r, args.timeout)
     check_artnet(r)
+    check_app(r, args.engine_url.rstrip("/"))
 
     print()
     if r.failed:
         print("previz doctor: something needs fixing (above).")
         return 1
-    print("previz doctor: ready. Open the editor, then\n"
-          "  python previz/ue_remote.py previz/unreal/Content/Python/go.py")
+    print("previz doctor: ready. Either open the editor, then\n"
+          "  python previz/ue_remote.py previz/unreal/Content/Python/go.py\n"
+          "or run the standalone app: previz/dist/Windows/KLightsPreviz.exe")
     return 0
 
 
