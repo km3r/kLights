@@ -375,10 +375,11 @@ class ShowController:
         a frame boundary like every other command -- a bridge sending on its own
         thread must not be able to move the tempo halfway through an evaluation.
         """
-        self.sync = syncmod.SyncListener(
+        listener = syncmod.SyncListener(
             on_sync=lambda fields: self.submit({"type": "sync", **fields}, None),
             port=port, bind=bind)
-        self.sync.start()
+        listener.start()            # raises on a taken port; then there is no sync
+        self.sync = listener
 
     def start(self) -> None:
         # A marker so the editing tools know not to rewrite this event's config
@@ -2283,7 +2284,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                          f"{exc.strerror or exc}")
 
     if args.sync_port:
-        controller.enable_sync(args.sync_port, args.sync_bind)
+        # The tempo port too, for the same reason: an engine sharing it with
+        # another hears none of the DJ, and nothing on screen says so.
+        try:
+            controller.enable_sync(args.sync_port, args.sync_bind)
+        except OSError as exc:
+            server.stop()
+            if exc.errno == errno.EADDRINUSE:
+                raise SystemExit(f"sync port {args.sync_port} is already in use -- "
+                                 f"is another engine, or an OSC app, listening there?")
+            raise SystemExit(f"cannot listen for sync on {args.sync_bind}:"
+                             f"{args.sync_port}: {exc.strerror or exc}")
 
     controller.start()
 

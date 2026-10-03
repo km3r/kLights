@@ -191,22 +191,44 @@ check("a second server on a taken port is refused",
 # traceback, and the lock the running engine wrote is neither rewritten nor
 # deleted by the one that lost.
 from engine import patch as patchmod  # noqa: E402
+from engine import sync as syncmod  # noqa: E402
+
+
+def second_engine(*args):
+    """`python -m engine.server` on this event: its exit code and output."""
+    try:
+        run = subprocess.run(
+            [sys.executable, "-m", "engine.server", "--no-token",
+             "--event", str(controller.event_dir), *args],
+            cwd=REPO, capture_output=True, text=True, errors="replace", timeout=30)
+        return run.returncode, run.stdout + run.stderr
+    except subprocess.TimeoutExpired:
+        return None, "still running after 30 s"
+
+
 lock = patchmod.lock_path(str(controller.event_dir))
 lock_before = lock.stat().st_mtime_ns if lock.exists() else None
-try:
-    run = subprocess.run(
-        [sys.executable, "-m", "engine.server", "--port", str(port), "--no-token",
-         "--event", str(controller.event_dir)],
-        cwd=REPO, capture_output=True, text=True, errors="replace", timeout=30)
-    code, output = run.returncode, run.stdout + run.stderr
-except subprocess.TimeoutExpired:
-    code, output = None, "still running after 30 s"
+code, output = second_engine("--port", str(port))
 check("a second engine on a taken port exits saying why",
       code not in (0, None) and f"port {port} is already in use" in output
       and "Traceback" not in output, f"exit {code}: {output.strip()[-300:]}")
 check("... before touching the rig: the running engine's lock is untouched",
       lock_before is not None and lock.exists()
       and lock.stat().st_mtime_ns == lock_before)
+
+# The tempo port too: an engine sharing it hears none of the DJ.
+holder = syncmod.SyncListener(on_sync=lambda fields: None, port=0, bind="127.0.0.1")
+holder.start()
+sync_port = holder.sock.getsockname()[1]
+try:
+    code, output = second_engine("--port", "0", "--sync-port", str(sync_port))
+finally:
+    holder.stop()
+check("a second engine on a taken sync port exits saying why",
+      code not in (0, None) and f"sync port {sync_port} is already in use" in output
+      and "Traceback" not in output, f"exit {code}: {output.strip()[-300:]}")
+check("... also before touching the rig",
+      lock.exists() and lock.stat().st_mtime_ns == lock_before)
 
 client = Client(port)
 check("server returned 101", "101" in client.status, client.status)
