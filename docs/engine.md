@@ -250,6 +250,18 @@ picked while it drives grabs those lanes (`program_grab` / `program_release`,
 operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
+**Templates** ([`templates.py`](../engine/templates.py), milestone 2) are the
+middle of the chain -- timeline, then template, then the operator's or auto
+mode's show. A template set maps rekordbox's phrase labels to routine picks
+(exact label, then without its number, then `*`) and cycles `bars.cycle` every
+`bars.every` bars where there are no phrases. `compile_set` builds one
+`Program` per distinct pick on the worker; a `TemplateRunner` plays them as ONE
+stable Show, each pick on its own beat counted from where its phrase began. The
+same pick into the next phrase carries on; a different one crossfades over the
+set's `transition.fade_beats` in parameter space, slot by slot, so a timeline
+can take the runner's Show as its fallback and show it through its fill gaps.
+A jump cuts.
+
 **The designer's side of the wire** ([`api.py`](../engine/api.py)): large reads
 are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 `routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with

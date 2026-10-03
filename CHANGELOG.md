@@ -11,6 +11,21 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20a: the template runtime (milestone 2)
+
+- **`engine/templates.py`**: what the lights do on a track nobody drew a
+  timeline for. A template set's phrase map picks a routine for each of
+  rekordbox's labels -- the exact label, then its family ("Verse 2" ->
+  "Verse"), then `*` -- and its `bars.cycle` covers tracks with no phrases,
+  one pick every `bars.every` bars. Each distinct pick compiles once into a
+  program of its own, running on its own beat from where its phrase began, so
+  a routine's phrasing lines up with the music.
+- A pick that comes round again carries on (Verse 1 into Verse 2 does not
+  restart the movement); a new pick crossfades over the set's
+  `transition.fade_beats`; a jump cuts. The runner is one stable Show, so a
+  timeline can sit on top of it and show it through its fill gaps.
+- Nothing plays it yet: F20b puts it on stage.
+
 ### Fixed — F19 review, before merging
 
 A review of the whole F19 branch before it merged. Each fix has a test.

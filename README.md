@@ -244,7 +244,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 27 suites, no test framework
+python -m engine.tests    # 28 suites, no test framework
 cd ui && npm test         # the console and the designer
 ```
 
