@@ -56,11 +56,14 @@ void AKLightsHUD::DrawHUD()
 	const FLinearColor Normal(0.85f, 0.85f, 0.85f);
 	const FLinearColor Good(0.45f, 0.9f, 0.5f);
 	const FLinearColor Bad(1.f, 0.45f, 0.35f);
-	float Y = 12.f;
+	// The small font is a fixed bitmap size: on a 1440p or 4K screen the
+	// overlay would be unreadable at 1:1. Scaled to 1080 lines, never below.
+	const float Scale = FMath::Clamp(Canvas->ClipY / 1080.f, 1.f, 3.f);
+	float Y = 12.f * Scale;
 	auto Line = [&](const FString& Text, const FLinearColor& Color)
 	{
-		DrawText(Text, Color, 14.f, Y, Font, 1.f);
-		Y += 16.f;
+		DrawText(Text, Color, 14.f * Scale, Y, Font, Scale);
+		Y += 16.f * Scale;
 	};
 
 	const FKLightsScene* Scene = Previz->GetScene();

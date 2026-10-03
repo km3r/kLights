@@ -51,17 +51,49 @@ perfectly capable of reading.
 from __future__ import annotations
 
 import json
+import math
+import re
 import socket
 import struct
 import threading
 import time
+import unicodedata
 from typing import Any, Callable, Optional
 
-# Only these ever reach the clock. A field not in here is ignored rather than
-# rejected: a bridge that sends extra keys should keep working, and a bridge
-# that sends a key we later add should not have needed a coordinated release.
-FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
-          "phrase_ends_in", "source", "deck", "track")
+# Only these ever get past this module. A field not in here is ignored rather
+# than rejected: a bridge that sends extra keys should keep working, and a
+# bridge that sends a key we later add should not have needed a coordinated
+# release.
+#
+# CLOCK_FIELDS move the show's tempo and phase (F16). TRACK_FIELDS say which
+# track is playing and where in it (F19): they feed the transport, which can
+# select pre-authored content -- which is why Follow DJ starts disarmed and why
+# every one of them is range-checked here, not trusted.
+CLOCK_FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
+                "phrase_ends_in", "source", "deck", "track")
+TRACK_FIELDS = ("track_time", "title", "artist", "album", "duration",
+                "bpm_original", "pitch", "playing", "on_air", "master",
+                "rekordbox_id", "signature", "beat_number")
+FIELDS = CLOCK_FIELDS + TRACK_FIELDS
+
+_FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
+           "beat_in_bar": (0.0, 64.0), "phrase_ends_in": (None, None),
+           # Position in the audio, in seconds. A little negative is real: a
+           # cue set before the first sample. Four hours is longer than any
+           # track a DJ will play.
+           "track_time": (-60.0, 14400.0), "duration": (0.0, 14400.0),
+           "bpm_original": (20.0, 400.0), "pitch": (0.0, 4.0)}
+_FLAGS = ("phrase_measured", "playing", "on_air", "master")
+_INTS = {"rekordbox_id": (0, 2 ** 32 - 1), "beat_number": (0, 200000)}
+_NAMES = ("title", "artist", "album")       # longer, and cleaned harder
+_SIGNATURE_RE = re.compile(r"^[0-9a-f]{40}$")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+# An address the tools send that we understand and choose not to use. Counted
+# separately from rejects: rkbx_link sends `/master/phrase/next` and
+# `/master/beat/trigger/*` all night, and a console reporting healthy traffic
+# as "unreadable packets" teaches the operator to ignore that number.
+IGNORED = object()
 
 # OSC address suffix -> field, matched LONGEST FIRST.
 #
@@ -74,9 +106,13 @@ FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
 OSC_FIELDS = {
     # rkbx_link -- rekordbox, read out of its memory. `/[deck]/...`
     "bpm/current": "bpm",
+    "bpm/original": "bpm_original",
     "phrase/current": "phrase_label",
     "phrase/countin": "phrase_ends_in",
-    "track/title": "track",
+    "track/title": "title",
+    "track/artist": "artist",
+    "track/album": "album",
+    "time": "track_time",                 # rkbx_link's /master/time, seconds
     # beat-link-trigger and anything hand-rolled, which are flat
     "bpm": "bpm", "tempo": "bpm",
     "beat": "beat_in_bar", "beat-within-bar": "beat_in_bar",
@@ -94,6 +130,20 @@ OSC_FIELDS = {
 # visible in the rejected count -- instead of "follows whichever deck spoke
 # last", which is invisible and sounds like the engine is broken.
 OSC_MASTER = "master"
+
+OSC_IGNORED = ("phrase/next",)
+
+# Our own namespace, sent by the beat-link-trigger expressions we ship
+# (bridges/prolink/blt/). Unlike the flat addresses, these carry SEVERAL
+# arguments, so they are decoded strictly: the exact count, each of the right
+# kind ("n" number, "s" string), or the whole message is rejected. The version
+# is in the address so the expressions and the engine can move independently.
+KLIGHTS_V1 = {
+    # deck, playing, time_s, pitch, beat_number, master, on_air
+    "pos": "nnnnnnn",
+    # deck, rekordbox_id, signature, title, artist, album, duration_s
+    "track": "nnssssn",
+}
 
 
 def parse_osc(data: bytes) -> Optional[dict]:
@@ -122,6 +172,10 @@ def parse_osc(data: bytes) -> Optional[dict]:
                 args.append(struct.unpack_from(">i", data, pos)[0]); pos += 4
             elif tag == "f":
                 args.append(struct.unpack_from(">f", data, pos)[0]); pos += 4
+            elif tag == "d":
+                args.append(struct.unpack_from(">d", data, pos)[0]); pos += 8
+            elif tag == "h":
+                args.append(struct.unpack_from(">q", data, pos)[0]); pos += 8
             elif tag == "s":
                 end = data.index(b"\0", pos)
                 args.append(data[pos:end].decode("utf-8", "replace"))
@@ -133,7 +187,42 @@ def parse_osc(data: bytes) -> Optional[dict]:
     except (ValueError, struct.error, UnicodeDecodeError):
         return None
 
+    parts = [p for p in address.lower().strip("/").split("/") if p]
+    if parts[:2] == ["klights", "v1"]:
+        return klights_fields(parts[2:], args)
     return osc_fields(address, args[0]) if args else None
+
+
+def klights_fields(parts: list[str], args: list) -> Optional[dict]:
+    """`/klights/v1/<kind>` -> fields, or None if anything is off."""
+    if len(parts) != 1 or parts[0] not in KLIGHTS_V1:
+        return None
+    shape = KLIGHTS_V1[parts[0]]
+    if len(args) != len(shape):
+        return None
+    for want, arg in zip(shape, args):
+        number = isinstance(arg, (int, float)) and not isinstance(arg, bool)
+        if (want == "n") != number or (want == "s" and not isinstance(arg, str)):
+            return None
+        # A float argument can be NaN or infinite, and `int(deck)` below
+        # would raise on either -- on the listener's thread, ending it. One
+        # datagram must never be able to do that.
+        if number and not math.isfinite(arg):
+            return None
+    if parts[0] == "pos":
+        deck, playing, time_s, pitch, beat_number, master, on_air = args
+        return {"source": "blt", "deck": str(int(deck)), "playing": playing != 0,
+                "track_time": time_s, "pitch": pitch,
+                "beat_number": beat_number, "master": master != 0,
+                "on_air": on_air != 0}
+    deck, rekordbox_id, signature, title, artist, album, duration = args
+    out = {"source": "blt", "deck": str(int(deck)), "rekordbox_id": rekordbox_id,
+           "title": title, "artist": artist, "album": album}
+    if signature:
+        out["signature"] = signature
+    if duration > 0:
+        out["duration"] = duration
+    return out
 
 
 def osc_fields(address: str, value: Any) -> Optional[dict]:
@@ -150,8 +239,12 @@ def osc_fields(address: str, value: Any) -> Optional[dict]:
     # a specific deck and following it would let two decks fight over the clock.
     if parts[0].isdigit():
         return None
-    if parts[0] == OSC_MASTER:
+    rkbx = parts[0] == OSC_MASTER
+    if rkbx:
         parts = parts[1:]
+    if "/".join(parts[-2:]) in OSC_IGNORED or (
+            len(parts) >= 3 and parts[-3:-1] == ["beat", "trigger"]):
+        return IGNORED
 
     # `/beat/subdiv/<n>` is a 0..1 ramp that loops every n beats -- rkbx_link's
     # bar phase, and the most useful thing it sends. Scaling it back up to beats
@@ -164,7 +257,7 @@ def osc_fields(address: str, value: Any) -> Optional[dict]:
             return None
         if divisor <= 0:
             return None
-        return {"beat_in_bar": float(value) * divisor}
+        return _tag({"beat_in_bar": float(value) * divisor}, rkbx)
 
     for span in (2, 1):
         if len(parts) >= span:
@@ -184,7 +277,16 @@ def osc_fields(address: str, value: Any) -> Optional[dict]:
     # exact degradation this whole milestone exists to end.
     if field == "phrase_label":
         out["phrase_measured"] = True
-    return out
+    return _tag(out, rkbx)
+
+
+def _tag(fields: dict, rkbx: bool) -> dict:
+    """`/master/...` is rkbx_link's namespace. Naming the source is what lets
+    the transport apply that source's latency, and the console say who is
+    driving."""
+    if rkbx:
+        fields["source"] = "rkbx"
+    return fields
 
 
 def parse(data: bytes) -> Optional[dict]:
@@ -199,11 +301,28 @@ def parse(data: bytes) -> Optional[dict]:
             return None
     elif stripped.startswith(b"/"):
         raw = parse_osc(data)
-        if raw is None:
-            return None
+        if raw is None or raw is IGNORED:
+            return raw
     else:
         return None
     return clean(raw)
+
+
+def _flag(value) -> bool:
+    """A boolean off the wire. `bool("false")` is True, and a JSON sender that
+    quoted its booleans would otherwise claim a measured phrase by saying it
+    had not. Anything that is not recognisably true or false is refused."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in ("1", "true", "yes", "on"):
+            return True
+        if word in ("0", "false", "no", "off", ""):
+            return False
+    raise ValueError(f"not a flag: {value!r}")
 
 
 def clean(raw: dict) -> Optional[dict]:
@@ -220,19 +339,51 @@ def clean(raw: dict) -> Optional[dict]:
             continue
         value = raw[key]
         try:
-            if key in ("bpm", "beat", "beat_in_bar", "phrase_ends_in"):
-                out[key] = float(value)
-            elif key == "phrase_measured":
-                out[key] = bool(value)
+            if key in _FLOATS:
+                if isinstance(value, bool):
+                    continue
+                number = float(value)
+                lo, hi = _FLOATS[key]
+                if number != number or number in (float("inf"), float("-inf")):
+                    continue                       # NaN and infinity: never
+                if lo is not None and number < lo:
+                    continue
+                # beat_in_bar is a phase, so its top is open: 64 is bar 1 again.
+                if hi is not None and (number >= hi if key == "beat_in_bar"
+                                       else number > hi):
+                    continue
+                out[key] = number
+            elif key in _FLAGS:
+                out[key] = _flag(value)
+            elif key in _INTS:
+                if isinstance(value, bool) or float(value) != int(float(value)):
+                    continue
+                number = int(float(value))
+                lo, hi = _INTS[key]
+                if lo <= number <= hi:
+                    out[key] = number
+            elif key == "signature":
+                sig = str(value).strip().lower()
+                if _SIGNATURE_RE.match(sig):
+                    out[key] = sig
+            elif key in _NAMES:
+                out[key] = _name(value)
             else:
                 out[key] = str(value)[:64]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
-    if "bpm" in out and not 40.0 <= out["bpm"] <= 250.0:
-        del out["bpm"]
-    if "beat_in_bar" in out and not 0.0 <= out["beat_in_bar"] < 64.0:
-        del out["beat_in_bar"]
+    # rkbx_link's title is the console's track label too. One field each way
+    # would have every bridge sending the title twice.
+    if "title" in out and "track" not in out:
+        out["track"] = out["title"][:64]
     return out or None
+
+
+def _name(value) -> str:
+    """A track title, artist or album: Unicode-normalised so the same name
+    typed on two machines compares equal, control characters out, bounded."""
+    text = unicodedata.normalize("NFC", str(value))
+    return _CONTROL_RE.sub("", text).strip()[:200]
 
 
 class SyncListener:
@@ -256,6 +407,7 @@ class SyncListener:
         # operator's side and have completely different fixes.
         self.received = 0
         self.rejected = 0
+        self.ignored = 0
         self.last_reject: Optional[str] = None
 
     def start(self) -> None:
@@ -293,7 +445,18 @@ class SyncListener:
                 if self.running:
                     continue
                 return
-            fields = parse(data)
+            try:
+                fields = parse(data)
+            except Exception as exc:          # noqa: BLE001 -- see below
+                # A decoder bug must cost one datagram, never the listener:
+                # this port is unauthenticated, and a thread that dies here
+                # takes the DJ feed with it for the rest of the night.
+                self.rejected += 1
+                self.last_reject = f"{addr[0]}: {type(exc).__name__}: {exc}"
+                continue
+            if fields is IGNORED:
+                self.ignored += 1
+                continue
             if fields is None:
                 self.rejected += 1
                 self.last_reject = f"{addr[0]}: {data[:48]!r}"
@@ -316,7 +479,7 @@ class SyncListener:
     def status(self) -> dict:
         return {"port": self.port, "bind": self.bind,
                 "received": self.received, "rejected": self.rejected,
-                "last_reject": self.last_reject}
+                "ignored": self.ignored, "last_reject": self.last_reject}
 
 
 def send(fields: dict, host: str = "127.0.0.1", port: int = 9000) -> None:

@@ -16,7 +16,9 @@
  * A scene is DELIVERED only once every model it names is on disk (in
  * Saved/ModelCache, named by hash), so the stage is never built half-dressed.
  * A model that cannot be fetched is reported and the scene delivered anyway:
- * a missing set piece must not stop the room from appearing.
+ * a missing set piece must not stop the room from appearing. Missing models are
+ * retried every RetrySeconds, and the scene delivered again only when one
+ * arrives -- a rebuild re-homes every head, so it is not done for nothing.
  *
  * If the engine goes away, the last scene stays up and the status says so.
  */
@@ -51,6 +53,8 @@ private:
 	void Poll();
 	void OnSceneResponse(FHttpResponsePtr Response, bool bConnected);
 	void FetchNextModel();
+	/** Every model fetch for Pending is done: deliver it, or not, and arrange a retry. */
+	void Finish();
 	void Deliver();
 
 	FString BaseUrl;
@@ -66,8 +70,12 @@ private:
 	TOptional<FKLightsScene> Pending;
 	TArray<FString> ToFetch;
 	int32 MissingModels = 0;
+	/** Models fetched for Pending: a retry that fetched nothing is not delivered again. */
+	int32 Fetched = 0;
+	FString DeliveredRev;
 
 	static constexpr double PollSeconds = 1.0;
+	static constexpr double RetrySeconds = 5.0;
 	static constexpr float TimeoutSeconds = 3.f;
 	static constexpr float ModelTimeoutSeconds = 60.f;
 };

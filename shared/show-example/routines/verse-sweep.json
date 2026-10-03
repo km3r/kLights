@@ -1,0 +1,77 @@
+{
+  "$schema": "../../../schemas/routine.schema.json",
+  "kind": "klights.routine",
+  "version": 1,
+  "id": "verse-sweep",
+  "name": "Verse sweep",
+  "bars": 8,
+  "loop": true,
+  "roles": {
+    "movers": {
+      "default": "movers"
+    },
+    "pins": {
+      "default": "pinspots",
+      "optional": true
+    }
+  },
+  "params": {
+    "color": {
+      "type": "color",
+      "default": "@secondary"
+    },
+    "width": {
+      "type": "number",
+      "default": 30,
+      "min": 0,
+      "max": 120,
+      "unit": "deg"
+    }
+  },
+  "variations": {
+    "wide": {
+      "width": 60
+    }
+  },
+  "rows": [
+    {
+      "id": "m",
+      "type": "clips",
+      "target": "movement",
+      "role": "movers",
+      "items": [
+        {
+          "id": "pend",
+          "at": 0,
+          "len": 32,
+          "block": "pendulum",
+          "args": {
+            "width": "$width",
+            "bars": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "type": "clips",
+      "target": "color",
+      "role": "movers",
+      "items": [
+        {
+          "id": "chase",
+          "at": 0,
+          "len": 32,
+          "block": "color_chase",
+          "args": {
+            "colors": [
+              "$color",
+              "@accent"
+            ],
+            "bars": 2
+          }
+        }
+      ]
+    }
+  ]
+}

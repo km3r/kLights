@@ -300,6 +300,74 @@ got = warned(extra={"Pinspot #1": {"body": {"model": "test/axes.glb"}}})
 check("...but a fixed fixture's body needs none",
       not any("Pinspot #1.body" in w for w in got["warnings"]), str(got["warnings"]))
 
+print("\n5b. a model the inspection chokes on, an event elsewhere, a re-export, a ball too fine")
+import hashlib  # noqa: E402
+import os  # noqa: E402
+
+# Valid JSON that is not glTF-shaped once took the WHOLE scene down with it: an
+# AttributeError out of inspect_glb was a 503 for every model in the room.
+for label, doc in (("a JSON chunk that is a list", [1, 2]),
+                   ("a node that is a number", {"asset": {"version": "2.0"}, "nodes": [5]}),
+                   ("bounds that are words", {"asset": {"version": "2.0"},
+                                              "accessors": [{"count": 3, "min": ["a"], "max": ["b"]}],
+                                              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}]})):
+    try:
+        found = problems_of(glb(doc))
+        check(f"{label}: a problem with the model, not an exception", bool(found), found)
+    except Exception as exc:                            # noqa: BLE001
+        check(f"{label}: a problem with the model, not an exception", False, repr(exc))
+
+tmp = event_with({"models": [{"file": "models/broken.glb"}, {"file": "models/stage.glb"}]})
+try:
+    (tmp / "models").mkdir()
+    shutil.copy(glb({"asset": {"version": "2.0"}, "nodes": [5]}), tmp / "models" / "broken.glb")
+    stage_glb = tmp / "models" / "stage.glb"
+    shutil.copy(REPO / "shared" / "models" / "test" / "axes.glb", stage_glb)
+    built = scene.build_for(tmp)
+    m = built.manifest
+    check("...and in a scene it is a warning, the scene still builds",
+          any("broken.glb" in w and "could not be inspected" in w for w in m["warnings"]), str(m["warnings"]))
+    # tmp is outside events/: an event the launcher's Browse can open.
+    sha = next((s for s, a in m["assets"].items() if a["name"] == "stage.glb"), None)
+    check("an event outside events/ has its own models served", sha is not None
+          and not any("outside" in w for w in m["warnings"]), str(m["warnings"]))
+    if sha is not None:
+        check("read_model serves the bytes the hash names", built.read_model(sha) == stage_glb.read_bytes())
+        check("...and nothing the scene does not name", built.read_model("0" * 64) is None)
+        # A re-export that keeps the size and lands in the same mtime tick.
+        st = stage_glb.stat()
+        changed = bytearray(stage_glb.read_bytes())
+        changed[-1] ^= 0xFF
+        stage_glb.write_bytes(bytes(changed))
+        os.utime(stage_glb, ns=(st.st_atime_ns, st.st_mtime_ns))
+        stale = scene.build_for(tmp).manifest
+        check("(the hash cache cannot see that re-export: why read_model checks)",
+              any(a["name"] == "stage.glb" for s, a in stale["assets"].items() if s == sha))
+        check("read_model will not serve it under the old hash", built.read_model(sha) is None)
+        fresh = scene.build_for(tmp).manifest
+        check("...and the next scene names its real hash",
+              any(a["name"] == "stage.glb" and s == hashlib.sha256(changed).hexdigest()
+                  for s, a in fresh["assets"].items()))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+got = warned({"ball": {"mirror_spacing_mm": 0, "reflect_spacing_mm": 0.45},
+              "optics": {"fog_density": -1, "reflect_budget": 0}})
+check("a ball spacing of 0 is refused, not divided by",
+      got["ball"]["mirror_spacing_mm"] == scene.BALL["mirror_spacing_mm"]
+      and any("mirror_spacing_mm should be" in w for w in got["warnings"]))
+check("...and 0.45 where 45 was meant", got["ball"]["reflect_spacing_mm"] == scene.BALL["reflect_spacing_mm"])
+check("a negative or zero optics value is refused",
+      got["optics"]["fog_density"] == scene.OPTICS["fog_density"]
+      and got["optics"]["reflect_budget"] == scene.OPTICS["reflect_budget"])
+fit_warnings: list[str] = []
+fitted = scene._fit_spacing(5.0, 2000.0, scene.MAX_MIRRORS, "mirror_spacing_mm", fit_warnings)
+rings = max(6, round(math.pi * 2000.0 / fitted))
+check("a big ball at a fine spacing is widened to the facet cap",
+      2 * rings * rings <= scene.MAX_MIRRORS and bool(fit_warnings), f"{fitted} {fit_warnings}")
+check("despacio's own ball is untouched", scene.build_for(DESPACIO).manifest["ball"]["mirror_spacing_mm"]
+      == scene.BALL["mirror_spacing_mm"])
+
 print("\n6. generated files are current")
 import subprocess  # noqa: E402
 for tool in ("gen_previz_parity.py", "gen_models.py"):

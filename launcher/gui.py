@@ -96,6 +96,9 @@ class Launcher:
         self._probe_target = self.settings.port      # read by the poller thread
         self.event_info: Optional[core.EventInfo] = None
         self.lan: Optional[str] = None
+        # This machine's addresses, from the poller: looking them up can wait
+        # on DNS, and the window redraws seven times a second.
+        self.local: set[str] = {"localhost", "0.0.0.0"}
         self.lock = ""
         self._lock_event = Path(self.settings.event)      # read by the poller thread
         self._info_generation = 0
@@ -325,7 +328,7 @@ class Launcher:
             if time.monotonic() - last_slow > 2.5:
                 last_slow = time.monotonic()
                 self.q.put(("previz", core.previz_pids(), core.previz_freshness()))
-                self.q.put(("lan", core.lan_address()))
+                self.q.put(("lan", core.lan_address(), core.this_machine()))
             self._wake.wait(1.0)
             self._wake.clear()
 
@@ -357,7 +360,7 @@ class Launcher:
             if item[1] == self._lock_event:
                 self.lock = item[2]
         elif kind == "lan":
-            self.lan = item[1]
+            self.lan, self.local = item[1], item[2]
         elif kind == "build":
             self.build_log.append(item[1])
         elif kind == "build_done":
@@ -505,7 +508,7 @@ class Launcher:
             text, colour = f"Ready ({detail}).", GREY
         self.previz_status.configure(text=text, foreground=colour)
         warning = "" if (not ours and p.state == "engine") else core.previz_feed_warning(
-            self.settings.artnet, self.settings.previz_port)
+            self.settings.artnet, self.settings.previz_port, self.local)
         self.feed_warning.configure(text=warning)
         running_any = ours_previz or bool(self.previz_found)
         self.launch_btn.state(["!disabled"] if state != "missing" and not building

@@ -201,8 +201,113 @@ export interface SyncState {
   track: string | null;
   port?: {
     port: number; bind: string; received: number; rejected: number;
+    /** Understood and deliberately unused (rkbx_link's phrase/next). Not a
+     *  fault, so never shown as one. */
+    ignored?: number;
     last_reject: string | null;
   };
+}
+
+/** Which track the DJ is playing and where in it (F19), from the engine's
+ *  transport. `time` is the position in the audio, in seconds. */
+export interface TrackState {
+  state: "no_track" | "playing" | "stalled" | "paused" | "reverse";
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  duration: number | null;
+  source: string | null;
+  deck: string | null;
+  time: number | null;
+  /** Audio seconds per wall second: the DJ's pitch. */
+  rate: number;
+  age: number | null;
+  /** Bump on every track change and every jump (loop, hot cue). */
+  track_seq: number;
+  jump_seq: number;
+  on_air: boolean | null;
+  /** Which prepped track this is (F19f). Null with no show folder, or with
+   *  nothing identified playing. Absent from an engine older than F19f. */
+  match?: TrackMatch | null;
+  /** The deck's own beats disagree with the prepped grid. */
+  grid_warning?: GridWarning | null;
+}
+
+/** What the playing track was matched to in the show folder. Fixed for the
+ *  whole play: a change to the folder, a manual link included, applies from
+ *  the track's next play, and `stale` says one is waiting. */
+export interface TrackMatch {
+  track_id: string | null;
+  via: "signature" | "rekordbox_id" | "alias" | "title_artist_album"
+     | "title_artist" | "ambiguous" | "none";
+  /** Every track that fitted; more than one is `ambiguous`. At most five. */
+  candidates: string[];
+  /** The matched track has a hand-built timeline (F19g). Absent before F19g. */
+  has_timeline?: boolean;
+  stale: boolean;
+}
+
+/** `offset_beats` is how far AHEAD of the grid the deck puts the beat.
+ *  "phase" is rekordbox's bar phase (blind to whole bars); "number" is a CDJ's
+ *  beat count (whole beats only). */
+export interface GridWarning {
+  kind: "phase" | "number";
+  offset_beats: number;
+}
+
+/** Who drives a lane: the track's timeline, the operator (a grab), the
+ *  pause idle routine, or the operator's/auto show because the timeline is not
+ *  driving at all. */
+export type LaneSource = "timeline" | "operator" | "idle" | "fallback";
+
+/** Playback (F19i): whether Follow DJ is armed, whether the timeline is on
+ *  stage, and who has each lane. */
+export interface ProgramState {
+  armed: boolean;
+  engaged: boolean;
+  mode: "timeline" | "preview" | "idle" | "fallback";
+  /** Why the timeline is not driving: "disarmed", "no track", "matching",
+   *  "not in the show folder", "no timeline", "compiling", "paused"... */
+  reason: string | null;
+  beat: number | null;
+  bar: number | null;
+  lanes: Partial<Record<Slot, LaneSource>>;
+  grabbed: Slot[];
+  policy: "idle" | "freeze" | "continue";
+  problems: number;
+  first_problem: string | null;
+  /** Per source, how far ahead of its position the lights run. */
+  latency_ms: Record<string, number>;
+}
+
+/** A designer's preview: who armed it, on which track, playing what. */
+export interface PreviewState {
+  client: string;
+  name: string;
+  track_id: string;
+  /** Playing an unsaved draft rather than the saved timeline. */
+  draft: boolean;
+  playing: boolean;
+  /** Its program has compiled; until then the operator's show runs. */
+  ready: boolean;
+}
+
+/** The show folder the engine is pointed at, in summary. The documents
+ *  themselves are never in the snapshot. */
+export interface ShowFolderState {
+  dir: string;
+  /** Changes whenever any loaded document does. */
+  rev: string;
+  tracks: number;
+  timelines: number;
+  routines: number;
+  templates: number;
+  errors: number;
+  warnings: number;
+  /** Files broken since they last loaded, running on their last good version. */
+  failed: number;
+  /** The first few problems, errors first. */
+  problems: string[];
 }
 
 export interface EngineState {
@@ -237,6 +342,14 @@ export interface EngineState {
   taper: TaperState;
   clock: ClockState;
   sync: SyncState;
+  /** Absent from an engine older than F19d. */
+  track?: TrackState;
+  /** Null with no show folder; absent from an engine older than F19f. */
+  show?: ShowFolderState | null;
+  /** Whether the timeline drives the rig (F19i). Null with no show folder. */
+  program?: ProgramState | null;
+  /** The designer driving the rig from its own transport (F19j), or null. */
+  preview?: PreviewState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
@@ -334,7 +447,31 @@ export type Command =
   | { type: "rate"; reset: true }
   /** Take the clock back from a bridge. Tempo and phase stay put; only who
    *  decides next changes. */
-  | { type: "sync_off" };
+  | { type: "sync_off" }
+  /** Follow DJ (F19i): may the matched track's timeline drive the rig. */
+  | { type: "follow"; armed: boolean }
+  | { type: "program_grab"; slot: Slot }
+  | { type: "program_release"; slot?: Slot }
+  | { type: "show_latency"; source: string; ms: number }
+  /** The designer (F19j). Drafts and saves are answered from the worker;
+   *  send them with an id and wait for the reply. */
+  | { type: "timeline_draft"; doc: unknown }
+  | { type: "timeline_save"; doc: unknown; base_rev: string }
+  | { type: "routine_draft"; doc: unknown }
+  | { type: "routine_save"; doc: unknown; base_rev: string }
+  | { type: "track_link"; track_id: string }
+  | { type: "preview_arm"; track_id: string; force?: boolean }
+  | { type: "preview_transport"; time_s: number; playing: boolean }
+  | { type: "preview_release" };
+
+/** The engine's answer to a command sent with an id (`useEngine.request`). */
+export interface Reply {
+  type: "reply";
+  id: string | number;
+  ok: boolean;
+  error?: string;
+  data?: unknown;
+}
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 

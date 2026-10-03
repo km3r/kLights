@@ -1,0 +1,73 @@
+{
+  "_comment": [
+    "What bridges/prolink/blt/klights.clj must put on the wire, byte for byte.",
+    "Built by hand from the OSC 1.0 spec, not by any code under test. The",
+    "expressions cast every argument explicitly -- (int ...), (float ...),",
+    "(str ...) -- so overtone.osc encodes them with exactly these type tags.",
+    "test_sync decodes each through the engine and requires bridge.py --blt to",
+    "produce the same bytes for the same values."
+  ],
+  "messages": [
+    {
+      "name": "pos",
+      "hex": "2f6b6c69676874732f76312f706f73002c69696666696969000000000000000200000001427500003f800000000000810000000100000001",
+      "values": {
+        "deck": 2,
+        "playing": 1,
+        "time_s": 61.25,
+        "pitch": 1.0,
+        "beat_number": 129,
+        "master": 1,
+        "on_air": 1
+      },
+      "decodes_to": {
+        "source": "blt",
+        "deck": "2",
+        "playing": true,
+        "track_time": 61.25,
+        "pitch": 1.0,
+        "beat_number": 129,
+        "master": true,
+        "on_air": true
+      }
+    },
+    {
+      "name": "track",
+      "hex": "2f6b6c69676874732f76312f747261636b0000002c6969737373736600000000000000020000019c31663065316630653166306531663065316630653166306531663065316630653166306531663065000000004e6967687420447269766500536f6d656f6e65004550000043ba0000",
+      "values": {
+        "deck": 2,
+        "rekordbox_id": 412,
+        "signature": "1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e",
+        "title": "Night Drive",
+        "artist": "Someone",
+        "album": "EP",
+        "duration": 372.0
+      },
+      "decodes_to": {
+        "source": "blt",
+        "deck": "2",
+        "rekordbox_id": 412,
+        "signature": "1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e1f0e",
+        "title": "Night Drive",
+        "artist": "Someone",
+        "album": "EP",
+        "duration": 372.0,
+        "track": "Night Drive"
+      }
+    },
+    {
+      "name": "bpm",
+      "hex": "2f62706d000000002c66000042fd0000",
+      "decodes_to": {
+        "bpm": 126.5
+      }
+    },
+    {
+      "name": "beat",
+      "hex": "2f626561740000002c66000040000000",
+      "decodes_to": {
+        "beat_in_bar": 2.0
+      }
+    }
+  ]
+}

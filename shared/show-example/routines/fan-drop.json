@@ -1,0 +1,124 @@
+{
+  "$schema": "../../../schemas/routine.schema.json",
+  "kind": "klights.routine",
+  "version": 1,
+  "id": "fan-drop",
+  "name": "Fan sweep (drop)",
+  "bars": 8,
+  "loop": true,
+  "roles": {
+    "movers": {
+      "default": "movers"
+    },
+    "pins": {
+      "default": "pinspots",
+      "optional": true
+    }
+  },
+  "params": {
+    "color": {
+      "type": "color",
+      "default": "@primary"
+    },
+    "width": {
+      "type": "number",
+      "default": 40,
+      "min": 0,
+      "max": 120,
+      "unit": "deg"
+    },
+    "rate": {
+      "type": "rate",
+      "default": 1
+    }
+  },
+  "variations": {
+    "wide": {
+      "width": 80
+    },
+    "tight": {
+      "width": 15
+    }
+  },
+  "rows": [
+    {
+      "id": "m",
+      "type": "clips",
+      "target": "movement",
+      "role": "movers",
+      "items": [
+        {
+          "id": "fan",
+          "at": 0,
+          "len": 32,
+          "block": "fan_sweep",
+          "args": {
+            "width": "$width",
+            "bars": 4,
+            "spread": 0.5,
+            "rate": "$rate"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "type": "clips",
+      "target": "color",
+      "role": "movers",
+      "items": [
+        {
+          "id": "solid",
+          "at": 0,
+          "len": 32,
+          "block": "solid",
+          "args": {
+            "color": "$color"
+          }
+        }
+      ]
+    },
+    {
+      "id": "p",
+      "type": "clips",
+      "target": "level",
+      "role": "pins",
+      "items": [
+        {
+          "id": "chase",
+          "at": 0,
+          "len": 16,
+          "block": "chase",
+          "args": {
+            "order": "x",
+            "bars": 1
+          }
+        },
+        {
+          "id": "back",
+          "at": 16,
+          "len": 16,
+          "block": "chase",
+          "args": {
+            "order": "-x",
+            "bars": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "h",
+      "type": "hits",
+      "items": [
+        {
+          "id": "strobe",
+          "hit": "strobe",
+          "at": 28,
+          "len": 4,
+          "role": "movers",
+          "level": 0.7
+        }
+      ]
+    }
+  ]
+}

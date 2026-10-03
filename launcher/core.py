@@ -477,7 +477,9 @@ def previz_command(exe: Path, port: int, artnet_port: int = ARTNET_PORT,
     return cmd
 
 
-def _this_machine() -> set[str]:
+def this_machine() -> set[str]:
+    """Every address that means this computer. Can block on a DNS lookup, so
+    the window asks for it from its poller thread, never while drawing."""
     addresses = {"localhost", "0.0.0.0"}
     try:
         addresses.update(socket.gethostbyname_ex(socket.gethostname())[2])
@@ -489,8 +491,13 @@ def _this_machine() -> set[str]:
     return addresses
 
 
-def previz_feed_warning(artnet: str, previz_port: int = ARTNET_PORT) -> str:
-    """Why a previz on THIS machine would get no DMX from these settings, or ''."""
+def previz_feed_warning(artnet: str, previz_port: int = ARTNET_PORT,
+                        local: Optional[set[str]] = None) -> str:
+    """Why a previz on THIS machine would get no DMX from these settings, or ''.
+
+    `local` is `this_machine()`, worked out once by the caller; without it this
+    looks it up, which may wait on DNS.
+    """
     if not artnet.strip():
         return ("Art-Net is off, so the previz gets no DMX: every head stays at "
                 "its rest pose.")
@@ -498,7 +505,8 @@ def previz_feed_warning(artnet: str, previz_port: int = ARTNET_PORT) -> str:
         targets = parse_targets(artnet)
     except ValueError as exc:
         return str(exc)
-    local = _this_machine()
+    if local is None:
+        local = this_machine()
     for host, port in targets:
         if port != previz_port:
             continue

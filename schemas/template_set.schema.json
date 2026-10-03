@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/template_set.schema.json",
+  "title": "cosmos template_set",
+  "description": "rekordbox phrase label -> routine, for tracks with no timeline.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.template_set"
+      ],
+      "description": "\"klights.template_set\" -- it says which format the file is"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "lower-case letters, digits, '-' and '_', starting with a letter or digit, at most 64 characters. It is also the file name"
+    },
+    "name": {
+      "type": "string"
+    },
+    "palettes": {
+      "type": "object",
+      "description": "{\"Cool\": {\"primary\": \"#3b82f6\", \"secondary\": ..., \"accent\": ...}}"
+    },
+    "palette": {
+      "type": "string"
+    },
+    "phrases": {
+      "type": "object",
+      "description": "rekordbox label -> {\"routine\": id}. \"Up\" covers \"Up 1\" and \"Up 2\"; \"*\" covers anything not listed"
+    },
+    "bars": {
+      "type": "object",
+      "properties": {
+        "every": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "bars per change when a track has a grid and no phrases"
+        },
+        "cycle": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "routine": {
+                "type": "string",
+                "minLength": 1
+              },
+              "variation": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              },
+              "palette": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "routine"
+            ]
+          }
+        }
+      },
+      "required": [
+        "every",
+        "cycle"
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "properties": {
+        "fade_beats": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "id",
+    "phrases"
+  ],
+  "additionalProperties": true
+}

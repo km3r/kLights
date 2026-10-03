@@ -242,9 +242,52 @@ def _merged(defaults: dict[str, float], block: Any, where: str,
         elif isinstance(value, bool) or not isinstance(value, (int, float)) \
                 or not math.isfinite(value):
             warnings.append(f"{where}.{key} should be a number, got {value!r}")
+        elif not _in_range(key, value):
+            lo, hi = LIMITS.get(key, (0.0, math.inf))
+            span = f"at least {lo:g}" if hi == math.inf else f"{lo:g} to {hi:g}"
+            warnings.append(f"{where}.{key} should be {span}, got {value!r}; "
+                            f"using {defaults[key]:g}")
         else:
             out[key] = float(value)
     return out
+
+
+# The range a setting may take; anything not listed may not be negative. Outside
+# these a value is not a different look but a broken app: a facet spacing of 0
+# divides by zero, and 0.22 where 22 was meant asks for sixteen million tiles.
+LIMITS: dict[str, tuple[float, float]] = {
+    "rpm": (-60.0, 60.0),
+    "mirror_spacing_mm": (5.0, 500.0),
+    "reflect_spacing_mm": (10.0, 500.0),
+    "aperture_mm": (1.0, 1000.0),
+    "tile_coverage": (0.05, 1.0),
+    "tile_lift_cm": (0.0, 10.0),
+    "reflect_budget": (1.0, 5000.0),
+    "shadow_resolution_scale": (0.1, 2.0),
+}
+# How many facets a ball may have even inside those ranges: a big ball at a fine
+# spacing is legal and still too many. Mirrors are instances drawn once; the
+# reflect lattice is traced every frame.
+MAX_MIRRORS = 100_000
+MAX_REFLECTORS = 20_000
+
+
+def _in_range(key: str, value: float) -> bool:
+    lo, hi = LIMITS.get(key, (0.0, math.inf))
+    return lo <= value <= hi
+
+
+def _fit_spacing(spacing: float, radius_mm: float, most: int, key: str,
+                 warnings: list[str]) -> float:
+    """`spacing`, widened if the ball would otherwise have more than `most`
+    facets. Uses the app's own lattice rule (Ball::Lattice)."""
+    rings = max(6, round(math.pi * radius_mm / spacing))
+    if 2 * rings * rings <= most:
+        return spacing
+    fitted = math.pi * radius_mm / math.floor(math.sqrt(most / 2))
+    warnings.append(f"previz.ball.{key} {spacing:g} mm on a {radius_mm:g} mm ball is "
+                    f"{2 * rings * rings:,} facets; using {fitted:.1f} mm ({most:,} at most)")
+    return fitted
 
 
 # ------------------------------------------------------------------ models --
@@ -254,7 +297,12 @@ _HASHES: dict[tuple[str, int, int], str] = {}
 
 def _sha256(path: Path) -> str:
     """Content hash, cached on (path, mtime, size): the scene is rebuilt on
-    every poll, and re-reading a 30 MB venue model each time would be absurd."""
+    every poll, and re-reading a 30 MB venue model each time would be absurd.
+
+    The cache can be fooled by a re-export that keeps the size and lands in the
+    same mtime tick. `read_model` is what catches that, at the one moment it
+    matters: when the bytes are about to be sent under this hash.
+    """
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     found = _HASHES.get(key)
@@ -268,8 +316,16 @@ def _sha256(path: Path) -> str:
     return found
 
 
-def _contained(path: Path) -> bool:
-    for root in MODEL_ROOTS:
+def _forget(path: Path) -> None:
+    """Drop every cached hash and inspection of `path`, so the next scene
+    rebuild reads it afresh."""
+    for cache in (_HASHES, _INSPECTED):
+        for key in [k for k in cache if k[0] == str(path)]:
+            del cache[key]
+
+
+def _contained(path: Path, roots: tuple[Path, ...] = MODEL_ROOTS) -> bool:
+    for root in roots:
         try:
             path.relative_to(root.resolve())
             return True
@@ -339,30 +395,41 @@ def inspect_glb(path: Path) -> ModelInfo:
     """Read a .glb's header and JSON and say what is wrong with it, if anything.
 
     Cached on (path, mtime, size), like the hash: the scene is rebuilt on every
-    poll and a model is only re-read when it changes.
+    poll and a model is only re-read when it changes. Never raises: a file the
+    inspection cannot make sense of -- JSON that is valid but not glTF-shaped,
+    a node that is a number, a file that vanished -- is one more problem with
+    that model, not an exception that takes the whole scene down with it.
     """
-    st = path.stat()
+    try:
+        st = path.stat()
+    except OSError as exc:
+        return ModelInfo(0, 0.0, {}, (f"could not be read ({exc.strerror or exc})",))
     key = (str(path), st.st_mtime_ns, st.st_size)
-    if key in _INSPECTED:
-        return _INSPECTED[key]
-
-    def done(info: ModelInfo) -> ModelInfo:
+    if key not in _INSPECTED:
+        try:
+            info = _inspect(path.read_bytes())
+        except Exception as exc:                      # noqa: BLE001 -- see docstring
+            info = ModelInfo(0, 0.0, {}, (f"could not be inspected ({type(exc).__name__}: "
+                                          f"{exc}) -- is it a valid glTF?",))
         _INSPECTED[key] = info
-        return info
+    return _INSPECTED[key]
 
-    data = path.read_bytes()
+
+def _inspect(data: bytes) -> ModelInfo:
     if len(data) < 20 or data[:4] != b"glTF":
-        return done(ModelInfo(0, 0.0, {}, ("is not a binary glTF -- export it as a single .glb",)))
+        return ModelInfo(0, 0.0, {}, ("is not a binary glTF -- export it as a single .glb",))
     problems: list[str] = []
     if struct.unpack_from("<I", data, 4)[0] != 2:
         problems.append("is not glTF 2.0")
     json_length, json_type = struct.unpack_from("<I4s", data, 12)
     if json_type != b"JSON":
-        return done(ModelInfo(0, 0.0, {}, ("has no JSON chunk where a .glb must have one",)))
+        return ModelInfo(0, 0.0, {}, ("has no JSON chunk where a .glb must have one",))
     try:
         doc = json.loads(data[20:20 + json_length])
     except (ValueError, UnicodeDecodeError):
-        return done(ModelInfo(0, 0.0, {}, ("has a JSON chunk that is not JSON",)))
+        return ModelInfo(0, 0.0, {}, ("has a JSON chunk that is not JSON",))
+    if not isinstance(doc, dict):
+        return ModelInfo(0, 0.0, {}, ("has a JSON chunk that is not a glTF object",))
     bin_start = 20 + json_length
     blob = b""
     if bin_start + 8 <= len(data):
@@ -440,13 +507,21 @@ def inspect_glb(path: Path) -> ModelInfo:
         if size and max(size) > MODEL_TEXTURE_BUDGET:
             problems.append(f"has a {size[0]}x{size[1]} texture (image {i}); above "
                             f"{MODEL_TEXTURE_BUDGET} it costs memory the previz does not need")
-    return done(ModelInfo(total, extent, nodes, tuple(problems)))
+    return ModelInfo(total, extent, nodes, tuple(problems))
 
 
 @dataclass
 class _Models:
-    """Every model file the manifest names, by hash."""
+    """Every model file the manifest names, by hash.
+
+    `roots` is where a model may live: events/ and shared/, plus the folders of
+    the event and venue being drawn -- an event opened from somewhere else (the
+    launcher can browse to one) still gets its own models served. The person
+    who started the engine chose those folders; nothing a client sends can.
+    """
+    roots: tuple[Path, ...] = MODEL_ROOTS
     files: dict[str, Path] = field(default_factory=dict)
+    sizes: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     info: dict[str, ModelInfo] = field(default_factory=dict)
 
@@ -468,11 +543,17 @@ class _Models:
         for candidate in (base / name, SHARED_MODELS / name):
             resolved = candidate.resolve()
             if resolved.is_file():
-                if not _contained(resolved):
-                    self.warnings.append(f"{where}: {name} resolves outside "
-                                         f"events/ and shared/, so it is not served")
+                if not _contained(resolved, self.roots):
+                    self.warnings.append(f"{where}: {name} resolves outside events/, "
+                                         f"shared/ and this event's folder, so it is not served")
                     return None
-                sha = _sha256(resolved)
+                try:
+                    sha = _sha256(resolved)
+                    self.sizes[sha] = resolved.stat().st_size
+                except OSError as exc:
+                    self.warnings.append(f"{where}: {name} could not be read "
+                                         f"({exc.strerror or exc})")
+                    return None
                 if sha not in self.info:
                     # Once per model, however many fixtures use it.
                     self.info[sha] = inspect_glb(resolved)
@@ -541,6 +622,28 @@ class Scene:
 
     def to_json(self) -> bytes:
         return _canonical(self.manifest)
+
+    def read_model(self, sha: str) -> Optional[bytes]:
+        """The bytes of model `sha`, or None if the file no longer hashes to it.
+
+        Checked on every serve, because the app caches a model under its hash
+        FOREVER: a re-export that slipped past the hash cache (same size, same
+        mtime tick) would otherwise be stored under the old name and never
+        fetched again. None also forgets the stale hash, so the next scene
+        names the file's real one and the app fetches that.
+        """
+        path = self.files.get(sha)
+        if path is None:
+            return None
+        try:
+            body = path.read_bytes()
+        except OSError:
+            _forget(path)
+            return None
+        if hashlib.sha256(body).hexdigest() != sha:
+            _forget(path)
+            return None
+        return body
 
 
 def _canonical(obj: Any) -> bytes:
@@ -677,7 +780,7 @@ def build(rig: rigmod.Rig, event_dir: Path) -> Scene:
     venue_dir = rig.venue_file.parent if rig.venue_file else event_dir
 
     warnings: list[str] = list(rig.validate())
-    models = _Models()
+    models = _Models(roots=(*MODEL_ROOTS, event_dir.resolve(), venue_dir.resolve()))
     previz = venue.previz if venue.previz is not None else {}
     if not isinstance(previz, dict):
         warnings.append(f"venue {venue.name!r}: previz should be an object; ignored")
@@ -691,6 +794,8 @@ def build(rig: rigmod.Rig, event_dir: Path) -> Scene:
             ball_model = models.resolve(ball_block["model"], venue_dir, "previz.ball.model")
         ball_block = {k: v for k, v in ball_block.items() if k != "model"}
     ball_cfg = _merged(BALL, ball_block, "previz.ball", warnings)
+    for key, most in (("mirror_spacing_mm", MAX_MIRRORS), ("reflect_spacing_mm", MAX_REFLECTORS)):
+        ball_cfg[key] = _fit_spacing(ball_cfg[key], venue.ball_radius, most, key, warnings)
 
     bodies = _bodies(warnings)
     fixtures: list[dict] = []
@@ -844,7 +949,7 @@ def build(rig: rigmod.Rig, event_dir: Path) -> Scene:
         "optics": optics,
         "fixtures": fixtures,
         "models": placed_models,
-        "assets": {sha: {"name": path.name, "bytes": path.stat().st_size}
+        "assets": {sha: {"name": path.name, "bytes": models.sizes[sha]}
                    for sha, path in sorted(models.files.items())},
         "unplaced": unplaced,
         "warnings": warnings + models.warnings,

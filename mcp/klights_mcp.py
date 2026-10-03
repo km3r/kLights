@@ -1,4 +1,5 @@
-"""An MCP server for the rig, so it can be described in conversation.
+"""An MCP server for the rig and the show, so both can be worked on in
+conversation.
 
     python mcp/klights_mcp.py
 
@@ -8,7 +9,9 @@ whole engine is standard library only and a tool for editing the show's config
 is a poor place to introduce the first dependency. The protocol surface actually
 needed is three methods.
 
-**Everything it can change goes through `engine.patch`.** This file is a
+**Everything it can change goes through `engine.patch`** (the rig) **or
+`engine.showtools`** (the show folder: tracks, timelines, routines, template
+sets). This file is a
 translation layer and nothing else: no validation rules live here, so the answer
 to "is this patch legal" cannot drift between saying it in chat, typing it at
 the CLI, and tapping it in the UI.
@@ -18,9 +21,12 @@ Two deliberate restrictions:
   * **Writes are opt-in per call.** Every editing tool takes `write`, defaulting
     to false, and a dry run reports exactly what would change. Describing a rig
     out loud is a lossy process and the first attempt is usually wrong.
-  * **It refuses to write while a show is running.** The engine reads its config
-    once at startup, so an edit mid-show leaves the file saying one thing and
-    the rig doing another, with nothing on screen to explain it.
+  * **It refuses to write the RIG while a show is running.** The engine reads
+    its config once at startup, so an edit mid-show leaves the file saying one
+    thing and the rig doing another, with nothing on screen to explain it.
+    The SHOW FOLDER is different: the engine reloads it, a playing track keeps
+    its version until its next play, and every write quotes the rev it read, so
+    a change made elsewhere is refused rather than overwritten.
 
 Stdout is the transport, so nothing may print to it. Diagnostics go to stderr.
 """
@@ -36,6 +42,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine import patch                                   # noqa: E402
+from engine import showtools                               # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
 
@@ -54,6 +61,92 @@ _EVENT = {"event": {**_STR, "description":
 _WRITE = {"write": {**_BOOL, "description":
                     "save the change. Default false, which reports what would "
                     "happen without touching anything."}}
+
+_SHOW = {"show_dir": {**_STR, "description":
+                      "the show folder. Default: KLIGHTS_SHOW_DIR, then "
+                      "show_dir in klights.local.json."}}
+_REV = {"base_rev": {**_STR, "description":
+                     "the rev you read (from a get_ tool), so a change made "
+                     "elsewhere since is refused rather than overwritten. \"\" "
+                     "for a new file. Required to write."}}
+_DOC = {"doc": {"type": "object", "description": "the whole document"}}
+_BEAT = {"beat": {**_NUM, "description":
+                  "beats from the track's first downbeat; bar n starts at "
+                  "beat 4*(n-1)"}}
+
+SHOW_TOOLS = [
+    {"name": "show_status",
+     "description": "The show folder: which tracks, timelines, routines and "
+                    "template sets it holds, show.json, and every error and "
+                    "warning in it.",
+     "inputSchema": _schema({**_SHOW}, [])},
+    {"name": "list_tracks",
+     "description": "Prepped tracks: title, artist, length, bpm, rekordbox's "
+                    "phrases with their beats, and whether each has a timeline.",
+     "inputSchema": _schema({**_SHOW}, [])},
+    {"name": "get_track",
+     "description": "One prepped track's document (identity, grid, phrases, "
+                    "cues) and its rev.",
+     "inputSchema": _schema({**_SHOW, "id": _STR}, ["id"])},
+    {"name": "list_routines",
+     "description": "Routines: bars, roles, open params, variations, and "
+                    "whether one is rig-bound.",
+     "inputSchema": _schema({**_SHOW}, [])},
+    {"name": "get_routine",
+     "description": "One routine's document and its rev.",
+     "inputSchema": _schema({**_SHOW, "id": _STR}, ["id"])},
+    {"name": "put_routine",
+     "description": "Validate a whole routine and, with write=true and "
+                    "base_rev, save it.",
+     "inputSchema": _schema({**_SHOW, **_DOC, **_REV, **_WRITE}, ["doc"])},
+    {"name": "get_timeline",
+     "description": "A track's timeline document and its rev.",
+     "inputSchema": _schema({**_SHOW, "track": _STR}, ["track"])},
+    {"name": "put_timeline",
+     "description": "Validate a whole timeline and, with write=true and "
+                    "base_rev, save it. It applies to a playing track from "
+                    "its next play.",
+     "inputSchema": _schema({**_SHOW, **_DOC, **_REV, **_WRITE}, ["doc"])},
+    {"name": "edit_timeline",
+     "description": "Apply small edits to a track's timeline (creating it if "
+                    "there is none), validate, and with write=true save. ops: "
+                    "add_row {row, index?}, remove_row {row}, add_item {row, "
+                    "item}, update_item {id, set}, remove_item {id}, "
+                    "set_points {row, points}, set {key: palette|palettes|"
+                    "grid_rev, value}. Rows are lanes, top first; the higher "
+                    "lane wins.",
+     "inputSchema": _schema({**_SHOW, "track": _STR,
+                             "ops": {"type": "array", "items": {"type": "object"}},
+                             **_REV, **_WRITE}, ["track", "ops"])},
+    {"name": "link_track",
+     "description": "Make a prepped track answer to another description -- a "
+                    "guest's copy with different tags. Applies from its next "
+                    "play.",
+     "inputSchema": _schema({**_SHOW, "track": _STR, "title": _STR,
+                             "artist": _STR, "album": _STR, "signature": _STR,
+                             **_WRITE}, ["track", "title"])},
+    {"name": "lint_show",
+     "description": "Everything wrong in the show folder; given an event, also "
+                    "everything in its timelines that will not work on that "
+                    "rig (looks it does not have, roles with no fixtures).",
+     "inputSchema": _schema({**_SHOW, **_EVENT}, [])},
+    {"name": "explain_position",
+     "description": "What a track's timeline says at a beat: each lane's clips "
+                    "and weights, automation, hits. Given an event, also what "
+                    "every fixture does there.",
+     "inputSchema": _schema({**_SHOW, "track": _STR, **_BEAT, **_EVENT},
+                            ["track", "beat"])},
+    {"name": "list_template_sets",
+     "description": "Template sets: rekordbox phrase -> routine mappings.",
+     "inputSchema": _schema({**_SHOW}, [])},
+    {"name": "get_template_set",
+     "description": "One template set's document and its rev.",
+     "inputSchema": _schema({**_SHOW, "id": _STR}, ["id"])},
+    {"name": "put_template_set",
+     "description": "Validate a whole template set and, with write=true and "
+                    "base_rev, save it.",
+     "inputSchema": _schema({**_SHOW, **_DOC, **_REV, **_WRITE}, ["doc"])},
+]
 
 TOOLS = [
     {
@@ -157,7 +250,7 @@ TOOLS = [
                        "it survives a fresh clone and can be patched.",
         "inputSchema": _schema({"path": _STR}, ["path"]),
     },
-]
+] + SHOW_TOOLS
 
 
 # ------------------------------------------------------------------- tools --
@@ -197,7 +290,48 @@ def _edit(name: str, args: dict, apply) -> dict:
     return out
 
 
+def call_show_tool(name: str, args: dict) -> "dict | None":
+    """The show-folder tools, or None for a name that is not one."""
+    d = args.get("show_dir")
+    write = bool(args.get("write", False))
+    if name == "show_status":
+        return showtools.status(d)
+    if name == "list_tracks":
+        return showtools.list_tracks(d)
+    if name == "list_routines":
+        return showtools.list_routines(d)
+    if name == "list_template_sets":
+        return showtools.list_template_sets(d)
+    gets = {"get_track": ("track", "id"), "get_routine": ("routine", "id"),
+            "get_timeline": ("timeline", "track"),
+            "get_template_set": ("template_set", "id")}
+    if name in gets:
+        kind, key = gets[name]
+        return showtools.get_doc(kind, args[key], d)
+    puts = {"put_routine": "routine", "put_timeline": "timeline",
+            "put_template_set": "template_set"}
+    if name in puts:
+        return showtools.put_doc(puts[name], args["doc"], args.get("base_rev"),
+                                 write, d)
+    if name == "edit_timeline":
+        return showtools.edit_timeline(args["track"], args["ops"],
+                                       args.get("base_rev"), write, d)
+    if name == "link_track":
+        return showtools.link_track(args["track"], args["title"],
+                                    args.get("artist", ""), args.get("album", ""),
+                                    args.get("signature"), write, d)
+    if name == "lint_show":
+        return showtools.lint(d, args.get("event"))
+    if name == "explain_position":
+        return showtools.explain(args["track"], float(args["beat"]), d,
+                                 args.get("event"))
+    return None
+
+
 def call_tool(name: str, args: dict) -> dict:
+    shown = call_show_tool(name, args)
+    if shown is not None:
+        return shown
     if name == "describe_rig":
         return patch.describe(args.get("event", "despacio"))
     if name == "list_profiles":

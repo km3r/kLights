@@ -10,6 +10,7 @@ These are **not** how-to documents. If you want to run something, start from
 | | |
 |---|---|
 | [`previz-optics.md`](previz-optics.md) | Why the previz looks the way it does — fog, beam gains, the mirror ball, what was measured and what is eyeballed |
+| [`timecoded-shows.md`](timecoded-shows.md) | F19: shows driven by which track is playing and where in it — the decisions, the designer layout, the staged build |
 
 Elsewhere, for the same reason:
 

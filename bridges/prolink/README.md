@@ -27,10 +27,11 @@ something in another language without it noticing.
 python bridges/prolink/bridge.py --fake
 ```
 
-Synthetic 128 BPM with a scripted phrase timeline — Intro, Verse, **Build**,
-Chorus, Verse, Build, **Drop**, Outro — that cycles in about two minutes. Every
-downstream branch happens: phrase becomes measured, the console's sync row
-lights up, and anything driven by phrase gets exercised.
+Synthetic 128 BPM with a scripted phrase timeline in rekordbox's own
+vocabulary — Intro, Verse 1, **Up 1**, **Chorus**, Down, Up 2, Chorus, Outro —
+that cycles every three minutes. Every downstream branch happens: phrase becomes
+measured, the console's sync row lights up, and anything driven by phrase gets
+exercised.
 
 Start the engine with the port open first:
 
@@ -48,6 +49,44 @@ JSON, which is how the rekordbox path's decoder — the deck filter, the nested
 addresses, the 0–1 subdiv conversion — gets exercised without a DDJ, rekordbox
 and a licensed copy of rkbx_link in one room.
 
+### A deck, not just a beat (F19)
+
+```bash
+python bridges/prolink/bridge.py --fake --track --osc
+python bridges/prolink/bridge.py --fake --track --blt \
+    --script "play:64,loop:4x3,play:8,hotcue:160,pause:3s,play:32,switch,scratch"
+```
+
+`--track` plays the show-example's synthetic track as a deck would: its
+position 30 times a second (`--hz`), its identity, and the beat and phrase as
+before. `--osc` shapes it as rkbx_link does — identity a field at a time, and
+**silence while paused**. `--blt` shapes it as the beat-link-trigger
+expressions we ship do: `/klights/v1` messages with an explicit playing flag.
+
+`--script` is what the deck does, step by step, then it plays on forever:
+
+| step | |
+|---|---|
+| `play[:BEATS]` | play forwards |
+| `loop:BxK` | play B beats and jump back to their start, K times |
+| `hotcue:BEAT` | jump to a beat of the track |
+| `pause:SECONDS` | stop |
+| `switch` | the other deck becomes master, playing a track no show folder has — a guest DJ's |
+| `scratch` | a second of back-and-forth on the platter |
+
+### Capturing what a source really sends
+
+```bash
+python bridges/prolink/capture.py --listen 9001 --forward 127.0.0.1:9000 --out venue.jsonl
+python bridges/prolink/bridge.py --replay venue.jsonl
+```
+
+Point rkbx_link or beat-link-trigger at `--listen` instead of the engine;
+`--forward` passes every datagram on, so the show keeps running. It records the
+**bytes**, base64, one per line, and `--replay` sends them back exactly — a
+capture taken at a venue becomes a regression test at a desk. The F19 design
+record lists what the first captures on each rig have to show.
+
 ## Two rigs, two tools, one wire format
 
 The CDJs and the DDJ-1000 need completely different mechanisms — one is a
@@ -62,12 +101,34 @@ the receiving end of both.
 
 [beat-link-trigger](https://github.com/Deep-Symmetry/beat-link-trigger) sits on
 Deep Symmetry's `beat-link`, *the* reference implementation of Pro DJ Link. It
-already has **phrase-triggered cues** as a first-class feature, and it emits
-OSC. Point a trigger at the engine's sync port and there is no code of ours in
-the path.
+already has **phrase-triggered cues** as a first-class feature.
 
-`engine/sync.py` reads flat addresses — `/…/bpm`, `/…/beat`, `/…/phrase`,
-`/…/deck`, `/…/track` — so the namespace can be renamed freely.
+It sends OSC only from **expressions** — Clojure that someone writes inside it.
+We ship them: [`blt/klights.clj`](blt/klights.clj). Paste each section into the
+expression it names, in the Triggers window's File menu:
+
+1. **Shared Functions** — the three `klights-` functions.
+2. **Global Setup Expression** — set `:klights-port` to the engine's
+   `--sync-port` (and `:klights-host` if the engine is on another machine).
+3. **Came Online Expression** and **Going Offline Expression** and **Global
+   Shutdown Expression** — one line or block each.
+
+Then go online. 25 times a second they send the tempo master's position and
+playing state (`/klights/v1/pos`), its identity whenever the deck or track
+changes (`/klights/v1/track`, with rekordbox id and signature), and on every
+beat its tempo and bar phase (`/bpm`, `/beat`), which the clock reads as before.
+`engine/tests/data/blt_klights_v1_golden.json` holds the exact bytes they must
+produce; the engine decodes them and `bridge.py --blt` reproduces them, so a
+desk test with `--blt` is a test of this encoding.
+
+**Not yet run against a CDJ.** They follow BLT's documented API and its own
+ArtNet-timecode example; the first real run is judged by the hardware
+checklist in [the F19 design record](../../docs/design/timecoded-shows.md).
+Position is exact only on CDJ-3000s, which report it every 30 ms; older players'
+is estimated from beats and goes wrong on loops — BLT's documentation says so.
+
+`engine/sync.py` also reads flat addresses — `/…/bpm`, `/…/beat`, `/…/phrase`,
+`/…/deck`, `/…/track` — for anything hand-rolled.
 
 Cost: a JVM in the show chain.
 
@@ -88,10 +149,22 @@ its analysis files. It emits OSC, Ableton Link and sACN. Windows, rekordbox
 | `/master/beat/subdiv/4` | `beat_in_bar` — it sends a 0–1 ramp looping every *n* beats, scaled back up here |
 | `/master/phrase/current` | `phrase_label`, and `phrase_measured` with it |
 | `/master/phrase/countin` | `phrase_ends_in` |
-| `/master/track/title` | `track` |
+| `/master/track/title` | `title`, and the console's `track` label |
+| `/master/track/artist`, `/master/track/album` | `artist`, `album` |
+| `/master/bpm/original` | `bpm_original` — with `bpm/current`, the pitch |
+| `/master/time` | `track_time`: where in the track, in seconds (F19) |
+| `/master/phrase/next`, `/master/beat/trigger/*` | understood and **ignored** — counted separately from rejects |
 
-Three things to get right, each of which fails quietly otherwise:
+Everything under `/master/` is tagged `source: "rkbx"`, which is how the
+transport applies rkbx_link's latency offset and the console names it.
 
+[`rkbx_link.config.example`](rkbx_link.config.example) is a complete config
+with every setting kLights needs, each commented with why. Four things to get
+right, each of which fails quietly otherwise:
+
+- **`osc.msg.master/time true` and `osc.msg.master/phrase true`.** Both are
+  `false` in rkbx_link's shipped config: without the first there is no position
+  at all, and without the second, no phrases.
 - **`osc.destination` must point at the engine's `--sync-port`.** rkbx_link
   defaults to `127.0.0.1:4460`.
 - **`osc.phrase_output_format string`.** The other formats send a number, which
@@ -176,10 +249,43 @@ JSON over UDP, any subset of these, unknown keys ignored:
 | `beat_in_bar` | beat within the bar. **This is what a per-beat source should send.** Corrects the grid by at most half a bar and never moves cumulative position. |
 | `beat` | absolute musical position. A **jump** — correct for a re-sync, wrong for tracking. Sending it every beat makes every move judder. |
 | `phrase_measured` | true when phrase is read, not counted from a tapped downbeat. |
-| `phrase_label` | `Intro` / `Verse` / `Build` / `Chorus` / `Drop` / `Outro`. Empty string clears it. |
+| `phrase_label` | rekordbox's label as it shows it: `Intro`, `Verse 1`, `Up 2`, `Chorus`, `Down`, `Bridge`, `Outro`. It never says Build or Drop. Empty string clears it. |
 | `phrase_ends_in` | beats until the phrase ends. Stored as an absolute beat, so sending it once per bar is enough. |
 | `source` | what to display as the clock owner. |
 | `deck`, `track` | labels for the console. |
+
+And which track is playing, and where in it (F19). These can select
+pre-authored shows, so each is range-checked and anything out of range is
+dropped:
+
+| field | meaning |
+|---|---|
+| `track_time` | position in the audio, seconds, -60 to 14400. Send it often: ~60 Hz from rkbx_link, 25 Hz from beat-link-trigger. |
+| `title`, `artist`, `album` | who the track is. Unicode-normalised, control characters stripped, 200 characters at most. A `title` also sets `track`. |
+| `duration` | track length, seconds. |
+| `bpm_original` | the track's own tempo; with `bpm`, the pitch. |
+| `pitch` | playback rate, 0–4, when a source knows it directly. |
+| `playing`, `on_air`, `master` | flags. `playing: false` pauses at once; without it, a source going silent for the grace period counts as paused. |
+| `rekordbox_id` | 0 to 2³²−1. Only meaningful with the database it came from. |
+| `signature` | beat-link-trigger's track signature, 40 hex characters. |
+| `beat_number` | the beat in the track, for the grid phase check. |
+
+### `/klights/v1` — our own namespace
+
+The beat-link-trigger expressions we ship send two messages, each with
+**several** arguments. Unlike the flat addresses they are decoded strictly:
+the exact argument count, each of the right kind, or the whole message is
+rejected.
+
+| address | arguments |
+|---|---|
+| `/klights/v1/pos` | deck, playing, time_s, pitch, beat_number, master, on_air |
+| `/klights/v1/track` | deck, rekordbox_id, signature, title, artist, album, duration_s |
+
+Numbers may be OSC `i`, `f`, `d` or `h`. Both are tagged `source: "blt"`.
+Identity arrives whole in one message, so a track change and a jump from this
+source count at once; from rkbx_link, whose identity arrives a field at a time,
+both wait a moment for the rest (see `engine/transport.py`).
 
 ## Security
 

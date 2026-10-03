@@ -1,0 +1,85 @@
+{
+  "$schema": "../../../schemas/track.schema.json",
+  "kind": "klights.track",
+  "version": 1,
+  "id": "synth-128",
+  "identity": {
+    "title": "synthetic 128",
+    "artist": "kLights",
+    "album": "test track",
+    "duration_s": 180.0,
+    "bpm": 128.0
+  },
+  "ids": {
+    "rekordbox": [],
+    "blt_signatures": []
+  },
+  "aliases": [],
+  "grid": {
+    "rev": "g:834af7",
+    "segments": [
+      [
+        0,
+        0,
+        128
+      ]
+    ]
+  },
+  "phrases": {
+    "mood": "high",
+    "items": [
+      [
+        0,
+        64,
+        "Intro"
+      ],
+      [
+        64,
+        128,
+        "Verse 1"
+      ],
+      [
+        128,
+        160,
+        "Up 1"
+      ],
+      [
+        160,
+        224,
+        "Chorus"
+      ],
+      [
+        224,
+        256,
+        "Down"
+      ],
+      [
+        256,
+        288,
+        "Up 2"
+      ],
+      [
+        288,
+        352,
+        "Chorus"
+      ],
+      [
+        352,
+        384,
+        "Outro"
+      ]
+    ]
+  },
+  "cues": [
+    {
+      "beat": 160,
+      "name": "first chorus",
+      "kind": "hot",
+      "slot": "A"
+    }
+  ],
+  "source": {
+    "from": "synthetic",
+    "note": "matches bridge.py --fake"
+  }
+}

@@ -123,6 +123,7 @@ class Venue:
     canopy: Optional[Canopy]
     truss: Optional[Truss] = None
     elev_extreme_deg: float = 90.0
+    rest_point: Optional[tuple[float, float, float]] = None
     # The `previz` block, RAW: models placed in the room, the mirror ball's look
     # and motor, how the room renders. Only engine.scene reads it, and it turns
     # anything malformed into a warning rather than an error, because nothing a
@@ -133,6 +134,12 @@ class Venue:
     @property
     def room(self) -> Box:
         return Box(0.0, self.width, 0.0, self.height, 0.0, self.depth)
+
+    @property
+    def rest(self) -> tuple[float, float, float]:
+        """Where movers rest when nothing drives their movement (F19h): the
+        room's `rest_point`, or the ball. Not every room has a ball."""
+        return self.rest_point if self.rest_point is not None else self.ball
 
 
 def load_venue(path: Path) -> Venue:
@@ -183,4 +190,7 @@ def load_venue(path: Path) -> Venue:
         apex_height=float(cfg.get("apex_height", cfg["height"])),
         crowd_zone=crowd, canopy=canopy, truss=truss,
         elev_extreme_deg=float(cfg.get("elev_extreme_deg", 90.0)),
+        rest_point=(None if "rest_point" not in cfg else
+                    (float(cfg["rest_point"]["x"]), float(cfg["rest_point"]["y"]),
+                     float(cfg["rest_point"]["z"]))),
         previz=cfg.get("previz", {}))

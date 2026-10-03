@@ -961,6 +961,116 @@ describe("patch", () => {
  * Every test here is about a failure state, because the success state is a word
  * on a card and the failure states are what decide whether anyone trusts it.
  */
+describe("follow dj (track card)", () => {
+  const program = (edit: (p: NonNullable<EngineState["program"]>) => void = () => {}) =>
+    stateWith((s) => {
+      s.program = {
+        armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+        beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+        problems: 0, first_problem: null, latency_ms: { blt: 0 },
+      };
+      s.track = { state: "playing", title: "synthetic 128", artist: "kLights",
+                  album: "test track", duration: 180, source: "blt", deck: "1",
+                  time: 75, rate: 1, age: 0.02, track_seq: 1, jump_seq: 0,
+                  on_air: true,
+                  match: { track_id: "synth-128", via: "title_artist_album",
+                           candidates: ["synth-128"], stale: false,
+                           has_timeline: true },
+                  grid_warning: null };
+      edit(s.program!);
+    });
+
+  it("is not there without a show folder", () => {
+    mount();
+    expect(screen.queryByText("Track")).toBeNull();
+  });
+
+  it("starts SAFE, says why nothing is driving, and arms with one tap", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.getByText(/drives nothing until you arm it/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Follow SAFE" }));
+    expect(socket.last()).toEqual({ type: "follow", armed: true });
+  });
+
+  it("links the matched track to the designer", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.getByRole("link", { name: "Open this track in the designer" }))
+      .toHaveAttribute("href", "#designer/synth-128");
+  });
+
+  it("shows who has each lane, and grabs and releases them", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 161,
+        bar: 41, grabbed: ["color"],
+        lanes: { movement: "timeline", color: "operator", level: "timeline" },
+      });
+    })));
+    expect(screen.getByRole("button", { name: "Follow ARMED" })).toBeInTheDocument();
+    expect(screen.getByText(/Timeline driving/)).toBeInTheDocument();
+    expect(screen.getByText("operator")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Release" }));
+    expect(socket.last()).toEqual({ type: "program_release", slot: "color" });
+    await user.click(screen.getAllByRole("button", { name: "Grab" })[0]!);
+    expect(socket.last()).toEqual({ type: "program_grab", slot: "movement" });
+  });
+
+  it("says when the track's show has problems on this rig", () => {
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, { armed: true, engaged: true, mode: "timeline",
+                         reason: null, problems: 2,
+                         first_problem: "look 'Nope' is not in this rig's library" });
+    })));
+    expect(screen.getByText(/2 problem\(s\) building this track's show/))
+      .toBeInTheDocument();
+  });
+
+  it("sends a latency change for the playing source when the slider is let go", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    const slider = screen.getByRole("slider", { name: "Latency (blt)" });
+    fireEvent.change(slider, { target: { value: "0.6" } });
+    fireEvent.pointerUp(slider);
+    expect(socket.last()).toEqual({ type: "show_latency", source: "blt", ms: 40 });
+  });
+});
+
+describe("designer preview banner", () => {
+  it("tells every console the designer is driving, and lets it be released", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
+                    draft: true, playing: true, ready: true };
+    })));
+    expect(screen.getByText(/DESIGNER \(laptop\) is driving the rig/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/unsaved draft/)).toBeInTheDocument();
+    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    await user.click(within(banner as HTMLElement).getByRole("button",
+                                                           { name: "Release" }));
+    expect(socket.last()).toEqual({ type: "preview_release" });
+  });
+
+  it("tells a view-only phone too, without offering a Release it cannot do", () => {
+    const socket = mount();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "welcome", id: "v1",
+                                                          tier: "view" }) }));
+    act(() => socket.push(stateWith((s) => {
+      s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
+                    draft: false, playing: true, ready: true };
+    })));
+    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    expect(within(banner as HTMLElement).queryByRole("button", { name: "Release" })).toBeNull();
+  });
+});
+
 describe("dj sync", () => {
   const driving = (edit: (s: EngineState["sync"]) => void = () => {}) =>
     stateWith((s) => {
@@ -1019,6 +1129,88 @@ describe("dj sync", () => {
     act(() => socket.push(driving()));
     await user.click(screen.getByRole("button", { name: /take over/i }));
     expect(socket.last()).toEqual({ type: "sync_off" });
+  });
+
+  it("names the track and where in it, once the transport has it", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.1,
+                 track: "Night Drive" };
+      s.track = { state: "playing", title: "Night Drive", artist: "Someone",
+                  album: "EP", duration: 372.4, source: "rkbx", deck: "2",
+                  time: 61.7, rate: 1.06, age: 0.02, track_seq: 1,
+                  jump_seq: 0, on_air: null };
+    })));
+    expect(screen.getByText("Night Drive")).toBeInTheDocument();
+    expect(screen.getByText(/— Someone/)).toBeInTheDocument();
+    // Position against length, and the DJ's pitch: what you need to see to
+    // believe a timeline is going to land where it should.
+    expect(screen.getByText(/1:01 \/ 6:12 · playing · \+6\.0%/)).toBeInTheDocument();
+  });
+
+  it("says which prepped track it is, how it knows, and when a change applies", () => {
+    const socket = mount();
+    const playing = (match: object, grid_warning: object | null = null) =>
+      stateWith((s) => {
+        s.sync = { ...s.sync, listening: true, driving: true, age: 0.1 };
+        s.track = { state: "playing", title: "Night Drive", artist: null,
+                    album: null, duration: null, source: "blt", deck: "1",
+                    time: 30, rate: 1, age: 0.02, track_seq: 3, jump_seq: 0,
+                    on_air: true, match: match as never,
+                    grid_warning: grid_warning as never };
+      });
+    act(() => socket.push(playing({ track_id: "night-drive", via: "signature",
+                                    candidates: ["night-drive"], stale: false,
+                                    has_timeline: true })));
+    expect(screen.getByText(/· by signature · timeline/)).toBeInTheDocument();
+    expect(screen.getByText("night-drive")).toBeInTheDocument();
+
+    // Matched, but nobody has drawn it a show yet: worth knowing before arming.
+    act(() => socket.push(playing({ track_id: "night-drive", via: "signature",
+                                    candidates: ["night-drive"], stale: false,
+                                    has_timeline: false })));
+    expect(screen.getByText(/· by signature · no timeline/)).toBeInTheDocument();
+
+    // A save or a manual link mid-song is not ignored -- it is waiting.
+    act(() => socket.push(playing({ track_id: "night-drive", via: "title_artist",
+                                    candidates: ["night-drive"], stale: true })));
+    expect(screen.getByText(/folder changed, applies next play/)).toBeInTheDocument();
+
+    act(() => socket.push(playing({ track_id: null, via: "ambiguous",
+                                    candidates: ["dup-1", "dup-2"], stale: false })));
+    expect(screen.getByText(/could be dup-1, dup-2 — not guessing/)).toBeInTheDocument();
+
+    act(() => socket.push(playing({ track_id: null, via: "none", candidates: [],
+                                    stale: false })));
+    expect(screen.getByText("not in the show folder")).toBeInTheDocument();
+  });
+
+  it("warns when the deck's beats disagree with the prepped grid", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.1 };
+      s.track = { state: "playing", title: "Night Drive", artist: null,
+                  album: null, duration: null, source: "rkbx", deck: null,
+                  time: 30, rate: 1, age: 0.02, track_seq: 3, jump_seq: 0,
+                  on_air: null,
+                  match: { track_id: "night-drive", via: "alias",
+                           candidates: ["night-drive"], stale: false },
+                  grid_warning: { kind: "phase", offset_beats: -0.5 } };
+    })));
+    expect(screen.getByText(/puts the beat 0.5 beat\(s\) behind the prepped grid/))
+      .toBeInTheDocument();
+  });
+
+  it("says when the packets are late, rather than calling the deck stopped", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.sync = { ...s.sync, listening: true, driving: true, age: 0.4 };
+      s.track = { state: "stalled", title: "Night Drive", artist: null,
+                  album: null, duration: null, source: "rkbx", deck: null,
+                  time: 75, rate: 1, age: 0.4, track_seq: 1, jump_seq: 2,
+                  on_air: null };
+    })));
+    expect(screen.getByText(/1:15 · packets late/)).toBeInTheDocument();
   });
 
   it("distinguishes silence from a bridge it cannot read", () => {

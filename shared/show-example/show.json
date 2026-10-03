@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/show.schema.json",
+  "_comment": [
+    "The example show folder. Point the engine at it with",
+    "--show-dir shared/show-example; a real one lives in a shared",
+    "folder outside the repo. See README.md."
+  ],
+  "kind": "klights.show",
+  "version": 1,
+  "template_set": "club",
+  "fallback": "auto",
+  "pause": {
+    "policy": "idle",
+    "grace_s": 4,
+    "idle_routine": "idle-orbit",
+    "fade_beats": 4
+  },
+  "sources": {
+    "rkbx": {
+      "latency_ms": 0
+    },
+    "blt": {
+      "latency_ms": 0
+    },
+    "designer": {
+      "latency_ms": 0
+    }
+  },
+  "follow": {
+    "default": "disarmed",
+    "min_track_change_s": 2
+  }
+}

@@ -37,6 +37,11 @@ events/*/.engine.lock
 # stop file. Per machine.
 .launcher/
 
+# Per-machine settings: where this machine's show folder and audio live. A
+# Dropbox path on the design desktop is not the one on the show laptop, so this
+# must never be committed. See engine/showfiles.py.
+klights.local.json
+
 # Scratch. Untracked AND unignored is the dangerous combination: it survives
 # every `git status` unnoticed until one `git add .` puts megabytes of stale
 # duplicates into history. Anything in here is disposable by definition.
