@@ -47,7 +47,8 @@ def bundle_matches_source() -> tuple[bool, str]:
     # bundle is committed precisely so it does not. Reporting NOT READY there
     # would be crying wolf, and a preflight that cries wolf gets ignored, which
     # costs more than the check is worth.
-    if shutil.which("npm") is None:
+    npm = shutil.which("npm")
+    if npm is None:
         return True, "skipped -- npm not installed, and a venue does not need it"
     if not (REPO / "ui" / "node_modules").is_dir():
         return True, ("skipped -- ui/node_modules absent. Run `cd ui && npm ci` "
@@ -64,8 +65,13 @@ def bundle_matches_source() -> tuple[bool, str]:
                 for p in sorted(dist.rglob("*")) if p.is_file()}
 
     before = fingerprint()
-    build = subprocess.run(["npm", "run", "build"], cwd=REPO / "ui",
-                           capture_output=True, text=True, shell=True)
+    # The resolved path, not the bare name and not shell=True. On Windows npm is
+    # npm.cmd, which CreateProcess will not find from "npm" -- `which` resolves
+    # it. shell=True was the earlier fix for that, and on POSIX it turns a list
+    # into `sh -c npm run build`, where "run" and "build" become $0 and $1: bare
+    # npm prints its usage, exits 1, and the check failed on every Linux and Mac.
+    build = subprocess.run([npm, "run", "build"], cwd=REPO / "ui",
+                           capture_output=True, text=True)
     if build.returncode != 0:
         return False, (build.stderr or build.stdout or "").strip()[-400:]
     after = fingerprint()
