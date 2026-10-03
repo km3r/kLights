@@ -180,9 +180,9 @@ port = server.httpd.server_address[1]
 # Its own controller, never started, as a second engine would have. Sharing the
 # live one is not harmless: a ShowServer takes its controller's `reply_to` when
 # it is built, so this one would leave every later reply going nowhere. And
-# built BEFORE the live clock starts: loading an event in this process holds
-# the GIL long enough to drop a frame on a slow runner, and section 6 counts
-# every drop since the start.
+# built BEFORE the live clock starts, as a second engine would be: loading an
+# event in this process holds the GIL long enough to drop a frame on a slow
+# runner.
 second = ShowServer(ShowController(REPO / "events" / "despacio"), port=port)
 try:
     second.start()
@@ -637,15 +637,28 @@ check("panic clears", not after["panicked"])
 
 
 # -- a bad command must not take the show down --------------------------------
+#
+# Surviving is two things: no command reached a frame as an exception, and the
+# clock kept going. It is NOT "no dropped frames". `drops` counts frames that
+# overran a whole period, since the clock started, and on a shared CI runner
+# that is the machine -- a vCPU descheduled for 75 ms -- not anything a command
+# did. Asserting it here made this check flake on py3.10 runners ("errors 0,
+# drops 1"), while repeated local py3.10 runs pinned to two cores never saw an
+# eval error. Drop-freedom is spike/timing/soak.py's to prove, on a machine
+# where it means something.
 print("\n6. bad input")
 before_frames = after["stats"]["frames"]
 client.send({"type": "no_such_command"})
 client.send({"type": "select_look", "name": "does not exist"})
 client.send({"type": "master"})                       # missing value
 after = client.wait_for(lambda s: s["stats"]["frames"] > before_frames + 20)
+stats = after["stats"]
+raised = (after["last_error"] or "").strip().splitlines()[-1:]
 check("the show survives unknown and malformed commands",
-      after["stats"]["eval_errors"] == 0 and after["stats"]["drops"] == 0,
-      f"errors {after['stats']['eval_errors']}, drops {after['stats']['drops']}")
+      stats["eval_errors"] == 0 and stats["frames"] > before_frames + 20,
+      f"errors {stats['eval_errors']}{': ' + raised[0] if raised else ''}, "
+      f"{stats['frames'] - before_frames} frames since, "
+      f"drops {stats['drops']} (the runner's, not asserted)")
 check("and each failure is reported",
       sum(1 for n in after["notices"] if "failed" in n) >= 2,
       f"{[n for n in after['notices'] if 'failed' in n][:3]}")
