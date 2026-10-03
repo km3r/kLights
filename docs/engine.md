@@ -263,6 +263,14 @@ folder edit of the active set, like any folder change, waits for the next
 track. The Track card's lanes say `template`, and it shows the phrase, the
 routine and the set switcher.
 
+**A preset pad can carry a routine** (`routine: {id, variation?, params?}` in
+presets.json, saved from the console with a show folder). Pressed, it waits for
+the clock's next downbeat and then lands whole: its looks, and the routine over
+them from the routine's beat 0, as the operator's show -- so with the timeline
+or a template driving it grabs every lane like any preset. Picking a look, a
+plain preset or a cue puts it away. Its program is built on the worker when the
+folder loads, when it is saved, and after a rig reload.
+
 **Templates** ([`templates.py`](../engine/templates.py), milestone 2) are the
 middle of the chain -- timeline, then template, then the operator's or auto
 mode's show. A template set maps rekordbox's phrase labels to routine picks

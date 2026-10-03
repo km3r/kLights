@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../useEngine";
 import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type {
@@ -163,6 +164,18 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
   const [editing, setEditing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  // Routines a pad can carry (milestone 2) -- only with a show folder.
+  const [routines, setRoutines] = useState<{ id: string; name?: string;
+                                             variations: string[] }[]>([]);
+  const [routine, setRoutine] = useState("");
+  const [variation, setVariation] = useState("");
+  const showFolder = state.program != null;
+  useEffect(() => {
+    if (!showFolder) return;
+    apiFetch<{ routines: { id: string; name?: string; variations: string[] }[] }>(
+      "/api/routines").then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
+  }, [showFolder]);
+  const chosen = routines.find((r) => r.id === routine);
 
   // Edit is Design-only, so leaving Design has to put the card back in a state
   // that makes sense — otherwise a half-finished move survives into Perform
@@ -180,11 +193,15 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
     const trimmed = name.trim();
     if (!trimmed) return;
     const where = cell ?? target;
+    const pad = routine
+      ? { routine: { id: routine, ...(variation ? { variation } : {}) } } : {};
     send(where == null
-      ? { type: "preset_save", name: trimmed }
-      : { type: "preset_save", name: trimmed, bank, cell: where });
+      ? { type: "preset_save", name: trimmed, ...pad }
+      : { type: "preset_save", name: trimmed, bank, cell: where, ...pad });
     setName("");
     setTarget(null);
+    setRoutine("");
+    setVariation("");
   };
 
   const tapped = (p: Preset | undefined, cell: number) => {
@@ -254,16 +271,19 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
             const p = at(cell);
             const isTarget = target === cell;
             const isPicked = picked != null && p?.name === picked;
+            const pad = p && state.pad?.name === p.name ? state.pad : null;
             return (
               <button key={cell}
-                      className={isPicked ? "on" : isTarget ? "on" : p ? "" : "ghost"}
+                      className={isPicked || isTarget || (pad && !pad.waiting) ? "on"
+                        : pad ? "pending" : p ? "" : "ghost"}
                       aria-label={p ? undefined : `empty pad ${bank}.${cell + 1}`}
                       onClick={() => tapped(p, cell)}>
                 {p ? (
                   <>
                     {p.name}
                     <div className="small muted">
-                      {slotCount(p)} slot(s)
+                      {p.routine ? `↻ ${p.routine.id}` : `${slotCount(p)} slot(s)`}
+                      {pad && (pad.waiting ? " · next downbeat" : " · playing")}
                       {p.tags.length > 0 && ` · ${p.tags.join(" ")}`}
                     </div>
                   </>
@@ -297,6 +317,24 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
                }} />
         <button onClick={() => save()} disabled={!name.trim()}>Save</button>
       </div>
+      {routines.length > 0 && (
+        <div className="row tight" style={{ marginTop: "0.4rem", flexWrap: "wrap" }}>
+          <label className="small muted">With a routine{" "}
+            <select value={routine} aria-label="pad routine"
+                    onChange={(e) => { setRoutine(e.target.value); setVariation(""); }}>
+              <option value="">none — the looks only</option>
+              {routines.map((r) => <option key={r.id} value={r.id}>{r.name ?? r.id}</option>)}
+            </select>
+          </label>
+          {chosen && chosen.variations.length > 0 && (
+            <select value={variation} aria-label="pad routine variation"
+                    onChange={(e) => setVariation(e.target.value)}>
+              <option value="">default</option>
+              {chosen.variations.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+        </div>
+      )}
 
       {/* Absent until something is tagged, which keeps the cost of the feature
           at zero for anyone not using it. Tags cross banks; a bank cannot,

@@ -156,6 +156,8 @@ export interface Selection {
   level: SlotSelection;
 }
 
+export interface PadRoutine { id: string; variation?: string; params?: Record<string, unknown> }
+
 export interface Preset extends Selection {
   name: string;
   speed?: number;
@@ -174,6 +176,9 @@ export interface Preset extends Selection {
    *  the filter row offers. A tag finds every drop in the show; a bank cannot,
    *  because a bank is a place. */
   tags: string[];
+  /** A routine from the show folder, played over the looks from the next
+   *  downbeat when the pad is pressed (milestone 2). */
+  routine?: PadRoutine;
 }
 
 /** One fixture definition the engine can resolve, with its modes and their
@@ -366,6 +371,8 @@ export interface EngineState {
   program?: ProgramState | null;
   /** The designer driving the rig from its own transport (F19j), or null. */
   preview?: PreviewState | null;
+  /** A routine pad, waiting for its downbeat or playing. Absent before F20d. */
+  pad?: { name: string; routine: string; waiting: boolean } | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
@@ -404,7 +411,7 @@ export type Command =
   | { type: "select_look"; name: string; hold?: boolean; slot?: Slot }
   | { type: "clear_slot"; slot: Slot; group?: string }
   | { type: "preset_save"; name: string; bank?: number; cell?: number;
-      tags?: string[] }
+      tags?: string[]; routine?: PadRoutine }
   | { type: "preset_apply"; name: string }
   | { type: "preset_delete"; name: string }
   | { type: "preset_move"; name: string; bank: number; cell: number }

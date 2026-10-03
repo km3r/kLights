@@ -52,6 +52,25 @@
             "items": {
               "type": "string"
             }
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "the id of a file in the show folder's routines/"
+              },
+              "variation": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id"
+            ]
           }
         },
         "required": [

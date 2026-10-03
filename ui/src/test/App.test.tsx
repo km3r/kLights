@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { EngineState } from "../types";
 import {
@@ -238,6 +238,49 @@ describe("presets", () => {
     await user.type(screen.getByLabelText("preset name"), "drop");
     await user.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+  });
+
+  it("saves a pad with a routine, and shows it waiting for the downbeat, then playing", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      // A show folder is what makes routines available.
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      await user.selectOptions(pick, "fan-drop");
+      await user.selectOptions(screen.getByLabelText("pad routine variation"), "wide");
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop",
+                                      routine: { id: "fan-drop", variation: "wide" } });
+      const withPad = (waiting: boolean) => stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+        s.pad = { name: "drop", routine: "fan-drop", waiting };
+      });
+      act(() => socket.push(withPad(true)));
+      const tile = screen.getAllByRole("button", { name: /^drop/ })[0]!;
+      expect(tile).toHaveTextContent("↻ fan-drop · next downbeat");
+      expect(tile).toHaveClass("pending");
+      act(() => socket.push(withPad(false)));
+      expect(screen.getAllByRole("button", { name: /^drop/ })[0]!)
+        .toHaveTextContent("↻ fan-drop · playing");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("will not save an unnamed preset", () => {

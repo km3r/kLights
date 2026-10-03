@@ -11,6 +11,17 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20d: routines on preset pads
+
+- **A preset pad can play a routine** over its looks: choose one (and a
+  variation) when saving the preset on the Show tab. Pressed, the pad waits for
+  the next downbeat and then lands whole -- its looks and the routine from its
+  first beat (decided with the user). The pad shows "next downbeat" until then
+  and "playing" after. With the timeline or a template driving, it grabs every
+  lane like any preset; picking a look, another preset or a cue puts it away.
+- Needs a show folder (routines live there). presets.json gains `routine`
+  (schema regenerated).
+
 ### Added — F20c: live phrases from CDJs
 
 - **Guest tracks on CDJs get phrase templates** (decided with the user): the

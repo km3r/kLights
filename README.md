@@ -187,7 +187,8 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    with no timeline, the gaps in a timeline, and a guest DJ's track the folder
    has never seen all get a show -- from the deck's live phrase, or a cycle
    every N bars when there is none. Switch set live from the Track card; it
-   lands on the next downbeat.
+   lands on the next downbeat. A preset pad can carry a routine too, starting on
+   the next downbeat when pressed.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking

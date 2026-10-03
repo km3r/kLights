@@ -29,6 +29,7 @@ from engine import playback as playbackmod  # noqa: E402
 from engine import program as programmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import state as statemod  # noqa: E402
+from engine import templates as templatesmod  # noqa: E402
 
 failures: list[str] = []
 
@@ -50,6 +51,14 @@ _other["identity"] = {**_other["identity"], "title": "no timeline tune"}
 _other.pop("ids", None)
 _other.pop("aliases", None)
 (shows / "tracks" / "no-timeline.json").write_text(json.dumps(_other, indent=2))
+# A routine that drives only the movers' movement, for a preset pad (F20d).
+(shows / "routines" / "move-only.json").write_text(json.dumps({
+    "kind": "klights.routine", "version": 1, "id": "move-only",
+    "name": "Move only", "bars": 2, "loop": True,
+    "roles": {"movers": {"default": "movers"}},
+    "rows": [{"id": "m", "type": "clips", "target": "movement", "role": "movers",
+              "items": [{"id": "o", "at": 0, "len": 8, "block": "orbit",
+                         "args": {"radius": 30, "bars": 1}}]}]}, indent=2))
 
 compile_threads: list[str] = []
 real_compile = programmod.compile
@@ -62,7 +71,10 @@ def spy_compile(*args, **kwargs):
 
 programmod.compile = spy_compile
 
-sc = servermod.ShowController(REPO / "events" / "despacio", show_dir=shows)
+# A copy of the event, not the repo's own: saving a preset writes presets.json.
+event = tmp / "despacio"
+shutil.copytree(REPO / "events" / "despacio", event)
+sc = servermod.ShowController(event, show_dir=shows)
 sc.worker.start()
 BEAT_S = 60.0 / 128.0
 HOT = blocksmod.parse_hex("#ff2d6f")
@@ -286,6 +298,70 @@ try:
     play(168, 0.2)
     settle()
     play(168.2, 0.2)
+
+    # -- 2c. routines on preset pads (F20d) -------------------------------------
+    print("\n2c. routines on pads")
+    sc.apply({"type": "follow", "armed": False}, None, t)
+    sc.apply({"type": "select_look", "name": "MH Red"}, None, t)
+    sc.apply({"type": "preset_save", "name": "Orbit red",
+              "routine": {"id": "move-only"}}, None, t)
+    settle()
+    saved_pad = next(p for p in sc.presets if p["name"] == "Orbit red")
+    check("a preset can carry a routine, saved with its looks",
+          saved_pad.get("routine") == {"id": "move-only"} and saved_pad.get("color"),
+          f"{saved_pad}")
+    for bad, why in (({"id": "nope"}, "no routine"),
+                     ({"id": "move-only", "variation": "wild"}, "no variation"),
+                     ("move-only", "routine must be")):
+        try:
+            sc.apply({"type": "preset_save", "name": "Bad pad", "routine": bad}, None, t)
+            ok = False
+        except ValueError as exc:
+            ok = why in str(exc)
+        check(f"a pad refuses routine {bad!r}", ok)
+    sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
+    play(184, 0.2)
+    # Press mid-bar: the pad must wait for the next downbeat.
+    while abs(sc.clock.beat(t) % 4) < 0.5 or abs(sc.clock.beat(t) % 4) > 3.0:
+        play(184, 0.04)
+    pressed_at = sc.clock.beat(t)
+    sc.apply({"type": "preset_apply", "name": "Orbit red"}, None, t)
+    downbeat = templatesmod.next_downbeat(pressed_at)
+    before = play(184.2, 0.04)
+    check("pressed mid-bar, a routine pad waits for the next downbeat (decided "
+          "with the user): the previous picture holds",
+          sc.pad is None and sc.snapshot()["pad"]["waiting"] is True
+          and all(before[f.fid].color == (0.0, 0.0, 1.0) for f in MOVERS),
+          f"pressed at {pressed_at:.2f}, downbeat {downbeat}")
+    while sc.clock.beat(t) < downbeat + 0.3:
+        play(184.4, 0.04)
+    a = play(185, 0.04)
+    b = play(185, 0.2)
+    check("then it lands on that downbeat, the whole picture at once",
+          sc.pad is not None and sc.pad["start"] == downbeat
+          and sc.snapshot()["pad"] == {"name": "Orbit red", "routine": "move-only",
+                                       "waiting": False}, f"{sc.pad and sc.pad['start']}")
+    check("the routine drives the movement it claims -- the heads orbit",
+          any(a[f.fid].aim != b[f.fid].aim for f in MOVERS))
+    check("and colour, which it does not claim, is the pad's own look (red)",
+          all(abs(b[f.fid].color[0] - 1.0) < 1e-6 and b[f.fid].color[2] == 0.0
+              for f in MOVERS), f"{b[MOVERS[0].fid].color}")
+    sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
+    play(186, 0.1)
+    check("picking a look puts the pad away", sc.pad is None
+          and sc.snapshot()["pad"] is None)
+    sc.apply({"type": "follow", "armed": True}, None, t)
+    play(186.5, 0.2)
+    sc.apply({"type": "preset_apply", "name": "Orbit red"}, None, t)
+    while sc.pad is None:
+        play(187, 0.04)
+    play(188, 0.2)
+    check("with the timeline driving, a routine pad grabs every lane and shows there",
+          status()["grabbed"] == ["color", "level", "movement"]
+          and set(status()["lanes"].values()) == {"operator"}, f"{status()}")
+    sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
+    sc.apply({"type": "program_release"}, None, t)
+    play(189, 0.2)
 
     # -- 3. pause policies ---------------------------------------------------
     print("\n3. pausing")

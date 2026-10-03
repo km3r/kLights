@@ -63,6 +63,7 @@ from . import showfiles
 from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import templates as templatesmod
 from . import timeline as timelinemod
 from . import tracks as tracksmod
 from . import transport as transportmod
@@ -373,6 +374,11 @@ class ShowController:
         self.player: Optional[playbackmod.TrackPlayer] = None
         self._frame_sample: Optional[transportmod.TrackSample] = None
         self.presets = load_presets(self.event_dir)
+        # Routines on preset pads (milestone 2): the one playing, the one
+        # waiting for its downbeat, and every routine pad built for this rig.
+        self.pad: Optional[dict] = None
+        self._pad_pending: Optional[dict] = None
+        self._pad_programs: dict[str, Any] = {}
         if self.show_dir is not None:
             self.player = playbackmod.TrackPlayer(
                 self.transport, pinned=lambda: self.pinned,
@@ -484,13 +490,88 @@ class ShowController:
     def _before_frame(self) -> None:
         self._drain()
         self._frame_sample = self._track_frame()
+        self._pad_frame(self.runner.now())
 
     def _choose_show(self, fallback: statemod.Show) -> statemod.Show:
         """The runner's hook: the timeline's show while it drives, else
-        auto mode's, unchanged."""
+        auto mode's, unchanged. A routine pad playing is the operator's show
+        -- over the looks, which show wherever it says nothing."""
         now = self.runner.now()
+        pad = self.pad
+        if pad is not None:
+            prog = pad["program"]
+            prog.grabbed = frozenset()
+            prog.begin(self.clock.beat(now) - pad["start"], fallback=fallback,
+                       base_palette=self._base_palette())
+            fallback = prog.show
         sample = self._frame_sample or self.transport.sample(now)
         return self.player.choose(fallback, sample, now)
+
+    # routines on pads (milestone 2) -----------------------------------------
+
+    @staticmethod
+    def _pad_key(routine: dict) -> str:
+        return templatesmod.pick_key({"routine": routine.get("id"),
+                                      "variation": routine.get("variation"),
+                                      "params": routine.get("params") or None})
+
+    def _compile_pad(self, preset: dict) -> None:
+        """Build a routine pad's program for this rig, on the worker."""
+        routine = preset.get("routine") or {}
+        library = self.show_library
+        if not routine or library is None:
+            return
+        key = self._pad_key(routine)
+        if key in self._pad_programs:
+            return
+        pick = {"routine": routine.get("id"), "variation": routine.get("variation"),
+                "params": routine.get("params")}
+        routines, rigging, name = library.folder.routines, self._rigging(), preset["name"]
+
+        def build():
+            if pick["routine"] not in routines:
+                raise ValueError(f"routine {pick['routine']!r} is not in routines/")
+            return programmod.compile(templatesmod.pick_timeline({}, pick), routines,
+                                      rigging, f"preset {name!r}")
+
+        def done(prog) -> None:
+            self._pad_programs[key] = prog
+            if prog.problems:
+                self.note(f"preset {name!r}: {prog.problems[0]}")
+
+        self.worker.submit(build, done, label=f"building preset {name!r}'s routine")
+
+    def _compile_pads(self) -> None:
+        self._pad_programs = {}
+        for preset in self.presets:
+            if preset.get("routine"):
+                self._compile_pad(preset)
+
+    def _clear_pad(self) -> None:
+        self.pad = None
+        self._pad_pending = None
+
+    def _pad_frame(self, now: float) -> None:
+        """A pressed routine pad lands on its downbeat (decided with the
+        user): the whole picture at once, its looks and its routine, from
+        beat 0 of the routine."""
+        pending = self._pad_pending
+        if pending is None:
+            return
+        beat = self.clock.beat(now)
+        if beat < pending["start"] - 1e-9:
+            return
+        prog = self._pad_programs.get(pending["key"])
+        if prog is None:
+            # Not built yet (just saved, or the rig just changed): the next
+            # downbeat instead, rather than starting it mid-bar.
+            pending["start"] = templatesmod.next_downbeat(beat + 1e-6)
+            return
+        self._pad_pending = None
+        self._apply_preset_looks(pending["preset"], now)
+        self.pad = {"name": pending["preset"]["name"],
+                    "routine": pending["preset"]["routine"].get("id"),
+                    "start": pending["start"], "program": prog}
 
     def _rigging(self):
         from . import blocks as blocksmod
@@ -655,6 +736,7 @@ class ShowController:
             self.player.configure(library.folder.show)
             self.player.compile_idle(library)
             self.player.compile_templates(library)
+            self._compile_pads()
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -798,6 +880,7 @@ class ShowController:
         entry = self.by_name.get(name)
         if entry is None:
             raise KeyError(f"no look named {name!r}")
+        self._clear_pad()
         slot = m.get("slot") or entry.slot
         if slot not in ("movement", "color", "level"):
             raise ValueError(f"unknown slot {slot!r}")
@@ -819,6 +902,7 @@ class ShowController:
         slot = m["slot"]
         if slot not in ("movement", "color", "level"):
             raise ValueError(f"unknown slot {slot!r}")
+        self._clear_pad()
         if slot == "movement":
             raise ValueError(
                 "the movement slot cannot be empty -- with nothing aiming the "
@@ -836,6 +920,7 @@ class ShowController:
         self.director.release()
 
     def _cmd_next_look(self, m: dict, now: float) -> None:
+        self._clear_pad()
         self.setlist.advance()
         self._grab({"movement"})
         self._recompose()
@@ -869,6 +954,7 @@ class ShowController:
                  for p in others):
             raise ValueError(f"bank {where[0]} cell {where[1]} is already taken")
         tags = m.get("tags")
+        routine = self._preset_routine(m.get("routine"))
         # Built whole and rebound once. Appending to the live list and then
         # sorting it in place is what let the broadcast thread serialise an
         # EMPTY preset list -- CPython empties a list for the duration of
@@ -886,9 +972,41 @@ class ShowController:
             "bank": where[0], "cell": where[1],
             "tags": [str(t) for t in tags] if tags is not None
                     else list(previous.get("tags", [])) if previous else [],
+            **({"routine": routine} if routine else {}),
         }], key=_at)
         save_presets(self.event_dir, self.presets)
-        self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}")
+        if routine:
+            self._compile_pad(next(p for p in self.presets if p["name"] == name))
+        self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}"
+                  + (f" with routine {routine['id']!r}" if routine else ""))
+
+    def _preset_routine(self, raw) -> Optional[dict]:
+        """A routine for a pad: {id, variation?, params?}, checked against the
+        show folder. None for a pad of looks only."""
+        if raw is None:
+            return None
+        library = self.show_library
+        if library is None:
+            raise ValueError("a routine pad needs a show folder -- start the "
+                             "engine with --show-dir")
+        if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+            raise ValueError('routine must be {"id": "<routine id>", ...}')
+        doc = library.folder.routines.get(raw["id"])
+        if doc is None:
+            raise ValueError(f"there is no routine {raw['id']!r} in routines/")
+        out: dict = {"id": raw["id"]}
+        variation = raw.get("variation")
+        if variation:
+            if variation not in (doc.get("variations") or {}):
+                raise ValueError(f"routine {raw['id']!r} has no variation "
+                                 f"{variation!r}")
+            out["variation"] = variation
+        params = raw.get("params")
+        if params:
+            if not isinstance(params, dict):
+                raise ValueError("routine params must be an object")
+            out["params"] = dict(params)
+        return out
 
     def _cmd_preset_move(self, m: dict, now: float) -> None:
         """Put a preset on a different pad, SWAPPING with whatever is there.
@@ -936,6 +1054,25 @@ class ShowController:
         preset = next((p for p in self.presets if p["name"] == name), None)
         if preset is None:
             raise KeyError(f"no preset named {name!r}")
+        self._clear_pad()
+        routine = preset.get("routine")
+        if routine and self.show_library is not None:
+            # On the next downbeat (decided with the user): the whole picture
+            # lands then, so the routine's first bar is the music's.
+            key = self._pad_key(routine)
+            if key not in self._pad_programs:
+                self._compile_pad(preset)
+            self._pad_pending = {
+                "preset": preset, "key": key,
+                "start": templatesmod.next_downbeat(self.clock.beat(now))}
+            return
+        if routine:
+            self.note(f"preset {name!r}: its routine needs a show folder; "
+                      f"applying its looks")
+        self._apply_preset_looks(preset, now)
+
+    def _apply_preset_looks(self, preset: dict, now: float) -> None:
+        name = preset["name"]
         # A preset naming a look that has since been re-ported away applies the
         # rest rather than failing whole -- a preset is a shortcut, and half a
         # shortcut beats an error message mid-set.
@@ -1356,6 +1493,7 @@ class ShowController:
         the library, and taking four of five slots is a recoverable night;
         refusing the cue is not.
         """
+        self._clear_pad()
         for slot in ("color", "level"):
             wanted = getattr(cue, slot)
             if wanted:
@@ -1917,6 +2055,8 @@ class ShowController:
             self.player.recompile()
             if self.show_library is not None:
                 self.player.compile_idle(self.show_library)
+            self._clear_pad()
+            self._compile_pads()
 
         if old_heads != new_heads:
             self.note(f"rig reloaded, and the moving heads CHANGED "
@@ -2149,6 +2289,7 @@ class ShowController:
             "track": _track_status(self),
             "show": _show_status(self),
             "program": _program_status(self),
+            "pad": _pad_status(self),
             "preview": (self.player.preview.public()
                         if self.player is not None and self.player.preview
                         else None),
@@ -2337,6 +2478,18 @@ def _track_status(controller: "ShowController") -> dict:
         "grid_warning": (check.warning if current and check is not None
                          else None),
     }
+
+
+def _pad_status(controller: "ShowController") -> Optional[dict]:
+    """A routine pad: playing, or waiting for its downbeat."""
+    pad, pending = controller.pad, controller._pad_pending
+    if pending is not None:
+        return {"name": pending["preset"]["name"],
+                "routine": pending["preset"]["routine"].get("id"),
+                "waiting": True}
+    if pad is not None:
+        return {"name": pad["name"], "routine": pad["routine"], "waiting": False}
+    return None
 
 
 def _program_status(controller: "ShowController") -> Optional[dict]:
