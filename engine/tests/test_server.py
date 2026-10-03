@@ -178,7 +178,11 @@ time.sleep(0.3)
 # SO_REUSEADDR, which on Windows lets a second socket bind a port another
 # process is LISTENING on -- silently, so two engines answer one port and which
 # one a phone reaches is luck.
-second = ShowServer(controller, port=port)
+#
+# Its own controller, never started, as a second engine would have. Sharing the
+# live one is not harmless: a ShowServer takes its controller's `reply_to` when
+# it is built, so this one would leave every later reply going nowhere.
+second = ShowServer(ShowController(REPO / "events" / "despacio"), port=port)
 try:
     second.start()
     refused = None
