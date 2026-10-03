@@ -36,7 +36,10 @@ failures: list[str] = []
 def check(label, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
     if not ok:
-        failures.append(label)
+        # With the detail: `python -m engine.tests` (and so CI) shows only the
+        # tail of a failing suite, which is this list -- a label alone says
+        # which check failed but not by how much.
+        failures.append(label + (f"  -- {detail}" if detail else ""))
 
 
 # -- an independent client ----------------------------------------------------
