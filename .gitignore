@@ -42,6 +42,10 @@ events/*/.engine.lock
 # must never be committed. See engine/showfiles.py.
 klights.local.json
 
+# beat-link and its dependencies, fetched by the signature checker (a dev tool,
+# pinned by SHA-1 in check.py). Never part of the show.
+bridges/rekordbox/blt_check/.jars/
+
 # Scratch. Untracked AND unignored is the dangerous combination: it survives
 # every `git status` unnoticed until one `git add .` puts megabytes of stale
 # duplicates into history. Anything in here is disposable by definition.

@@ -16,6 +16,7 @@ from beat-link's `computeTrackSignature`, not by calling prep's.
 Run: python engine/tests/test_rekordbox.py
 """
 
+import base64
 import contextlib
 import hashlib
 import io
@@ -385,6 +386,29 @@ try:
           prep.blt_signature("Blue Only", "Streamer", 400, blue) is None)
     check("and none without a length", prep.blt_signature("T", "A", None, analysis) is None)
 
+    # beat-link's own output, recorded by bridges/rekordbox/blt_check/check.py
+    # golden from these exact analysis files: no Java needed to check against it.
+    golden = json.loads((REPO / "engine" / "tests" / "data" / "blt_signatures.json")
+                        .read_text(encoding="utf-8"))
+    by_name = {}
+    for n, case in enumerate(golden["cases"]):
+        dat = tmp / "golden" / str(n) / "ANLZ0000.DAT"
+        dat.parent.mkdir(parents=True)
+        dat.write_bytes(base64.b64decode(case["dat"]))
+        dat.with_suffix(".EXT").write_bytes(base64.b64decode(case["ext"]))
+        got = prep.blt_signature(case["title"], case["artist"], case["duration"],
+                                 anlz.read_files(*anlz.siblings(dat)))
+        by_name[case["name"]] = (case, dat)
+        check(f"identical to beat-link {golden['beat_link']}'s own: {case['name']}",
+              got == case["signature"], f"prep {got}, beat-link {case['signature']}")
+    none_case, none_dat = next(v for k, v in by_name.items() if k.startswith("no artist"))
+    empty_case = next(v[0] for k, v in by_name.items() if k.startswith("an empty artist"))
+    check("a track with no artist carries both signatures a CDJ could report: the "
+          "stick database's \"[no artist]\" and a metadata server's empty name",
+          prep.blt_signatures(none_case["title"], None, none_case["duration"],
+                              anlz.read_files(*anlz.siblings(none_dat)))
+          == [none_case["signature"], empty_case["signature"]])
+
     # -------------------------------------------------------------------------
     print("\n3. the db route, into a show folder")
     show = tmp / "show"
@@ -422,8 +446,14 @@ try:
                                           {"db": "collection:TEST", "id": 102}],
           f"{doc['ids']}")
     check("it carries its beat-link signature, and says it computed it",
-          doc["ids"]["blt_signatures"] == [sig] and doc["source"]["signature"] == sig
+          doc["ids"]["blt_signatures"] == [sig] and doc["source"]["signatures"] == [sig]
           and doc["source"]["from"] == "master.db", f"{doc['ids']} {doc['source']}")
+    lone = folder.tracks[by_id[106]["track_id"]]
+    check("a track with no artist carries both of its possible signatures",
+          lone["ids"]["blt_signatures"] == [
+              expected_signature("Nobody's Tune".encode(), b"[no artist]", 400, DETAIL, BEATS),
+              expected_signature("Nobody's Tune".encode(), b"", 400, DETAIL, BEATS)],
+          f"{lone['ids']}")
     check("its phrases, from the analysis the database names",
           doc["phrases"]["items"] == [[0, 64, "Intro 1"], [64, 96, "Up 2"],
                                       [96, 160, "Chorus 2"]], f"{doc.get('phrases')}")
@@ -637,6 +667,25 @@ try:
     check("with a notice every console sees",
           any("prepped 1 track(s) from rekordbox, 1 new; 1 skipped" in n
               for n in sc.notices), f"{sc.notices[-2:]}")
+
+    # A CDJ playing a stick exported from this collection, as beat-link-trigger
+    # reports it: the stick's own track id (3: it means nothing here), the
+    # names, and the signature beat-link computed from the stick's analysis.
+    t0 = 100.0
+    sc.ctx.time = t0
+    sc.apply({"type": "sync", "source": "blt", "deck": "1",
+              "title": "Night Drive (Extended Mix)", "artist": "Kölsch & Friend",
+              "album": "Night EP", "duration": 400.0, "rekordbox_id": 3,
+              "signature": sig}, None, t0)
+    for i in range(10):
+        sc.apply({"type": "sync", "source": "blt", "deck": "1", "track_time": 30 + i / 25,
+                  "playing": True, "pitch": 1.0}, None, t0 + i / 25)
+    sc.ctx.time = t0 + 0.5
+    sc._track_frame(t0 + 0.5)
+    live = (sc.snapshot()["track"] or {}).get("match") or {}
+    check("a CDJ playing the track from a USB stick matches it, by signature, the "
+          "first time it is played",
+          live.get("track_id") == new_tid and live.get("via") == "signature", f"{live}")
     sc.worker.stop()
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

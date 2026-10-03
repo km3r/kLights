@@ -32,7 +32,15 @@ the only record of them until a roadmap doc lands.
   exported from this collection, not only after being linked at a gig. With
   this database's id (CDJs loading from rekordbox over the network) and the
   title, artist and album (rkbx_link), one prepped track is the same song to
-  every deck.
+  every deck. A track with no artist carries two signatures, since beat-link
+  hashes it as `[no artist]` from a stick's database but a player's metadata
+  server may send an empty name.
+- **`bridges/rekordbox/blt_check/check.py`** checks all of this with beat-link
+  8's own code (a dev tool; Java 11+): `usb E:/` says which prepped track every
+  track on a stick will match and, where only the name matches, which input
+  differs; `collection` compares prep with beat-link on every analysed track
+  (6,331 of 6,331 identical on a rekordbox 7.2.14 collection); `golden` records
+  beat-link's output as the test suite's fixture.
 - **Cues on the db route come from the database**, because a collection's
   analysis files carry none. The same file imported into rekordbox twice is
   one track with both ids and both rows' cues.

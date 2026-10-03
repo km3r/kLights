@@ -85,8 +85,35 @@ is played from any stick exported from this collection, instead of only after
 someone links it at a gig. Re-grid or retitle the track in rekordbox and the
 signature changes, so prep it again (and re-export the stick); prep replaces its
 own old signature and keeps any learned at a gig. `report` shows how many each
-track has. The computation follows beat-link 8's `SignatureFinder` source byte
-for byte; it has not yet been checked against a real CDJ.
+track has.
+
+A track with **no artist** gets two signatures. beat-link hashes such a track
+as `[no artist]` when it reads the stick's database, but a player's metadata
+server may send an empty artist name instead, and which of the two a gig uses
+depends on the players and BLT's settings.
+
+### Checking it with beat-link itself
+
+[`blt_check/check.py`](blt_check/check.py) runs beat-link's own code (a dev
+tool: it needs Java 11+ and fetches beat-link 8 from Maven Central once, pinned
+by SHA-1):
+
+```bash
+python bridges/rekordbox/blt_check/check.py usb E:/        # this stick, against the show folder
+python bridges/rekordbox/blt_check/check.py collection     # prep vs beat-link, every analysed track
+```
+
+`usb` reads the stick the way beat-link-trigger does (its `export.pdb` through
+beat-link's `TrackMetadata`, its analysis files) and asks the engine's matcher
+which prepped track each one is. A track that matches only by name is listed
+with the input that differs: title, artist, length, waveform or grid, almost
+always a track re-gridded after the stick was exported. Run it on a stick
+before a gig.
+
+`collection` was run on a 6,331-track rekordbox 7.2.14 collection and beat-link
+agreed with prep on every track. `golden` records beat-link's output for a few
+synthetic tracks in `engine/tests/data/blt_signatures.json`, which the test
+suite checks prep against, with no Java.
 
 ## From an XML export
 

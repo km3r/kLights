@@ -111,7 +111,8 @@ class Prepared:
     waveform: Optional[dict] = None
     notes: list = field(default_factory=list)
     fixed_id: Optional[str] = None      # synthetic tracks have a known id
-    signature: Optional[str] = None     # beat-link-trigger's, computed here
+    # beat-link-trigger's, computed here: what a CDJ will report (blt_signatures)
+    signatures: list = field(default_factory=list)
 
 
 # -- grids --------------------------------------------------------------------
@@ -255,7 +256,10 @@ def blt_signature(title: str, artist: Optional[str], duration_s: Optional[float]
     Everything hashed is copied unchanged by a USB export, which is the point:
     a stick's track ids are its own, but its signature is this collection's.
     It changes when the track is re-gridded or retitled, and so does this.
-    Checked against beat-link's source, not yet against a CDJ.
+
+    Checked against beat-link 8.0.0 itself on a whole collection, every one of
+    6,331 tracks identical (bridges/rekordbox/blt_check/), and the golden
+    signatures in engine/tests/data/ are beat-link's own output.
     """
     if (analysis.detail_format != "pwv5" or analysis.detail is None
             or not analysis.beats or duration_s is None or not title):
@@ -272,6 +276,27 @@ def blt_signature(title: str, artist: Optional[str], duration_s: Optional[float]
         digest.update(struct.pack(">II", beat.number & 0xFFFFFFFF,
                                   beat.time_ms & 0xFFFFFFFF))
     return digest.hexdigest()
+
+
+def blt_signatures(title: str, artist: Optional[str],
+                   duration_s: Optional[float],
+                   analysis: anlz.Analysis) -> list[str]:
+    """Every signature a CDJ could report for this track: one, or two for a
+    track with no artist.
+
+    beat-link reads a track's metadata one of three ways. From the stick's
+    export.pdb, or rekordbox 7's exportLibrary.db, a track with no artist has
+    no artist at all and hashes "[no artist]". From the player's metadata
+    server it is whatever artist item the player sends, which may be an empty
+    name -- hashing "". Which path a gig takes depends on the players and on
+    beat-link-trigger's settings, so both are recorded. Neither can be another
+    track's: a signature hashes the whole waveform and grid."""
+    first = blt_signature(title, artist, duration_s, analysis)
+    if first is None:
+        return []
+    if artist is None:
+        return [first, blt_signature(title, "", duration_s, analysis)]
+    return [first]
 
 
 # -- rekordbox XML ------------------------------------------------------------
@@ -421,14 +446,14 @@ def prepare_xml_track(xt: XmlTrack, index: AnlzIndex, db: str, host: str,
         ids.append({"db": db, "id": int(xt.track_id)})
     # The XML writes Artist="" for a track with no artist; a CDJ hashes those
     # as "[no artist]".
-    signature = (blt_signature(xt.identity["title"], xt.identity["artist"] or None,
-                               xt.identity.get("duration_s"), analysis)
-                 if analysis is not None else None)
+    signatures = (blt_signatures(xt.identity["title"], xt.identity["artist"] or None,
+                                 xt.identity.get("duration_s"), analysis)
+                  if analysis is not None else [])
     return Prepared(identity=xt.identity, segments=segments, phrases=phrases,
                     cues=cues, audio=audio, rekordbox_ids=ids,
                     source={"from": "xml", "file": xml_name, "tool": TOOL},
                     waveform=waveform_from(analysis) if analysis else None,
-                    notes=notes, signature=signature)
+                    notes=notes, signatures=signatures)
 
 
 # -- rekordbox's database -----------------------------------------------------
@@ -476,8 +501,8 @@ def prepare_db_track(t: masterdb.Track, coll: masterdb.Collection, db: str,
             audio[0]["size"] = t.size
     else:
         notes.append("a streaming track: there is no file for the designer to play")
-    signature = blt_signature(t.title, t.artist, t.duration_s, analysis)
-    if signature is None:
+    signatures = blt_signatures(t.title, t.artist, t.duration_s, analysis)
+    if not signatures:
         notes.append("no colour waveform in its analysis, so no beat-link "
                      "signature: a CDJ playing it from a stick matches it by name")
     return Prepared(identity=identity, segments=segments, phrases=phrases,
@@ -485,7 +510,7 @@ def prepare_db_track(t: masterdb.Track, coll: masterdb.Collection, db: str,
                     rekordbox_ids=[{"db": db, "id": row.id} for row in copies],
                     source={"from": "master.db", "tool": TOOL},
                     waveform=waveform_from(analysis), notes=notes,
-                    signature=signature)
+                    signatures=signatures)
 
 
 def select_db(coll: masterdb.Collection, playlists: list[str], ids: list[int],
@@ -590,14 +615,16 @@ def _track_doc(tid: str, p: Prepared, base: Optional[dict] = None) -> dict:
         if rid not in known:
             known.append(rid)
     sigs = ids.setdefault("blt_signatures", [])
-    # Prep's own signature from last time is replaced: it hashed a grid or a
-    # title that has since changed. Signatures learned at a gig are kept --
+    # Prep's own signatures from last time are replaced: they hashed a grid or
+    # a title that has since changed. Signatures learned at a gig are kept --
     # they are a stick someone really played.
-    previous = ((base or {}).get("source") or {}).get("signature")
-    if previous and previous != p.signature and previous in sigs:
-        sigs.remove(previous)
-    if p.signature and p.signature not in sigs:
-        sigs.append(p.signature)
+    previous = ((base or {}).get("source") or {}).get("signatures") or []
+    for old in previous:
+        if old not in p.signatures and old in sigs:
+            sigs.remove(old)
+    for new in p.signatures:
+        if new not in sigs:
+            sigs.append(new)
     doc.setdefault("aliases", [])
     doc["grid"] = {"rev": grid.rev, "segments": p.segments}
     # What the analysis says now, including "no phrases". Old phrases are not
@@ -613,8 +640,8 @@ def _track_doc(tid: str, p: Prepared, base: Optional[dict] = None) -> dict:
                   if a.get("host") != p.audio[0].get("host")]
         doc["audio"] = others + p.audio
     doc["source"] = dict(p.source)
-    if p.signature:
-        doc["source"]["signature"] = p.signature
+    if p.signatures:
+        doc["source"]["signatures"] = list(p.signatures)
     return doc
 
 
@@ -633,9 +660,9 @@ def find_existing(tracks: dict, p: Prepared) -> Optional[str]:
     twice (the same file imported twice) is one track here, with both ids."""
     if p.fixed_id and p.fixed_id in tracks:
         return p.fixed_id
-    if p.signature:
+    for sig in p.signatures:
         for tid, doc in tracks.items():
-            if p.signature in ((doc.get("ids") or {}).get("blt_signatures") or ()):
+            if sig in ((doc.get("ids") or {}).get("blt_signatures") or ()):
                 return tid
     for tid, doc in tracks.items():
         known = (doc.get("ids") or {}).get("rekordbox") or []
@@ -671,7 +698,7 @@ def apply(root: Path, prepared: list[Prepared], dry_run: bool = False,
                 "rekordbox_ids": [r["id"] for r in p.rekordbox_ids],
                 "title": p.identity.get("title", ""),
                 "artist": p.identity.get("artist", ""),
-                "signature": p.signature is not None,
+                "signature": bool(p.signatures),
                 "notes": list(p.notes) + [s.strip() for s in extra.split("\n")
                                           if s.strip()]})
 
