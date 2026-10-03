@@ -9,6 +9,7 @@ of the framing, so a bug shared between encoder and decoder cannot hide.
 Run: python engine/tests/test_server.py
 """
 
+import atexit
 import base64
 import errno
 import json
@@ -26,11 +27,31 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import patch as patchmod
 from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
 from engine import server as servermod
-from engine.server import ShowController, ShowServer, load_presets
+from engine.server import ShowController, ShowServer
+
+# Every controller here runs against a COPY of the event, never the real one.
+# These tests save presets, save the venue and attempt calibration writes
+# through the same paths the UI uses, and each of those rewrites a real show's
+# file: cleaning up after itself left the content right but the line endings
+# changed, and a test that crashed between a save and its delete would have
+# left junk presets in tonight's show. The room is copied too -- the despacio
+# rig names a venue in shared/venues/, which venue_save writes -- and both
+# library lookups are pointed at the copy. Safe to patch module globals: every
+# suite runs in its own interpreter (see engine/tests/__main__.py).
+#
+# Named "despacio" because the engine reports the folder name as the event.
+EVENT_TMP = Path(tempfile.mkdtemp(prefix="klights-server-"))
+atexit.register(shutil.rmtree, EVENT_TMP, ignore_errors=True)
+_SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
+EVENT = EVENT_TMP / "despacio"
+shutil.copytree(REPO / "events" / "despacio", EVENT, ignore=_SKIP)
+shutil.copytree(rigmod.VENUE_LIBRARY, EVENT_TMP / "venues", ignore=_SKIP)
+rigmod.VENUE_LIBRARY = patchmod.VENUES = EVENT_TMP / "venues"
 
 failures: list[str] = []
 
@@ -167,7 +188,7 @@ check("a 70k frame uses the 64-bit length", huge[1] == 127
 
 # -- a live server ------------------------------------------------------------
 print("\n2. a live server, over a real socket")
-controller = ShowController(REPO / "events" / "despacio", fps=40.0)
+controller = ShowController(EVENT, fps=40.0)
 server = ShowServer(controller, port=0)
 server.start()
 port = server.httpd.server_address[1]
@@ -183,7 +204,7 @@ port = server.httpd.server_address[1]
 # built BEFORE the live clock starts, as a second engine would be: loading an
 # event in this process holds the GIL long enough to drop a frame on a slow
 # runner.
-second = ShowServer(ShowController(REPO / "events" / "despacio"), port=port)
+second = ShowServer(ShowController(EVENT), port=port)
 try:
     second.start()
     refused = None
@@ -374,7 +395,7 @@ check("and it can be deleted again", True)
 # first preset saved from the UI silently stripped the editor's completion out
 # of the file. Same trap as calibration.json, which is written the same way.
 presets_file = json.loads(
-    (REPO / "events" / "despacio" / "presets.json").read_text(encoding="utf-8"))
+    (EVENT / "presets.json").read_text(encoding="utf-8"))
 check("saving presets keeps the file's $schema",
       presets_file.get("$schema", "").endswith("presets.schema.json"),
       f"{presets_file.get('$schema')!r}")
@@ -486,11 +507,6 @@ client.wait_for(lambda s: not any(p["name"] == "banked" for p in s["presets"]))
 client.send({"type": "preset_move", "name": "Phase a", "bank": 1, "cell": 0})
 client.wait_for(
     lambda s: next(p for p in s["presets"] if p["name"] == "Phase a")["bank"] == 1)
-
-# The test writes into the real event directory; leave it as it was found.
-presets_path = REPO / "events" / "despacio" / "presets.json"
-if presets_path.exists() and not load_presets(presets_path.parent):
-    presets_path.unlink()
 
 client.send({"type": "master", "value": 0.25})
 after = client.wait_for(lambda s: abs(s["master"] - 0.25) < 1e-6)
@@ -883,11 +899,11 @@ check("disabling the taper is announced in capitals",
 # Saving must keep the file's explanatory comments -- they carry the reasoning
 # for every number in it, and rewriting from the dataclass would discard them.
 # Resolved, not assumed: the room may live in shared/venues/ and be shared with
-# another show, so this test edits whatever the engine actually loaded -- and
-# restores it in the `finally` below, which matters more now that the file is
-# not this event's private property.
-venue_path = rigmod.venue_path(REPO / "events" / "despacio", json.loads(
-    (REPO / "events" / "despacio" / "rig.json").read_text(encoding="utf-8")))
+# another show, so this test edits whatever the engine actually loaded (the
+# temp copy of the library, see the top of this file) -- and restores it in the
+# `finally` below, so later sections still see the room as committed.
+venue_path = rigmod.venue_path(EVENT, json.loads(
+    (EVENT / "rig.json").read_text(encoding="utf-8")))
 original = venue_path.read_text(encoding="utf-8")
 try:
     client.send({"type": "taper", "enabled": True, "crowd_level": 0.4})
@@ -912,7 +928,7 @@ try:
           saved["ball"]["y"] == 2743 and saved["apex_height"] == 4600)
 
     # ...and a fresh engine picks the saved policy back up, or saving is theatre.
-    reloaded = ShowController(REPO / "events" / "despacio")
+    reloaded = ShowController(EVENT)
     check("a restart honours the saved taper policy",
           abs(reloaded.ctx.taper.crowd_level - 0.4) < 1e-9,
           f"{reloaded.ctx.taper.crowd_level}")
@@ -943,7 +959,7 @@ controller.apply({"type": "capture", "fixture": head_name, "target": ball,
                   "label": "mirror ball"}, None)
 controller.apply({"type": "capture", "fixture": head_name, "pan": 0, "tilt": 0,
                   "target": [500.0, 0.0, 8644.0], "label": "bogus"}, None)
-cal_before = (REPO / "events" / "despacio" / "calibration.json").read_text(encoding="utf-8")
+cal_before = (EVENT / "calibration.json").read_text(encoding="utf-8")
 try:
     controller.apply({"type": "solve", "write": True}, None)
     check("a badly-fitting solve is not written", False, "it wrote")
@@ -951,7 +967,7 @@ except ValueError as exc:
     check("a badly-fitting solve is not written", "refusing to write" in str(exc),
           str(exc)[:90])
 check("the stored calibration is untouched",
-      (REPO / "events" / "despacio" / "calibration.json").read_text(encoding="utf-8")
+      (EVENT / "calibration.json").read_text(encoding="utf-8")
       == cal_before)
 controller.apply({"type": "capture_clear"}, None)
 controller.apply({"type": "jog_clear"}, None)
@@ -1231,7 +1247,7 @@ controller.stop()
 # attacker; it is the guest who opens the URL you showed someone and starts
 # pressing things between sets.
 print("\n12. access tiers")
-guarded = ShowController(REPO / "events" / "despacio")
+guarded = ShowController(EVENT)
 guarded_server = ShowServer(guarded, port=0, token="secret123")
 guarded.start()
 guarded_server.start()
@@ -1344,7 +1360,7 @@ finally:
 # The default is a token, but a laptop with no network is a real case and it
 # must not need a query string to work.
 print("\n13. --no-token")
-open_ctl = ShowController(REPO / "events" / "despacio")
+open_ctl = ShowController(EVENT)
 open_server = ShowServer(open_ctl, port=0, token=None)
 open_ctl.start()
 open_server.start()
@@ -1376,7 +1392,7 @@ with tempfile.TemporaryDirectory() as tmp:
     ev = Path(tmp) / "ev"
     ev.mkdir()
     for name in ("rig.json", "calibration.json"):
-        shutil.copy(REPO / "events" / "despacio" / name, ev / name)
+        shutil.copy(EVENT / name, ev / name)
 
     live = ShowController(ev)
     live.start()
@@ -1489,7 +1505,7 @@ with tempfile.TemporaryDirectory() as tmp:
 print("\n15. tempo ingest")
 from engine import sync as syncmod          # noqa: E402
 
-djs = ShowController(REPO / "events" / "despacio")
+djs = ShowController(EVENT)
 try:
     djs.enable_sync(port=0, bind="127.0.0.1")
     sync_port = djs.sync.sock.getsockname()[1]
@@ -1639,7 +1655,7 @@ def spy_load(*args, **kwargs):
 
 
 showlibrary.load = spy_load
-sc = ShowController(REPO / "events" / "despacio", show_dir=shows)
+sc = ShowController(EVENT, show_dir=shows)
 sc.worker.start()
 GUEST_SIG = "d" * 40
 
@@ -1687,7 +1703,7 @@ def track_now():
 
 
 try:
-    plain = ShowController(REPO / "events" / "despacio")
+    plain = ShowController(EVENT)
     check("with no show folder, none of it exists",
           plain.snapshot()["show"] is None
           and plain.snapshot()["track"]["match"] is None
