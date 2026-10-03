@@ -11,6 +11,20 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Fixed — preflight on a machine without QLC+
+
+- **`scripts/preflight.py` said NOT READY on every machine without QLC+**: any
+  container, CI runner or fresh laptop. despacio's venue checks hard-failed
+  when the fixture def was not installed in QLC+'s user dir, and nothing at the
+  venue loads that copy since the show moved to the engine. That check is gone.
+- **The rig step now loads the rig the way a fresh clone will**, resolving
+  profiles from `shared/fixtures/` only. The engine also searches
+  `~/QLC+/Fixtures` and the gitignored `qlcplus/` tree, so a `.qxf` that lived
+  only there passed preflight on the machine that had it and failed on every
+  other one. That is how the pinspot went missing until 2026-08-06. The failure
+  names the file it was really loading from and the
+  `python -m engine.patch import` command that fixes it.
+
 ### Added — the launcher
 
 - **`kLights.pyw`, one window for show setup** (`python -m launcher`). Pick the
