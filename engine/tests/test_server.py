@@ -1248,16 +1248,17 @@ controller.stop()
 # pressing things between sets.
 print("\n12. access tiers")
 guarded = ShowController(EVENT)
-guarded_server = ShowServer(guarded, port=8788, token="secret123")
+guarded_server = ShowServer(guarded, port=0, token="secret123")
 guarded.start()
 guarded_server.start()
+guarded_port = guarded_server.httpd.server_address[1]
 time.sleep(0.3)
 try:
     # One client at a time, and closed before the next. Three left connected and
     # unread is what surfaced the broadcast stall fixed in send_all -- worth
     # knowing, but not what this section is testing.
     def tier_of(path):
-        c = Client(8788, path=path)
+        c = Client(guarded_port, path=path)
         return c, c.recv().get("tier")
 
     good, tier = tier_of("/ws?token=secret123")
@@ -1293,7 +1294,7 @@ try:
     # Browsers send Origin on a WebSocket handshake and do not apply the
     # same-origin policy to it, so without this check any page the operator has
     # open could drive the rig.
-    hostile = socket.create_connection(("127.0.0.1", 8788), timeout=5)
+    hostile = socket.create_connection(("127.0.0.1", guarded_port), timeout=5)
     key = base64.b64encode(os.urandom(16)).decode()
     hostile.sendall(("\r\n".join([
         "GET /ws HTTP/1.1", "Host: localhost", "Upgrade: websocket",
@@ -1314,12 +1315,12 @@ try:
     # of unread broadcasts before a send would actually have blocked. Without
     # the wait this check passes whether or not the bug is present, which is the
     # kind of test that is worse than none.
-    idle = Client(8788, path="/ws")
+    idle = Client(guarded_port, path="/ws")
     idle.recv()                        # welcome, then never read again
     idle.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
     time.sleep(2.5)                    # ~25 unread snapshots
 
-    live = Client(8788, path="/ws?token=secret123")
+    live = Client(guarded_port, path="/ws?token=secret123")
     live.recv()
     started = time.time()
     live.send({"type": "master", "value": 0.55})
@@ -1360,12 +1361,13 @@ finally:
 # must not need a query string to work.
 print("\n13. --no-token")
 open_ctl = ShowController(EVENT)
-open_server = ShowServer(open_ctl, port=8787, token=None)
+open_server = ShowServer(open_ctl, port=0, token=None)
 open_ctl.start()
 open_server.start()
+open_port = open_server.httpd.server_address[1]
 time.sleep(0.3)
 try:
-    c = Client(8787, path="/ws")
+    c = Client(open_port, path="/ws")
     welcome = c.recv()
     check("with no token configured, a bare client gets configure",
           welcome.get("tier") == "configure", f"{welcome.get('tier')}")
