@@ -91,12 +91,38 @@ const ROUTINES = [
     params: idleOrbit.params, variations: [], roles: idleOrbit.roles },
 ];
 
+/** What `prep.py catalogue` says, cut down: a folder, a playlist in it with
+ *  rekordbox's trailing space, a smart playlist, and one track of each kind. */
+const CATALOGUE = {
+  kind: "klights.rekordbox_catalogue", db: "collection:TEST",
+  path: "C:/rekordbox/master.db", rekordbox: "7.2.14", read_at: "2026-10-03T07:39:22",
+  playlists: [
+    { id: "10", name: "Gigs", parent: null, kind: "folder", tracks: [] },
+    { id: "11", name: "Friday ", parent: "10", kind: "playlist", tracks: [101, 102] },
+    { id: "13", name: "Smart", parent: null, kind: "smart", tracks: [] },
+  ],
+  tracks: [
+    { id: 101, title: "synthetic 128", artist: "kLights", album: "", genre: "", key: "",
+      bpm: 128, duration_s: 360, local: true, analysed: true, added: "2026-01-01" },
+    { id: 102, title: "Night Drive", artist: "Kölsch", album: "Night EP", genre: "", key: "8A",
+      bpm: 124, duration_s: 400, local: true, analysed: true, added: "2026-01-02" },
+    { id: 103, title: "Raw Demo", artist: "Someone", album: "", genre: "", key: "",
+      bpm: null, duration_s: 200, local: true, analysed: false, added: "2026-01-03" },
+    { id: 104, title: "Streamed Tune", artist: "Streamer", album: "", genre: "", key: "",
+      bpm: 128, duration_s: 300, local: false, analysed: true, added: "2026-01-04" },
+  ],
+};
+let rekordbox: [number, unknown] = [200, CATALOGUE];
+
 function serve(path: string): [number, unknown] {
   if (path === "/api/tracks") {
     return [200, { tracks: [{ id: "synth-128", title: "synthetic 128", artist: "kLights",
                               bpm: 128, phrases: 8, has_timeline: true,
-                              has_waveform: false, has_audio: false }] }];
+                              has_waveform: false, has_audio: false,
+                              rekordbox: [{ db: "collection:TEST", id: 101 }],
+                              signatures: 1 }] }];
   }
+  if (path === "/api/rekordbox") return rekordbox;
   if (path === "/api/tracks/synth-128") return [200, { doc: trackDoc, rev: "r:t" }];
   if (path === "/api/timelines/synth-128") return [200, { doc: timelineDoc, rev: TIMELINE_REV }];
   if (path === "/api/routines") return [200, { routines: ROUTINES }];
@@ -108,6 +134,7 @@ function serve(path: string): [number, unknown] {
 
 beforeEach(() => {
   localStorage.clear();
+  rekordbox = [200, CATALOGUE];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -141,7 +168,7 @@ describe("designer", () => {
   it("lists the show folder's tracks", async () => {
     await open("#designer");
     expect(await screen.findByText("synthetic 128")).toBeInTheDocument();
-    expect(screen.getByText(/8 phrases · timeline/)).toBeInTheDocument();
+    expect(screen.getByText(/8 phrases · timeline · CDJ signature/)).toBeInTheDocument();
   });
 
   it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
@@ -550,5 +577,92 @@ describe("routine editor", () => {
     await user.click(await screen.findByRole("button", { name: "1 note(s)" }));
     expect(screen.getByRole("dialog", { name: "draft check" }))
       .toHaveTextContent(/no fixtures on this rig/);
+  });
+});
+
+describe("rekordbox collection", () => {
+  async function browse() {
+    const user = userEvent.setup();
+    const socket = await open("#designer");
+    await user.click(await screen.findByRole("button", { name: "Browse rekordbox" }));
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    return { user, socket, region };
+  }
+
+  it("is read only when asked: a big collection is a megabyte", async () => {
+    await open("#designer");
+    await screen.findByText("synthetic 128");
+    const asked = (vi.mocked(fetch).mock.calls as unknown as [string][])
+      .map(([url]) => new URL(url, "http://engine").pathname);
+    expect(asked).not.toContain("/api/rekordbox");
+  });
+
+  it("lists every track, and says which are in the show, unanalysed or streamed", async () => {
+    const { region } = await browse();
+    const table = within(region).getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(5);   // header + 4
+    expect(within(table).getByRole("link", { name: "in the show" }))
+      .toHaveAttribute("href", "#designer/synth-128");
+    expect(within(table).getByLabelText("tick Raw Demo")).toBeDisabled();
+    expect(within(table).getByText("not analysed")).toBeInTheDocument();
+    expect(within(table).getByText("streaming")).toBeInTheDocument();
+    expect(within(region).getByLabelText("smart Smart")).toBeDisabled();
+  });
+
+  it("browses folder, then playlist, then its tracks; and searches the way the matcher compares", async () => {
+    const { user, region } = await browse();
+    const tree = within(region).getByRole("navigation", { name: "playlists" });
+    expect(within(tree).queryByLabelText("playlist Friday")).toBeNull();
+    await user.click(within(tree).getByLabelText("folder Gigs"));
+    await user.click(within(tree).getByLabelText("playlist Friday"));
+    const table = within(region).getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByText("Night Drive")).toBeInTheDocument();
+    expect(within(table).queryByText("Streamed Tune")).toBeNull();
+    await user.type(within(region).getByLabelText("search rekordbox"), "kolsch night");
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getByText("Night Drive")).toBeInTheDocument();
+  });
+
+  it("preps the ticked tracks and says what happened to each", async () => {
+    const { user, socket, region } = await browse();
+    const add = within(region).getByRole("button", { name: /to the show/ });
+    expect(add).toBeDisabled();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByLabelText("tick Streamed Tune"));
+    await user.click(within(region).getByRole("button", { name: "Add 2 to the show" }));
+    const sent = reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] },
+                { status: "created", track_id: "streamer-streamed-tune", rekordbox_ids: [104],
+                  title: "Streamed Tune", artist: "Streamer", signature: false,
+                  notes: ["a streaming track: there is no file for the designer to play"] }],
+      skipped: [] }) as Command & { ids: number[] };
+    expect(sent.ids).toEqual([102, 104]);
+    const summary = await within(region).findByRole("status");
+    expect(summary).toHaveTextContent("Prepped 2:");
+    expect(summary).toHaveTextContent("2 new, 0 updated, 0 unchanged");
+    expect(within(summary).getByRole("link", { name: "Kölsch – Night Drive" }))
+      .toHaveAttribute("href", "#designer/kolsch-night-drive");
+    expect(summary).toHaveTextContent(/no CDJ signature/);
+    expect(summary).toHaveTextContent(/no file for the designer to play/);
+    expect(within(region).getByRole("button", { name: "Add to the show" })).toBeDisabled();
+  });
+
+  it("shows what the engine said when it cannot prep", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    reply(socket, "rekordbox_prep", false, undefined,
+          "a prep from rekordbox is already running; wait for it");
+    expect(await within(region).findByRole("alert")).toHaveTextContent("already running");
+  });
+
+  it("says why when rekordbox cannot be read, in the bridge's words", async () => {
+    rekordbox = [503, { error: "master.db is encrypted and no key was given: set RB_CIPHER_KEY" }];
+    const user = userEvent.setup();
+    await open("#designer");
+    await user.click(await screen.findByRole("button", { name: "Browse rekordbox" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("set RB_CIPHER_KEY");
   });
 });

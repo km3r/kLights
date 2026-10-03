@@ -460,6 +460,9 @@ export type Command =
   | { type: "routine_draft"; doc: unknown }
   | { type: "routine_save"; doc: unknown; base_rev: string }
   | { type: "track_link"; track_id: string }
+  /** Prep tracks from the DJ's rekordbox collection into the show folder, by
+   *  rekordbox id. Answered when the bridge has finished. */
+  | { type: "rekordbox_prep"; ids: number[] }
   | { type: "preview_arm"; track_id: string; force?: boolean }
   | { type: "preview_transport"; time_s: number; playing: boolean }
   | { type: "preview_release" };

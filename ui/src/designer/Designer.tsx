@@ -12,6 +12,7 @@ import type {
 import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
+import { CollectionBrowser } from "./Collection";
 import "./designer.css";
 
 /**
@@ -61,12 +62,19 @@ function TrackPicker({ engine }: { engine: Engine }) {
   const [routines, setRoutines] = useState<RoutineSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newId, setNewId] = useState("");
-  useEffect(() => {
+  const loadTracks = useCallback(() => {
     apiFetch<{ tracks: TrackLine[] }>("/api/tracks")
       .then((r) => setTracks(r.tracks)).catch((e: Error) => setError(e.message));
+  }, []);
+  useEffect(() => {
     apiFetch<{ routines: RoutineSummary[] }>("/api/routines")
       .then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
   }, []);
+  // The folder's rev rides in every snapshot, so the list follows the folder:
+  // tracks prepped from rekordbox below, or by anything else, appear when the
+  // engine has reloaded them -- not when a reply guesses it has.
+  const folderRev = engine.state?.show?.rev;
+  useEffect(() => { loadTracks(); }, [loadTracks, folderRev]);
   const idOk = /^[a-z0-9][a-z0-9_-]{0,63}$/.test(newId)
     && !routines.some((r) => r.id === newId);
   return (
@@ -80,8 +88,8 @@ function TrackPicker({ engine }: { engine: Engine }) {
         {error && <p className="d-error">{error}</p>}
         {!tracks && !error && <p className="muted">Loading the show folder…</p>}
         {tracks?.length === 0 && (
-          <p className="muted">No prepped tracks in the show folder yet --
-            prep some with <code>bridges/rekordbox/prep.py</code>.</p>)}
+          <p className="muted">No prepped tracks in the show folder yet -- add some
+            from rekordbox below.</p>)}
         <ul>
           {tracks?.map((t) => (
             <li key={t.id}>
@@ -91,10 +99,13 @@ function TrackPicker({ engine }: { engine: Engine }) {
               <span className="muted small">
                 {" "}{t.bpm ? `${t.bpm} bpm · ` : ""}{t.phrases} phrases ·{" "}
                 {t.has_timeline ? "timeline" : "no timeline yet"}
+                {t.signatures ? " · CDJ signature" : ""}
               </span>
             </li>
           ))}
         </ul>
+        <h2>From rekordbox</h2>
+        <CollectionBrowser engine={engine} tracks={tracks ?? []} onPrepped={loadTracks} />
         <h2>Routines</h2>
         <p className="muted small">The reusable pieces a timeline's clips play: rows on roles,
           in their own bars.</p>

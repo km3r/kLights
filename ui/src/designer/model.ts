@@ -131,7 +131,61 @@ export interface TrackLine {
   has_waveform: boolean;
   has_audio: boolean;
   phrases: number;
+  /** The rekordbox rows this track is, each in its own database. */
+  rekordbox?: { db: string; id: number }[];
+  /** How many beat-link signatures it answers to: CDJs playing a USB stick. */
+  signatures?: number;
   rev?: string;
+}
+
+/** `GET /api/rekordbox`: the DJ's collection, as the prep bridge read it. */
+export interface Catalogue {
+  kind: "klights.rekordbox_catalogue";
+  /** What the ids belong to, as prepped tracks record it. */
+  db: string;
+  path: string;
+  rekordbox: string | null;
+  read_at: string;
+  playlists: CataloguePlaylist[];
+  tracks: CatalogueTrack[];
+}
+
+export interface CataloguePlaylist {
+  id: string;
+  name: string;
+  parent: string | null;
+  kind: "playlist" | "folder" | "smart";
+  tracks: number[];
+}
+
+export interface CatalogueTrack {
+  id: number;
+  title: string;
+  artist: string;
+  album: string;
+  genre: string;
+  key: string;
+  bpm: number | null;
+  duration_s: number | null;
+  /** A file on the rekordbox machine; false for a streaming service's track. */
+  local: boolean;
+  analysed: boolean;
+  added: string;
+}
+
+/** The bridge's answer to `rekordbox_prep`. */
+export interface PrepSummary {
+  results: { status: string; track_id: string; rekordbox_ids: number[]; title: string;
+             artist: string; signature: boolean; notes: string[] }[];
+  skipped: { rekordbox_id: number; title: string; artist: string; reason: string }[];
+}
+
+/** A form of a name for comparing, the way engine/tracks.normalize compares:
+ *  case, accents, "&" and punctuation forgiven. */
+export function normalizeName(text: string): string {
+  return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/&/g, " and ").replace(/\b(?:featuring|feat|ft)\b\.?/g, " feat ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 // -- the grid ----------------------------------------------------------------

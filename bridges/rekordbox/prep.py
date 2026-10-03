@@ -47,8 +47,9 @@ counting bars. The db route has no grid but the analysis's, so it skips one.
 **What it writes.** `tracks/<id>.json` and `waveforms/<id>.json`, through
 engine/showfiles.py, so a prepped track is validated by the same rules the
 designer and MCP use. It is idempotent: a track already in the folder is
-recognised (by its rekordbox id, then by title, artist, album and duration) and
-updated in place, and an unchanged track is not rewritten at all. It never
+recognised (by its signature, then its rekordbox id, then by title, artist,
+album and duration) and updated in place, and an unchanged track is not
+rewritten at all. It never
 touches a timeline. When a track's grid has moved since a timeline was drawn on
 it, that is reported, because every cue on that timeline may now be off.
 """
