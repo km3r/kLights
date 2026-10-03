@@ -320,7 +320,8 @@ class MasterClock:
              beat_in_bar: Optional[float] = None,
              phrase_label: Optional[str] = None,
              phrase_ends_in: Optional[float] = None,
-             at: Optional[float] = None) -> None:
+             at: Optional[float] = None,
+             phrase_into: Optional[float] = None) -> None:
         """Accept a position from an external source -- Pro DJ Link, MIDI clock,
         an audio beat tracker.
 
@@ -363,6 +364,10 @@ class MasterClock:
             self.phrase_label = label
         if phrase_ends_in is not None:
             self.phrase_ends_at = self._anchor_beat + float(phrase_ends_in)
+        if phrase_into is not None and self.phrase_label is not None:
+            # The deck said how far into the phrase it is: exact, where the
+            # label change alone is only a bar line.
+            self.phrase_start = self._anchor_beat - float(phrase_into)
         if at is not None:
             self.synced_at = float(at)
 

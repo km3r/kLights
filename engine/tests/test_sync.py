@@ -675,6 +675,17 @@ check("and the golden identity bytes",
 check("and the golden tempo and bar-phase bytes",
       bridgemod.as_blt({"bpm": 126.5}) == [byname["bpm"]]
       and bridgemod.as_blt({"beat_in_bar": 2.0}) == [byname["beat"]])
+v = next(m for m in golden["messages"] if m["name"] == "phrase")["values"]
+check("and the golden phrase bytes (milestone 2)",
+      bridgemod.as_blt({"deck": str(v["deck"]), "phrase_label": v["label"],
+                        "phrase_into": v["beats_into"],
+                        "phrase_ends_in": v["beats_left"]}) == [byname["phrase"]])
+check("an empty phrase label from the deck clears the phrase, nothing more",
+      syncmod.parse(osc_args("/klights/v1/phrase", 2, "", 0.0, 0.0))
+      == {"source": "blt", "deck": "2", "phrase_label": ""})
+check("a negative beats-into is refused rather than trusted",
+      "phrase_into" not in (syncmod.parse(osc_args("/klights/v1/phrase", 2, "Chorus",
+                                                   -3.0, 60.0)) or {}))
 osc_sink.stop()
 
 

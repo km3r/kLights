@@ -11,6 +11,19 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20c: live phrases from CDJs
+
+- **Guest tracks on CDJs get phrase templates** (decided with the user): the
+  beat-link-trigger expressions read the song structure from the rekordbox
+  analysis on the DJ's own USB and send `/klights/v1/phrase` (deck, label,
+  beats into, beats left) when the phrase changes and every bar. The labels are
+  the prep tool's own table, so a guest's "Up 1" reads exactly as a prepped
+  one. Not yet run on hardware; golden bytes pin the encoding, and the fake
+  bridge's `--blt` shape now sends the same message.
+- The clock places a phrase's start exactly from "beats into"
+  (`clock.phrase_start`), where a label change alone is only a bar line -- for
+  rkbx_link too, which announces where a phrase will end.
+
 ### Added — F20b: templates on stage
 
 - **The fallback chain is whole**: timeline, then template, then the operator's

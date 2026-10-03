@@ -166,4 +166,7 @@ called done, a ten-minute capture on each rig must show:
 - whether rkbx_link re-sends track metadata or sends it only on change, and in
   what order during a master switch;
 - rkbx_link's exact phrase strings in `string` format;
-- that beat-link-trigger delivers the signature and rekordbox id.
+- that beat-link-trigger delivers the signature and rekordbox id;
+- that it reads the song structure (PSSI) off a guest's USB, with the labels
+  rekordbox shows, and that `/klights/v1/phrase`'s beats-into lands the
+  template's routine on the phrase's first beat (milestone 2).

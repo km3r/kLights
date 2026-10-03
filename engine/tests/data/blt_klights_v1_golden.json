@@ -68,6 +68,24 @@
       "decodes_to": {
         "beat_in_bar": 2.0
       }
+    },
+    {
+      "name": "phrase",
+      "hex": "2f6b6c69676874732f76312f70687261736500002c697366660000000000000243686f72757300004080000042700000",
+      "values": {
+        "deck": 2,
+        "label": "Chorus",
+        "beats_into": 4.0,
+        "beats_left": 60.0
+      },
+      "decodes_to": {
+        "source": "blt",
+        "deck": "2",
+        "phrase_label": "Chorus",
+        "phrase_measured": true,
+        "phrase_into": 4.0,
+        "phrase_ends_in": 60.0
+      }
     }
   ]
 }

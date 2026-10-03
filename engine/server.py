@@ -1476,6 +1476,7 @@ class ShowController:
             phrase_measured=fields.get("phrase_measured"),
             phrase_label=fields.get("phrase_label"),
             phrase_ends_in=fields.get("phrase_ends_in"),
+            phrase_into=fields.get("phrase_into"),
             at=syncmod.now())
         if "deck" in fields:
             self.sync_deck = fields["deck"]

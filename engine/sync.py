@@ -70,7 +70,7 @@ from typing import Any, Callable, Optional
 # select pre-authored content -- which is why Follow DJ starts disarmed and why
 # every one of them is range-checked here, not trusted.
 CLOCK_FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
-                "phrase_ends_in", "source", "deck", "track")
+                "phrase_ends_in", "phrase_into", "source", "deck", "track")
 TRACK_FIELDS = ("track_time", "title", "artist", "album", "duration",
                 "bpm_original", "pitch", "playing", "on_air", "master",
                 "rekordbox_id", "signature", "beat_number")
@@ -82,7 +82,10 @@ _FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
            # cue set before the first sample. Four hours is longer than any
            # track a DJ will play.
            "track_time": (-60.0, 14400.0), "duration": (0.0, 14400.0),
-           "bpm_original": (20.0, 400.0), "pitch": (0.0, 4.0)}
+           "bpm_original": (20.0, 400.0), "pitch": (0.0, 4.0),
+           # Beats since the current phrase began, as the deck's own analysis
+           # says (milestone 2): where a template starts its routine.
+           "phrase_into": (0.0, 4096.0)}
 _FLAGS = ("phrase_measured", "playing", "on_air", "master")
 _INTS = {"rekordbox_id": (0, 2 ** 32 - 1), "beat_number": (0, 200000)}
 _NAMES = ("title", "artist", "album")       # longer, and cleaned harder
@@ -143,6 +146,10 @@ KLIGHTS_V1 = {
     "pos": "nnnnnnn",
     # deck, rekordbox_id, signature, title, artist, album, duration_s
     "track": "nnssssn",
+    # deck, label, beats_into, beats_left -- the tempo master's phrase from
+    # the rekordbox analysis on the DJ's USB (milestone 2). An empty label
+    # says the deck has no phrase analysis.
+    "phrase": "nsnn",
 }
 
 
@@ -209,6 +216,12 @@ def klights_fields(parts: list[str], args: list) -> Optional[dict]:
         # datagram must never be able to do that.
         if number and not math.isfinite(arg):
             return None
+    if parts[0] == "phrase":
+        deck, label, into, left = args
+        out = {"source": "blt", "deck": str(int(deck)), "phrase_label": label}
+        if label:
+            out.update(phrase_measured=True, phrase_into=into, phrase_ends_in=left)
+        return out
     if parts[0] == "pos":
         deck, playing, time_s, pitch, beat_number, master, on_air = args
         return {"source": "blt", "deck": str(int(deck)), "playing": playing != 0,

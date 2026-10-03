@@ -239,6 +239,24 @@ try:
           and st["template"]["routine"] == "fan-drop"
           and st["template"]["start"] == sc.clock.phrase_start, f"{st}")
 
+    # A guest on a CDJ: beat-link-trigger sends the USB's phrase and how far
+    # into it the deck is (F20c), so the routine starts where the phrase did.
+    t += 2.5
+    blt(t, "CDJ Guest", "Guest DJ", "", 210.0, rid=5)
+    t += 0.01
+    play(20, 0.2)
+    sc.apply({"type": "sync", "source": "blt", "deck": "1", "phrase_label": "Up 1",
+              "phrase_into": 6.0, "phrase_ends_in": 26.0, "phrase_measured": True},
+             None, t)
+    said_at = sc.clock.beat(t)
+    play(20.2, 0.2)
+    st = status()
+    check("a CDJ guest's phrase from the USB analysis picks by family (Up 1 -> Up) "
+          "and starts the routine where the phrase began",
+          st["mode"] == "template" and st["template"]["label"] == "Up 1"
+          and st["template"]["routine"] == "build-rise"
+          and abs(st["template"]["start"] - (said_at - 6.0)) < 1e-6, f"{st}")
+
     sc.apply({"type": "template_set", "id": None}, None, t)
     check("switching set waits for the next downbeat",
           sc.player.pending == playbackmod.NO_SET and sc.player.set_id == "club")
