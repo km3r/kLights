@@ -34,6 +34,7 @@ regenerated without being read, which is a guard that guards nothing.
 from __future__ import annotations
 
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -180,14 +181,54 @@ def build() -> bytes:
     return (json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def first_difference(a, b, path: str = "") -> str:
+    """Where `a` and `b` disagree, or '' if nowhere.
+
+    Numbers agree within 1e-12. The file is written on one machine and checked
+    on others, and libm differs between them in the last bit: Windows' sin and
+    atan2 are not glibc's, so exact equality called the file stale on every
+    Linux CI run. A real change -- a recalibration, a new head -- moves values
+    by many orders of magnitude more than this.
+
+    The manifest's `rev` is skipped: it is a hash OF those values, so the same
+    last-bit wobble turns it into a different string, and everything it hashes
+    is compared here anyway.
+    """
+    if isinstance(a, bool) or isinstance(b, bool):
+        return "" if a == b else f"{path}: {a!r} != {b!r}"
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return "" if math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12) else f"{path}: {a!r} != {b!r}"
+    if isinstance(a, dict) and isinstance(b, dict):
+        if a.keys() != b.keys():
+            return f"{path}: keys {sorted(a.keys() ^ b.keys())} differ"
+        for key in a:
+            if key == "rev":
+                continue
+            found = first_difference(a[key], b[key], f"{path}.{key}")
+            if found:
+                return found
+        return ""
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return f"{path}: {len(a)} entries != {len(b)}"
+        for i, (x, y) in enumerate(zip(a, b)):
+            found = first_difference(x, y, f"{path}[{i}]")
+            if found:
+                return found
+        return ""
+    return "" if a == b else f"{path}: {a!r} != {b!r}"
+
+
 def main(argv: list[str]) -> int:
     data = build()
     if "--check" in argv:
         # Compared as JSON, not bytes: a Windows checkout with autocrlf hands
         # back CRLF and would otherwise read as stale on every machine but CI.
         current = json.loads(OUT.read_text(encoding="utf-8")) if OUT.is_file() else None
-        if current != json.loads(data):
-            print(f"stale: {OUT.relative_to(REPO)} -- run shared/tools/gen_previz_parity.py")
+        moved = ("the file is missing" if current is None
+                 else first_difference(current, json.loads(data)))
+        if moved:
+            print(f"stale: {OUT.relative_to(REPO)} ({moved}) -- run shared/tools/gen_previz_parity.py")
             return 1
         print(f"{OUT.relative_to(REPO)} is current")
         return 0
