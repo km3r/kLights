@@ -84,12 +84,74 @@ def bundle_matches_source() -> tuple[bool, str]:
     return True, "the bundle on disk matches a fresh build"
 
 
+def check_rig(event_dir: Path) -> int:
+    """Load the event's rig the way a fresh clone will, then validate it.
+
+    Profiles come from shared/fixtures/ only. The engine also searches
+    ~/QLC+/Fixtures and the gitignored qlcplus/ tree, so a .qxf that lives in
+    one of those loads on the machine that has it and fails on every other one,
+    the show laptop included -- which is how the pinspot went missing until
+    2026-08-06. Loading with the engine's own search order would pass on
+    exactly the machine this gets run on before leaving.
+
+    This replaced despacio's "fixture def installed in QLC+" check. That one
+    guarded a second copy going stale, and failed outright wherever QLC+ was not
+    installed. The engine has no second copy -- it reads the repo's -- so the
+    only way left to be wrong is for the repo not to have it.
+    """
+    sys.path.insert(0, str(REPO))
+    from engine import config as configmod, rig
+
+    # Root 0 is shared/fixtures/, "first and always" -- see rig.py.
+    in_repo = rig.ProfileLibrary(rig.QXF_SEARCH_ROOTS[:1])
+    cfg =configmod.load(event_dir / "rig.json", configmod.RIG)
+    missing: dict[tuple[str, str], list[str]] = {}
+    for entry in cfg["fixtures"]:
+        key = (entry["manufacturer"], entry["model"])
+        if in_repo.get(*key) is None:
+            missing.setdefault(key, []).append(entry["name"])
+    if missing:
+        # Say where each one IS coming from on this machine, so the fix is one
+        # command rather than a hunt.
+        elsewhere = rig.ProfileLibrary(rig.QXF_SEARCH_ROOTS[1:])
+        for (manufacturer, model), names in sorted(missing.items()):
+            found = elsewhere.get(manufacturer, model)
+            print(f"{', '.join(names)}: {manufacturer} {model!r} is not in "
+                  f"shared/fixtures/" + (
+                      f" -- it loads here only from {found.path}, which a "
+                      f"fresh clone does not have. Copy it in:\n"
+                      f"    python -m engine.patch import \"{found.path}\""
+                      if found else " or anywhere else on this machine"))
+        return 1
+
+    r = rig.load_rig(event_dir, in_repo)
+    errors = r.validate()
+    if errors:
+        print("\n".join(errors))
+        return 1
+    print(f"{len(r.fixtures)} fixtures, {len(r.movers)} movers, ok")
+    return 0
+
+
+def rig_step(event_dir: Path) -> Step:
+    # Its own process, like every other step, so a broken rig cannot take the
+    # runner down with it.
+    return Step("rig loads and validates",
+                [sys.executable, str(Path(__file__).resolve()),
+                 "--check-rig", str(event_dir)])
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Pre-venue checks")
     parser.add_argument("--event", default="despacio")
     parser.add_argument("--skip-tests", action="store_true",
                         help="skip the engine suites (they take ~15s)")
+    parser.add_argument("--check-rig", metavar="EVENT_DIR",
+                        help=argparse.SUPPRESS)   # what rig_step runs
     args = parser.parse_args(argv)
+
+    if args.check_rig:
+        return check_rig(Path(args.check_rig))
 
     event_dir = REPO / "events" / args.event
     if not event_dir.is_dir():
@@ -106,14 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         Step("patch sheet validates",
              [sys.executable, "shared/tools/validate_patch.py",
               "--event", args.event]),
-        Step("rig loads and validates",
-             [sys.executable, "-c",
-              "import sys; sys.path.insert(0, '.');"
-              "from pathlib import Path; from engine import rig;"
-              f"r = rig.load_rig(Path('events/{args.event}'));"
-              "e = r.validate();"
-              "print('\\n'.join(e)) or sys.exit(1) if e else "
-              "print(f'{len(r.fixtures)} fixtures, {len(r.movers)} movers, ok')"]),
+        rig_step(event_dir),
     ]
 
     # Event-specific gate, where the event has one. despacio's checks venue
