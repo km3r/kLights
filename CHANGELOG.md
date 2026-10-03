@@ -11,6 +11,34 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — guides and help in the app
+
+- **A guide to every tab**, behind a **?** in the console's header: a short
+  walkthrough of what the tab is for, then the things worth knowing. Start,
+  Show, Color, Move, Bright, Setup, and a pointer to the designer. A guide
+  opens in place of the tab, under the same header, so Master and Blackout stay
+  one tap away while someone reads; it is in the main bundle, so it works while
+  the engine is down. `#guide/<tab>` links straight to one.
+- **A first-run tour**, offered once per device by a card at the top of the
+  console. Never a dialog: the device it most often appears on is a phone
+  handed to someone mid-set.
+- **Tap-to-open help on the cards whose labels do not explain them**: the cue
+  list, On now (Release hold), Presets, Track (Follow, Grab, Latency), Tempo
+  (Downbeat, nudge), Auto, the quick palette's long-press, the safety taper's
+  soft edge and smoothing, the crowd zone's axes, Capture, and Drift check.
+  A tap rather than a tooltip, because a phone has no hover.
+- **The designer has a Guide** (or press **?**): building a track's show and
+  building a routine, in a column beside the lanes so nothing it tells you to
+  press is covered. A first visit offers it once. At the playhead, Draft from
+  template, Record and Palettes have their own **?**.
+
+### Fixed — links between console tabs
+
+- **The On now rows did nothing when tapped.** They are links to the tab that
+  owns each slot, and the console only read the address when it loaded, so
+  following one changed the address and nothing else. It now follows the
+  address as it changes.
+
 ### Fixed — preflight on a machine without QLC+
 
 - **`scripts/preflight.py` said NOT READY on every machine without QLC+**: any

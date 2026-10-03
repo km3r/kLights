@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
@@ -1630,5 +1630,163 @@ describe("controls that had handlers but no sender", () => {
     // The release never arrives if the socket drops mid-press, and the operator
     // is then looking at a reconnected console that appears fine.
     expect(socket.commands.some((c) => c.type === "flash_clear")).toBe(true);
+  });
+});
+
+/**
+ * The guides and the "?" help: the console explaining itself.
+ *
+ * A guide is read by someone who does not know the console yet, so the things
+ * worth pinning are the ones that would strand them: a guide that cannot find
+ * its way back to the tab, a tab with no guide, a tour that keeps coming back,
+ * and help that is not there on the surface with no hover.
+ */
+describe("guides", () => {
+  const guideButton = () =>
+    within(document.querySelector(".header") as HTMLElement)
+      .getByRole("button", { name: "Guide" });
+  const pressedGuide = () =>
+    within(screen.getByRole("group", { name: "guides" }))
+      .getAllByRole("button").find((b) => b.getAttribute("aria-pressed") === "true");
+
+  it("offers the tour once, and Not now means not on this device again", async () => {
+    const user = userEvent.setup();
+    mount();
+    const welcome = screen.getByRole("region", { name: "welcome" });
+    await user.click(within(welcome).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("region", { name: "welcome" })).toBeNull();
+    expect(localStorage.getItem("klights.guide.welcomed")).toBe("1");
+
+    // A reload, as a phone waking up would do it.
+    cleanup();
+    mount();
+    expect(screen.queryByRole("region", { name: "welcome" })).toBeNull();
+  });
+
+  it("takes the tour before the engine has answered at all", async () => {
+    // Help is reached for when something is wrong, so it must not wait on the
+    // thing that is wrong.
+    const user = userEvent.setup();
+    installMockSocket();
+    render(<App />);
+    expect(screen.getByText(/Waiting for the engine/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Take the tour" }));
+    expect(screen.getByText("The console in two minutes")).toBeInTheDocument();
+    expect(location.hash).toBe("#guide/start");
+    // Opening it was the answer to the offer.
+    expect(localStorage.getItem("klights.guide.welcomed")).toBe("1");
+  });
+
+  it("opens the guide to the tab you are on, and Back returns to that tab", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Move/);
+    await user.click(guideButton());
+    expect(screen.getByText("Move: aiming the beams")).toBeInTheDocument();
+    // In place of the tab, not on top of it.
+    expect(screen.queryByRole("slider", { name: "Size" })).toBeNull();
+    expect(location.hash).toBe("#guide/move");
+    // Master and Blackout stay put while someone reads.
+    expect(screen.getByRole("button", { name: /^blackout$/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back to Move" }));
+    expect(screen.getByRole("slider", { name: "Size" })).toBeInTheDocument();
+    expect(location.hash).toBe("#move");
+  });
+
+  it("has a guide for every tab, and opens that tab from it", async () => {
+    const user = userEvent.setup();
+    mount();
+    const bar = document.querySelector("nav.tabbar") as HTMLElement;
+    const labels = within(bar).getAllByRole("button").map((b) => b.textContent!.slice(1));
+    expect(labels).toEqual(["Show", "Color", "Move", "Bright", "Setup"]);
+    for (const label of labels) {
+      await user.click(within(bar).getByRole("button", { name: new RegExp(label) }));
+      await user.click(guideButton());
+      expect(pressedGuide()?.textContent).toBe(label);
+      await user.click(guideButton());
+    }
+
+    // From another tab's guide, its Open button goes there.
+    await user.click(guideButton());
+    await user.click(within(screen.getByRole("group", { name: "guides" }))
+      .getByRole("button", { name: "Bright" }));
+    await user.click(screen.getByRole("button", { name: "Open Bright" }));
+    expect(screen.getByText("Dimmers")).toBeInTheDocument();
+  });
+
+  it("closes when a tab in the bar is tapped", async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.click(guideButton());
+    await goTo(user, /Bright/);
+    expect(screen.queryByRole("group", { name: "guides" })).toBeNull();
+    expect(screen.getByText("Dimmers")).toBeInTheDocument();
+  });
+
+  it("says it will switch to Design before opening Setup from Perform", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("klights.mode", "perform");
+    mount();
+    await user.click(guideButton());
+    await user.click(within(screen.getByRole("group", { name: "guides" }))
+      .getByRole("button", { name: "Setup" }));
+    await user.click(screen.getByRole("button", { name: "Switch to Design and open Setup" }));
+    expect(screen.getByText("Who you are")).toBeInTheDocument();
+    expect(localStorage.getItem("klights.mode")).toBe("design");
+  });
+
+  it("comes back to the guide it was on after a reload", () => {
+    location.hash = "#guide/bright";
+    mount();
+    expect(screen.getByText("Bright: setting levels")).toBeInTheDocument();
+  });
+
+  it("follows plain links between tabs", async () => {
+    // The On now rows are links to the tab that owns each slot, and until the
+    // console listened for the hash changing, following one changed nothing.
+    const user = userEvent.setup();
+    mount();
+    const onNow = screen.getByText("On now").closest(".card") as HTMLElement;
+    await user.click(within(onNow).getAllByRole("link")[0]!);
+    expect(await screen.findByRole("slider", { name: "Size" })).toBeInTheDocument();
+  });
+});
+
+describe("help", () => {
+  it("opens an explanation in place, and closes it again", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Color/);
+    const help = screen.getByRole("button", { name: "Help: Quick palette" });
+    expect(help).toHaveAttribute("aria-expanded", "false");
+    await user.click(help);
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    // The long-press is the gesture with nothing on screen to suggest it.
+    expect(screen.getByRole("note")).toHaveTextContent(/Long-press/);
+    await user.click(help);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("is on the cards whose labels do not say what they do", async () => {
+    const user = userEvent.setup();
+    mount();
+    // Presets is a prefix: its title carries the count.
+    for (const topic of ["Night", "On now", "Presets", "Tempo", "Auto"]) {
+      expect(screen.getByRole("button", { name: new RegExp(`^Help: ${topic}`) }))
+        .toBeInTheDocument();
+    }
+    await goTo(user, /Setup/);
+    for (const topic of ["Safety taper", "Crowd zone", "Capture", "Drift check"]) {
+      expect(screen.getByRole("button", { name: `Help: ${topic}` })).toBeInTheDocument();
+    }
+  });
+
+  it("says how a drift check is actually run, since the card cannot start one", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Setup/);
+    await user.click(screen.getByRole("button", { name: "Help: Drift check" }));
+    expect(screen.getByRole("note")).toHaveTextContent("python -m engine.calibrate drift");
   });
 });
