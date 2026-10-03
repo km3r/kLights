@@ -12,6 +12,7 @@ room, so nothing here needs hardware.
 Run: python engine/tests/test_sync.py
 """
 
+import errno
 import socket
 import struct
 import sys
@@ -376,6 +377,21 @@ check("and the fields that ARE clock fields still get through",
 check("unreadable datagrams are counted, so 'no bridge' and 'a bridge I cannot "
       "read' are distinguishable",
       listener.rejected >= 3, f"{listener.status()}")
+
+# A second listener on a live port is refused rather than sharing it. Sharing
+# means the bridge's datagrams go to one of the two, and the engine that lost
+# sits deaf to the DJ with nothing to say why.
+rival = syncmod.SyncListener(on_sync=seen.append, port=port, bind="127.0.0.1")
+try:
+    rival.start()
+    refused = None
+except OSError as exc:
+    refused = exc
+check("a second listener on a taken port is refused",
+      refused is not None and refused.errno == errno.EADDRINUSE,
+      repr(refused) if refused else "the second bind succeeded")
+check("and keeps no socket from the attempt", rival.sock is None)
+rival.stop()
 
 # One bad callback must not take the listener down: the bridge keeps sending
 # and the show keeps running.

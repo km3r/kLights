@@ -10,11 +10,13 @@ Run: python engine/tests/test_server.py
 """
 
 import base64
+import errno
 import json
 import os
 import shutil
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -169,8 +171,75 @@ controller = ShowController(REPO / "events" / "despacio", fps=40.0)
 server = ShowServer(controller, port=0)
 server.start()
 port = server.httpd.server_address[1]
+
+# A second engine on this port must be refused, not join it. http.server sets
+# SO_REUSEADDR, which on Windows lets a second socket bind a port another
+# process is LISTENING on -- silently, so two engines answer one port and which
+# one a phone reaches is luck.
+#
+# Its own controller, never started, as a second engine would have. Sharing the
+# live one is not harmless: a ShowServer takes its controller's `reply_to` when
+# it is built, so this one would leave every later reply going nowhere. And
+# built BEFORE the live clock starts: loading an event in this process holds
+# the GIL long enough to drop a frame on a slow runner, and section 6 counts
+# every drop since the start.
+second = ShowServer(ShowController(REPO / "events" / "despacio"), port=port)
+try:
+    second.start()
+    refused = None
+except OSError as exc:
+    refused = exc
+finally:
+    second.stop()
+check("a second server on a taken port is refused",
+      refused is not None and refused.errno == errno.EADDRINUSE,
+      repr(refused) if refused else "the second bind succeeded")
+
 controller.start()
 time.sleep(0.3)
+
+# And the engine itself says so and leaves before it touches the rig: no
+# traceback, and the lock the running engine wrote is neither rewritten nor
+# deleted by the one that lost.
+from engine import patch as patchmod  # noqa: E402
+from engine import sync as syncmod  # noqa: E402
+
+
+def second_engine(*args):
+    """`python -m engine.server` on this event: its exit code and output."""
+    try:
+        run = subprocess.run(
+            [sys.executable, "-m", "engine.server", "--no-token",
+             "--event", str(controller.event_dir), *args],
+            cwd=REPO, capture_output=True, text=True, errors="replace", timeout=30)
+        return run.returncode, run.stdout + run.stderr
+    except subprocess.TimeoutExpired:
+        return None, "still running after 30 s"
+
+
+lock = patchmod.lock_path(str(controller.event_dir))
+lock_before = lock.stat().st_mtime_ns if lock.exists() else None
+code, output = second_engine("--port", str(port))
+check("a second engine on a taken port exits saying why",
+      code not in (0, None) and f"port {port} is already in use" in output
+      and "Traceback" not in output, f"exit {code}: {output.strip()[-300:]}")
+check("... before touching the rig: the running engine's lock is untouched",
+      lock_before is not None and lock.exists()
+      and lock.stat().st_mtime_ns == lock_before)
+
+# The tempo port too: an engine sharing it hears none of the DJ.
+holder = syncmod.SyncListener(on_sync=lambda fields: None, port=0, bind="127.0.0.1")
+holder.start()
+sync_port = holder.sock.getsockname()[1]
+try:
+    code, output = second_engine("--port", "0", "--sync-port", str(sync_port))
+finally:
+    holder.stop()
+check("a second engine on a taken sync port exits saying why",
+      code not in (0, None) and f"sync port {sync_port} is already in use" in output
+      and "Traceback" not in output, f"exit {code}: {output.strip()[-300:]}")
+check("... also before touching the rig",
+      lock.exists() and lock.stat().st_mtime_ns == lock_before)
 
 client = Client(port)
 check("server returned 101", "101" in client.status, client.status)
