@@ -994,6 +994,37 @@ describe("follow dj (track card)", () => {
     expect(socket.last()).toEqual({ type: "follow", armed: true });
   });
 
+  it("says what the template plays, and switches set on the next downbeat", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, {
+        armed: true, engaged: true, mode: "template", reason: null, beat: 162, bar: 41,
+        lanes: { movement: "template", color: "template", level: "template" },
+        set: "club", pending: null,
+        sets: [{ id: "club", name: "Club" }, { id: "chill", name: "Chill" }],
+        template: { set: "club", label: "Chorus", routine: "fan-drop", start: 160,
+                    fading: false },
+      });
+    })));
+    expect(screen.getByText(/Template driving/)).toBeInTheDocument();
+    expect(screen.getByLabelText("template now")).toHaveTextContent("Chorus → fan-drop");
+    expect(screen.getAllByText("template").length).toBe(3);
+    const sets = screen.getByRole("group", { name: "template set" });
+    expect(within(sets).getByRole("button", { name: "Club" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await user.click(within(sets).getByRole("button", { name: "Chill" }));
+    expect(socket.last()).toEqual({ type: "template_set", id: "chill" });
+    act(() => socket.push(program((p) => {
+      Object.assign(p, { armed: true, engaged: true, mode: "template", set: "club",
+                         pending: "off", sets: [{ id: "club", name: "Club" }] });
+    })));
+    expect(within(screen.getByRole("group", { name: "template set" }))
+      .getByRole("button", { name: /Off · next downbeat/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Off/ }));
+    expect(socket.last()).toEqual({ type: "template_set", id: null });
+  });
+
   it("links the matched track to the designer", () => {
     const socket = mount();
     act(() => socket.push(program()));

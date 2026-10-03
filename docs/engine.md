@@ -250,6 +250,19 @@ picked while it drives grabs those lanes (`program_grab` / `program_release`,
 operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
+With a template set active (show.json's `template_set`, or switched live with
+`template_set {id | null}`, operate tier) the chain is timeline, then template,
+then the operator's show -- still only while a DJ track plays with Follow
+armed. A matched track's template follows its own phrases in track beats (bars
+on its grid if it has none); a guest's follows the deck's live phrase in clock
+beats (`clock.phrase_start`: the bar line the label changed on, or where the
+source said the last phrase would end), else the bar cycle on the clock. The
+template's Show is the timeline program's fallback, so a fill gap shows it. A
+switch lands on the next bar line, crossfading over the new set's transition; a
+folder edit of the active set, like any folder change, waits for the next
+track. The Track card's lanes say `template`, and it shows the phrase, the
+routine and the set switcher.
+
 **Templates** ([`templates.py`](../engine/templates.py), milestone 2) are the
 middle of the chain -- timeline, then template, then the operator's or auto
 mode's show. A template set maps rekordbox's phrase labels to routine picks

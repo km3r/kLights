@@ -29,6 +29,7 @@ the right amount of machinery for "I typed 124".
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
@@ -168,6 +169,12 @@ class MasterClock:
         # Cumulative beat the current phrase ends at, so the UI can count down
         # live instead of the bridge re-sending a countdown every packet.
         self.phrase_ends_at: Optional[float] = None
+        # Cumulative beat the current phrase BEGAN on -- where a template
+        # starts the routine it picks for it, so the routine's phrasing lines
+        # up with the music's (F19 milestone 2). The bar line the label
+        # changed on, or, when the source had announced where the last phrase
+        # would end, that beat.
+        self.phrase_start: Optional[float] = None
 
         # WALL time of the last accepted sync, and the wall clock that measured
         # it. Both, because everything else here runs on the engine's monotonic
@@ -348,11 +355,27 @@ class MasterClock:
             # Empty string clears it: a bridge that has lost track of the phrase
             # must be able to SAY so, and leaving the last label up would have
             # the console confidently announcing a drop that ended minutes ago.
-            self.phrase_label = phrase_label or None
+            label = phrase_label or None
+            if label is not None and label != self.phrase_label:
+                self.phrase_start = self._phrase_began(self._anchor_beat)
+            elif label is None:
+                self.phrase_start = None
+            self.phrase_label = label
         if phrase_ends_in is not None:
             self.phrase_ends_at = self._anchor_beat + float(phrase_ends_in)
         if at is not None:
             self.synced_at = float(at)
+
+    def _phrase_began(self, beat: float) -> float:
+        """Where a phrase whose label arrives at `beat` began. If the source
+        said where the last phrase would end and that is within a bar, it began
+        there -- a label can arrive a packet late; otherwise on the bar line at
+        or before the label."""
+        bpb = self.meter.beats_per_bar
+        ends = self.phrase_ends_at
+        if ends is not None and abs(beat - ends) <= bpb:
+            return float(ends)
+        return float(math.floor(beat / bpb + 1e-9) * bpb)
 
     def unsync(self, source: str = "tap") -> None:
         """Hand the clock back. Tempo and phase stay exactly where the source
@@ -362,6 +385,7 @@ class MasterClock:
         self.phrase_measured = False
         self.phrase_label = None
         self.phrase_ends_at = None
+        self.phrase_start = None
         self.synced_at = None
 
     def start(self, now: float) -> None:

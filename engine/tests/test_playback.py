@@ -25,6 +25,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine import blocks as blocksmod  # noqa: E402
+from engine import playback as playbackmod  # noqa: E402
 from engine import program as programmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import state as statemod  # noqa: E402
@@ -41,6 +42,14 @@ def check(label, ok, detail=""):
 tmp = Path(tempfile.mkdtemp(prefix="klights-playback-"))
 shows = tmp / "shows"
 shutil.copytree(REPO / "shared" / "show-example", shows)
+# A second prepped track with phrases and NO timeline: milestone 2's templates
+# play it from its own phrases.
+_other = json.loads((shows / "tracks" / "synth-128.json").read_text())
+_other.update(id="no-timeline")
+_other["identity"] = {**_other["identity"], "title": "no timeline tune"}
+_other.pop("ids", None)
+_other.pop("aliases", None)
+(shows / "tracks" / "no-timeline.json").write_text(json.dumps(_other, indent=2))
 
 compile_threads: list[str] = []
 real_compile = programmod.compile
@@ -160,10 +169,12 @@ try:
     blt(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2)
     t += 0.01
     play(10, 0.3)
-    check("an unmatched track hands back to the operator's show",
-          status()["mode"] == "fallback"
-          and status()["reason"] == "not in the show folder",
-          f"{status()}")
+    check("an unmatched guest track gets the template set instead (milestone 2): "
+          "with no phrase from the deck, the bar-count cycle on the clock",
+          status()["mode"] == "template" and status()["template"]["label"] == "bars"
+          and status()["lanes"]["movement"] == "template", f"{status()}")
+    check("and the grab still holds the colour lane",
+          status()["lanes"]["color"] == "operator")
     t += 2.5
     synth()
     play(162, 0.2)
@@ -191,6 +202,72 @@ try:
     play(163.4, 0.1)
     check("and Release with no lane gives them all back",
           status()["grabbed"] == [])
+
+    # -- 2b. templates (milestone 2) -------------------------------------------
+    print("\n2b. templates")
+    st = status()
+    check("the show folder's set is active from the start",
+          st["set"] == "club" and {"id": "club", "name": "Club"} in st["sets"],
+          f"{st['set']} {st['sets']}")
+    t += 2.5
+    blt(t, "no timeline tune", "kLights", "test track", 180.0, rid=3)
+    t += 0.01
+    play(161, 0.2)
+    settle()
+    s = play(162, 0.3)
+    st = status()
+    check("a matched track with no timeline plays its own phrases' template: "
+          "the chorus is fan-drop, from the chorus's first beat",
+          st["mode"] == "template" and st["template"]["label"] == "Chorus"
+          and st["template"]["routine"] == "fan-drop"
+          and st["template"]["start"] == 160.0, f"{st}")
+    check("in the pick's palette (Hot)",
+          abs(s[MOVERS[0].fid].color[0] - HOT[0]) < 0.05, f"{s[MOVERS[0].fid].color}")
+    check("every lane says the template has it",
+          set(st["lanes"].values()) == {"template"}, f"{st['lanes']}")
+
+    t += 2.5
+    blt(t, "Another Guest", "Guest DJ", "", 200.0, rid=4)
+    t += 0.01
+    sc.apply({"type": "sync", "source": "rkbx", "phrase_label": "Chorus",
+              "phrase_ends_in": 32}, None, t)
+    play(10, 0.3)
+    st = status()
+    check("a guest track with a live phrase from the deck plays that phrase's pick, "
+          "from where the deck said it began (not the last track's chorus)",
+          st["mode"] == "template" and st["template"]["label"] == "Chorus"
+          and st["template"]["routine"] == "fan-drop"
+          and st["template"]["start"] == sc.clock.phrase_start, f"{st}")
+
+    sc.apply({"type": "template_set", "id": None}, None, t)
+    check("switching set waits for the next downbeat",
+          sc.player.pending == playbackmod.NO_SET and sc.player.set_id == "club")
+    play(10.3, 2.5)
+    st = status()
+    check("and then takes over: templates off, the operator's show again",
+          st["mode"] == "fallback" and st["set"] is None and st["pending"] is None,
+          f"{st}")
+    try:
+        sc.apply({"type": "template_set", "id": "nope"}, None, t)
+        refused = False
+    except ValueError as exc:
+        refused = "no template set" in str(exc)
+    check("an unknown set is refused", refused)
+    sc.apply({"type": "template_set", "id": "club"}, None, t)
+    settle()
+    play(12, 2.5)
+    check("and back on at the next downbeat", status()["set"] == "club"
+          and status()["mode"] == "template", f"{status()}")
+    sc.apply({"type": "follow", "armed": False}, None, t)
+    play(14, 0.2)
+    check("disarmed, no template runs (Follow gates it, decided with the user)",
+          status()["mode"] == "fallback" and status()["reason"] == "disarmed")
+    sc.apply({"type": "follow", "armed": True}, None, t)
+    t += 2.5
+    synth()
+    play(168, 0.2)
+    settle()
+    play(168.2, 0.2)
 
     # -- 3. pause policies ---------------------------------------------------
     print("\n3. pausing")
@@ -266,7 +343,9 @@ try:
     print("\n5b. a show that cannot be built")
     attempts: list[int] = []
 
-    def broken_compile(*args, **kwargs):
+    def broken_compile(timeline, routines, rigging, where="timeline"):
+        if not str(where).startswith("timelines/"):
+            return real_compile(timeline, routines, rigging, where)
         attempts.append(1)
         raise RuntimeError("a bug in the compiler")
 
@@ -275,8 +354,9 @@ try:
     play(190, 0.4)
     settle()
     play(191, 0.4)
-    check("a compile that raises is said once, and the operator's show runs",
-          status()["mode"] == "fallback" and status()["reason"] == "compile failed"
+    check("a compile that raises is said once, and the next layer down runs -- "
+          "the template here",
+          status()["mode"] == "template" and status()["reason"] == "compile failed"
           and any("could not be built" in n for n in sc.notices), f"{status()}")
     check("and it is not retried every frame", len(attempts) == 1, f"{len(attempts)}")
     programmod.compile = spy_compile

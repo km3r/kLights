@@ -60,7 +60,11 @@ arbitrary, the reason is next to it.
 | Follow DJ | **Starts disarmed.** One tap arms it. Printed at startup. |
 | Clock `speed` | **Left alone.** The timeline never uses `clock.speed`; it uses per-slot rate. The judder `speed` causes under a per-beat sync source is a known, documented issue, not fixed here. |
 | MCP | Read and write routines and timelines in milestone 1, through the same validation as the designer. |
-| Phone | Now playing and match state, which source drives each lane, Follow armed/safe, grab and release per lane. The template-set switcher arrives with templates in milestone 2. |
+| Phone | Now playing and match state, which source drives each lane, Follow armed/safe, grab and release per lane, and (milestone 2) the template-set switcher. |
+| Template scope | Templates run **only while a DJ track plays and Follow is armed**; otherwise auto mode or the operator's show, as before (milestone 2, with the user). |
+| Set switch | A set switched mid-track takes over on the **next downbeat**, crossfading over the new set's `transition.fade_beats` (milestone 2, with the user). Not saved: show.json's `template_set` is the start-up default. |
+| Pad routines | A preset pad holding a routine starts it on the **next downbeat** (milestone 2, with the user). |
+| CDJ phrases | Guest tracks on CDJs get phrase templates: the beat-link-trigger expressions are **extended to send the USB's phrase analysis** (milestone 2, with the user; unverified on hardware until captures). |
 | VJ | Later, and both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
 
 ## The designer: layout B

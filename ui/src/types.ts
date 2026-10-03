@@ -258,14 +258,24 @@ export interface GridWarning {
 /** Who drives a lane: the track's timeline, the operator (a grab), the
  *  pause idle routine, or the operator's/auto show because the timeline is not
  *  driving at all. */
-export type LaneSource = "timeline" | "operator" | "idle" | "fallback";
+export type LaneSource = "timeline" | "template" | "operator" | "idle" | "fallback";
+
+/** What the template set plays now (milestone 2). */
+export interface TemplateNow {
+  set: string | null;
+  /** The phrase that chose it ("Chorus", "Verse 2"), "*", or "bars". */
+  label: string;
+  routine: string;
+  start: number;
+  fading: boolean;
+}
 
 /** Playback (F19i): whether Follow DJ is armed, whether the timeline is on
  *  stage, and who has each lane. */
 export interface ProgramState {
   armed: boolean;
   engaged: boolean;
-  mode: "timeline" | "preview" | "idle" | "fallback";
+  mode: "timeline" | "template" | "preview" | "idle" | "fallback";
   /** Why the timeline is not driving: "disarmed", "no track", "matching",
    *  "not in the show folder", "no timeline", "compiling", "paused"... */
   reason: string | null;
@@ -278,6 +288,12 @@ export interface ProgramState {
   first_problem: string | null;
   /** Per source, how far ahead of its position the lights run. */
   latency_ms: Record<string, number>;
+  /** The active template set, the one switching in on the next downbeat
+   *  ("off" for none), and every set in the folder. Absent before F20b. */
+  set?: string | null;
+  pending?: string | null;
+  sets?: { id: string; name: string }[];
+  template?: TemplateNow | null;
 }
 
 /** A designer's preview: who armed it, on which track, playing what. */
@@ -453,6 +469,8 @@ export type Command =
   | { type: "program_grab"; slot: Slot }
   | { type: "program_release"; slot?: Slot }
   | { type: "show_latency"; source: string; ms: number }
+  /** Milestone 2: switch template set (null = off), on the next downbeat. */
+  | { type: "template_set"; id: string | null }
   /** The designer (F19j). Drafts and saves are answered from the worker;
    *  send them with an id and wait for the reply. */
   | { type: "timeline_draft"; doc: unknown }

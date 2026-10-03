@@ -288,10 +288,12 @@ class TemplateRunner:
             self._set = cset
             return
         cur = self.current
-        if cur is not None and cur.cue.key == cue.key and self._set is cset:
-            # The same pick again (Verse 1 into Verse 2, a one-entry cycle):
-            # it carries on from where it started rather than restarting --
-            # under the new phrase's name.
+        if (cur is not None and cur.cue.key == cue.key and self._set is cset
+                and not jumped):
+            # The same pick again in continuous play (Verse 1 into Verse 2, a
+            # one-entry cycle): it carries on from where it started rather
+            # than restarting -- under the new phrase's name. After a jump or
+            # onto another track it starts again from its own phrase.
             if cue.label != cur.cue.label:
                 self.current = _Playing(replace(cue, start=cur.cue.start), cur.prog)
         else:

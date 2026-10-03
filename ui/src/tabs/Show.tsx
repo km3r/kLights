@@ -399,7 +399,8 @@ const LANE_NAMES: Record<Slot, string> = {
   movement: "Movement", color: "Colour", level: "Level",
 };
 const LANE_SOURCE: Record<LaneSource, string> = {
-  timeline: "timeline", operator: "operator", idle: "idle", fallback: "show",
+  timeline: "timeline", template: "template", operator: "operator", idle: "idle",
+  fallback: "show",
 };
 /** Why the timeline is not on stage, in the operator's words. */
 const NOT_DRIVING: Record<string, string> = {
@@ -409,6 +410,8 @@ const NOT_DRIVING: Record<string, string> = {
   "not in the show folder": "This track is not in the show folder — the "
     + "operator's show runs.",
   "no timeline": "Matched, but nobody has drawn this track a show yet.",
+  "no template for this phrase": "The template set has nothing for this "
+    + "phrase, and no bar cycle — the operator's show runs.",
   compiling: "Building this track's show…",
   "compile failed": "This track's show could not be built — see the notices. "
     + "The operator's show runs.",
@@ -452,12 +455,42 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
         {prog.mode === "timeline" || prog.mode === "preview"
           ? <>{prog.mode === "preview" ? "The designer is driving" : "Timeline driving"}
               {prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
-          : prog.mode === "idle"
-            ? <>Paused — the idle routine is running</>
-            : <span className="muted">
-                {NOT_DRIVING[prog.reason ?? ""] ?? prog.reason}
-              </span>}
+          : prog.mode === "template"
+            ? <>Template driving{prog.bar != null && <> · bar <b>{prog.bar}</b></>}
+                {prog.reason && <span className="muted"> ({prog.reason})</span>}</>
+            : prog.mode === "idle"
+              ? <>Paused — the idle routine is running</>
+              : <span className="muted">
+                  {NOT_DRIVING[prog.reason ?? ""] ?? prog.reason}
+                </span>}
       </div>
+      {prog.template && (
+        <div className="small muted" aria-label="template now">
+          {prog.template.label === "bars" ? "bar cycle" : prog.template.label}
+          {" → "}<b>{prog.template.routine}</b>
+          {prog.template.fading && " (crossfading)"}
+        </div>
+      )}
+      {(prog.sets?.length ?? 0) > 0 && (
+        <div style={{ marginTop: "0.5rem" }}>
+        <div className="small muted">Template set</div>
+        <div className="pills" role="group" aria-label="template set">
+          {[{ id: null as string | null, name: "Off" }, ...(prog.sets ?? [])].map((s) => {
+            const active = (prog.set ?? null) === s.id;
+            const waiting = prog.pending != null
+              && (prog.pending === "off" ? s.id === null : prog.pending === s.id);
+            return (
+              <button key={s.id ?? "off"} aria-pressed={active}
+                      className={active ? "on" : waiting ? "pending" : ""}
+                      title={waiting ? "Switches on the next downbeat" : undefined}
+                      onClick={() => send({ type: "template_set", id: s.id })}>
+                {s.name}{waiting && " · next downbeat"}
+              </button>
+            );
+          })}
+        </div>
+        </div>
+      )}
       {prog.engaged && (
         <div className="lanes" style={{ marginTop: "0.4rem" }}>
           {slots.map((slot) => {

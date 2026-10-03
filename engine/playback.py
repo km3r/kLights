@@ -54,10 +54,13 @@ from typing import Callable, Optional
 from . import blocks as blocksmod
 from . import program as programmod
 from . import state as statemod
+from . import templates as templatesmod
 from . import timeline as timelinemod
+from . import tracktime
 from . import transport as transportmod
 
 POLICIES = ("idle", "freeze", "continue")
+NO_SET = ""                  # a pending switch to no template at all
 IDLE_LENGTH = 1e7            # beats: an idle clip that never runs out
 PREVIEW_JUMP_S = 0.2         # a designer position this far off is a seek
 
@@ -90,7 +93,7 @@ class Status:
     """What the phone's Track card shows. Replaced, never edited."""
     armed: bool
     engaged: bool
-    mode: str                       # "timeline", "idle" or "fallback"
+    mode: str                       # "timeline", "template", "idle", "fallback"
     reason: Optional[str]           # why the timeline is not driving
     beat: Optional[float]
     lanes: dict
@@ -98,6 +101,12 @@ class Status:
     policy: str
     problems: int
     first_problem: Optional[str]
+    # Templates (milestone 2): the active set, the one waiting for the next
+    # downbeat, every set in the folder, and what the template plays now.
+    set: Optional[str] = None
+    pending: Optional[str] = None
+    sets: tuple = ()
+    template: Optional[dict] = None
 
     def public(self) -> dict:
         return {"armed": self.armed, "engaged": self.engaged, "mode": self.mode,
@@ -106,7 +115,11 @@ class Status:
                 "bar": None if self.beat is None else int(self.beat // 4) + 1,
                 "lanes": dict(self.lanes), "grabbed": list(self.grabbed),
                 "policy": self.policy, "problems": self.problems,
-                "first_problem": self.first_problem}
+                "first_problem": self.first_problem,
+                "set": self.set,
+                "pending": self.pending if self.pending != NO_SET else "off",
+                "sets": [{"id": i, "name": n} for i, n in self.sets],
+                "template": self.template}
 
 
 class TrackPlayer:
@@ -117,7 +130,8 @@ class TrackPlayer:
                  rigging: Callable[[], blocksmod.Rigging],
                  submit: Callable[..., None], post: Callable[[Callable], None],
                  note: Callable[[str], None], clock_beat: Callable[[], float],
-                 base_palette: Callable[[], dict]):
+                 base_palette: Callable[[], dict],
+                 clock_phrase: Optional[Callable[[], tuple]] = None):
         self.transport = transport
         self._pinned = pinned
         self._rigging = rigging
@@ -126,6 +140,9 @@ class TrackPlayer:
         self._note = note
         self._clock_beat = clock_beat
         self._base_palette = base_palette
+        # (label, start beat) of the phrase the deck says is playing, in clock
+        # beats -- a guest's track, read live (milestone 2).
+        self._clock_phrase = clock_phrase or (lambda: (None, None))
         self.armed = False
         self.grabbed: frozenset[str] = frozenset()
         self.policy = "idle"
@@ -151,6 +168,24 @@ class TrackPlayer:
         self.preview: Optional[Preview] = None
         self._preview_jumps = 0
         self._preview_fresh = False
+        # -- templates (milestone 2) ----------------------------------------
+        self.template = templatesmod.TemplateRunner()
+        self.set_id: Optional[str] = None       # the active set
+        self.cset: Optional[templatesmod.CompiledSet] = None
+        self._cset_key: Optional[tuple] = None
+        self._set_chosen = False                # the operator picked one live
+        self.sets: tuple = ()                   # (id, name) of every set
+        self._library = None
+        # The operator's switch, landing on the next downbeat.
+        self.pending: Optional[str] = None      # set id, or NO_SET for off
+        self._pending_cset: Optional[templatesmod.CompiledSet] = None
+        self._pending_ready = False
+        self._pending_bar: Optional[int] = None
+        # The active set, rebuilt after a folder edit: like any folder change
+        # it waits for the next track rather than changing under this one.
+        self._next_cset: Optional[templatesmod.CompiledSet] = None
+        self._phrases: tuple = (None, None)     # (track_seq, PhraseMap)
+        self._held: Optional[float] = None      # a paused clock beat
 
     # -- settings ----------------------------------------------------------
 
@@ -161,6 +196,9 @@ class TrackPlayer:
             else "idle"
         self.grace_s = float(pause.get("grace_s", 4.0))
         self.idle_routine = pause.get("idle_routine")
+        if not self._set_chosen:
+            default = (show or {}).get("template_set")
+            self.set_id = default if isinstance(default, str) and default else None
 
     def arm(self, armed: bool) -> None:
         self.armed = bool(armed)
@@ -257,11 +295,106 @@ class TrackPlayer:
                                                 f"idle routine {name!r}"),
                      done, f"compiling idle routine {name!r}")
 
+    def compile_templates(self, library) -> None:
+        """Build the active template set for this rig, on the worker. After a
+        folder edit the rebuilt set waits for the next track; at start-up, or
+        with nothing playing, it is used at once."""
+        self._library = library
+        docs = library.folder.templates if library is not None else {}
+        self.sets = tuple((sid, str(doc.get("name") or sid))
+                          for sid, doc in sorted(docs.items()))
+        if self.set_id is not None and self.set_id not in docs:
+            self._note(f"template set {self.set_id!r} is not in templates/; "
+                       f"templates are off")
+            self.set_id = None
+        if self.set_id is None:
+            self.cset, self._cset_key = None, None
+            return
+        doc = docs[self.set_id]
+        key = (self.set_id, id(doc))
+        if key == self._cset_key:
+            return
+        self._cset_key = key
+        set_id, routines, rigging = self.set_id, library.folder.routines, self._rigging()
+
+        def done(cset) -> None:
+            if self._cset_key != key:
+                return                       # switched or reloaded since
+            self._report(cset)
+            if self.cset is None or self.template.cue is None:
+                self.cset = cset
+            else:
+                self._next_cset = cset
+
+        self._submit(lambda: templatesmod.compile_set(set_id, doc, routines, rigging),
+                     done, f"compiling template set {set_id!r}")
+
+    def _report(self, cset) -> None:
+        if cset.problems:
+            more = (f" (+{len(cset.problems) - 1} more)"
+                    if len(cset.problems) > 1 else "")
+            self._note(f"{cset.problems[0]}{more}")
+
+    def select_set(self, set_id: Optional[str]) -> None:
+        """The operator chose a set (or None for no templates). It takes over
+        on the next downbeat (decided with the user), crossfading over its
+        own transition; with nothing playing, at once."""
+        if set_id is not None and set_id not in dict(self.sets):
+            raise ValueError(f"there is no template set {set_id!r} in templates/")
+        self._set_chosen = True
+        target = set_id if set_id is not None else NO_SET
+        if target == (self.set_id or NO_SET) and self.pending is None:
+            return
+        self.pending = target
+        self._pending_cset, self._pending_ready, self._pending_bar = None, False, None
+        if set_id is None:
+            self._pending_ready = True
+            return
+        doc = self._library.folder.templates[set_id]
+        routines, rigging = self._library.folder.routines, self._rigging()
+
+        def done(cset) -> None:
+            if self.pending != set_id:
+                return
+            self._report(cset)
+            self._pending_cset, self._pending_ready = cset, True
+
+        self._submit(lambda: templatesmod.compile_set(set_id, doc, routines, rigging),
+                     done, f"compiling template set {set_id!r}")
+
+    def _switch_if_due(self, beat: Optional[float]) -> Optional[float]:
+        """Make a waiting switch, if its downbeat has come. Returns the fade
+        to use for a change made now, else None."""
+        if not self._pending_ready:
+            return None
+        if beat is not None and self.template.cue is not None:
+            bar = int(beat // templatesmod.BEATS_PER_BAR)
+            if self._pending_bar is None:
+                self._pending_bar = bar
+                on_line = abs(beat - bar * templatesmod.BEATS_PER_BAR) < 1e-6
+                if not on_line:
+                    return None
+            elif bar == self._pending_bar:
+                return None
+        target, cset = self.pending, self._pending_cset
+        self.pending, self._pending_cset = None, None
+        self._pending_ready, self._pending_bar = False, None
+        self.set_id = None if target == NO_SET else target
+        self.cset = cset
+        self._next_cset = None
+        self._cset_key = ((self.set_id, id(self._library.folder.templates[self.set_id]))
+                          if self.set_id and self._library else None)
+        return cset.fade if cset is not None else 0.0
+
     def recompile(self) -> None:
         """The rig changed under the programs: build them again."""
         self.program, self._program_for, self._compiling_for = None, None, None
         self._failed_for = None
         self.compile_for(self._pinned())
+        self.cset, self._cset_key, self._next_cset = None, None, None
+        self.template.reset()
+        if self._library is not None:
+            self.compile_templates(self._library)
 
     # -- each frame, on the output thread ------------------------------------
 
@@ -272,10 +405,12 @@ class TrackPlayer:
             show, mode, reason, beat = self._decide_preview(fallback, now)
         else:
             show, mode, reason, beat = self._decide(fallback, sample, now)
-        self.engaged = mode in ("timeline", "preview")
+        self.engaged = mode in ("timeline", "preview", "template")
         prog = (self.preview.program if mode == "preview"
                 else self.program if mode == "timeline"
                 else self.idle if mode == "idle" else None)
+        templating = (mode in ("timeline", "template")
+                      and self.template.cue is not None)
         lanes = {}
         for slot in statemod.SLOTS:
             if slot in self.grabbed and self.engaged:
@@ -284,15 +419,21 @@ class TrackPlayer:
                     and mode in ("timeline", "preview") \
                     and prog.timeline.entries(slot, beat):
                 lanes[slot] = "timeline"
+            elif templating:
+                lanes[slot] = "template"
             elif mode == "idle":
                 lanes[slot] = "idle"
             else:
                 lanes[slot] = "fallback"
         shown = prog if prog is not None else self.program
-        problems = shown.problems if shown is not None else []
+        problems = list(shown.problems) if shown is not None else []
+        if self.cset is not None:
+            problems += self.cset.problems
         self.status = Status(self.armed, self.engaged, mode, reason, beat, lanes,
                              tuple(sorted(self.grabbed)), self.policy,
-                             len(problems), problems[0] if problems else None)
+                             len(problems), problems[0] if problems else None,
+                             self.set_id, self.pending, self.sets,
+                             self.template.status() if templating else None)
         return show
 
     def _decide_preview(self, fallback, now):
@@ -307,33 +448,38 @@ class TrackPlayer:
         return show, "preview", None, beat
 
     def _decide(self, fallback, sample, now):
+        """The chain (F19): the matched track's timeline, over the template
+        set's pick for this phrase, over the operator's or auto mode's show --
+        while a DJ track plays and Follow is armed (milestone 2, with the
+        user). Otherwise the fallback, and the reason why."""
         pinned = self._pinned()
         self._sample = sample
-        if not self.armed:
-            return fallback, "fallback", "disarmed", None
-        if sample is None or sample.state == transportmod.NO_TRACK:
-            return fallback, "fallback", "no track", None
-        if pinned is None or pinned.track_seq != sample.track_seq:
-            return fallback, "fallback", "matching", None
-        if pinned.match is None or pinned.match.track_id is None:
-            return fallback, "fallback", "not in the show folder", None
-        if pinned.timeline is None:
-            return fallback, "fallback", "no timeline", None
-        key = (pinned.track_seq, id(pinned.timeline))
-        if self._program_for != key:
-            if self._failed_for == key:
-                return fallback, "fallback", "compile failed", None
-            self.compile_for(pinned)
-            return fallback, "fallback", "compiling", None
-        prog = self.program
-        grid = pinned.grid
-        if grid is None or sample.time_s is None:
-            return fallback, "fallback", "no position", None
+        if not self.armed or sample is None or sample.state == transportmod.NO_TRACK:
+            self.template.reset()
+            self._adopt_reloaded()
+            self._switch_if_due(None)
+            return fallback, "fallback", ("disarmed" if not self.armed
+                                          else "no track"), None
+        current = pinned is not None and pinned.track_seq == sample.track_seq
+        matched = (current and pinned.match is not None
+                   and pinned.match.track_id is not None)
+        timeline = pinned.timeline if matched else None
+        if timeline is None and self.cset is None and not self._pending_ready:
+            self.template.reset()
+            reason = ("matching" if not current
+                      else "not in the show folder" if not matched
+                      else "no timeline")
+            return fallback, "fallback", reason, None
 
-        jumped = (sample.jump_seq != self._jump or sample.track_seq != self._seq)
+        new_track = sample.track_seq != self._seq
+        jumped = sample.jump_seq != self._jump or new_track
         self._jump, self._seq = sample.jump_seq, sample.track_seq
+        if new_track:
+            self._adopt_reloaded()
 
-        if sample.state == transportmod.PAUSED:
+        # -- the pause policy ------------------------------------------------
+        paused = sample.state == transportmod.PAUSED
+        if paused:
             if self._paused_since is None:
                 self._paused_since = now
             paused_for = now - self._paused_since
@@ -347,20 +493,107 @@ class TrackPlayer:
                     self._beat = None
                     return self.idle.show, "idle", "paused", idle_beat
                 return fallback, "fallback", "paused (no idle routine)", None
-            if self.policy == "continue" and self._last_play is not None:
-                beat0, t0, bps = self._last_play
-                beat = beat0 + (now - t0) * bps
-                return self._run(prog, fallback, beat, jumped=False)
-            # freeze, and idle during its grace: hold where the deck stopped
-            beat = grid.beat_at(sample.time_s)
-            return self._run(prog, fallback, beat, jumped=jumped)
+        else:
+            self._paused_since = None
 
-        self._paused_since = None
-        beat = grid.beat_at(sample.time_s)
-        if sample.state == transportmod.PLAYING:
-            bps = grid.bpm_at(sample.time_s) / 60.0 * sample.rate
-            self._last_play = (beat, now, bps)
-        return self._run(prog, fallback, beat, jumped=jumped)
+        # -- the beat: the track's on its grid, else the clock's ---------------
+        grid = pinned.grid if matched else None
+        on_track = grid is not None and sample.time_s is not None
+        if on_track:
+            if paused and self.policy == "continue" and self._last_play is not None:
+                beat0, t0, bps = self._last_play
+                beat, jumped = beat0 + (now - t0) * bps, False
+            else:
+                # freeze, and idle during its grace: hold where the deck stopped
+                beat = grid.beat_at(sample.time_s)
+            if sample.state == transportmod.PLAYING:
+                bps = grid.bpm_at(sample.time_s) / 60.0 * sample.rate
+                self._last_play = (beat, now, bps)
+            self._held = None
+        else:
+            clock = self._clock_beat()
+            if paused and self.policy != "continue":
+                if self._held is None:
+                    self._held = clock
+                beat = self._held
+            else:
+                self._held = None
+                beat = clock
+        prev = None if jumped else self._beat
+
+        # -- the template ------------------------------------------------------
+        fade = self._switch_if_due(beat)
+        cue = None
+        if self.cset is not None:
+            cue = self._template_cue(pinned if matched else None, on_track, beat)
+        self.template.grabbed = self.grabbed
+        self.template.begin(self.cset, cue, beat, prev=prev, jumped=jumped,
+                            fallback=fallback, base_palette=self._base_palette(),
+                            fade=fade)
+        templated = self.template.cue is not None
+        base = self.template.show if templated else fallback
+
+        # -- the timeline, over it -----------------------------------------------
+        if timeline is not None:
+            key = (pinned.track_seq, id(timeline))
+            reason = None
+            if self._program_for != key:
+                if self._failed_for == key:
+                    reason = "compile failed"
+                else:
+                    self.compile_for(pinned)
+                    reason = "compiling"
+            elif not on_track:
+                reason = "no position"
+            if reason is None:
+                return self._run(self.program, base, beat, jumped)
+            self._beat = beat
+            if templated:
+                return base, "template", reason, beat
+            return fallback, "fallback", reason, None
+        self._beat = beat
+        if templated:
+            return base, "template", None, beat
+        return fallback, "fallback", ("no template for this phrase"
+                                      if self.cset is not None
+                                      else "matching" if not current
+                                      else "not in the show folder"
+                                      if not matched else "no timeline"), None
+
+    def _template_cue(self, pinned, on_track: bool, beat: float):
+        """What the template plays at `beat`: a prepped track's own phrases
+        (or bars on its grid); for anything else the deck's live phrase, or
+        bars on the clock."""
+        cset = self.cset
+        if on_track and pinned is not None:
+            return templatesmod.cue_in_track(cset, self._phrases_for(pinned), beat)
+        label, start = self._clock_phrase()
+        if label and start is not None:
+            cue = templatesmod.cue_for_phrase(cset, label, start)
+            if cue is not None:
+                return cue
+        return templatesmod.cue_for_bars(cset, beat)
+
+    def _phrases_for(self, pinned) -> Optional[tracktime.PhraseMap]:
+        seq, phrases = self._phrases
+        if seq == pinned.track_seq:
+            return phrases
+        phrases = None
+        folder = pinned.library.folder if pinned.library else None
+        doc = folder.tracks.get(pinned.match.track_id) if folder else None
+        items = ((doc or {}).get("phrases") or {}).get("items")
+        if items:
+            try:
+                phrases = tracktime.PhraseMap.from_items(items)
+            except tracktime.GridError:
+                phrases = None
+        self._phrases = (pinned.track_seq, phrases)
+        return phrases
+
+    def _adopt_reloaded(self) -> None:
+        """A rebuilt active set (a folder edit) waits for a track change."""
+        if self._next_cset is not None:
+            self.cset, self._next_cset = self._next_cset, None
 
     def _run(self, prog, fallback, beat, jumped):
         prev = None if jumped else self._beat

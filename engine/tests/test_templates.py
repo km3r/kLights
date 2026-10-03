@@ -148,6 +148,9 @@ runner.begin(club, again, 36.0, fallback=FALLBACK)
 check("Verse 1 into Verse 2 (the same pick) carries on rather than restarting",
       runner.cue.start == 0 and runner.outgoing is None, f"{runner.cue}")
 check("under the new phrase's name", runner.cue.label == "Verse 2")
+runner.begin(club, again, 40.0, jumped=True, fallback=FALLBACK)
+check("but after a jump (or onto another track) it starts again from its phrase",
+      runner.cue.start == 32 and runner.outgoing is None, f"{runner.cue}")
 
 drop = tm.cue_for_phrase(club, "Chorus", 64)
 runner.begin(club, drop, 64.0, prev=63.9, fallback=FALLBACK)

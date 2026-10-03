@@ -379,7 +379,9 @@ class ShowController:
                 rigging=self._rigging, submit=self.worker.submit,
                 post=self.submit_call, note=self.note,
                 clock_beat=lambda: self.ctx.beat,
-                base_palette=self._base_palette)
+                base_palette=self._base_palette,
+                clock_phrase=lambda: (self.clock.phrase_label,
+                                      self.clock.phrase_start))
             self.runner.choose_show = self._choose_show
             self._install_library(showlibrary.load(self.show_dir))
             show = self.show_library.folder.show or {}
@@ -652,6 +654,7 @@ class ShowController:
         if self.player is not None:
             self.player.configure(library.folder.show)
             self.player.compile_idle(library)
+            self.player.compile_templates(library)
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -1530,6 +1533,22 @@ class ShowController:
             raise ValueError("the timeline is not driving; there is nothing "
                              "to take a lane from")
         self.player.grab({slot})
+
+    def _cmd_template_set(self, m: dict, now: float) -> dict:
+        """Switch template set -- a vibe, live. It takes over on the next
+        downbeat (decided with the user), crossfading over its own transition;
+        `null` turns templates off. Not saved: show.json's `template_set` is
+        what the next start begins with."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        set_id = m.get("id")
+        if set_id is not None and not isinstance(set_id, str):
+            raise ValueError("template_set needs id: a set's id, or null for none")
+        self.player.select_set(set_id)
+        names = dict(self.player.sets)
+        self.note(f"template set -> {names.get(set_id, set_id) if set_id else 'off'}"
+                  f" on the next downbeat")
+        return {"pending": set_id}
 
     def _cmd_program_release(self, m: dict, now: float) -> None:
         """Give a lane (or every lane) back to the timeline."""

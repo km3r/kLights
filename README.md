@@ -182,6 +182,12 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    [`bridges/prolink/`](bridges/prolink/README.md)). On the phone's **Track**
    card, arm **Follow** and the matched track's timeline drives the rig;
    picking a look grabs that lane back until you release it.
+4. **Templates** cover everything else: a template set maps rekordbox's phrase
+   labels (Intro, Verse, Up, Chorus, Down...) to routines, so a prepped track
+   with no timeline, the gaps in a timeline, and a guest DJ's track the folder
+   has never seen all get a show -- from the deck's live phrase, or a cycle
+   every N bars when there is none. Switch set live from the Track card; it
+   lands on the next downbeat.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking

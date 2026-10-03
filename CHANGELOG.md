@@ -11,6 +11,22 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20b: templates on stage
+
+- **The fallback chain is whole**: timeline, then template, then the operator's
+  or auto mode's show, while a DJ track plays with Follow armed (decided with
+  the user). A matched track with no timeline plays its own phrases' template;
+  a timeline's fill gaps show the template underneath; a guest's track the
+  folder does not know plays the deck's live phrase (rkbx_link's label, from
+  the bar it changed on) or, with no phrase at all, the set's bar cycle on the
+  clock.
+- **Switching set** from the phone's Track card (`template_set`, operate tier):
+  it takes over on the next downbeat, crossfading over the new set's transition
+  (decided with the user). "Off" turns templates off. The card shows which
+  phrase chose which routine, and every lane the template drives says so.
+- A folder edit of the active set waits for the next track, like any folder
+  change; the pause policies (freeze, continue, idle) apply to templates too.
+
 ### Added — F20a: the template runtime (milestone 2)
 
 - **`engine/templates.py`**: what the lights do on a track nobody drew a
