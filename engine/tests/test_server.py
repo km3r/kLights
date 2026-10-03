@@ -171,8 +171,6 @@ controller = ShowController(REPO / "events" / "despacio", fps=40.0)
 server = ShowServer(controller, port=0)
 server.start()
 port = server.httpd.server_address[1]
-controller.start()
-time.sleep(0.3)
 
 # A second engine on this port must be refused, not join it. http.server sets
 # SO_REUSEADDR, which on Windows lets a second socket bind a port another
@@ -181,7 +179,10 @@ time.sleep(0.3)
 #
 # Its own controller, never started, as a second engine would have. Sharing the
 # live one is not harmless: a ShowServer takes its controller's `reply_to` when
-# it is built, so this one would leave every later reply going nowhere.
+# it is built, so this one would leave every later reply going nowhere. And
+# built BEFORE the live clock starts: loading an event in this process holds
+# the GIL long enough to drop a frame on a slow runner, and section 6 counts
+# every drop since the start.
 second = ShowServer(ShowController(REPO / "events" / "despacio"), port=port)
 try:
     second.start()
@@ -193,6 +194,9 @@ finally:
 check("a second server on a taken port is refused",
       refused is not None and refused.errno == errno.EADDRINUSE,
       repr(refused) if refused else "the second bind succeeded")
+
+controller.start()
+time.sleep(0.3)
 
 # And the engine itself says so and leaves before it touches the rig: no
 # traceback, and the lock the running engine wrote is neither rewritten nor
