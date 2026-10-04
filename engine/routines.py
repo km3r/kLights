@@ -8,7 +8,9 @@ routine leaves open:
 - **params**: values for its open parameters. Lowest to highest: the
   parameter's default, then the use's `variation`, then the use's own
   `params`. A colour parameter takes a palette role (`"@primary"`), a hex
-  colour, `[r, g, b]`, or a colour look's name.
+  colour, `[r, g, b]`, or a colour look's name. Above all three, per frame:
+  the routine's own `param.<name>` lane, read in its own beats, and above
+  that the timeline's (`blocks.Env.param`).
 - **bind**: which rig tag plays each ROLE. Unbound, a role plays its default
   tag. A role marked `optional` that finds no fixtures on this rig is simply
   absent; a required one is a warning, and its rows do nothing.
@@ -56,6 +58,9 @@ class Instance:
     roles: dict[str, tuple[rigmod.PatchedFixture, ...]]
     env: blocksmod.Env
     problems: list[str] = field(default_factory=list)
+    # Routine-local beat the compiler last placed it at (`sched`), which its
+    # own param lanes are read at.
+    now: float = 0.0
 
     def sched(self, local: float) -> float:
         """Where in its own rows a routine is, `local` beats after it
@@ -76,6 +81,11 @@ class Instance:
     def curve(self, target: str) -> Optional[timelinemod.Curve]:
         entry = self.timeline.curves.get(target)
         return entry[1] if entry else None
+
+    def param_lane(self, name: str) -> Any:
+        """Its own `param.<name>` lane at `now`, or None if it has none."""
+        curve = self.curve(f"param.{name}")
+        return blocksmod.automation_value(curve, self.now) if curve else None
 
     @property
     def fixtures(self) -> frozenset[int]:
@@ -178,5 +188,7 @@ def instantiate(doc: Mapping, use: Mapping, rigging: blocksmod.Rigging,
             role = item.data.get("role")
             hit_fixtures[(row.id, item.id)] = (
                 frozenset(f.fid for f in roles.get(role, ())) if role else everyone)
-    return Instance(rid, length, bool(doc.get("loop", True)), timeline, built,
+    inst = Instance(rid, length, bool(doc.get("loop", True)), timeline, built,
                     hit_fixtures, roles, env, problems)
+    env.lanes = inst.param_lane
+    return inst

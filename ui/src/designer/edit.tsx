@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { HelpHeading } from "../components";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue, itemName, itemSub,
-  oscArgsText, parseOscArgs,
+  BEATS_PER_BAR, BLOCK_ARGS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue, itemName,
+  itemSub, oscArgsText, parseOscArgs,
 } from "./model";
 import type {
-  Item, OscMessage, Point, RoutineSummary, Row, TimelineDoc, TrackDoc, VisualRule,
+  Item, OscMessage, Point, PointValue, RoutineSummary, Row, TimelineDoc, TrackDoc, VisualRule,
 } from "./model";
 
 /**
@@ -32,6 +32,159 @@ export const AUTOMATION_RANGES: Record<string, [number, number]> = {
   "center.bearing": [-180, 180], "center.elevation": [-90, 90],
   "rate.movement": [0, 8], "rate.color": [0, 8], "rate.level": [0, 8],
 };
+
+// -- what an automation lane drives -----------------------------------------------
+
+/**
+ * One automation target, as a lane draws and edits it. The macros come from
+ * AUTOMATION_RANGES; `param.<name>` from the routine that declares the
+ * parameter -- each routine has its own range, so there is no table for them.
+ *
+ * `min`/`max` are what the engine ACCEPTS: the declaration, held to it by
+ * `showfiles`, undefined where the routine left a side open. `lo`/`hi` are only
+ * what the lane draws: the declaration where there is one, else the declared
+ * range of the block argument the parameter feeds (`blocks.PARAMS`), so an
+ * open-ended radius is still drawn on a sensible scale.
+ */
+export interface LaneSpec {
+  label: string;
+  unit: string;
+  kind: "number" | "color";
+  lo: number;
+  hi: number;
+  min?: number;
+  max?: number;
+  /** A new lane's first point: the macro's neutral, the parameter's default. */
+  start: PointValue;
+  /** In a track's timeline: the routines placed on it that the lane reaches. */
+  reaches?: string[];
+}
+
+export type LaneSpecs = Record<string, LaneSpec>;
+
+const NEUTRAL_ONE = new Set(["master", "size", "rate.movement", "rate.color", "rate.level"]);
+
+function macroSpec(target: string): LaneSpec {
+  const [lo, hi] = AUTOMATION_RANGES[target]!;
+  const neutral = NEUTRAL_ONE.has(target) ? 1 : 0;
+  return { label: target === "master" ? "Master" : target, unit: "", kind: "number",
+           lo, hi, min: lo, max: hi, start: Math.min(hi, Math.max(lo, neutral)) };
+}
+
+/** A parameter declaration, as a routine file or the routine list carries it. */
+interface ParamLike { type: string; default?: unknown; min?: number; max?: number; unit?: string }
+
+/** A lane for one declared parameter; null for a look, which the engine cannot
+ *  automate (it is chosen once, when the routine is built). */
+export function paramSpec(name: string, def: ParamLike, argRange?: [number, number],
+                          reaches?: string[]): LaneSpec | null {
+  if (def.type === "look") return null;
+  const unit = def.unit ?? "";
+  if (def.type === "color") {
+    return { label: name, unit, kind: "color", lo: 0, hi: 1,
+             start: typeof def.default === "string" || Array.isArray(def.default)
+               ? def.default as PointValue : "@primary", reaches };
+  }
+  // A rate is held to 0-8 whether or not it says so (`_param_value_problem`).
+  const rate = def.type === "rate";
+  const min = def.min ?? (rate ? 0 : undefined);
+  const max = def.max ?? (rate ? 8 : undefined);
+  const dflt = typeof def.default === "number" ? def.default : undefined;
+  const lo = min ?? argRange?.[0] ?? Math.min(0, dflt ?? 0);
+  let hi = max ?? argRange?.[1] ?? Math.max(1, 2 * Math.abs(dflt ?? 0));
+  if (hi <= lo) hi = lo + 1;
+  return { label: name, unit, kind: "number", lo, hi, min, max,
+           start: Math.min(hi, Math.max(lo, dflt ?? lo)), reaches };
+}
+
+/** The parameters a routine can automate on its own lanes, each ranged by its
+ *  declaration and, where that is open, by the block arguments it feeds. */
+export function routineLaneSpecs(doc: { params?: Record<string, ParamLike>; rows: Row[] }): LaneSpecs {
+  const fed: Record<string, [number, number]> = {};
+  for (const row of doc.rows) {
+    for (const it of row.items ?? []) {
+      for (const [arg, value] of Object.entries(it.args ?? {})) {
+        if (typeof value !== "string" || !value.startsWith("$")) continue;
+        const spec = BLOCK_ARGS[it.block ?? ""]?.find((s) => s.name === arg);
+        if (spec?.min === undefined || spec.max === undefined) continue;
+        const name = value.slice(1);
+        const had = fed[name];
+        fed[name] = had ? [Math.min(had[0], spec.min), Math.max(had[1], spec.max)]
+          : [spec.min, spec.max];
+      }
+    }
+  }
+  const out: LaneSpecs = {};
+  for (const [name, def] of Object.entries(doc.params ?? {})) {
+    const spec = paramSpec(name, def, fed[name]);
+    if (spec) out[`param.${name}`] = spec;
+  }
+  return out;
+}
+
+/**
+ * The parameters a TRACK's timeline can automate: those of the routines placed
+ * on it, by name. A timeline's `param.radius` drives `$radius` on every routine
+ * clip that has one, so one lane per name -- held to the narrowest of their
+ * ranges, since the engine checks each point against every one of them.
+ */
+export function timelineLaneSpecs(doc: { rows: Row[] },
+                                  routines: { id: string; params: Record<string, ParamLike> }[]): LaneSpecs {
+  const placed = new Set(doc.rows.flatMap((r) => (r.items ?? [])
+    .filter((i) => i.kind === "routine" && typeof i.routine === "string")
+    .map((i) => i.routine as string)));
+  const byName: Record<string, { def: ParamLike; from: string[] }> = {};
+  for (const r of [...routines].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!placed.has(r.id)) continue;
+    for (const [name, def] of Object.entries(r.params ?? {})) {
+      const had = byName[name];
+      if (!had) { byName[name] = { def: { ...def }, from: [r.id] }; continue; }
+      // A name that is a colour in one routine and a number in another: the
+      // first routine decides what the lane is, and the engine's check warns
+      // about the rest.
+      if (had.def.type === "color" ? def.type !== "color" : def.type === "color") continue;
+      had.from.push(r.id);
+      if (def.min !== undefined) had.def.min = Math.max(had.def.min ?? def.min, def.min);
+      if (def.max !== undefined) had.def.max = Math.min(had.def.max ?? def.max, def.max);
+      had.def.unit ??= def.unit;
+    }
+  }
+  const out: LaneSpecs = {};
+  for (const [name, { def, from }] of Object.entries(byName)) {
+    const spec = paramSpec(name, def, undefined, from);
+    if (spec) out[`param.${name}`] = spec;
+  }
+  return out;
+}
+
+/** The parameter lanes the page being edited offers, keyed by target. */
+export const ParamLanes = createContext<LaneSpecs>({});
+
+/** How to draw a lane, whatever it targets -- including a `param.<name>` no
+ *  routine declares any more, drawn from its own points so it can still be
+ *  seen, fixed, and removed. */
+export function laneSpec(target: string, params: LaneSpecs, points: Point[] = []): LaneSpec {
+  if (target in AUTOMATION_RANGES) return macroSpec(target);
+  const known = params[target];
+  if (known) return known;
+  const nums = points.map((p) => p[1]).filter((v): v is number => typeof v === "number");
+  const colour = points.length > 0 && nums.length === 0;
+  const lo = Math.min(0, ...nums);
+  const hi = Math.max(lo + 1, ...nums);
+  return { label: target.startsWith("param.") ? target.slice(6) : target, unit: "",
+           kind: colour ? "color" : "number", lo, hi, start: colour ? "@primary" : lo };
+}
+
+/** Another output's curve (an OSC or MIDI lane): sent as 0-1 -- MIDI scales it
+ *  to 0-127, and `showfiles` refuses a MIDI point outside it. */
+const EXTERNAL_CURVE: LaneSpec = { label: "curve", unit: "", kind: "number", lo: 0, hi: 1,
+                                   min: 0, max: 1, start: 0 };
+
+export function useLaneSpec(row: Row): LaneSpec {
+  const params = useContext(ParamLanes);
+  if (row.type === "external") return EXTERNAL_CURVE;
+  return laneSpec(row.target ?? "", params, row.points ?? []);
+}
 
 export const FADES = [0, 1, 2, 4, 8, 16];
 export const ROLES = ["primary", "secondary", "accent"] as const;
@@ -483,17 +636,94 @@ export function parsePointId(id: string | null): { row: string; beat: number } |
 
 const CURVES = ["linear", "step", "ease"] as const;
 
+/** A colour value as CSS, or null for one only the show can resolve -- a
+ *  palette role, a colour look -- which the lane names instead of painting. */
+export function cssColour(v: unknown): string | null {
+  if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === "number")) {
+    return `rgb(${v.map((c) => Math.round(Math.max(0, Math.min(1, c as number)) * 255)).join(",")})`;
+  }
+  return null;
+}
+
+/** The point whose value a lane is leaving at a beat: the last at or before
+ *  it, or the first, which holds before it. */
+function pointBefore(points: Point[], beat: number): Point | undefined {
+  let held = points[0];
+  for (const p of points) if (p[0] <= beat) held = p;
+  return held;
+}
+
+/**
+ * A colour parameter's lane: a band of what it is at each beat. A colour is
+ * not a height, so there is no curve -- each segment is painted from the point
+ * it leaves to the point it arrives at (a step holds, then jumps), and a value
+ * only the show can resolve, like "@primary", is written rather than painted.
+ */
+function ColourBand({ points, x, width, id }: {
+  points: Point[]; x: (b: number) => number; width: number; id: string;
+}) {
+  if (!points.length) return null;
+  const top = 8;
+  const h = LANE_H - 16;
+  const spans: { x0: number; x1: number; a: PointValue; b: PointValue; step: boolean }[] = [];
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  if (x(first[0]) > 0) spans.push({ x0: 0, x1: x(first[0]), a: first[1], b: first[1], step: true });
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    spans.push({ x0: x(a[0]), x1: x(b[0]), a: a[1], b: b[1], step: b[2] === "step" });
+  }
+  spans.push({ x0: x(last[0]), x1: width, a: last[1], b: last[1], step: true });
+  return (
+    <g pointerEvents="none">
+      {spans.map((s, i) => {
+        const ca = cssColour(s.a);
+        const cb = cssColour(s.b);
+        const w = Math.max(0, s.x1 - s.x0);
+        if (!ca || (!s.step && !cb)) {
+          return (
+            <g key={i}>
+              <rect x={s.x0} y={top} width={w} height={h} className="d-band-named" />
+              {w > 40 && <text x={s.x0 + 8} y={top + h / 2 + 4} className="d-label">
+                {String(s.a)}{!s.step && s.b !== s.a ? ` → ${String(s.b)}` : ""}</text>}
+            </g>
+          );
+        }
+        if (s.step || ca === cb) {
+          return <rect key={i} x={s.x0} y={top} width={w} height={h} fill={ca} opacity={0.85} />;
+        }
+        const gid = `band-${id}-${i}`;
+        return (
+          <g key={i}>
+            <defs>
+              <linearGradient id={gid}>
+                <stop offset="0" stopColor={ca} /><stop offset="1" stopColor={cb!} />
+              </linearGradient>
+            </defs>
+            <rect x={s.x0} y={top} width={w} height={h} fill={`url(#${gid})`} opacity={0.85} />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 /**
  * An automation lane. Click empty space to add a point there; click a point to
  * select it (the inspector edits its value and the curve that arrives at it);
  * drag a point to move it -- across to another beat, up and down to another
- * value -- as one edit when it is let go.
+ * value -- as one edit when it is let go. A colour lane's points move only
+ * across: up and down means nothing for a colour, which the inspector picks.
  */
 function AutoSvg({ row, x, width, history, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number; history: Edits;
   selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
-  const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
+  const spec = useLaneSpec(row);
+  const { lo, hi } = spec;
+  const colour = spec.kind === "color";
   const points = row.points ?? [];
   const perBeat = x(1) - x(0);
   const y = (v: number) => LANE_H - 3 - ((v - lo) / (hi - lo)) * (LANE_H - 6);
@@ -561,7 +791,11 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
            const beat = history.snapBeat((e.clientX - r.left) / perBeat);
            const frac = 1 - (e.clientY - r.top - 3) / (LANE_H - 6);
-           const value = Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
+           // A colour lane's new point starts as the colour it lands on, so
+           // adding one changes nothing until the inspector picks another.
+           const value: PointValue = colour
+             ? pointBefore(points, beat)?.[1] ?? spec.start
+             : Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
            history.apply((d) => {
              const target = rowOf(d, row.id);
              if (!target) return;
@@ -572,13 +806,17 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
            });
            onSelect?.(pointId(row.id, beat));
          }}>
-      <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />
+      {colour
+        ? <ColourBand points={shown} x={x} width={width} id={row.id} />
+        : <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />}
       {shown.map((p, i) => {
         const id = pointId(row.id, drag && p[0] === drag.beat + drag.dBeat ? drag.beat : p[0]);
         return (
           <circle key={i} cx={x(p[0])} cy={typeof p[1] === "number" ? y(p[1]) : LANE_H / 2}
                   r={selected === id ? 6 : 4}
-                  className={`d-point${selected === id ? " sel" : ""}`} role="button"
+                  style={colour ? { fill: cssColour(p[1]) ?? undefined } : undefined}
+                  className={`d-point${colour ? " d-point-colour" : ""}${selected === id ? " sel" : ""}`}
+                  role="button"
                   aria-label={`point at bar ${barBeat(p[0])}: ${String(p[1])}`}
                   onPointerDown={(e) => begin(e, p)}
                   onClick={(e) => e.stopPropagation()} />
@@ -593,9 +831,13 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 function PointInspector({ row, beat, history, onSelect }: {
   row: Row; beat: number; history: Edits; onSelect: (id: string | null) => void;
 }) {
+  const spec = useLaneSpec(row);
   const pt = row.points?.find((p) => p[0] === beat);
   if (!pt) return null;
-  const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
+  // What the engine accepts, not what the lane draws: a parameter left open
+  // on one side takes any value on that side.
+  const { min, max } = spec;
+  const step = (spec.hi - spec.lo) / 100;
   const curve = (pt[2] as string | undefined) ?? "linear";
   const set = (to: Point) => {
     history.apply((d) => {
@@ -606,12 +848,13 @@ function PointInspector({ row, beat, history, onSelect }: {
     });
     onSelect(pointId(row.id, to[0]));
   };
-  const withCurve = (b: number, v: number | string, c: string): Point =>
+  const withCurve = (b: number, v: PointValue, c: string): Point =>
     (c === "linear" ? [b, v] : [b, v, c]);
+  const role = typeof pt[1] === "string" && pt[1].startsWith("@") ? pt[1].slice(1) : null;
   return (
     <footer className="d-inspector" aria-label="inspector">
       <div className="d-insp-head">
-        <b>{row.target === "master" ? "Master" : row.target}</b>
+        <b>{laneTitle(row.target ?? "", spec)}</b>
         <span className="muted"> · automation point on {row.id} · bar {barBeat(beat)}</span>
         <span className="grow" />
         <button onClick={() => {
@@ -630,15 +873,29 @@ function PointInspector({ row, beat, history, onSelect }: {
                    set(withCurve(Number(e.target.value), pt[1], curve));
                  }} />
         </label>
-        {typeof pt[1] === "number" ? (
+        {spec.kind === "color" ? (
+          <div>
+            <span className="small muted">Colour{" "}
+              <span className="mono">{Array.isArray(pt[1]) ? `[${pt[1].join(", ")}]` : String(pt[1])}</span></span>
+            <div className="d-chips" role="group" aria-label="point colour">
+              {ROLES.map((r) => (
+                <button key={r} className={role === r ? "on" : ""}
+                        onClick={() => set(withCurve(beat, `@${r}`, curve))}>{r}</button>))}
+              <input type="color" aria-label="point direct colour"
+                     value={typeof pt[1] === "string" && pt[1].startsWith("#") ? pt[1] : "#ffffff"}
+                     onChange={(e) => set(withCurve(beat, e.target.value, curve))} />
+            </div>
+          </div>
+        ) : typeof pt[1] === "number" ? (
           <label className="small">Value{" "}
-            <input type="number" min={lo} max={hi} step={(hi - lo) / 100} value={pt[1]}
+            <input type="number" min={min} max={max} step={step} value={pt[1]}
                    aria-label="point value" style={{ width: 70 }}
                    onChange={(e) => {
                      const v = Number(e.target.value);
-                     if (e.target.value !== "" && v >= lo && v <= hi) set(withCurve(beat, v, curve));
+                     if (e.target.value !== "" && (min === undefined || v >= min)
+                         && (max === undefined || v <= max)) set(withCurve(beat, v, curve));
                    }} />
-            <span className="muted"> {lo} to {hi}</span>
+            <span className="muted"> {min ?? "any"} to {max ?? "any"}{spec.unit ? ` ${spec.unit}` : ""}</span>
           </label>
         ) : (
           <label className="small">Value{" "}
@@ -723,18 +980,61 @@ export function externalRow(d: RowsDoc, kind: string): Row | undefined {
   return undefined;
 }
 
-/** A new automation lane for `target`, starting at its neutral value. */
-export function automationRow(d: RowsDoc, target: string): Row {
-  const [lo, hi] = AUTOMATION_RANGES[target] ?? [0, 1];
-  const neutral = target === "master" || target === "size" || target.startsWith("rate.") ? 1 : 0;
-  return { id: uniqueId(d, target), type: "automation", target,
-           points: [[0, Math.min(hi, Math.max(lo, neutral))]] };
+/** A lane's name as its head, its menu entry and the inspector show it: a
+ *  parameter as `$name` with its unit, the way a block argument refers to it. */
+export function laneTitle(target: string, spec: LaneSpec): string {
+  if (!target.startsWith("param.")) return spec.label;
+  return `$${spec.label}${spec.unit ? ` (${spec.unit})` : ""}`;
 }
 
-function AddLane({ history }: { history: History }) {
+/** A new automation lane for `target`, starting where it already is: a macro
+ *  at its neutral value, a parameter at its default -- so adding the lane
+ *  changes nothing until a point is drawn. */
+export function automationRow(d: RowsDoc, target: string, params: LaneSpecs = {}): Row {
+  return { id: uniqueId(d, target), type: "automation", target,
+           points: [[0, laneSpec(target, params).start]] };
+}
+
+/**
+ * "+ automation": a lane for each macro and each open parameter not already
+ * automated here. Parameters are listed by name and unit, and in a track's
+ * timeline with the routines on it that have them, since one lane drives the
+ * parameter on all of them.
+ */
+export function AutomationMenu({ history, params }: {
+  history: Edits & { doc: RowsDoc | null }; params: LaneSpecs;
+}) {
   const doc = history.doc;
   if (!doc) return null;
   const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
+  const macros = Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t));
+  const open = Object.entries(params).filter(([t]) => !automated.has(t))
+    .sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <select aria-label="add automation" value=""
+            onChange={(e) => {
+              const target = e.target.value;
+              if (target) history.apply((d) => { d.rows.push(automationRow(d, target, params)); });
+            }}>
+      <option value="">+ automation</option>
+      <optgroup label="Macros">
+        {macros.map((t) => <option key={t} value={t}>{t}</option>)}
+      </optgroup>
+      {open.length > 0 && (
+        <optgroup label="Parameters">
+          {open.map(([t, spec]) => (
+            <option key={t} value={t}>
+              {laneTitle(t, spec)}{spec.reaches ? ` · ${spec.reaches.join(", ")}` : ""}</option>))}
+        </optgroup>
+      )}
+    </select>
+  );
+}
+
+function AddLane({ history }: { history: History }) {
+  const params = useContext(ParamLanes);
+  const doc = history.doc;
+  if (!doc) return null;
   return (
     <div className="d-row d-add">
       <div className="d-head">
@@ -755,16 +1055,7 @@ function AddLane({ history }: { history: History }) {
           <option value="">+ lane</option>
           {NEW_LANES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select aria-label="add automation" value=""
-                onChange={(e) => {
-                  const target = e.target.value;
-                  if (!target) return;
-                  history.apply((d) => { d.rows.push(automationRow(d, target)); });
-                }}>
-          <option value="">+ automation</option>
-          {Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t)).map((t) => (
-            <option key={t} value={t}>{t}</option>))}
-        </select>
+        <AutomationMenu history={history} params={params} />
       </div>
     </div>
   );

@@ -113,6 +113,11 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
 # (`server.rig_reach`), which on a real rig is often wider on one side and
 # narrower on the other. A show folder does not know which rig will play it, so
 # it is authored against the range every rig can be expected to understand.
+#
+# Besides these, `param.<name>` drives a routine's open parameter. It has no
+# range here because each routine declares its own: a routine's lane is held to
+# its declaration (`_check_points`), a timeline's to the declarations of the
+# routines it places (`param_lane_problems`).
 AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
     "master": (0.0, 1.0),
     "size": (0.0, 3.0),
@@ -721,18 +726,54 @@ def _check_curve(points: list, result: Result, where: str) -> None:
             result.errors.append(f"{at} is not after the point before it")
         prev = point[0]
 
+PARAM_PREFIX = "param."
+
+
+def param_name(target: Any) -> Optional[str]:
+    """The parameter a `param.<name>` automation target drives, or None."""
+    if (isinstance(target, str) and target.startswith(PARAM_PREFIX)
+            and len(target) > len(PARAM_PREFIX)):
+        return target[len(PARAM_PREFIX):]
+    return None
+
+
+# A look parameter names a library entry, and `blocks._look` reads it once,
+# when the routine is bound to a rig -- not per frame, the way a number or a
+# colour is read. A lane for one would draw a curve and change nothing, so it
+# is refused rather than accepted and ignored. Switching looks over time is two
+# items on a lane.
+LOOK_NOT_AUTOMATABLE = ("is a look, which is chosen once when the routine is "
+                        "built, not per frame, so a lane cannot change it; put "
+                        "two items on the lane to switch looks")
+
 
 def _check_points(row: dict, result: Result, where: str,
-                  allow_params: bool) -> None:
+                  params: Optional[Mapping]) -> None:
+    """One automation row. `params` is the routine's own declarations when the
+    row is in a routine; None in a timeline, whose `param.<name>` lanes reach
+    routines in OTHER files and are checked against them by
+    `param_lane_problems`, where both halves are in hand."""
     target = row["target"]
     rng = AUTOMATION_RANGES.get(target)
-    is_param = target.startswith("param.") and len(target) > len("param.")
-    if rng is None and not (allow_params and is_param):
-        allowed = ", ".join(AUTOMATION_RANGES) + (
-            ", param.<name>" if allow_params else "")
+    name = param_name(target)
+    if rng is None and name is None:
+        allowed = ", ".join(AUTOMATION_RANGES) + ", param.<name>"
         result.errors.append(f"{where}: {target!r} is not something that can be "
                              f"automated; one of {allowed}")
         return
+    param = None
+    if name is not None and params is not None:
+        param = params.get(name)
+        if param is None:
+            result.errors.append(f"{where}: {target} automates ${name}, which "
+                                 f"this routine does not declare in params")
+            return
+        if not isinstance(param, dict) or param.get("type") not in PARAM_TYPES:
+            param = None              # reported where it is defined
+        elif param["type"] == "look":
+            result.errors.append(f"{where}: ${name} {LOOK_NOT_AUTOMATABLE}")
+            return
+    kinds: set[str] = set()
     prev = None
     for i, point in enumerate(row["points"]):
         at = f"{where} point {i}"
@@ -753,9 +794,84 @@ def _check_points(row: dict, result: Result, where: str,
             if not _num(value) or not rng[0] <= value <= rng[1]:
                 result.errors.append(f"{at} {target} must be a number from "
                                      f"{rng[0]:g} to {rng[1]:g}, got {value!r}")
-        elif not _num(value) and color_problem(value) is not None:
+        elif param is not None:
+            problem = _param_value_problem(param, value)
+            if problem:
+                result.errors.append(f"{at} ${name} {problem}")
+        elif _num(value):
+            kinds.add("number")
+        elif color_problem(value) is None:
+            kinds.add("colour")
+        else:
             result.errors.append(f"{at} must be a number or a colour, got "
                                  f"{value!r}")
+    # A curve from a number to a colour means nothing: `timeline.Curve` would
+    # hand the block a blend of the two, which is neither.
+    if len(kinds) > 1:
+        result.errors.append(f"{where}: {target} mixes numbers and colours; one "
+                             f"lane drives one parameter, which is one or the "
+                             f"other")
+
+
+def param_lane_problems(timeline: Mapping,
+                        routines: Mapping[str, Mapping]) -> list[str]:
+    """A timeline's `param.<name>` lanes against the routines it places: each
+    point checked against every one of them that declares the parameter, as
+    that routine declares it -- its range, colour or number, look or not.
+
+    WARNINGS, although the same value in the routine's own lane is an error.
+    The two halves are separate files in a folder that syncs one file at a
+    time -- the routine may be mid-edit, its new range not yet arrived -- and
+    refusing the timeline over it would make one file's save hang on another's
+    (the rule `load_folder` states for every cross-file problem). A lane that
+    reaches no routine is said too: it does nothing, which is nearly always a
+    typo or a routine since taken off the timeline."""
+    rows = timeline.get("rows") or []
+    used = sorted({item.get("routine") for row in rows
+                   if row.get("type") == "clips"
+                   for item in row.get("items") or []
+                   if item.get("kind") == "routine"
+                   and isinstance(item.get("routine"), str)})
+    out: list[str] = []
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is None:
+            continue
+        where = f"row {row.get('id')!r}"
+        decls = [(rid, ((routines.get(rid) or {}).get("params") or {}).get(name))
+                 for rid in used]
+        decls = [(rid, p) for rid, p in decls if isinstance(p, dict)]
+        if not decls:
+            out.append(f"{where}: no routine on this timeline has ${name}, so "
+                       f"its lane does nothing")
+            continue
+        for rid, param in decls:
+            if param.get("type") == "look":
+                out.append(f"{where}: ${name} in routine {rid!r} "
+                           f"{LOOK_NOT_AUTOMATABLE}")
+                continue
+            for i, point in enumerate(row.get("points") or []):
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                problem = _param_value_problem(param, point[1])
+                if problem:
+                    out.append(f"{where} point {i}: routine {rid!r} ${name} "
+                               f"{problem}")
+    return out
+
+
+def _automated_params(rows: list) -> dict[str, str]:
+    """A routine's own param lanes: param name -> the row automating it."""
+    out: dict[str, str] = {}
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is not None:
+            out.setdefault(name, row["id"])
+    return out
 
 
 def _check_palettes(doc: dict, result: Result) -> None:
@@ -850,7 +966,7 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
             _check_external(row, result, where)
             continue
         if kind == "automation":
-            _check_points(row, result, where, allow_params=True)
+            _check_points(row, result, where, None)
             continue
         _check_items(row, result, where)
         if kind == "hits":
@@ -927,12 +1043,23 @@ def _semantic_routine(doc: dict, result: Result) -> None:
     rows = doc["rows"]
     _unique_ids(rows, result, "routine")
     _shadowed_automation(rows, result)
+    # The routine's own lane is the parameter's value wherever the routine is,
+    # so a fixed value for it -- from a variation here, or a use site
+    # (`_check_use`) -- is never heard. Legal, and worth saying.
+    automated = _automated_params(rows)
+    for vname, values in (doc.get("variations") or {}).items():
+        for pname in (values if isinstance(values, dict) else {}):
+            if pname in automated:
+                result.warnings.append(
+                    f"variation {vname!r} sets {pname!r}, which row "
+                    f"{automated[pname]!r} automates; the lane wins, so the "
+                    f"variation's value is never heard")
     length = doc["bars"] * tracktime.BEATS_PER_BAR
     rig_bound = False
     for row in rows:
         where = f"row {row['id']!r}"
         if row["type"] == "automation":
-            _check_points(row, result, where, allow_params=False)
+            _check_points(row, result, where, params)
             continue
         if row["type"] == "external":
             _check_external(row, result, where)
@@ -1238,6 +1365,8 @@ def _cross_check(folder: Folder) -> None:
                 if item.get("kind") == "routine":
                     _check_use(folder, f"timelines/{track_id}.json item "
                                        f"{item['id']!r}", item)
+        for problem in param_lane_problems(tl, folder.routines):
+            warn(f"timelines/{track_id}.json {problem}")
     for set_id, ts in folder.templates.items():
         picks = list(ts["phrases"].values()) + list(
             (ts.get("bars") or {}).get("cycle") or [])
@@ -1283,11 +1412,17 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
         folder.warnings.append(f"{where}: routine {use['routine']!r} has no "
                                f"variation {variation!r}")
     params = routine.get("params") or {}
+    automated = _automated_params(routine["rows"])
     for name, value in (use.get("params") or {}).items():
         if name not in params:
             folder.warnings.append(f"{where} sets {name!r}, which routine "
                                    f"{use['routine']!r} does not have")
             continue
+        if name in automated:
+            folder.warnings.append(
+                f"{where} sets {name!r}, which routine {use['routine']!r} "
+                f"automates on its own lane {automated[name]!r}; the lane wins, "
+                f"so this value is never heard")
         problem = _param_value_problem(params[name], value)
         if problem:
             folder.warnings.append(f"{where} {name}: {problem}")

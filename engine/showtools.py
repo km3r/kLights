@@ -114,6 +114,11 @@ def put_doc(kind: str, doc: Any, base_rev: Optional[str] = None,
     except ValueError as exc:
         return _error(str(exc))
     result = showfiles.validate(kind, doc)
+    if kind == "timeline" and result.ok:
+        # The designer's draft says these too; an assistant should hear them
+        # before it writes, not only from a later lint.
+        result.warnings += showfiles.param_lane_problems(
+            doc, showfiles.load_folder(root).routines)
     current = showfiles.doc_rev(path)
     out = {"ok": result.ok, "errors": result.errors, "warnings": result.warnings,
            "path": str(path.relative_to(root)), "exists": current is not None,

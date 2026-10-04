@@ -10,7 +10,9 @@ import {
 import type {
   RoutineSummary, TimelineDoc, TrackDoc, TrackLine, Wave,
 } from "./model";
-import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
+import {
+  Editor, ParamLanes, parsePointId, timelineLaneSpecs, useEditorKeys, useHistory,
+} from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
@@ -346,8 +348,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
+  const paramLanes = timelineLaneSpecs(doc, routines);
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href="#designer" title="All tracks">◂</a>
@@ -486,6 +490,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         : <Editor.Inspector history={history} item={selectedItem} routines={routines}
                             engine={engine} onDeleted={() => setSelected(null)} />}
     </div>
+    </ParamLanes.Provider>
   );
 }
 

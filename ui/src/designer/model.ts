@@ -77,7 +77,10 @@ export interface Item {
   [key: string]: unknown;
 }
 
-export type Point = [number, number | string] | [number, number | string, string];
+/** A number, or a colour for a colour parameter's lane: a palette role, a
+ *  hex colour, `[r, g, b]` from 0 to 1, or a colour look's name. */
+export type PointValue = number | string | number[];
+export type Point = [number, PointValue] | [number, PointValue, string];
 
 export interface Row {
   id: string;

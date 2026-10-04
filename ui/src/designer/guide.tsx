@@ -52,7 +52,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Arm <b>Record</b>, play, and tap <b>Flash</b>, <b>Strobe</b>,{" "}
             <b>Blackout</b> or <b>Next scene</b> in time with the music.</>,
           <><b>+ lane</b> adds a lane. <b>+ automation</b> adds a curve for
-            master, size, spread, centre or rate.</>,
+            master, size, spread, centre or rate, or for a parameter of the
+            routines on this track. A <code>$name</code> lane drives that
+            parameter on every routine that has it.</>,
           <>On a curve, click to add a point and drag to move it. Select a
             point to choose how it arrives: linear, step or ease.</>,
           <><b>List</b> shows every item in order, with nudge buttons for exact
@@ -118,6 +120,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Add an <b>open parameter</b> and set a block's value to{" "}
             <code>$name</code>. Each clip, or a <b>variation</b>, can then
             choose the value.</>,
+          <><b>+ automation</b> also lists each parameter, so it can change
+            over the routine on its own lane. A lane overrides the clip's or
+            variation's value. Look parameters can't be automated.</>,
           <>A colour can be a palette role, a fixed colour or a parameter. Use
             roles and the routine follows the track's palette.</>,
           <>Blocks under <b>This rig only</b> use this event's own looks or

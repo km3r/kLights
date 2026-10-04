@@ -42,8 +42,10 @@ authored there, every pass.
 
 Automation: the timeline's `size` multiplies the operator's, `spread` and
 `center` add to them, `master` multiplies the final intensity; a routine's own
-automation stacks on top for its own fixtures only. `param.<name>` overrides
-that parameter on every routine clip that has it.
+automation stacks on top for its own fixtures only. The timeline's
+`param.<name>` overrides that parameter on every routine clip that has it; a
+routine's own `param.<name>` lane drives it in that routine's beats wherever
+the timeline does not.
 
 Hits -- flash, strobe, blackout -- come from the timeline's hit rows and from
 the hit rows of any routine clip on top of a lane, scaled by its weight. Flash
@@ -296,10 +298,8 @@ class Program:
         self._master = self.timeline.automation("master", beat)
 
     def _param_automation(self, name: str) -> Any:
-        value = self.timeline.automation(f"param.{name}", self._beat)
-        if isinstance(value, tuple):
-            return blocksmod.Blend(*value)
-        return value
+        entry = self.timeline.curves.get(f"param.{name}")
+        return blocksmod.automation_value(entry[1], self._beat) if entry else None
 
     def _resolve_palette(self, entries, i: int, default: Palette) -> Palette:
         if i >= len(entries) or entries[i] is timelinemod.BLANK:
@@ -345,6 +345,10 @@ class Program:
         for src, clip in self._visible_routines(beat):
             inst = src.inst
             sched = inst.sched(clip.local)
+            # Where its own param lanes are read this frame. Only a routine
+            # showing on some lane is ever evaluated, so one that is not can
+            # keep a stale position harmlessly.
+            inst.now = sched
             prev_sched = None
             again = jumped
             if prev is not None:

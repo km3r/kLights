@@ -313,6 +313,14 @@ class Blend:
     t: float
 
 
+def automation_value(curve: Any, beat: float) -> Any:
+    """A `timeline.Curve` at a beat, as a parameter reads it: a number, or a
+    Blend for a colour curve, which only `Env.color` knows how to mix."""
+    if curve.numeric:
+        return curve.value(beat)
+    return Blend(*curve.segment(beat))
+
+
 def parse_hex(text: str) -> Optional[RGB]:
     if (isinstance(text, str) and len(text) == 7 and text[0] == "#"):
         try:
@@ -343,9 +351,19 @@ class Env:
         # name -> the timeline's automation of `param.<name>` at this beat, or
         # None. Set per frame.
         self.automate: Callable[[str], Any] = lambda name: None
+        # name -> the routine's OWN lane for `param.<name>` where the routine
+        # is now, or None. Set once by `routines.instantiate`.
+        self.lanes: Callable[[str], Any] = lambda name: None
 
     def param(self, name: str) -> Any:
+        # The timeline's lane, then the routine's own, then the fixed value.
+        # The routine's lane is how the routine moves its parameter; a track
+        # drawing the same parameter is the show taking it over for that
+        # track, so the track wins -- the same way a use's values beat the
+        # routine's defaults.
         auto = self.automate(name)
+        if auto is None:
+            auto = self.lanes(name)
         return self.params.get(name) if auto is None else auto
 
     def raw(self, value: Any) -> Any:

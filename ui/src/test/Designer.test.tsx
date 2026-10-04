@@ -8,7 +8,9 @@ import {
   decodeWave,
   whoDrives,
 } from "../designer/model";
-import { AUTOMATION_RANGES } from "../designer/edit";
+import {
+  AUTOMATION_RANGES, paramSpec, routineLaneSpecs, timelineLaneSpecs,
+} from "../designer/edit";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import type { RoutineDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
@@ -90,6 +92,41 @@ describe("designer model", () => {
     expect(arg("scatter", "stations")).toMatchObject({ kind: "number", step: 1 });
     // A unit that only repeats the name is dropped rather than shown twice.
     expect(arg("orbit", "bars").unit).toBeUndefined();
+  });
+
+  it("ranges a parameter's lane by its declaration, then by the arguments it feeds", () => {
+    const fan = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    // declared: what the engine holds the lane to
+    expect(fan["param.width"]).toMatchObject(
+      { kind: "number", min: 0, max: 120, lo: 0, hi: 120, unit: "deg", start: 40 });
+    // a rate says nothing and is still held to 0-8, as the engine holds it
+    expect(fan["param.rate"]).toMatchObject({ min: 0, max: 8, start: 1 });
+    expect(fan["param.color"]).toMatchObject({ kind: "color", start: "@primary" });
+    // open-ended: accepted as anything, drawn on the orbit radius it feeds
+    const open = routineLaneSpecs({
+      params: { r: { type: "number", default: 10 }, which: { type: "look" } },
+      rows: [{ id: "m", type: "clips", target: "movement",
+               items: [{ id: "o", at: 0, len: 4, block: "orbit", args: { radius: "$r" } }] }],
+    });
+    expect(open["param.r"]).toMatchObject({ lo: 0, hi: 90, min: undefined, max: undefined });
+    // a look is chosen when the routine is built; no lane can change it
+    expect(open["param.which"]).toBeUndefined();
+    expect(paramSpec("which", { type: "look" })).toBeNull();
+  });
+
+  it("offers a track's timeline one lane per parameter name of the routines on it", () => {
+    const specs = timelineLaneSpecs(timelineDoc as unknown as TimelineDoc, [
+      { id: "fan-drop", params: fanDrop.params },
+      { id: "idle-orbit", params: idleOrbit.params },
+      { id: "verse-sweep", params: { width: { type: "number", min: 10, max: 90 } } },
+      { id: "not-placed", params: { gobo: { type: "number" } } },
+    ]);
+    expect(specs["param.color"]!.reaches).toEqual(["fan-drop", "idle-orbit"]);
+    // one lane drives every routine with the name, so it takes the narrowest range
+    expect(specs["param.width"]).toMatchObject(
+      { min: 10, max: 90, reaches: ["fan-drop", "verse-sweep"] });
+    expect(specs["param.radius"]!.reaches).toEqual(["idle-orbit"]);
+    expect(specs["param.gobo"]).toBeUndefined();
   });
 
   it("offers the blocks the console's parametric looks are built from", () => {
@@ -548,6 +585,20 @@ describe("designer", () => {
     expect(row.points).toContainEqual([36, -0.5, "ease"]);
   });
 
+  it("offers a lane for each parameter of the routines on the track, naming them", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    await waitFor(() => expect(within(menu).getByRole("option", {
+      name: "$color · fan-drop, idle-orbit" })).toBeInTheDocument());
+    expect(within(menu).getByRole("option", { name: "$radius (deg) · idle-orbit" }))
+      .toBeInTheDocument();
+    await user.selectOptions(menu, "param.radius");
+    const radius = within(lanes).getByLabelText("automation param.radius");
+    expect(within(radius).getByLabelText("point at bar 1.1: 10")).toBeInTheDocument();
+  });
+
   it("answers the editing keys: Space plays, Ctrl+S saves, Escape lets go", async () => {
     const socket = await open();
     const lanes = await screen.findByRole("region", { name: "lanes" });
@@ -665,6 +716,47 @@ describe("routine editor", () => {
     const level = doc.rows.find((r) => r.id === "p")!;
     expect(level.items!.find((i) => i.block === "pulse"))
       .toMatchObject({ at: 0, len: 32, args: { depth: "$depth" } });
+  });
+
+  it("automates its own parameters on lanes, held to their declared range", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    // each open parameter, by name and unit -- and a look would not be here
+    expect(within(menu).getByRole("option", { name: "$width (deg)" })).toBeInTheDocument();
+    expect(within(menu).getByRole("option", { name: "$rate" })).toBeInTheDocument();
+    await user.selectOptions(menu, "param.width");
+    expect(within(menu).queryByRole("option", { name: "$width (deg)" })).toBeNull();
+
+    // the lane starts at the default, so adding it changes nothing
+    const width = within(lanes).getByLabelText("automation param.width");
+    expect(within(width).getByLabelText("point at bar 1.1: 40")).toBeInTheDocument();
+    expect(within(lanes).getByText("$width (deg)")).toBeInTheDocument();
+    fireEvent.click(width, { clientX: 16 * 16, clientY: 3 });   // bar 5, the top
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/0 to 120 deg/)).toBeInTheDocument();
+    // past the declared max is refused here, as the engine would refuse it
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "500" } });
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "90" } });
+
+    // a colour parameter's lane takes colours, picked in the inspector
+    await user.selectOptions(menu, "param.color");
+    const colour = within(lanes).getByLabelText("automation param.color");
+    fireEvent.click(colour, { clientX: 8 * 16, clientY: 20 });
+    expect(within(colour).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "point colour" }))
+      .getByRole("button", { name: "accent" }));
+    expect(within(colour).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:f" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "param.width"))
+      .toMatchObject({ type: "automation", points: [[0, 40], [16, 90]] });
+    expect(doc.rows.find((r) => r.target === "param.color"))
+      .toMatchObject({ points: [[0, "@primary"], [8, "@accent"]] });
   });
 
   it("starts a new routine and saves it as a new file", async () => {

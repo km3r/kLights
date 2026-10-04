@@ -2425,6 +2425,7 @@ class ShowController:
             result = showfiles.validate("timeline", doc)
             if not result.ok:
                 return result, None
+            result.warnings += showfiles.param_lane_problems(doc, routines)
             timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
             return result, programmod.compile(
                 timeline, routines, rigging, f"draft of {doc.get('track')}")

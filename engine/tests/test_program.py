@@ -349,6 +349,52 @@ s = frame(p, 4)
 check("param automation overrides a routine's colour, blended between points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 
+
+# A routine's own param lane: read in the ROUTINE's beats, wrapped with its
+# loop, under the timeline's lane and over every fixed value.
+grow = routine("grow", [
+    clips("m", "movement", [block("o", "orbit", 0, 8, radius="$radius", bars=1,
+                                  spread=0)]) | {"role": "movers"},
+    {"id": "rad", "type": "automation", "target": "param.radius",
+     "points": [[0, 10.0], [8, 30.0]]}], bars=2,
+    params={"radius": {"type": "number", "default": 20, "min": 0, "max": 40}})
+
+
+def bearing_at(prog, beat):
+    return offset(frame(prog, beat)[MOVERS[0].fid], MOVERS[0])[0]
+
+
+# A quarter of the way round, an orbit is exactly its radius out in bearing;
+# one beat into the routine its lane is 10 + 20 * 1/8.
+p = build([clips("scene", "scene", [use("a", "grow", 4, 32)])], [grow])
+check("a routine's own param lane drives its param, in the routine's beats "
+      "(placed at beat 4, read at routine beat 1)",
+      close(bearing_at(p, 5), 12.5, 1e-6), f"{bearing_at(p, 5)}")
+check("and lands on the same value every pass of the loop",
+      close(bearing_at(p, 13), 12.5, 1e-6) and close(bearing_at(p, 21), 12.5, 1e-6),
+      f"{bearing_at(p, 13)} {bearing_at(p, 21)}")
+p = build([clips("scene", "scene", [use("a", "grow", 4, 32,
+                                        params={"radius": 35})])], [grow])
+check("the lane beats a use's fixed value (which the folder check warns of)",
+      close(bearing_at(p, 5), 12.5, 1e-6), f"{bearing_at(p, 5)}")
+p = build([clips("scene", "scene", [use("a", "grow", 4, 32)]),
+           {"id": "tr", "type": "automation", "target": "param.radius",
+            "points": [[0, 5.0]]}], [grow])
+check("the timeline's lane for the same param beats the routine's own",
+      close(bearing_at(p, 5), 5.0, 1e-6), f"{bearing_at(p, 5)}")
+held = routine("held", grow["rows"], bars=2, loop=False, params=grow["params"])
+p = build([clips("scene", "scene", [use("a", "held", 0, 32)])], [held])
+check("a routine that does not loop holds its lane's last value past its end",
+      close(bearing_at(p, 25), 30.0, 1e-3),
+      f"{bearing_at(p, 25)}")
+fade_tint = routine("ftint", tinted["rows"] + [
+    {"id": "pc", "type": "automation", "target": "param.color",
+     "points": [[0, "#ff0000"], [8, "#0000ff"]]}], params=tinted["params"])
+s = frame(build([clips("scene", "scene", [use("a", "ftint", 16, 64)])],
+                [fade_tint]), 20)
+check("a colour param's own lane blends between its points",
+      rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
+
 slow = build([clips("scene", "scene", [use("a", "orb", 0, 64)])], [orbit])
 fast = build([clips("scene", "scene", [use("a", "orb", 0, 64)]),
               {"id": "r", "type": "automation", "target": "rate.movement",
