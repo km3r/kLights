@@ -11,6 +11,32 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — run a drift check, and move a fixture, from the console
+
+- **Drift check has a button.** Jog every head onto the mirror ball and press
+  **Check all heads**. The engine compares each head's live jog position with
+  its stored calibration. The card always showed results, but nothing in the
+  console could start a check: the only way was the CLI, and its answer never
+  reached the console. The button stays off, and names the heads still to aim,
+  until every head is jogging. The engine refuses the same way, as capture does:
+  a head nobody aimed has no reading.
+- **`drift` with no `readings`** uses the jog positions. With `readings`, it now
+  refuses a list that is not one per head, instead of quietly checking only the
+  heads the list reached.
+- **A drift result is dropped when a patch is applied**, since it was measured
+  against the rig that was replaced.
+- **Fixture positions are editable on the Patch card** (X, height, Z in mm).
+  The card already said so, and the engine had `patch_position`, but there was
+  no field. Sent once, when focus leaves all three.
+- Notices that told operators to run `python -m engine.calibrate drift` now
+  point at the Drift check.
+
+### Fixed — banners with a bold name in them
+
+- The Capture card's "Jog **head** onto the target first" warning laid out as
+  three columns on a phone. Banners are flex rows, so text either side of the
+  bold name became separate items. Result chips no longer wrap mid-word.
+
 ### Added — guides and help in the app
 
 - **A guide to every tab**, behind a **?** in the console's header: a short
