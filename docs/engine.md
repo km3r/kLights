@@ -271,6 +271,16 @@ or a template driving it grabs every lane like any preset. Picking a look, a
 plain preset or a cue puts it away. Its program is built on the worker when the
 folder loads, when it is saved, and after a rig reload.
 
+**Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
+says what any deck has loaded, as `loaded_*` sync fields that never touch the
+transport. The controller matches it against the folder at once and the player
+builds its timeline on the worker into a small cache (eight shows, oldest out),
+so when that track becomes the master `compile_for` finds it built and the
+timeline drives from the first frame. A rig reload or a folder load drops the
+cache -- a build still running for the old one is thrown away when it lands --
+and matches the decks again. The snapshot's `track.decks` lists the other
+decks: title, match, and whether the show is ready.
+
 **Templates** ([`templates.py`](../engine/templates.py), milestone 2) are the
 middle of the chain -- timeline, then template, then the operator's or auto
 mode's show. A template set maps rekordbox's phrase labels to routine picks

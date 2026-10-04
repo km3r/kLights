@@ -185,6 +185,13 @@ class TrackPlayer:
         # it waits for the next track rather than changing under this one.
         self._next_cset: Optional[templatesmod.CompiledSet] = None
         self._phrases: tuple = (None, None)     # (track_seq, PhraseMap)
+        # Timelines built in advance for tracks loaded on other decks
+        # (milestone 2), so a master switch engages on its first frame. Keyed
+        # by the timeline object's id, holding the object so the id cannot be
+        # reused by another; a handful at most.
+        self._precompiled: dict[int, tuple] = {}
+        self._precompiling: set[int] = set()
+        self._pregen = 0                # bumped when the rig or folder changes
         self._held: Optional[float] = None      # a paused clock beat
 
     # -- settings ----------------------------------------------------------
@@ -241,6 +248,11 @@ class TrackPlayer:
         key = (pinned.track_seq, id(pinned.timeline))
         if key in (self._program_for, self._compiling_for, self._failed_for):
             return
+        pre = self._precompiled.get(id(pinned.timeline))
+        if pre is not None and pre[0] is pinned.timeline:
+            # Built while it was loaded on another deck: on stage at once.
+            self.program, self._program_for = pre[1], key
+            return
         self._compiling_for = key
         timeline = pinned.timeline
         routines = pinned.library.folder.routines if pinned.library else {}
@@ -272,6 +284,48 @@ class TrackPlayer:
                 self._note(f"{track}: {prog.problems[0]}{more}")
 
         self._submit(build, done, f"compiling {track}")
+
+    PRECOMPILE_MAX = 8
+
+    def precompile(self, timeline, routines, label: str) -> None:
+        """Build a timeline for a track loaded on another deck, on the worker,
+        before it is the master's (milestone 2: per-deck pre-matching)."""
+        key = id(timeline)
+        hit = self._precompiled.get(key)
+        if (hit is not None and hit[0] is timeline) or key in self._precompiling:
+            return
+        self._precompiling.add(key)
+        rigging, gen = self._rigging(), self._pregen
+
+        def build():
+            try:
+                return programmod.compile(timeline, routines, rigging, label)
+            except Exception as exc:                        # noqa: BLE001
+                return exc
+
+        def done(prog) -> None:
+            if gen != self._pregen:
+                return                  # built for a rig or load since replaced
+            self._precompiling.discard(key)
+            if isinstance(prog, Exception):
+                return                  # compile_for will say so if it plays
+            while len(self._precompiled) >= self.PRECOMPILE_MAX:
+                self._precompiled.pop(next(iter(self._precompiled)))
+            self._precompiled[key] = (timeline, prog)
+
+        self._submit(build, done, f"building {label} in advance")
+
+    def drop_precompiled(self) -> None:
+        """Forget the shows built in advance (a new rig or folder load). One
+        still building is thrown away when it lands: it was built against the
+        old rig, and a cached program is never checked again."""
+        self._pregen += 1
+        self._precompiled.clear()
+        self._precompiling.clear()
+
+    def precompiled(self, timeline) -> bool:
+        hit = self._precompiled.get(id(timeline))
+        return hit is not None and hit[0] is timeline
 
     def compile_idle(self, library) -> None:
         """The idle routine as a program of its own, for pauses."""
@@ -390,6 +444,7 @@ class TrackPlayer:
         """The rig changed under the programs: build them again."""
         self.program, self._program_for, self._compiling_for = None, None, None
         self._failed_for = None
+        self.drop_precompiled()
         self.compile_for(self._pinned())
         self.cset, self._cset_key, self._next_cset = None, None, None
         self.template.reset()

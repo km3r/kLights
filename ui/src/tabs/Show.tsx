@@ -3,7 +3,7 @@ import { apiFetch } from "../useEngine";
 import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type {
-  Command, EngineState, LaneSource, Preset, Slot, TrackMatch,
+  Command, DeckLoaded, EngineState, LaneSource, Preset, Slot, TrackMatch,
 } from "../types";
 
 /**
@@ -489,6 +489,15 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
           {track.match && <MatchLine match={track.match} />}
         </div>
       )}
+      {(track?.decks?.length ?? 0) > 0 && (
+        <div className="small muted" aria-label="other decks">
+          {track!.decks!.map((d) => (
+            <div key={d.deck}>
+              Deck {d.deck}: {d.title ?? "?"} · {deckShow(d)}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="small" style={{ marginTop: "0.3rem" }}>
         {prog.mode === "timeline" || prog.mode === "preview"
           ? <>{prog.mode === "preview" ? "The designer is driving" : "Timeline driving"}
@@ -582,6 +591,13 @@ const MATCH_VIA: Record<string, string> = {
   alias: "by manual link", title_artist_album: "by title, artist and album",
   title_artist: "by title and artist",
 };
+
+/** What a deck's loaded track will bring when it becomes the master. */
+function deckShow(d: DeckLoaded): string {
+  if (!d.track_id) return "not in the show folder";
+  if (!d.has_timeline) return `${d.track_id}, no timeline`;
+  return d.ready ? `${d.track_id}, show ready` : `${d.track_id}, building its show`;
+}
 
 function MatchLine({ match }: { match: TrackMatch }) {
   if (match.track_id) {

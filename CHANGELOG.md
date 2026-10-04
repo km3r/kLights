@@ -11,6 +11,26 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F20e: per-deck pre-matching
+
+- **A track's show is built before the DJ fades it in.** The beat-link-trigger
+  expressions now say what every deck has loaded (`/klights/v1/deck`, the same
+  shape as `track`). The engine matches it at once and builds its timeline on
+  the worker, so when that deck becomes the tempo master its timeline drives
+  from the very first frame instead of showing the layer below while it
+  compiles. At most eight are kept; a rig reload or folder change rebuilds them.
+- The Track card lists the other decks: what is loaded, which show it is, and
+  whether that show is ready.
+- These fields arrive as `loaded_*` and never move the transport, which follows
+  the master alone; they are checked by the same rules as the master's.
+
+### Fixed — F20e
+
+- The beat-link-trigger expressions could send a new master track's identity
+  with the previous track's metadata, if the deck reported the new track before
+  its metadata arrived -- and then never send it again. Identity is now sent
+  only once the metadata's rekordbox id is the one the deck reports.
+
 ### Added — F20d: routines on preset pads
 
 - **A preset pad can play a routine** over its looks: choose one (and a

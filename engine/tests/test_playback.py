@@ -14,6 +14,7 @@ latency is saved to the show folder.
 Run: python engine/tests/test_playback.py
 """
 
+import copy
 import json
 import shutil
 import sys
@@ -362,6 +363,95 @@ try:
     sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
     sc.apply({"type": "program_release"}, None, t)
     play(189, 0.2)
+
+    # -- 2d. pre-matching (F20e) -------------------------------------------------
+    print("\n2d. pre-matching")
+
+    def loaded(at, deck, title, artist="", album="", duration=0.0, rid=1):
+        sc.apply({"type": "sync", "source": "blt", "loaded_deck": deck,
+                  "loaded_title": title, "loaded_artist": artist,
+                  "loaded_album": album, "loaded_duration": duration,
+                  "loaded_rekordbox_id": rid}, None, at)
+
+    def first_frame_of_synth():
+        global t
+        t += 2.5
+        blt(t, "synthetic 128", "kLights", "test track", 180.0)
+        t += 0.01
+        play(170, 0.04)                 # exactly one frame
+        return status()
+
+    t += 2.5
+    blt(t, "Guest Before", "Guest DJ", "", 200.0, rid=6)
+    t += 0.01
+    play(10, 0.2)
+    st = first_frame_of_synth()
+    check("without a deck message, a master switch to a drawn track shows the "
+          "layer below for a frame or more while its show compiles",
+          st["mode"] == "template" and st["reason"] == "compiling", f"{st}")
+    settle()
+    play(170.1, 0.1)
+
+    t += 2.5
+    blt(t, "Guest Before", "Guest DJ", "", 200.0, rid=6)
+    t += 0.01
+    play(10, 0.2)
+    seq = sc.snapshot()["track"]["track_seq"]
+    compile_threads.clear()
+    loaded(t, "2", "synthetic 128", "kLights", "test track", 180.0)
+    decks = sc.snapshot()["track"]["decks"]
+    check("deck 2 loading a drawn track is matched at once, while the guest plays",
+          [(d["deck"], d["track_id"], d["has_timeline"]) for d in decks]
+          == [("2", "synth-128", True)], f"{decks}")
+    check("and never touches the transport, which follows the master alone",
+          sc.snapshot()["track"]["track_seq"] == seq
+          and sc.snapshot()["track"]["title"] == "Guest Before")
+    settle()
+    check("its show is built in advance, on the worker",
+          sc.snapshot()["track"]["decks"][0]["ready"] is True
+          and compile_threads == ["klights-worker"], f"{compile_threads}")
+    st = first_frame_of_synth()
+    check("so when that track becomes the master, its timeline drives from the "
+          "very first frame -- no 'compiling' frame",
+          st["mode"] == "timeline" and st["reason"] is None, f"{st}")
+    check("and nothing was compiled again for it", compile_threads == ["klights-worker"],
+          f"{compile_threads}")
+
+    loaded(t, "3", "not in the library", "Guest DJ", "", 200.0, rid=9)
+    loaded(t, "4", "")
+    decks = {d["deck"]: d for d in sc.snapshot()["track"]["decks"]}
+    check("an unknown track on another deck is listed as such; an empty deck is not",
+          decks["3"]["track_id"] is None and decks["3"]["ready"] is False
+          and "4" not in decks, f"{decks}")
+
+    synth_tl = sc.show_library.timelines["synth-128"]
+    routines = sc.show_library.folder.routines
+    copies = [copy.copy(synth_tl) for _ in range(playbackmod.TrackPlayer.PRECOMPILE_MAX + 2)]
+    for i, c in enumerate(copies):
+        sc.player.precompile(c, routines, f"copy {i}")
+    settle()
+    check("the shows built in advance are bounded, oldest out first",
+          len(sc.player._precompiled) <= playbackmod.TrackPlayer.PRECOMPILE_MAX
+          and sc.player.precompiled(copies[-1]) and not sc.player.precompiled(copies[0]),
+          f"{len(sc.player._precompiled)}")
+    late = copy.copy(synth_tl)
+    sc.player.precompile(late, routines, "late")
+    sc.player.drop_precompiled()
+    settle()
+    check("a show still building when the rig changes is thrown away when it lands",
+          not sc.player.precompiled(late) and not sc.player._precompiled)
+
+    old_tl = sc.decks["2"]["timeline"]
+    sc.reload_library()
+    settle()
+    fresh = sc.show_library.timelines["synth-128"]
+    check("a folder reload matches the decks again against the new load, and "
+          "builds their shows afresh",
+          fresh is not old_tl and sc.decks["2"]["timeline"] is fresh
+          and sc.player.precompiled(fresh) and not sc.player.precompiled(old_tl))
+    check("while the playing track keeps the load it was matched against",
+          status()["mode"] == "timeline" and sc.pinned.timeline is synth_tl)
+    play(170.2, 0.2)
 
     # -- 3. pause policies ---------------------------------------------------
     print("\n3. pausing")

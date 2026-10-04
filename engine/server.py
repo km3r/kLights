@@ -373,6 +373,9 @@ class ShowController:
         # show folder; without one the runner never asks.
         self.player: Optional[playbackmod.TrackPlayer] = None
         self._frame_sample: Optional[transportmod.TrackSample] = None
+        # What the other decks have loaded (milestone 2), from beat-link-
+        # trigger: matched, and their timelines built in advance.
+        self.decks: dict[str, dict] = {}
         self.presets = load_presets(self.event_dir)
         # Routines on preset pads (milestone 2): the one playing, the one
         # waiting for its downbeat, and every routine pad built for this rig.
@@ -737,6 +740,10 @@ class ShowController:
             self.player.compile_idle(library)
             self.player.compile_templates(library)
             self._compile_pads()
+            # The other decks' shows were built from the last load: match them
+            # again against this one and build what changed.
+            self.player.drop_precompiled()
+            self._rematch_decks()
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -1623,10 +1630,43 @@ class ShowController:
         # `now` is when the datagram ARRIVED (see submit), which is what the
         # transport's line needs: applying it at the frame boundary instead
         # would quantise every position to the 25 ms frame grid.
+        if "loaded_deck" in fields:
+            self._prematch(fields)
         self.transport.ingest(fields, now)
         sample = self._track_frame(now)
         if sample is not None:
             self._check_grid(fields, sample, now)
+
+    def _prematch(self, fields: dict) -> None:
+        """Another deck loaded a track: match it now, and build its timeline
+        on the worker, so that when it becomes the master its show is already
+        there -- no frame of the operator's show while it compiles. Never
+        touches the transport, which follows the master alone."""
+        library = self.show_library
+        deck = fields["loaded_deck"]
+        if library is None or self.player is None:
+            return
+        match = library.index.match(
+            title=fields.get("loaded_title", ""), artist=fields.get("loaded_artist", ""),
+            album=fields.get("loaded_album", ""),
+            duration=fields.get("loaded_duration"),
+            rekordbox_id=fields.get("loaded_rekordbox_id"),
+            signature=fields.get("loaded_signature"))
+        tid = match.track_id
+        timeline = library.timelines.get(tid) if tid else None
+        # A new dict, assigned whole: the snapshot reads it from another thread.
+        self.decks = {**self.decks,
+                      deck: {"deck": deck, "title": fields.get("loaded_title") or None,
+                             "track_id": tid, "timeline": timeline,
+                             "fields": dict(fields)}}
+        if timeline is not None:
+            self.player.precompile(timeline, library.folder.routines,
+                                   f"timelines/{tid}.json")
+
+    def _rematch_decks(self) -> None:
+        """A new folder load or rig: the decks' matches and shows again."""
+        for d in list(self.decks.values()):
+            self._prematch(d["fields"])
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -2057,6 +2097,7 @@ class ShowController:
                 self.player.compile_idle(self.show_library)
             self._clear_pad()
             self._compile_pads()
+            self._rematch_decks()
 
         if old_heads != new_heads:
             self.note(f"rig reloaded, and the moving heads CHANGED "
@@ -2477,6 +2518,15 @@ def _track_status(controller: "ShowController") -> dict:
         "match": (pinned.public(controller.show_library) if current else None),
         "grid_warning": (check.warning if current and check is not None
                          else None),
+        # The other decks (milestone 2): what they have loaded, matched, and
+        # whether its show is built yet. An empty deck is left out.
+        "decks": [{"deck": d["deck"], "title": d["title"], "track_id": d["track_id"],
+                   "has_timeline": d["timeline"] is not None,
+                   "ready": (d["timeline"] is not None and controller.player is not None
+                             and controller.player.precompiled(d["timeline"]))}
+                  for d in sorted(list(controller.decks.values()),
+                                  key=lambda d: d["deck"])
+                  if d["deck"] != s.deck and (d["title"] or d["track_id"])],
     }
 
 

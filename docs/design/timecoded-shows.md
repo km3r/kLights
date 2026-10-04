@@ -169,4 +169,8 @@ called done, a ten-minute capture on each rig must show:
 - that beat-link-trigger delivers the signature and rekordbox id;
 - that it reads the song structure (PSSI) off a guest's USB, with the labels
   rekordbox shows, and that `/klights/v1/phrase`'s beats-into lands the
-  template's routine on the phrase's first beat (milestone 2).
+  template's routine on the phrase's first beat (milestone 2);
+- that `/klights/v1/deck` arrives for every player as tracks load (not just
+  the master), with the new track's title rather than the last one's, and that
+  a master switch to a drawn track engages its timeline on the first frame
+  (milestone 2).

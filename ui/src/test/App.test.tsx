@@ -1068,6 +1068,38 @@ describe("follow dj (track card)", () => {
     expect(socket.last()).toEqual({ type: "template_set", id: null });
   });
 
+  it("lists what the other decks have loaded, and whether their shows are built", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.track = { state: "playing", title: "Guest Tune", artist: null, album: null,
+                  duration: 200, source: "blt", deck: "1", time: 10, rate: 1, age: 0.02,
+                  track_seq: 2, jump_seq: 0, on_air: true, match: null, grid_warning: null,
+                  decks: [
+                    { deck: "2", title: "synthetic 128", track_id: "synth-128",
+                      has_timeline: true, ready: true },
+                    { deck: "3", title: "Night Drive", track_id: "night-drive",
+                      has_timeline: true, ready: false },
+                    { deck: "4", title: "Someone Else's", track_id: null,
+                      has_timeline: false, ready: false },
+                  ] };
+    })));
+    const decks = screen.getByLabelText("other decks");
+    expect(decks).toHaveTextContent("Deck 2: synthetic 128 · synth-128, show ready");
+    expect(decks).toHaveTextContent("Deck 3: Night Drive · night-drive, building its show");
+    expect(decks).toHaveTextContent("Deck 4: Someone Else's · not in the show folder");
+  });
+
+  it("says nothing about other decks when none have anything loaded", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.queryByLabelText("other decks")).toBeNull();
+  });
+
   it("links the matched track to the designer", () => {
     const socket = mount();
     act(() => socket.push(program()));

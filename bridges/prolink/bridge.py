@@ -144,6 +144,16 @@ def as_blt(fields: dict) -> list[bytes]:
         out.append(osc_args("/klights/v1/phrase", deck, fields["phrase_label"],
                             float(fields.get("phrase_into", 0.0)),
                             float(fields.get("phrase_ends_in", 0.0))))
+    if "loaded_deck" in fields:
+        # What a deck -- any deck -- has loaded (milestone 2), so the engine
+        # can build its show before the DJ fades it in.
+        out.append(osc_args("/klights/v1/deck", int(fields["loaded_deck"]),
+                            int(fields.get("loaded_rekordbox_id", 0)),
+                            fields.get("loaded_signature", ""),
+                            fields.get("loaded_title", ""),
+                            fields.get("loaded_artist", ""),
+                            fields.get("loaded_album", ""),
+                            float(fields.get("loaded_duration", 0.0))))
     return out
 
 

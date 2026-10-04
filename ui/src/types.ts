@@ -236,6 +236,19 @@ export interface TrackState {
   match?: TrackMatch | null;
   /** The deck's own beats disagree with the prepped grid. */
   grid_warning?: GridWarning | null;
+  /** What the OTHER decks have loaded (milestone 2, beat-link-trigger only),
+   *  matched, with their shows built in advance. Absent before F20e. */
+  decks?: DeckLoaded[];
+}
+
+/** A track loaded on a deck that is not the master. `ready`: its timeline is
+ *  built, so it drives from its first frame when the DJ makes it the master. */
+export interface DeckLoaded {
+  deck: string;
+  title: string | null;
+  track_id: string | null;
+  has_timeline: boolean;
+  ready: boolean;
 }
 
 /** What the playing track was matched to in the show folder. Fixed for the

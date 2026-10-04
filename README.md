@@ -188,7 +188,9 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    has never seen all get a show -- from the deck's live phrase, or a cycle
    every N bars when there is none. Switch set live from the Track card; it
    lands on the next downbeat. A preset pad can carry a routine too, starting on
-   the next downbeat when pressed.
+   the next downbeat when pressed. With CDJs, what the other decks have loaded
+   is matched and its show built while the DJ cues it, so a master switch is on
+   its timeline from the first frame.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking
