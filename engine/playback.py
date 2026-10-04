@@ -197,6 +197,7 @@ class TrackPlayer:
         # The programs that began this frame, for the other outputs (milestone
         # 3): (source, key prefix, program), the track's timeline first.
         self.stage: tuple = ()
+        self._preview_time: Optional[float] = None
 
     # -- settings ----------------------------------------------------------
 
@@ -521,11 +522,16 @@ class TrackPlayer:
         for _, _, prog in stage:
             palette = dict(getattr(prog, "_palette", {}) or {})
             break
+        pv = self.preview if st.mode == "preview" else None
+        if pv is not None:                  # the designer's track and position
+            track_id, time_s, playing = pv.track_id, self._preview_time, pv.playing
+        else:
+            track_id = pinned.match.track_id if matched else None
+            time_s = sample.time_s if matched else None
+            playing = sample is not None and sample.state == transportmod.PLAYING
         return outputsmod.ProgramFrame(
-            mode=st.mode, beat=st.beat,
-            track_id=pinned.match.track_id if matched else None,
-            time_s=sample.time_s if matched else None,
-            playing=sample is not None and sample.state == transportmod.PLAYING,
+            mode=st.mode, armed=self.armed or pv is not None, beat=st.beat,
+            track_id=track_id, time_s=time_s, playing=playing,
             phrase=cue.label if cue is not None else self._clock_phrase()[0],
             palette=palette, active=outputsmod.gather(stage))
 
@@ -533,7 +539,8 @@ class TrackPlayer:
         pv = self.preview
         if pv.program is None:
             return fallback, "fallback", "preview: no timeline yet", None
-        beat = pv.grid.beat_at(pv.position(now))
+        self._preview_time = pv.position(now)
+        beat = pv.grid.beat_at(self._preview_time)
         jumped = pv.jumps != self._preview_jumps or self._preview_fresh
         self._preview_jumps, self._preview_fresh = pv.jumps, False
         self._seq = None                    # the DJ's next frame is a jump

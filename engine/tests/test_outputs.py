@@ -1,6 +1,7 @@
 """
 Tests for the other outputs (milestone 3): external rows in the timeline core,
-collected through routines and templates into a ProgramFrame, and sent as OSC.
+collected through routines and templates into a ProgramFrame, and sent as OSC;
+and Art-Net timecode carrying the matched track's position.
 
 The OSC goes over a real UDP socket to a listener in this process, and is
 decoded by the engine's own OSC reader. The last section runs a whole
@@ -24,6 +25,7 @@ sys.path.insert(0, str(REPO / "bridges" / "prolink"))
 
 import bridge as bridgemod  # noqa: E402
 from engine import outputs as outputsmod  # noqa: E402
+from engine.output import artnet as artnetmod  # noqa: E402
 from engine import program as programmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import showfiles as sf  # noqa: E402
@@ -47,6 +49,17 @@ class Listener:
         self.sock.bind(("127.0.0.1", 0))
         self.sock.settimeout(0.05)
         self.port = self.sock.getsockname()[1]
+
+    def raw(self, wait=0.05):
+        out = []
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                data, _ = self.sock.recvfrom(65536)
+                out.append(data)
+            except (socket.timeout, BlockingIOError):
+                if time.monotonic() >= deadline:
+                    return out
 
     def drain(self, wait=0.05):
         out = []
@@ -284,6 +297,73 @@ try:
           outs.public() is None and not outs.active)
     outs.close()
 
+    # -- 6b. timecode ----------------------------------------------------------------
+    print("\n6b. ArtTimeCode")
+    golden = bytes.fromhex("4172742d4e657400" "0097" "000e" "0000" "04030201" "03")
+    check("the packet, byte for byte, as the Art-Net 4 spec lays it out "
+          "(01:02:03:04 at SMPTE 30)",
+          artnetmod.build_arttimecode(4, 3, 2, 1, 3) == golden
+          and len(golden) == 19)
+    tc = outputsmod.timecode_at
+    check("whole-frame rates count plainly",
+          tc(75.0, 30) == (0, 15, 1, 0) and tc(3599.99, 25) == (24, 59, 59, 0)
+          and tc(1.5, 24) == (12, 1, 0, 0))
+    check("hours wrap at 24, as timecode does", tc(86401.0, 30) == (0, 1, 0, 0))
+
+    def df(n):          # the time of drop-frame frame n, safely inside it
+        return outputsmod.timecode_text(tc((n + 0.5) * 1001 / 30000, 29.97), 29.97)
+
+    check("29.97 is drop-frame: ;00 and ;01 are skipped at each new minute...",
+          df(1799) == "00:00:59;29" and df(1800) == "00:01:00;02", f"{df(1800)}")
+    check("...except every tenth minute, so ten minutes is ten minutes",
+          df(17981) == "00:09:59;29" and df(17982) == "00:10:00;00"
+          and df(17982 + 1800) == "00:11:00;02", f"{df(17982)}")
+
+    clock_ear = Listener()
+    tco = outputsmod.TimecodeOut("127.0.0.1", clock_ear.port, fps=25)
+
+    def at(time_s, playing=True, armed=True):
+        return outputsmod.ProgramFrame(mode="timeline", armed=armed, time_s=time_s,
+                                       playing=playing)
+
+    for i in range(40):                       # one second of 40 fps frames
+        tco.send(at(75.0 + i * 0.025), 0.0)
+    packets = [artnetmod.build_arttimecode(*tc(75.0 + i * 0.025, 25), 1)
+               for i in range(40)]
+    got = clock_ear.raw()
+    check("sent each time its frame changes -- 25 a second at 25 fps, never twice "
+          "for one frame", len(got) == len(set(packets)) and 24 <= len(got) <= 26
+          and got == list(dict.fromkeys(packets)), f"{len(got)}")
+    tco.send(at(200.0), 0.0)
+    check("a hot cue jumps it at once", clock_ear.raw()
+          == [artnetmod.build_arttimecode(*tc(200.0, 25), 1)])
+    for frame_ in (at(201.0, playing=False), at(201.0, armed=False), at(None),
+                   at(-0.5), None):
+        tco.send(frame_, 0.0)
+    check("silent while paused, disarmed, unmatched, before the track's start, or "
+          "with nothing on stage", clock_ear.raw() == [] and tco.last is None)
+    tco.send(at(201.0), 0.0)
+    check("and playing again it goes at once, even on the frame it stopped on",
+          len(clock_ear.raw()) == 1)
+    check("its status says where, at what rate, and the time it last sent",
+          tco.public() == {"target": f"127.0.0.1:{clock_ear.port}", "fps": 25,
+                           "sent": tco.sent, "errors": 0, "last_error": None,
+                           "now": "00:03:21:00"}, f"{tco.public()}")
+    tco.close()
+
+    outs = outputsmod.Outputs()
+    said = outs.configure({"timecode": {}}, None)
+    check("timecode: {} turns it on -- broadcast, Art-Net's port, 30 fps",
+          outs.timecode.target == ("255.255.255.255", 6454) and outs.timecode.fps == 30
+          and "ArtTimeCode (30 fps) to 255.255.255.255:6454" in said, f"{said}")
+    outs.configure({"timecode": {"fps": 60}}, None)
+    check("a rate timecode does not have is refused, said why",
+          outs.timecode is None and "fps 60" in outs.public()["problems"][0])
+    check("and show.json says so when it is checked",
+          not sf.validate("show", {"kind": "klights.show", "version": 1,
+                                   "outputs": {"timecode": {"fps": 60}}}).ok)
+    outs.close()
+
     # -- 7. a whole engine ----------------------------------------------------------
     print("\n7. through a whole engine")
     tmp = Path(tempfile.mkdtemp(prefix="klights-outputs-"))
@@ -298,8 +378,11 @@ try:
                                    "on": {"address": "/template/drop",
                                           "args": ["$bar"]}}]})
     (shows / "routines" / "fan-drop.json").write_text(json.dumps(fan, indent=2))
-    sc = servermod.ShowController(REPO / "events" / "despacio", show_dir=shows,
-                                  local_outputs={"osc": {"port": ear.port}})
+    sc = servermod.ShowController(
+        REPO / "events" / "despacio", show_dir=shows,
+        local_outputs={"osc": {"port": ear.port},
+                       "timecode": {"host": "127.0.0.1", "port": clock_ear.port,
+                                    "fps": 30}})
     sc.worker.start()
     BEAT_S = 60.0 / 128.0
     t = 100.0
@@ -335,7 +418,7 @@ try:
     ear.drain()
     play(150.2, 0.3)
     check("disarmed, nothing is sent: Follow gates the other outputs as it does "
-          "the lights", ear.drain() == [])
+          "the lights", ear.drain() == [] and clock_ear.raw() == [])
     sc.apply({"type": "follow", "armed": True}, None, t)
     play(159.5, 1.0)
     got = ear.drain()
@@ -344,6 +427,12 @@ try:
           f"{[m[0] for m in got][:6]}")
     check("and its opacity curve is sent", any(
         m[0] == "/composition/layers/1/video/opacity" for m in got))
+    clock = clock_ear.raw()
+    last = clock[-1] if clock else b""
+    check("ArtTimeCode carries the track's position: beat 160.5 at 128 bpm is "
+          "1:15.2, so 00:01:15 and some frames",
+          len(clock) >= 20 and last[14:19][1:4] == bytes([15, 1, 0])
+          and last[18] == 3, f"{len(clock)} {last.hex()}")
     check("the snapshot says where OSC goes and how it is doing",
           sc.snapshot()["outputs"]["osc"]["target"] == f"127.0.0.1:{ear.port}"
           and sc.snapshot()["outputs"]["osc"]["sent"] > 0)
@@ -355,6 +444,8 @@ try:
               "phrase_ends_in": 32}, None, t)
     play(10, 0.6)
     got = ear.drain()
+    check("a guest the folder does not know sends no timecode -- there is no "
+          "track position to share", clock_ear.raw() == [])
     check("leaving the drawn track turns its cue off (the clear message)",
           ("/composition/layers/1/clear", [1]) in got, f"{[m[0] for m in got][:6]}")
     check("and a guest's chorus, from the template, cues the VJ app through the "
@@ -369,6 +460,7 @@ try:
     sc.outputs.close()
     shutil.rmtree(tmp, ignore_errors=True)
     ear.close()
+    clock_ear.close()
 finally:
     pass
 

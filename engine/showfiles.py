@@ -173,6 +173,15 @@ SHOW = {
             "port": S(int, required=True, min=1, max=65535,
                       fix="the port the VJ app listens on (Resolume: 7000)"),
         }),
+        # Art-Net ArtTimeCode: the matched track's position, for a VJ app
+        # with its own per-track timeline. {} turns it on with the defaults.
+        "timecode": S(dict, of={
+            "host": S(str, non_empty=True,
+                      fix="where to send it; default 255.255.255.255, everyone"),
+            "port": S(int, min=1, max=65535, fix="default 6454, Art-Net's"),
+            "fps": S(N, choices=(24, 25, 29.97, 30),
+                     fix="24 film, 25 EBU, 29.97 drop-frame, 30 SMPTE (default)"),
+        }),
     }),
 }
 

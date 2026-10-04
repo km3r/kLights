@@ -22,6 +22,13 @@ track, a new template pick or the next pass of a looping routine fires again.
 rows for an output owns it for that track, and the template's rows for that
 output are silent; a timeline with none leaves the output to the template.
 
+**Timecode** (`TimecodeOut`, decided with the user): Art-Net ArtTimeCode
+carrying the matched track's position -- so it jumps with loops and hot cues,
+and a VJ app with its own per-track timeline follows the DJ. It is sent when
+its frame changes, and not at all when nothing matched is playing, when the
+deck is paused, or while Follow is disarmed (the designer's preview counts as
+armed: someone with the token is driving).
+
 **OSC** (`OscOut`): one UDP socket, non-blocking, to an IPv4 address (never a
 name: resolving one could block the output thread). An item sends `on` when it
 comes on, `off` when it goes off, and `while` as it plays -- only when the
@@ -43,6 +50,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from . import showfiles
 from . import timeline as timelinemod
+from .output import artnet as artnetmod
 
 RATE_HZ = 30.0              # continuous sends (while, curves) per key, at most
 INT32 = (-2 ** 31, 2 ** 31 - 1)
@@ -68,6 +76,7 @@ class ProgramFrame:
     """Everything the other outputs need from one frame. Replaced, never
     edited, so an output on another thread may hold one safely."""
     mode: str                            # the player's: timeline, template, ...
+    armed: bool = False                  # Follow armed, or the designer driving
     beat: Optional[float] = None         # the show's beat (track's, else clock's)
     track_id: Optional[str] = None
     time_s: Optional[float] = None       # the matched track's position
@@ -262,6 +271,84 @@ class OscOut:
                 "on": len(self._on)}
 
 
+# -- timecode ---------------------------------------------------------------------
+
+def timecode_at(seconds: float, fps: float) -> tuple[int, int, int, int]:
+    """(frames, seconds, minutes, hours) at `seconds` into the track. 29.97
+    is drop-frame: frame numbers 0 and 1 are skipped at the start of every
+    minute except each tenth, so the clock stays on wall time. Hours wrap at
+    24, as timecode does."""
+    if fps == 29.97:
+        total = int(seconds * 30000 / 1001)
+        tens, rest = divmod(total, 17982)          # frames per ten minutes
+        skipped = 18 * tens + (2 * ((rest - 2) // 1798) if rest >= 2 else 0)
+        n, base = total + skipped, 30
+    else:
+        base = int(fps)
+        n = int(seconds * base)
+    return (n % base, (n // base) % 60, (n // (base * 60)) % 60,
+            (n // (base * 3600)) % 24)
+
+
+def timecode_text(tc: tuple[int, int, int, int], fps: float) -> str:
+    frames, secs, mins, hours = tc
+    sep = ";" if fps == 29.97 else ":"
+    return f"{hours:02d}:{mins:02d}:{secs:02d}{sep}{frames:02d}"
+
+
+class TimecodeOut:
+    """ArtTimeCode, from the matched track's position."""
+
+    def __init__(self, host: str = "255.255.255.255",
+                 port: int = artnetmod.ARTNET_PORT, fps: float = 30,
+                 sock: Optional[socket.socket] = None):
+        self.host = "127.0.0.1" if host == "localhost" else host
+        self.port = int(port)
+        self.target = (self.host, self.port)
+        self.fps = fps
+        self.kind = artnetmod.TIMECODE_TYPES[fps]
+        if sock is None:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setblocking(False)
+            try:     # the default goes to everyone on the network
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            except OSError:
+                pass
+        self.sock = sock
+        self.last: Optional[tuple[int, int, int, int]] = None
+        self.sent = 0
+        self.errors = 0
+        self.last_error: Optional[str] = None
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def send(self, frame: Optional[ProgramFrame], now: float) -> None:
+        if (frame is None or not frame.armed or not frame.playing
+                or frame.time_s is None or frame.time_s < 0):
+            self.last = None                    # silent: a stopped clock
+            return
+        tc = timecode_at(frame.time_s, self.fps)
+        if tc == self.last:
+            return
+        self.last = tc
+        try:
+            self.sock.sendto(artnetmod.build_arttimecode(*tc, self.kind), self.target)
+            self.sent += 1
+        except OSError as exc:
+            self.errors += 1
+            self.last_error = str(exc) or type(exc).__name__
+
+    def public(self) -> dict:
+        return {"target": f"{self.host}:{self.port}", "fps": self.fps,
+                "sent": self.sent, "errors": self.errors,
+                "last_error": self.last_error,
+                "now": timecode_text(self.last, self.fps) if self.last else None}
+
+
 # -- the outputs together ---------------------------------------------------------
 
 def merge(show: Optional[Mapping], local: Optional[Mapping]) -> dict:
@@ -281,12 +368,13 @@ class Outputs:
 
     def __init__(self) -> None:
         self.osc: Optional[OscOut] = None
+        self.timecode: Optional[TimecodeOut] = None
         self.config: dict = {}
         self.problems: list[str] = []
 
     @property
     def active(self) -> bool:
-        return self.osc is not None
+        return self.osc is not None or self.timecode is not None
 
     def configure(self, show: Optional[Mapping], local: Optional[Mapping] = None
                   ) -> Optional[str]:
@@ -300,7 +388,7 @@ class Outputs:
         osc = config.get("osc")
         old = self.osc
         self.osc = None
-        if osc:
+        if osc is not None:
             host, port = osc.get("host", "127.0.0.1"), osc.get("port")
             problem = showfiles.host_problem(host)
             if problem is None and not (isinstance(port, int)
@@ -316,26 +404,58 @@ class Outputs:
                 self.osc = OscOut(host, port)
         if old is not None:
             old.close()
+        self._configure_timecode(config.get("timecode"))
         return "outputs: " + self.describe()
+
+    def _configure_timecode(self, conf: Optional[Mapping]) -> None:
+        old, self.timecode = self.timecode, None
+        if conf is not None:
+            host = conf.get("host", "255.255.255.255")
+            port = conf.get("port", artnetmod.ARTNET_PORT)
+            fps = conf.get("fps", 30)
+            problem = showfiles.host_problem(host)
+            if problem is None and not (isinstance(port, int)
+                                        and not isinstance(port, bool)
+                                        and 1 <= port <= 65535):
+                problem = f"port {port!r} must be a whole number from 1 to 65535"
+            if problem is None and fps not in artnetmod.TIMECODE_TYPES:
+                problem = f"fps {fps!r} must be 24, 25, 29.97 or 30"
+            if problem is not None:
+                self.problems.append(f"outputs.timecode: {problem}; timecode is off")
+            elif old is not None and (old.target, old.fps) == (
+                    ("127.0.0.1" if host == "localhost" else host, port), fps):
+                self.timecode, old = old, None
+            else:
+                self.timecode = TimecodeOut(host, port, fps)
+        if old is not None:
+            old.close()
 
     def describe(self) -> str:
         parts = []
         if self.osc is not None:
             parts.append(f"OSC to {self.osc.host}:{self.osc.port}")
+        if self.timecode is not None:
+            parts.append(f"ArtTimeCode ({self.timecode.fps:g} fps) to "
+                         f"{self.timecode.host}:{self.timecode.port}")
         parts.extend(self.problems)
         return "; ".join(parts) if parts else "none"
 
     def send(self, frame: Optional[ProgramFrame], now: float) -> None:
         if self.osc is not None:
             self.osc.send(frame, now)
+        if self.timecode is not None:
+            self.timecode.send(frame, now)
 
     def public(self) -> Optional[dict]:
-        if self.osc is None and not self.problems:
+        if not self.active and not self.problems:
             return None
         return {"osc": self.osc.public() if self.osc is not None else None,
+                "timecode": (self.timecode.public() if self.timecode is not None
+                             else None),
                 "problems": list(self.problems)}
 
     def close(self) -> None:
-        if self.osc is not None:
-            self.osc.close()
-            self.osc = None
+        for out in (self.osc, self.timecode):
+            if out is not None:
+                out.close()
+        self.osc = self.timecode = None

@@ -1104,9 +1104,12 @@ describe("follow dj (track card)", () => {
       };
       s.outputs = { osc: { target: "192.168.1.20:7000", sent: 120, errors: 3,
                            last_error: "network is unreachable", on: 2 },
+                    timecode: { target: "255.255.255.255:6454", fps: 30, sent: 900,
+                                errors: 0, last_error: null, now: "00:01:15:21" },
                     problems: [] };
     })));
     const line = screen.getByLabelText("outputs");
+    expect(line).toHaveTextContent("Timecode → 255.255.255.255:6454 · 00:01:15:21 (30 fps)");
     expect(line).toHaveTextContent("OSC → 192.168.1.20:7000 · 2 on");
     expect(line).toHaveTextContent("3 failed (network is unreachable)");
     act(() => socket.push(stateWith((s) => {
@@ -1116,9 +1119,12 @@ describe("follow dj (track card)", () => {
         first_problem: null, latency_ms: { blt: 0 },
       };
       s.outputs = { osc: null,
+                    timecode: { target: "255.255.255.255:6454", fps: 25, sent: 900,
+                                errors: 0, last_error: null, now: null },
                     problems: ["outputs.osc: 'vj.local' is not an IPv4 address; OSC is off"] };
     })));
     expect(screen.getByLabelText("outputs")).toHaveTextContent("OSC is off");
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("· silent (25 fps)");
   });
 
   it("says nothing about other decks when none have anything loaded", () => {

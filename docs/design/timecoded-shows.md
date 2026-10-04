@@ -71,7 +71,8 @@ arbitrary, the reason is next to it.
 | Timecode | Art-Net ArtTimeCode carries **the matched track's position** -- it jumps with loops and hot cues, and stops when nothing matched is playing (milestone 3, with the user). |
 | Visuals | **Both** generative scenes and a video clip player, on a `#visuals` page (milestone 3, with the user). |
 | Output ownership | A track's timeline with rows for an output **owns** that output for the track, and the template's rows for it are silent; a timeline with none leaves it to the template (settled like the lanes' owning mode). |
-| Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued. A routine pad's cues play whenever the pad does. |
+| Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued and timecode is silent. A routine pad's cues play whenever the pad does. The designer's preview counts as armed (it needs the token). |
+| Timecode details | Silent while the deck is paused (a stopped clock), sent only when its frame changes; 30 fps non-drop by default, to the broadcast address on Art-Net's port. |
 | OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
 
 ## The designer: layout B
@@ -166,6 +167,7 @@ bar-count fallback, the template-set switcher, routines on preset pads.
 | stage | what |
 |---|---|
 | F21a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
+| F21b | Art-Net ArtTimeCode from the matched track's position |
 
 ## Things to verify on hardware
 

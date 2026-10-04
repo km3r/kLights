@@ -20,6 +20,9 @@ Usage examples:
 
   # Watch specific channels (e.g. Par 36 #1: ch 1-5)
   python artnet_listener.py --watch 1,2,3,4,5
+
+  # Print ArtTimeCode instead -- what kLights sends a VJ app (milestone 3)
+  python artnet_listener.py --timecode
 """
 
 import argparse
@@ -32,6 +35,8 @@ from datetime import datetime
 ARTNET_PORT = 6454
 ARTNET_HEADER = b"Art-Net\x00"
 ARTNET_OP_DMX = 0x5000
+ARTNET_OP_TIMECODE = 0x9700
+TIMECODE_FPS = {0: "24", 1: "25", 2: "29.97 DF", 3: "30"}
 
 
 def decode_universe(sub_uni: int, net: int) -> int:
@@ -61,6 +66,17 @@ def parse_artdmx(data: bytes) -> tuple[int, bytes] | None:
     universe = decode_universe(sub_uni, net)
     dmx = data[18 : 18 + length]
     return universe, dmx
+
+
+def parse_arttimecode(data: bytes) -> tuple[int, int, int, int, int] | None:
+    """Parse an ArtTimeCode packet: (hours, minutes, seconds, frames, type),
+    or None if it is not one."""
+    if len(data) < 19 or data[:8] != ARTNET_HEADER:
+        return None
+    if struct.unpack_from("<H", data, 8)[0] != ARTNET_OP_TIMECODE:
+        return None
+    frames, seconds, minutes, hours, kind = data[14:19]
+    return hours, minutes, seconds, frames, kind
 
 
 def format_channels(dmx: bytes, threshold: int, watch: set[int] | None) -> str:
@@ -99,6 +115,8 @@ def main():
                         help="Minimum channel value to display (default 1, hides zeros)")
     parser.add_argument("--grid", action="store_true",
                         help="Print full 512-channel grid on each packet")
+    parser.add_argument("--timecode", action="store_true",
+                        help="Print ArtTimeCode packets instead of DMX")
     parser.add_argument("--watch", default=None,
                         help="Comma-separated channel numbers to always show "
                              "(e.g. --watch 1,2,3,4,5)")
@@ -120,6 +138,14 @@ def main():
     try:
         while True:
             raw, addr = sock.recvfrom(600)
+            if args.timecode:
+                tc = parse_arttimecode(raw)
+                if tc is not None:
+                    hours, minutes, seconds, frames, kind = tc
+                    sep = ";" if kind == 2 else ":"
+                    print(f"{hours:02d}:{minutes:02d}:{seconds:02d}{sep}{frames:02d}  "
+                          f"{TIMECODE_FPS.get(kind, kind)} fps  src:{addr[0]}")
+                continue
             result = parse_artdmx(raw)
             if result is None:
                 continue

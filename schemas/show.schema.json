@@ -96,6 +96,32 @@
           "required": [
             "port"
           ]
+        },
+        "timecode": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "minLength": 1,
+              "description": "where to send it; default 255.255.255.255, everyone"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "default 6454, Art-Net's"
+            },
+            "fps": {
+              "type": "number",
+              "enum": [
+                24,
+                25,
+                29.97,
+                30
+              ],
+              "description": "24 film, 25 EBU, 29.97 drop-frame, 30 SMPTE (default)"
+            }
+          }
         }
       }
     },

@@ -287,6 +287,13 @@ show.json's `outputs.osc {host, port}`, overridden per machine by
 klights.local.json's `outputs`; arguments may be `$beat`, `$bar`, `$phase`,
 `$progress` and `$value`. A failed send is counted in the snapshot's
 `outputs`, never raised. Follow gates it: disarmed, nothing is cued.
+**Timecode** (`TimecodeOut`) sends Art-Net ArtTimeCode (OpCode 0x9700,
+`output/artnet.build_arttimecode`) carrying the matched track's position --
+latency applied, so it lines up with the lights -- whenever its frame
+changes, at 24, 25, 29.97 drop-frame or 30 fps (`outputs.timecode {host,
+port, fps}`, default broadcast on 6454 at 30). Silent while paused, disarmed,
+or with nothing matched; the designer's preview sends its own position.
+`shared/tools/artnet_listener.py --timecode` prints what arrives.
 
 **Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
 says what any deck has loaded, as `loaded_*` sync fields that never touch the

@@ -11,6 +11,18 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F21b: Art-Net timecode
+
+- **ArtTimeCode carries the matched track's position** (decided with the
+  user), so a VJ app with its own timeline per track follows the DJ: it jumps
+  with loops and hot cues, and stops while the deck is paused, while Follow is
+  disarmed, or when nothing matched is playing. The designer's preview sends
+  its own position. Sent when its frame changes.
+- `outputs.timecode {host, port, fps}` in show.json or `klights.local.json`:
+  `{}` sends to everyone (255.255.255.255:6454) at 30 fps; 24, 25 and 29.97
+  drop-frame too. The Track card shows the target and the time last sent.
+- `shared/tools/artnet_listener.py --timecode` prints what arrives.
+
 ### Added — F21a: OSC out, for a VJ app
 
 - **OSC lanes** (decided with the user: generic OSC, mapped by you). In the

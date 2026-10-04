@@ -244,6 +244,11 @@ export interface TrackState {
 export interface OutputsState {
   osc: { target: string; sent: number; errors: number; last_error: string | null;
          on: number } | null;
+  /** Art-Net timecode: the matched track's position. `now` is the last time
+   *  sent, null while silent (paused, disarmed, nothing matched). Absent
+   *  before F21b. */
+  timecode?: { target: string; fps: number; sent: number; errors: number;
+               last_error: string | null; now: string | null } | null;
   /** Why an output is off: a bad address in show.json or klights.local.json. */
   problems: string[];
 }

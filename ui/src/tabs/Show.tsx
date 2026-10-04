@@ -596,8 +596,14 @@ const MATCH_VIA: Record<string, string> = {
 /** Where the show's cues for a VJ app go, and whether they are getting there. */
 function OutputsLine({ outputs }: { outputs: OutputsState }) {
   const osc = outputs.osc;
+  const tc = outputs.timecode;
   return (
     <div className="small muted" aria-label="outputs">
+      {tc && <div>
+        Timecode → {tc.target} · <span className="mono">{tc.now ?? "silent"}</span>
+        {" "}({tc.fps} fps)
+        {tc.errors > 0 && <span className="warn-text"> · {tc.errors} failed</span>}
+      </div>}
       {osc && <div>
         OSC → {osc.target}{osc.on > 0 && <> · <b>{osc.on}</b> on</>}
         {osc.errors > 0 && <span className="warn-text"> · {osc.errors} failed
