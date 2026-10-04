@@ -508,6 +508,87 @@ try:
         proc.terminate()
         proc.wait(timeout=10)
 
+    # -- 6e. visuals -------------------------------------------------------------------
+    print("\n6e. the built-in visuals")
+
+    def vis_errors(*items, warnings=False, **row):
+        r = sf.validate("timeline", {"kind": "klights.timeline", "version": 1,
+                                     "track": "x", "rows": [
+                                         {"id": "v", "type": "external",
+                                          "output": "visuals", "items": list(items),
+                                          **row}]})
+        return r.warnings if warnings else r.errors
+
+    def item(scene=None, **params):
+        out = {"id": "i", "at": 0, "len": 8, "params": params}
+        if scene:
+            out["scene"] = scene
+        return out
+
+    check("a scene with its parameters validates",
+          vis_errors(item("tunnel", color="@primary", speed=2, depth=12, opacity=0.8)) == [])
+    for label, it, needle in (
+            ("no scene", item(color="@primary"), "needs a scene"),
+            ("a scene that does not exist", item("lasers"), "must be one of"),
+            ("a look name for a colour", item("wash", color="MH Red"), "a visuals colour is"),
+            ("a palette role that does not exist", item("wash", color="@tertiary"),
+             "not a palette role"),
+            ("a number out of range", item("bars", count=500), "from 1 to 64"),
+            ("a video without a file", item("video"), "needs a file"),
+            ("a video file in a folder", item("video", file="../x.mp4"), "no folders"),
+            ("a video file that is not a video", item("video", file="x.gif"), "ending"),
+            ("rate as a number", item("video", file="x.mp4", rate=2), "beat, normal")):
+        errs = vis_errors(it)
+        check(f"visuals refuse {label}", any(needle in e for e in errs), f"{errs}")
+    check("a parameter the scene does not read is a warning, not an error",
+          any("does not use it" in w for w in vis_errors(item("wash", speed=2),
+                                                          warnings=True)))
+    check("a visuals row's points are said to be unused",
+          any("points are not used" in w for w in vis_errors(
+              item("wash"), warnings=True, points=[[0, 1]])))
+    club = json.loads((REPO / "shared" / "show-example" / "templates" / "club.json")
+                      .read_text())
+    club["phrases"]["Chorus"]["visuals"] = {"scene": "lasers"}
+    check("a template pick's visuals are checked too",
+          not sf.validate("template_set", club).ok)
+
+    folder_dir = Path(tempfile.mkdtemp(prefix="klights-media-"))
+    shutil.copytree(REPO / "shared" / "show-example", folder_dir / "show")
+    tdoc = json.loads((folder_dir / "show" / "timelines" / "synth-128.json").read_text())
+    tdoc["rows"].append({"id": "film", "type": "external", "output": "visuals",
+                         "items": [item("video", file="intro.mp4", loop=True)]})
+    (folder_dir / "show" / "timelines" / "synth-128.json").write_text(json.dumps(tdoc))
+    warned_missing = any("media/intro.mp4, which is not in the show folder" in w
+                         for w in sf.load_folder(folder_dir / "show").warnings)
+    (folder_dir / "show" / "media").mkdir()
+    (folder_dir / "show" / "media" / "intro.mp4").write_bytes(b"\0" * 64)
+    check("a video the show folder does not have is said when it loads -- and "
+          "not once it is there", warned_missing and not any(
+              "intro.mp4" in w for w in sf.load_folder(folder_dir / "show").warnings))
+    shutil.rmtree(folder_dir, ignore_errors=True)
+
+    vis_tl = tl.Timeline.from_rows([{"id": "v", "type": "external", "output": "visuals",
+                                     "items": [{"id": "a", "at": 0, "len": 8,
+                                                "scene": "bars", "params": {"count": 4}},
+                                               {"id": "z", "at": 9, "len": 0.01,
+                                                "scene": "strobe"}]}])
+    vp = Prog(vis_tl).at(9.1, prev=8.95)
+    vf = outputsmod.ProgramFrame(mode="timeline", beat=9.1, bpm=128.0,
+                                 palette={"primary": (1.0, 0.176, 0.435)},
+                                 active=outputsmod.gather((("timeline", "t", vp),)))
+    pub = outputsmod.visuals_public(vf)
+    check("the snapshot's visuals: the beat, how fast it runs, the palette as hex",
+          pub["beat"] == 9.1 and pub["bpm"] == 128.0
+          and pub["palette"] == {"primary": "#ff2d6f"}, f"{pub}")
+    check("and no cue a frame was too short to show -- a projector cannot flash "
+          "for zero frames", pub["items"] == [])
+    vp.at(4.0)
+    pub = outputsmod.visuals_public(outputsmod.ProgramFrame(
+        mode="timeline", beat=4.0, active=outputsmod.gather((("timeline", "t", vp),))))
+    check("an item on says its scene, params, and how far into it the show is",
+          [(i["scene"], i["params"], i["elapsed"], i["len"]) for i in pub["items"]]
+          == [("bars", {"count": 4}, 4.0, 8)], f"{pub}")
+
     # -- 7. a whole engine ----------------------------------------------------------
     print("\n7. through a whole engine")
     tmp = Path(tempfile.mkdtemp(prefix="klights-outputs-"))
@@ -577,6 +658,11 @@ try:
           "1:15.2, so 00:01:15 and some frames",
           len(clock) >= 20 and last[14:19][1:4] == bytes([15, 1, 0])
           and last[18] == 3, f"{len(clock)} {last.hex()}")
+    vis = sc.snapshot()["visuals"]
+    check("the snapshot's visuals: the drawn track's projector lane on the drop, "
+          "at the track's tempo", [(i["scene"], i["source"]) for i in vis["items"]]
+          == [("tunnel", "timeline")] and vis["bpm"] == 128.0
+          and vis["palette"]["primary"] == "#ff2d6f", f"{vis}")
     check("the snapshot says where OSC goes and how it is doing",
           sc.snapshot()["outputs"]["osc"]["target"] == f"127.0.0.1:{ear.port}"
           and sc.snapshot()["outputs"]["osc"]["sent"] > 0)
@@ -595,11 +681,18 @@ try:
     check("and a guest's chorus, from the template, cues the VJ app through the "
           "routine it picks", any(m[0] == "/template/drop" for m in got),
           f"{[m[0] for m in got][:6]}")
+    vis = sc.snapshot()["visuals"]
+    check("and the template set's chorus scene is on the projector, at the clock's "
+          "tempo", [(i["scene"], i["source"]) for i in vis["items"]]
+          == [("tunnel", "template")]
+          and abs(vis["bpm"] - sc.clock.effective_bpm) < 1e-3, f"{vis}")
     sc.apply({"type": "follow", "armed": False}, None, t)
     play(12, 0.2)
     check("disarming turns nothing on; the cue on goes off quietly (it has no "
           "off message)", not any(m[0] == "/template/drop" for m in ear.drain())
           and sc.outputs.osc.public()["on"] == 0)
+    check("and the projector goes dark with the lights' show",
+          sc.snapshot()["visuals"]["items"] == [])
     sc.worker.stop()
     sc.outputs.close()
     shutil.rmtree(tmp, ignore_errors=True)

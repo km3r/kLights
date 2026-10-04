@@ -79,6 +79,7 @@ class ProgramFrame:
     mode: str                            # the player's: timeline, template, ...
     armed: bool = False                  # Follow armed, or the designer driving
     beat: Optional[float] = None         # the show's beat (track's, else clock's)
+    bpm: Optional[float] = None          # how fast that beat is going now
     track_id: Optional[str] = None
     time_s: Optional[float] = None       # the matched track's position
     playing: bool = False
@@ -96,6 +97,31 @@ class ProgramFrame:
 
     def of(self, output: str) -> tuple[Active, ...]:
         return tuple(a for a in self.active if a.output == output)
+
+
+def _hex(rgb: Sequence[float]) -> str:
+    return "#" + "".join(f"{int(round(max(0.0, min(1.0, float(c))) * 255)):02x}"
+                         for c in tuple(rgb)[:3])
+
+
+def visuals_public(frame: Optional[ProgramFrame]) -> Optional[dict]:
+    """What a #visuals page needs from a frame, for the 10 Hz snapshot: the
+    beat and how fast it moves (the page runs on between snapshots), the
+    palette, and every visuals item on with how far into it the show is."""
+    if frame is None:
+        return None
+    items = [{"key": a.key, "scene": a.item.data.get("scene"),
+              "params": dict(a.item.data.get("params") or {}),
+              "elapsed": round(a.progress * a.item.len, 3),
+              "len": a.item.len, "source": a.source}
+             for a in frame.of("visuals")
+             if a.item is not None and not a.crossed and a.item.data.get("scene")]
+    return {"mode": frame.mode,
+            "beat": None if frame.beat is None else round(frame.beat, 3),
+            "bpm": None if frame.bpm is None else round(frame.bpm, 3),
+            "phrase": frame.phrase,
+            "palette": {role: _hex(rgb) for role, rgb in frame.palette.items()},
+            "items": items}
 
 
 def outputs_used(prog) -> frozenset[str]:

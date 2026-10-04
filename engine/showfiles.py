@@ -284,6 +284,24 @@ _OSC_MESSAGE = S(dict, of={
                         'or "$value" (the row\'s curve)'),
 })
 
+# The built-in visuals (milestone 3): what a #visuals page can draw, and the
+# parameters each scene reads. "color" is @primary, @secondary, @accent or
+# #rrggbb; "file" is a video in the show folder's media/; a pair is a range.
+VISUAL_SCENES = ("wash", "bars", "tunnel", "particles", "strobe", "video")
+_COMMON_VISUAL = {"opacity": (0, 1)}
+VISUAL_PARAMS: dict[str, dict[str, Any]] = {
+    "wash": {"color": "color", "pulse": (0, 1)},
+    "bars": {"color": "color", "count": (1, 64), "speed": (0, 8)},
+    "tunnel": {"color": "color", "speed": (0, 8), "depth": (2, 40)},
+    "particles": {"color": "color", "count": (1, 2000), "burst": (0, 1)},
+    "strobe": {"color": "color", "rate": (0.25, 16)},
+    "video": {"file": "file", "loop": "bool", "rate": ("beat", "normal"),
+              "bpm": (20, 400)},
+}
+MEDIA_DIR = "media"
+MEDIA_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+VIDEO_EXTENSIONS = (".mp4", ".m4v", ".webm", ".mov")
+
 _MIDI_7BIT = dict(min=0, max=127)
 _MIDI_CHANNEL = S(int, min=1, max=16, fix="a MIDI channel, 1-16")
 
@@ -301,6 +319,9 @@ _EXTERNAL_ITEM = S(dict, of={
                                       "default 127"),
     "off_value": S(int, **_MIDI_7BIT, fix="the CC value at the end, if any"),
     "pc": S(int, **_MIDI_7BIT, fix="a program number, 0-127"),
+    # Visuals: a scene and its parameters.
+    "scene": S(str, choices=VISUAL_SCENES),
+    "params": S(dict, fix="the scene's parameters, e.g. {\"color\": \"@primary\"}"),
 })
 
 _EXTERNAL_ROW = {
@@ -385,7 +406,11 @@ _PARAM = S(dict, of={"type": S(str, required=True, choices=PARAM_TYPES,
 
 _PICK = S(dict, of={"routine": S(str, required=True, non_empty=True),
                     "variation": S(str), "params": S(dict),
-                    "palette": S(str)})
+                    "palette": S(str),
+                    # what the built-in visuals show for this pick (milestone 3)
+                    "visuals": S(dict, of={
+                        "scene": S(str, required=True, choices=VISUAL_SCENES),
+                        "params": S(dict)})})
 
 TEMPLATE_SET = {
     "kind": _kind("template_set"),
@@ -586,6 +611,17 @@ def _check_external(row: dict, result: Result, where: str) -> None:
             else:
                 _check_osc({"address": row["address"],
                             "args": row.get("args", ["$value"])}, result, where)
+    elif output == "visuals":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            if not item.get("scene"):
+                result.errors.append(f"{at} needs a scene: "
+                                     + ", ".join(VISUAL_SCENES))
+                continue
+            _check_visual(item["scene"], item.get("params") or {}, result, at)
+        if points is not None:
+            result.warnings.append(f"{where}: a visuals row plays its items; its "
+                                   f"points are not used")
     elif output == "midi":
         for item in items:
             at = f"{where} item {item['id']!r}"
@@ -609,6 +645,43 @@ def _check_external(row: dict, result: Result, where: str) -> None:
                         and not 0 <= point[1] <= 1):
                     result.errors.append(f"{where} point {i}: a MIDI curve runs "
                                          f"0-1 (sent as 0-127), got {point[1]}")
+
+
+def _check_visual(scene: str, params: dict, result: Result, where: str) -> None:
+    """A visuals scene's parameters: known ones in range, and a video's file
+    a plain name with a video extension."""
+    known = {**_COMMON_VISUAL, **VISUAL_PARAMS.get(scene, {})}
+    for name, value in params.items():
+        rule = known.get(name)
+        at = f"{where} param {name}"
+        if rule is None:
+            result.warnings.append(f"{at}: the {scene} scene does not use it "
+                                   f"(it reads {', '.join(sorted(known))})")
+        elif rule == "color":
+            if not (isinstance(value, str) and value[:1] in ("@", "#")):
+                result.errors.append(f"{at}: {value!r} -- a visuals colour is "
+                                     f"@primary, @secondary, @accent or #rrggbb")
+            elif color_problem(value):
+                result.errors.append(f"{at}: {color_problem(value)}")
+        elif rule == "file":
+            if not (isinstance(value, str) and MEDIA_NAME_RE.match(value)
+                    and value.lower().endswith(VIDEO_EXTENSIONS)):
+                result.errors.append(
+                    f"{at}: {value!r} must be a file name in media/ -- letters, "
+                    f"digits, . _ -, no folders -- ending "
+                    + ", ".join(VIDEO_EXTENSIONS))
+        elif rule == "bool":
+            if not isinstance(value, bool):
+                result.errors.append(f"{at} must be true or false, got {value!r}")
+        elif isinstance(rule, tuple) and all(isinstance(r, str) for r in rule):
+            if value not in rule:
+                result.errors.append(f"{at} must be one of {', '.join(rule)}, "
+                                     f"got {value!r}")
+        elif not _num(value) or not rule[0] <= value <= rule[1]:
+            result.errors.append(f"{at} must be a number from {rule[0]} to "
+                                 f"{rule[1]}, got {value!r}")
+    if scene == "video" and not params.get("file"):
+        result.errors.append(f"{where}: a video scene needs a file")
 
 
 def _check_osc(message: dict, result: Result, where: str) -> None:
@@ -926,6 +999,9 @@ def _semantic_template_set(doc: dict, result: Result) -> None:
         if pick.get("palette") is not None and pick["palette"] not in palettes:
             result.errors.append(f"{where}: palette {pick['palette']!r} is not "
                                  f"defined in this template set")
+        if pick.get("visuals"):
+            _check_visual(pick["visuals"]["scene"], pick["visuals"].get("params") or {},
+                          result, f"{where} visuals")
 
 
 def _semantic_waveform(doc: dict, result: Result) -> None:
@@ -1146,6 +1222,8 @@ def _cross_check(folder: Folder) -> None:
         end_beat = grid.beat_at(duration) if duration else None
         for row in tl["rows"]:
             for item in row.get("items") or []:
+                _check_media(folder, f"timelines/{track_id}.json item "
+                                     f"{item['id']!r}", item)
                 if end_beat is not None and item["at"] >= end_beat:
                     warn(f"timelines/{track_id}.json item {item['id']!r} starts "
                          f"at beat {item['at']:g}, after the track ends "
@@ -1158,6 +1236,11 @@ def _cross_check(folder: Folder) -> None:
             (ts.get("bars") or {}).get("cycle") or [])
         for pick in picks:
             _check_use(folder, f"templates/{set_id}.json", pick)
+            _check_media(folder, f"templates/{set_id}.json", pick.get("visuals") or {})
+    for rid, routine in folder.routines.items():
+        for row in routine["rows"]:
+            for item in row.get("items") or []:
+                _check_media(folder, f"routines/{rid}.json item {item['id']!r}", item)
     if folder.show:
         ts = folder.show.get("template_set")
         if ts and ts not in folder.templates:
@@ -1167,6 +1250,17 @@ def _cross_check(folder: Folder) -> None:
         if idle and idle not in folder.routines:
             warn(f"show.json names idle routine {idle!r}, which is not in "
                  f"routines/")
+
+
+def _check_media(folder: Folder, where: str, item: dict) -> None:
+    """A video scene's file: that it is in media/."""
+    if item.get("scene") != "video":
+        return
+    name = (item.get("params") or {}).get("file")
+    if isinstance(name, str) and MEDIA_NAME_RE.match(name) \
+            and not (folder.root / MEDIA_DIR / name).is_file():
+        folder.warnings.append(f"{where} plays media/{name}, which is not in the "
+                               f"show folder")
 
 
 def _check_use(folder: Folder, where: str, use: dict) -> None:

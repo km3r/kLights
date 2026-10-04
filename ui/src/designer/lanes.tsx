@@ -125,7 +125,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
                      selected={selected} onSelect={onSelect} />;
   }
   if (row.type === "external") {
-    if (row.output === "osc" || row.output === "midi") {
+    if (row.output === "osc" || row.output === "midi" || row.output === "visuals"
+        || row.output === "vj") {
       return <ExternalLane row={row} index={index} x={x} width={width} zoom={zoom}
                            selected={selected} onSelect={onSelect} history={history}
                            beat={beat} />;
@@ -169,10 +170,14 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
 
 /** A new cue on an OSC or MIDI lane, before its author says what it sends. */
 function newCue(output: string): Partial<Item> {
-  return output === "midi"
-    ? { note: 60, velocity: 100 }
-    : { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
+  if (output === "midi") return { note: 60, velocity: 100 };
+  if (output === "visuals" || output === "vj") return { scene: "wash", params: { color: "@primary" } };
+  return { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
 }
+
+const OUTPUT_LABEL: Record<string, string> = {
+  osc: "OSC", midi: "MIDI", visuals: "Visuals", vj: "Visuals",
+};
 
 /** An OSC or MIDI lane (milestone 3): cues as the track plays -- or, with
  *  points, a curve sent to one OSC address or one MIDI controller. */
@@ -191,7 +196,8 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
   return (
     <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
       <div className="d-head">
-        <span>{midi ? "MIDI" : "OSC"}<span className="muted small"> · {row.label ?? row.id}</span>
+        <span>{OUTPUT_LABEL[row.output ?? ""] ?? row.output}
+          <span className="muted small"> · {row.label ?? row.id}</span>
           {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</span>
         {curve && !midi && (
           <input className="small mono d-osc-address" aria-label={`${row.id} address`}

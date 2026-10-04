@@ -305,8 +305,8 @@ doc = json.loads((REPO / "shared" / "show-example" / "timelines" /
 ex = tl.Timeline.from_doc(doc, showfiles.timeline_channels)
 check("channels in lane order, palette included",
       ex.channels == ("movement", "color", "level", "palette"), f"{ex.channels}")
-check("the OSC rows are carried, untouched", [r["output"] for r in ex.external]
-      == ["osc", "osc"] and ex.external[0]["items"][2]["off"]["args"] == [1])
+check("the OSC and visuals rows are carried, untouched", [r["output"] for r in ex.external]
+      == ["osc", "osc", "visuals"] and ex.external[0]["items"][2]["off"]["args"] == [1])
 check("and the document's own fields are kept",
       ex.meta["palette"] == "Cool" and ex.meta["track"] == "synth-128")
 e = ex.explain(160)

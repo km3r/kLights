@@ -72,6 +72,8 @@ arbitrary, the reason is next to it.
 | Visuals | **Both** generative scenes and a video clip player, on a `#visuals` page (milestone 3, with the user). |
 | Output ownership | A track's timeline with rows for an output **owns** that output for the track, and the template's rows for it are silent; a timeline with none leaves it to the template (settled like the lanes' owning mode). |
 | Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued and timecode is silent. A routine pad's cues play whenever the pad does. The designer's preview counts as armed (it needs the token). |
+| Projector strobe | The `#visuals` strobe obeys the engine's strobe policy (off, ceiling as brightness, `max_seconds`) and never flashes more than **three times a second** -- the broadcast limit for photosensitive viewers -- halving its rate to stay on the beat. A whole screen flashing is the strongest trigger there is. |
+| Visuals layering | Videos play underneath the generative scenes; a scene's `opacity` lets one through. Media are served with the token only, like audio. |
 | Timecode details | Silent while the deck is paused (a stopped clock), sent only when its frame changes; 30 fps non-drop by default, to the broadcast address on Art-Net's port. |
 | OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
 
@@ -169,6 +171,7 @@ bar-count fallback, the template-set switcher, routines on preset pads.
 | F21a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
 | F21b | Art-Net ArtTimeCode from the matched track's position |
 | F21c | MIDI through the sidecar (`bridges/midi/`): note, CC and program cues, CC curves |
+| F21d | Built-in visuals: the `#visuals` page, its scenes and video from `media/`, template picks' scenes |
 
 ## Things to verify on hardware
 

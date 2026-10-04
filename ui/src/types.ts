@@ -241,6 +241,29 @@ export interface TrackState {
   decks?: DeckLoaded[];
 }
 
+/** One built-in visuals item on now: its scene and parameters, and how far
+ *  into it the show is, in beats. */
+export interface VisualItem {
+  key: string;
+  scene: string;
+  params: Record<string, unknown>;
+  elapsed: number;
+  len: number;
+  source: string;
+}
+
+export interface VisualsState {
+  mode: string;
+  /** The show's beat when the snapshot was taken, and how fast it runs: the
+   *  page runs on from it between snapshots. bpm 0: paused. */
+  beat: number | null;
+  bpm: number | null;
+  phrase: string | null;
+  /** Palette roles as #rrggbb. */
+  palette: Record<string, string>;
+  items: VisualItem[];
+}
+
 export interface OutputsState {
   osc: { target: string; sent: number; errors: number; last_error: string | null;
          on: number } | null;
@@ -404,6 +427,9 @@ export interface EngineState {
   /** The other outputs (milestone 3): where OSC goes and how it is doing.
    *  Null when none is configured; absent before F21a. */
   outputs?: OutputsState | null;
+  /** What a #visuals page draws (milestone 3). Null without a show folder;
+   *  absent before F21d. */
+  visuals?: VisualsState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */

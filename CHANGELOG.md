@@ -11,6 +11,29 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F21d: built-in visuals
+
+- **`#visuals`** (decided with the user: generative scenes and a video
+  player): open it full screen on the projector laptop. Scenes are wash, bars,
+  tunnel, particles and strobe, in the show's palette and on its beat, and
+  video from the show folder's new `media/` folder (looped or not, at its own
+  speed or stretched to the DJ's tempo). It runs on between snapshots at the
+  show's tempo and eases into each one, so it stays smooth. Its own chunk: a
+  phone never downloads it.
+- **What plays:** a Visuals lane in the designer (`+ lane` → Visuals: a scene
+  and its parameters per cue, a video picked from media/), the same lane in a
+  routine, or a template set's `visuals {scene, params}` on each phrase pick
+  -- so a guest's tracks get scenes too. The example folder has both.
+- **Safety:** the strobe scene obeys the strobe policy -- off when strobe is
+  off, no brighter than its ceiling, stopped after `max_seconds` -- and never
+  flashes more than three times a second.
+- `GET /api/media` lists the videos; `GET /api/media/<file>` serves one with
+  Range, with the token only, video types only, never outside media/. A video
+  a show names but the folder lacks is a warning when the folder loads.
+- The snapshot gains `visuals`. Timeline, routine and template-set schemas
+  regenerated.
+- F21c's commit message counted 164 UI tests; it was 163.
+
 ### Added — F21c: MIDI, through a sidecar
 
 - **MIDI lanes** (decided with the user: through an optional sidecar). A cue

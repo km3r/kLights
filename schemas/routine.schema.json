@@ -369,6 +369,21 @@
                       "minimum": 0,
                       "maximum": 127,
                       "description": "a program number, 0-127"
+                    },
+                    "scene": {
+                      "type": "string",
+                      "enum": [
+                        "wash",
+                        "bars",
+                        "tunnel",
+                        "particles",
+                        "strobe",
+                        "video"
+                      ]
+                    },
+                    "params": {
+                      "type": "object",
+                      "description": "the scene's parameters, e.g. {\"color\": \"@primary\"}"
                     }
                   },
                   "required": [

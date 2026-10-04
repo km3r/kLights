@@ -3,10 +3,11 @@ import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub, oscArgsText, parseOscArgs,
+  BEATS_PER_BAR, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue, itemName, itemSub,
+  oscArgsText, parseOscArgs,
 } from "./model";
 import type {
-  Item, OscMessage, Point, RoutineSummary, Row, TimelineDoc, TrackDoc,
+  Item, OscMessage, Point, RoutineSummary, Row, TimelineDoc, TrackDoc, VisualRule,
 } from "./model";
 
 /**
@@ -699,7 +700,7 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 const NEW_LANES: [string, string][] = [
   ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
   ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
-  ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"],
+  ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"], ["visuals", "Visuals"],
 ];
 
 /** A new lane for another output (milestone 3), or undefined for a lights lane. */
@@ -711,6 +712,9 @@ export function externalRow(d: RowsDoc, kind: string): Row | undefined {
              points: [[0, 1]] };
   }
   if (kind === "midi") return { id: uniqueId(d, "midi"), type: "external", output: "midi", items: [] };
+  if (kind === "visuals") {
+    return { id: uniqueId(d, "visuals"), type: "external", output: "visuals", items: [] };
+  }
   if (kind === "midi-curve") {
     return { id: uniqueId(d, "midi-curve"), type: "external", output: "midi",
              channel: 1, cc: 1, points: [[0, 0]] };
@@ -997,6 +1001,9 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         {row.type === "external" && row.output === "midi" && (
           <MidiCue item={it} set={set} />
         )}
+        {row.type === "external" && (row.output === "visuals" || row.output === "vj") && (
+          <VisualCue item={it} set={set} />
+        )}
         {!it.hit && row.type !== "external" && (
           <div>
             <span className="small muted">Fade in</span>
@@ -1107,6 +1114,105 @@ function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => voi
       {(["on", "while", "off"] as const).map((k) => (
         <OscField key={`${item.id}-${k}`} which={k} message={item[k]}
                   onChange={(m) => set({ [k]: m })} />))}
+    </>
+  );
+}
+
+const ROLE_COLORS = ["@primary", "@secondary", "@accent"];
+
+/** A visuals cue: its scene, and that scene's parameters. A video's file is
+ *  picked from the show folder's media/. */
+function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const [media, setMedia] = useState<string[] | null>(null);
+  const scene = item.scene ?? "wash";
+  useEffect(() => {
+    if (scene !== "video") return;
+    let live = true;
+    apiFetch<{ media: { file: string }[] }>("/api/media")
+      .then((r) => { if (live) setMedia(r.media.map((m) => m.file)); })
+      .catch(() => { if (live) setMedia([]); });
+    return () => { live = false; };
+  }, [scene]);
+  const params = item.params ?? {};
+  const setParam = (name: string, value: unknown) => {
+    const next = { ...params };
+    if (value === undefined || value === "") delete next[name]; else next[name] = value;
+    set({ params: next });
+  };
+  const rules: Record<string, VisualRule> = { ...(VISUAL_PARAMS[scene] ?? {}), opacity: [0, 1] };
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="visuals scene">
+        {VISUAL_SCENES.map((s) => (
+          <button key={s} className={scene === s ? "on" : ""}
+                  onClick={() => set({ scene: s,
+                                       params: s === "video" ? { loop: true } : { color: "@primary" } })}>
+            {s}</button>))}
+      </div>
+      {Object.entries(rules).map(([name, rule]) => {
+        const value = params[name];
+        const label = `visuals ${name}`;
+        if (rule === "color") {
+          const role = typeof value === "string" && value.startsWith("@") ? value : "";
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={role || (typeof value === "string" ? "hex" : "")}
+                      onChange={(e) => setParam(name, e.target.value === "hex"
+                        ? "#ffffff" : e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {ROLE_COLORS.map((r) => <option key={r} value={r}>{r}</option>)}
+                <option value="hex">a colour…</option>
+              </select>
+              {typeof value === "string" && value.startsWith("#") && (
+                <input type="color" aria-label={`${label} colour`} value={value}
+                       onChange={(e) => setParam(name, e.target.value)} />)}
+            </label>
+          );
+        }
+        if (rule === "file") {
+          const files = media ?? [];
+          return (
+            <label key={name} className="small">file{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">{media == null ? "…" : files.length ? "(pick one)" : "(media/ is empty)"}</option>
+                {typeof value === "string" && value && !files.includes(value) && (
+                  <option value={value}>{value} (not in media/)</option>)}
+                {files.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+          );
+        }
+        if (rule === "bool") {
+          return (
+            <label key={name} className="small">
+              <input type="checkbox" aria-label={label} checked={value !== false}
+                     onChange={(e) => setParam(name, e.target.checked)} /> {name}
+            </label>
+          );
+        }
+        if (typeof rule[0] === "string") {
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {(rule as string[]).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          );
+        }
+        const [lo, hi] = rule as [number, number];
+        return (
+          <label key={name} className="small">{name}{" "}
+            <input type="number" className="d-num" min={lo} max={hi} step={hi <= 1 ? 0.05 : 1}
+                   aria-label={label} placeholder="default"
+                   value={typeof value === "number" ? value : ""}
+                   onChange={(e) => setParam(name, e.target.value === ""
+                     ? undefined : Number(e.target.value))} />
+          </label>
+        );
+      })}
     </>
   );
 }
@@ -1261,5 +1367,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector, uniqueId, OscCue, MidiCue,
+  PointInspector, uniqueId, OscCue, MidiCue, VisualCue,
 };

@@ -156,6 +156,44 @@ try:
     status, _ = jget("/api/audio/synth-128", token="tok")
     check("a file without an audio extension is never served", status == 404)
 
+    # -- 2b. media, for the #visuals page (milestone 3) ------------------------
+    print("\n2b. media")
+    media = shows / "media"
+    media.mkdir()
+    VIDEO = bytes(range(256)) * 20
+    (media / "loop-1.mp4").write_bytes(VIDEO)
+    (media / "notes.txt").write_text("not a video")
+    (tmp / "secret.mp4").write_bytes(b"outside")
+    try:
+        (media / "escape.mp4").symlink_to(tmp / "secret.mp4")
+        linked = True
+    except OSError:                         # Windows without the privilege
+        linked = False
+    status, body = jget("/api/media")
+    check("the videos in media/ are listed for anyone watching -- names only, "
+          "and never a link leading out of it",
+          status == 200 and body["media"] == [{"file": "loop-1.mp4", "size": len(VIDEO)}],
+          f"{body}")
+    status, body = jget("/api/media/loop-1.mp4")
+    check("a video itself needs the token", status == 401 and "token" in body["error"])
+    status, headers, data = get("/api/media/loop-1.mp4", token="tok")
+    check("with it, the file, as video", status == 200 and data == VIDEO
+          and headers.get("Content-Type") == "video/mp4"
+          and headers.get("Accept-Ranges") == "bytes")
+    status, headers, data = get("/api/media/loop-1.mp4", token="tok",
+                                headers={"Range": "bytes=100-199"})
+    check("with Range, the part asked for (206) -- a video element seeks",
+          status == 206 and data == VIDEO[100:200]
+          and headers.get("Content-Range") == f"bytes 100-199/{len(VIDEO)}")
+    for bad, code in (("/api/media/notes.txt", 415), ("/api/media/..", 404),
+                      ("/api/media/..%2Fshow.json", 404), ("/api/media/nope.mp4", 404),
+                      ("/api/media/.hidden.mp4", 404)):
+        check(f"{bad} is refused ({code})", get(bad, token="tok")[0] == code,
+              f"{get(bad, token='tok')[0]}")
+    if linked:
+        check("a link in media/ that leads outside it is never followed",
+              get("/api/media/escape.mp4", token="tok")[0] == 404)
+
     # -- 3. commands that answer from the worker -----------------------------
     print("\n3. draft, save")
     replies: list[dict] = []
@@ -337,6 +375,14 @@ check("and a phone never downloads the designer: its marker is not in the entry"
       entries and marker not in (dist / entries[0]).read_bytes(), f"{entries}")
 check("it is in a chunk of its own, loaded only from #designer",
       any(marker in js.read_bytes() for js in (dist / "assets").glob("*.js")
+          if js.name != Path(entries[0]).name) if entries else False)
+seen = b"klights-visuals"
+check("nor the built-in visuals (milestone 3): their marker is not in the entry",
+      entries and seen not in (dist / entries[0]).read_bytes())
+check("they too are a chunk of their own, loaded only from #visuals -- and not "
+      "the designer's",
+      any(seen in js.read_bytes() and marker not in js.read_bytes()
+          for js in (dist / "assets").glob("*.js")
           if js.name != Path(entries[0]).name) if entries else False)
 
 

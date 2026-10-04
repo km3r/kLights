@@ -301,6 +301,16 @@ own pinned dependencies (`outputs.midi {host, port}`, default this machine on
 9123). A note cue holds its note for its length, a CC cue sets a value (and
 `off_value` at its end), a program cue sends a program change; a curve drives
 one CC, 0-1 as 0-127. Closing stops every note still sounding.
+**The built-in visuals** are a page, not an output: `#visuals` (its own UI
+chunk, never loaded by a phone) draws what the snapshot's `visuals` section
+says is on -- the beat, its tempo, the palette as hex, and each visuals item's
+scene, params and elapsed beats (`outputs.visuals_public`, built from the same
+frame every frame). Scenes are `wash`, `bars`, `tunnel`, `particles`, `strobe`
+and `video`; a template pick's `visuals {scene, params}` puts one on for its
+phrase. Videos come from the show folder's `media/` through `GET
+/api/media/<file>` (token, Range, video types only, never a link out of the
+folder); `GET /api/media` lists them. The page's strobe obeys the strobe policy
+and never flashes more than three times a second.
 
 **Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
 says what any deck has loaded, as `loaded_*` sync fields that never touch the

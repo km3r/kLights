@@ -103,6 +103,7 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/routines/fan-drop") return [200, { doc: fanDrop, rev: ROUTINE_REV }];
   if (path === "/api/templates") return [200, { templates: [{ id: "club", name: "Club" }] }];
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
+  if (path === "/api/media") return [200, { media: [{ file: "loop-1.mp4", size: 5120 }] }];
   return [404, { error: `no ${path}` }];
 }
 
@@ -346,6 +347,38 @@ describe("designer", () => {
     expect(item.note).toBeUndefined();
     expect(sent.rows.find((r) => r.id === "midi-curve")).toMatchObject({
       type: "external", output: "midi", channel: 1, cc: 1, points: [[0, 0]] });
+  });
+
+  it("puts a scene on the projector: a visuals lane, a tunnel, a video from media/", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("tunnel at bar 41.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "visuals");
+    await user.click(await screen.findByRole("button", { name: "add a cue to visuals" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const scenes = within(inspector).getByRole("group", { name: "visuals scene" });
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+    await user.selectOptions(within(inspector).getByLabelText("visuals color"), "@accent");
+    expect(within(lanes).getByLabelText("tunnel at bar 1.1")).toBeInTheDocument();
+    await user.click(within(scenes).getByRole("button", { name: "video" }));
+    const file = await within(inspector).findByLabelText("visuals file");
+    await waitFor(() => expect(within(file).getByRole("option", { name: "loop-1.mp4" }))
+      .toBeInTheDocument());
+    await user.selectOptions(file, "loop-1.mp4");
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "visuals")!;
+    expect(row).toMatchObject({ type: "external", output: "visuals" });
+    expect(row.items![0]).toMatchObject({ scene: "tunnel", params: { color: "@primary", speed: 3 } });
   });
 
   it("refuses to save while the engine says the draft is invalid", async () => {

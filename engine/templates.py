@@ -97,7 +97,7 @@ def bars_pick(doc: Mapping, block: int) -> Optional[Mapping]:
 def pick_key(p: Mapping) -> str:
     """What makes two picks the same program."""
     return json.dumps({k: p.get(k) for k in ("routine", "variation", "params",
-                                              "palette")}, sort_keys=True)
+                                              "palette", "visuals")}, sort_keys=True)
 
 
 @dataclass(frozen=True)
@@ -189,6 +189,15 @@ def pick_timeline(doc: Mapping, p: Mapping) -> timelinemod.Timeline:
     meta: dict[str, Any] = {"rows": [{"id": "pick", "type": "clips",
                                       "target": "scene", "gap": "fill",
                                       "items": [item]}]}
+    visuals = p.get("visuals")
+    if visuals:
+        # What the built-in visuals show for this pick (milestone 3): one item
+        # as long as the pick, so it plays from the phrase's first beat.
+        meta["rows"].append({"id": "pick-visuals", "type": "external",
+                             "output": "visuals",
+                             "items": [{"id": "visuals", "at": 0, "len": LONG,
+                                        "scene": visuals.get("scene"),
+                                        "params": dict(visuals.get("params") or {})}]})
     if doc.get("palettes"):
         meta["palettes"] = doc["palettes"]
     palette = p.get("palette") or doc.get("palette")

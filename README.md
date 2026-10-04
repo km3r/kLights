@@ -199,7 +199,10 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    MIDI port. For a VJ app with its own timeline per track,
    `outputs.timecode` sends Art-Net timecode at the DJ's position in the
    track -- it jumps with loops and hot cues. Say where under `outputs` in
-   show.json, or per machine in `klights.local.json`.
+   show.json, or per machine in `klights.local.json`. Or skip the VJ app: open
+   **`#visuals`** on a laptop on the projector for kLights' own scenes (wash,
+   bars, tunnel, particles, strobe, and videos from the folder's `media/`),
+   cued by a Visuals lane or by the template set phrase by phrase.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking

@@ -243,6 +243,7 @@ class ShowController:
         # show folder says -- or this machine's klights.local.json, which wins.
         self.outputs = outputsmod.Outputs()
         self.local_outputs = dict(local_outputs or {})
+        self._output_frame: Optional[outputsmod.ProgramFrame] = None
         self.rig = rigmod.load_rig(self.event_dir)
         errors = self.rig.validate()
         if errors:
@@ -397,7 +398,8 @@ class ShowController:
                 clock_beat=lambda: self.ctx.beat,
                 base_palette=self._base_palette,
                 clock_phrase=lambda: (self.clock.phrase_label,
-                                      self.clock.phrase_start))
+                                      self.clock.phrase_start),
+                clock_bpm=lambda: self.clock.effective_bpm)
             self.runner.choose_show = self._choose_show
             self._install_library(showlibrary.load(self.show_dir))
             show = self.show_library.folder.show or {}
@@ -517,12 +519,15 @@ class ShowController:
             fallback = prog.show
         sample = self._frame_sample or self.transport.sample(now)
         show = self.player.choose(fallback, sample, now)
+        extra = ()
+        if pad is not None:
+            extra = (("pad", f"pad:{pad['name']}@{pad['start']:g}", pad["program"]),)
+        # Every frame, for the outputs and for the snapshot's visuals section
+        # (a #visuals page may be open whether or not anything else is on).
+        frame = self.player.output_frame(extra)
+        self._output_frame = frame
         if self.outputs.active:
-            extra = ()
-            if pad is not None:
-                extra = (("pad", f"pad:{pad['name']}@{pad['start']:g}",
-                          pad["program"]),)
-            self.outputs.send(self.player.output_frame(extra), now)
+            self.outputs.send(frame, now)
         return show
 
     # routines on pads (milestone 2) -----------------------------------------
@@ -2351,6 +2356,8 @@ class ShowController:
             "program": _program_status(self),
             "pad": _pad_status(self),
             "outputs": self.outputs.public(),
+            # What a #visuals page draws (milestone 3); None without a show folder.
+            "visuals": outputsmod.visuals_public(self._output_frame),
             "preview": (self.player.preview.public()
                         if self.player is not None and self.player.preview
                         else None),

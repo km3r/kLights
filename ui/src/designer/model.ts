@@ -69,6 +69,8 @@ export interface Item {
   value?: number;
   off_value?: number;
   pc?: number;
+  /** A visuals cue: a scene, and its parameters in `params`. */
+  scene?: string;
   [key: string]: unknown;
 }
 
@@ -303,6 +305,20 @@ export function findItem(doc: { rows: Row[] }, id: string | null): { row: Row; i
 /** A clip's name on a lane: what it IS, in a word or two. */
 /** The end of an OSC address, which is the part that says what it does:
  *  `/composition/layers/1/clips/3/connect` is `clips/3/connect`. */
+/** The built-in visuals' scenes and what each reads -- a copy of
+ *  `engine/showfiles.VISUAL_PARAMS`: "color", "file", "bool", a list of
+ *  choices, or a [min, max] range. Every scene also takes `opacity`. */
+export const VISUAL_SCENES = ["wash", "bars", "tunnel", "particles", "strobe", "video"] as const;
+export type VisualRule = "color" | "file" | "bool" | string[] | [number, number];
+export const VISUAL_PARAMS: Record<string, Record<string, VisualRule>> = {
+  wash: { color: "color", pulse: [0, 1] },
+  bars: { color: "color", count: [1, 64], speed: [0, 8] },
+  tunnel: { color: "color", speed: [0, 8], depth: [2, 40] },
+  particles: { color: "color", count: [1, 2000], burst: [0, 1] },
+  strobe: { color: "color", rate: [0.25, 16] },
+  video: { file: "file", loop: "bool", rate: ["beat", "normal"], bpm: [20, 400] },
+};
+
 export function shortAddress(address: string): string {
   const parts = address.split("/").filter(Boolean);
   return parts.length > 3 ? parts.slice(-3).join("/") : address;
@@ -326,6 +342,8 @@ export function itemName(it: Item): string {
   if (it.note != null) return `note ${it.note}`;
   if (it.cc != null) return `cc ${it.cc}`;
   if (it.pc != null) return `program ${it.pc}`;
+  if (it.scene) return it.scene === "video" && typeof it.params?.file === "string"
+    ? `video ${it.params.file}` : it.scene;
   if (it.kind === "routine") return it.routine ?? "routine";
   if (it.kind === "look") return it.look ?? "look";
   if (it.kind === "snapshot") return it.preset ?? "snapshot";

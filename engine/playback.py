@@ -132,7 +132,8 @@ class TrackPlayer:
                  submit: Callable[..., None], post: Callable[[Callable], None],
                  note: Callable[[str], None], clock_beat: Callable[[], float],
                  base_palette: Callable[[], dict],
-                 clock_phrase: Optional[Callable[[], tuple]] = None):
+                 clock_phrase: Optional[Callable[[], tuple]] = None,
+                 clock_bpm: Optional[Callable[[], float]] = None):
         self.transport = transport
         self._pinned = pinned
         self._rigging = rigging
@@ -144,6 +145,7 @@ class TrackPlayer:
         # (label, start beat) of the phrase the deck says is playing, in clock
         # beats -- a guest's track, read live (milestone 2).
         self._clock_phrase = clock_phrase or (lambda: (None, None))
+        self._clock_bpm = clock_bpm or (lambda: None)
         self.armed = False
         self.grabbed: frozenset[str] = frozenset()
         self.policy = "idle"
@@ -523,14 +525,22 @@ class TrackPlayer:
             palette = dict(getattr(prog, "_palette", {}) or {})
             break
         pv = self.preview if st.mode == "preview" else None
+        bpm = None
         if pv is not None:                  # the designer's track and position
             track_id, time_s, playing = pv.track_id, self._preview_time, pv.playing
+            if time_s is not None:
+                bpm = pv.grid.bpm_at(time_s) if playing else 0.0
         else:
             track_id = pinned.match.track_id if matched else None
             time_s = sample.time_s if matched else None
             playing = sample is not None and sample.state == transportmod.PLAYING
+            if matched and time_s is not None and pinned.grid is not None \
+                    and st.mode in ("timeline", "template"):
+                bpm = pinned.grid.bpm_at(time_s) * sample.rate if playing else 0.0
+        if bpm is None and st.beat is not None:
+            bpm = self._clock_bpm()         # the show runs on the clock's beat
         return outputsmod.ProgramFrame(
-            mode=st.mode, armed=self.armed or pv is not None, beat=st.beat,
+            mode=st.mode, armed=self.armed or pv is not None, beat=st.beat, bpm=bpm,
             track_id=track_id, time_s=time_s, playing=playing,
             phrase=cue.label if cue is not None else self._clock_phrase()[0],
             palette=palette, active=outputsmod.gather(stage))
