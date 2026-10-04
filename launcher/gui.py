@@ -531,9 +531,9 @@ class Launcher:
             messagebox.showerror("Start engine", f"The rig does not load, so the engine would not "
                                  f"start:\n\n{info.error}")
             return
-        # Checked here and not left to the engine: on Windows a second server
-        # can bind a port another is already listening on, and then which of
-        # them answers is down to luck.
+        # Checked here as well as in the engine. The engine refuses a taken
+        # port, but can only say so in its log after the start has failed;
+        # this says it in a dialog, before a process exists.
         if core.probe(s.port, timeout=0.4).state != "down":
             messagebox.showerror("Start engine", f"Something is already answering on port "
                                  f"{s.port}. Pick another port.")

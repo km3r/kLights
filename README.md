@@ -117,6 +117,14 @@ Three ideas make the rest make sense:
 - **The cue list is the night**, and GO walks it. A guest who knows nothing
   about the rig can run the whole show off one button.
 
+**The console explains itself.** The **?** in the header opens a guide to the
+tab you are on: a short walkthrough and the things worth knowing. A first visit
+on each device offers a two-minute tour. Cards whose controls do not say what
+they do (Tempo, Auto, Track, the quick palette's long-press, the safety taper,
+calibration) have a **?** by their title that opens an explanation in place. A
+tap, not a tooltip, because a phone has no hover. The designer has its own
+**Guide**.
+
 ## Running a show
 
 Full procedure for the day, including what to do when something breaks:
@@ -243,7 +251,7 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 151 tests: the console against a fixture captured from a
+npm test         # 170 tests: the console against a fixture captured from a
                  # real engine, the designer against the example show folder
 npm run build    # writes ui/dist/
 ```

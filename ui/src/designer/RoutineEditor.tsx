@@ -12,6 +12,7 @@ import {
 } from "./edit";
 import type { History } from "./edit";
 import { Lane, Ruler } from "./lanes";
+import { useDesignerGuide } from "./guide";
 import "./designer.css";
 
 /**
@@ -84,6 +85,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [bpm, setBpm] = useState(128);
   const [selected, setSelected] = useState<string | null>(null);
   const [back] = useState(backHash);
+  const guide = useDesignerGuide("routines");
 
   useEffect(() => {
     setSnap("beat");
@@ -155,9 +157,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         </label>
         <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="routine" ident={routineId} />
+        {guide.button}
       </header>
+      {guide.banner}
 
-      <div className="d-body">
+      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
         <div className="d-lanes" role="region" aria-label="lanes">
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={loop.seek} />
@@ -184,6 +188,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
           <Blocks history={history} doc={doc} engine={engine} beat={loop.beat}
                   selected={selected} onAdded={setSelected} />
         </aside>
+        {guide.drawer}
       </div>
 
       {history.listView

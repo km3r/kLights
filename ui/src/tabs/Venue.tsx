@@ -24,7 +24,18 @@ export function VenueSection({ state, send }: {
 
   return (
     <>
-      <Card title="Safety taper" right={
+      <Card title="Safety taper" help={<>
+        <p>Dims beams that cross the crowd at head height.</p>
+        <ul>
+          <li><b>Crowd level</b>: how bright those beams stay. 0 means
+            dark.</li>
+          <li><b>Soft edge</b>: how gradually beams dim near the crowd, in
+            degrees. 6° is about two beam widths.</li>
+          <li><b>Smoothing</b>: caps how fast the dimming can change. At 2, off
+            to full takes at least half a second. 0 turns it off.</li>
+        </ul>
+        <p>Changes apply straight away. <b>Save to venue.json</b> keeps them.</p>
+      </>} right={
         <span className="small muted">
           {taper.enabled ? `floor ${Math.round(taper.crowd_level * 100)}%` : "OFF"}
         </span>
@@ -77,7 +88,12 @@ export function VenueSection({ state, send }: {
       </Card>
 
       {crowd && (
-        <Card title="Crowd zone">
+        <Card title="Crowd zone" help={<>
+          <p>Where the crowd stands, in millimetres from the room's corner: the top
+            left of the plan on the Move tab, where it's the dashed box. <b>X</b>{" "}
+            runs left to right and <b>Z</b> top to bottom.</p>
+          <p>The head band is the range of eye heights, from the floor.</p>
+        </>}>
           <p className="small muted" style={{ marginTop: 0 }}>
             Where people stand, and how high their eyes are. The head band is a
             judgement call, not a measurement — generous at the top because

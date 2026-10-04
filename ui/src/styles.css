@@ -424,6 +424,50 @@ label.field input, label.field select {
    default centre alignment reads as ragged. */
 button { max-width: 100%; overflow-wrap: anywhere; }
 
+/* ------------------------------------------------------------------ help -- */
+
+/* The "?" by a card title. Drawn small and hit large: a 44 px button in a 12 px
+   heading would add 30 px to every card that has one, so the circle is 22 px
+   and the ::after extends the touch target to 44 without taking layout space. */
+.help-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; min-height: 0; padding: 0;
+  margin: -5px 0 -5px 0.45rem;
+  border-radius: 50%;
+  font-size: 12px; font-weight: 700; line-height: 1;
+  letter-spacing: 0; vertical-align: middle;
+  color: var(--dim);
+}
+.help-btn::after { content: ""; position: absolute; inset: -11px; }
+.help-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+
+.help {
+  margin: 0 0 0.7rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: rgba(90, 169, 255, 0.08);
+  font-size: 13px;
+}
+.help p { margin: 0 0 0.45rem; }
+.help p:last-child, .help ul:last-child { margin-bottom: 0; }
+.help ul { margin: 0 0 0.45rem; padding-left: 1.1rem; }
+.help li + li { margin-top: 0.25rem; }
+.help code, .guide code { font-size: 12px; overflow-wrap: anywhere; }
+
+/* --------------------------------------------------------------- guides -- */
+
+.guide ol, .guide ul { margin: 0; padding-left: 1.3rem; }
+.guide li { margin: 0 0 0.5rem; padding-left: 0.15rem; }
+.guide li:last-child { margin-bottom: 0; }
+.guide .lead { margin: 0; font-size: 15px; }
+.guide-nav { margin-bottom: 0.75rem; }
+.guide-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+
+/* The first-run card: the one card in the console that is about the console. */
+.card.welcome { border-color: var(--accent); }
+
 /* The six rate buttons, and the one place the rule above is wrong.
 
    `overflow-wrap: anywhere` is right for a look called "Split Pink/Green" and

@@ -12,9 +12,11 @@ guardrails that are easy to forget under setup pressure:
          (you'd go live aiming by geometry guess, not by verified readings).
        - WARN if mount_mode == "table" (that's the bench-test mode -- flip it
          to "venue" in despacio_config.json once mounted at the venue).
-  4. The fixture def is installed in the QLC+ user fixtures dir AND is
-     byte-identical to the project copy (divergent copies silently load a
-     stale fixture -- a documented gotcha).
+  4. (Moved.) This compared the .qxf installed in QLC+'s user fixtures dir
+     against the repo copy, which mattered while QLC+ ran the show -- and
+     failed on every machine without QLC+. The engine reads the repo copy
+     directly, so scripts/preflight.py's rig step now checks the thing that
+     can still go wrong: a profile that resolves only from outside the repo.
   5. At least one recent backups/ snapshot exists (aim_calc.py writes these).
   6. webui/gen_webui_config.py --check -- the mobile virtual console's layout
      (webui/ui_layout.js) still matches despacio.qxw, and every routine that
@@ -41,15 +43,10 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent          # events/despacio/
-REPO = HERE.parent.parent             # lights/
-FIXTURE_LIB = REPO / "shared" / "fixtures"
-QXF_NAME = "MingJie-MJ-OS-018-60W-Beam.qxf"
 
 CONFIG_PATH = HERE / "despacio_config.json"
 AIM_REPORT_PATH = HERE / "aim_report.json"
 VALIDATOR = HERE / "validate_despacio.py"
-QXF_PROJECT = FIXTURE_LIB / QXF_NAME
-QXF_INSTALLED = Path.home() / "QLC+" / "Fixtures" / QXF_NAME
 BACKUP_DIR = HERE / "backups"
 WEBUI_GENERATOR = HERE / "webui" / "gen_webui_config.py"
 
@@ -156,23 +153,7 @@ if aim_calc is not None and mode in aim_calc.MOUNT_PROFILES:
           f"never per-head, to fix (per-head is fine for the OTHER channel, which carries "
           f"elevation in this mode)")
 
-# --- 4. fixture def installed and in sync --------------------------------
-if not QXF_INSTALLED.exists():
-    check("fixture def installed in QLC+ user dir", False,
-          f"missing {QXF_INSTALLED} -- copy it there and restart QLC+")
-else:
-    # Compare content, not raw bytes. .gitattributes marks .qxf as text, so the
-    # repo copy is checked out with native line endings (CRLF on Windows) while
-    # the copy hand-installed into the QLC+ user dir keeps whatever it had. A
-    # byte comparison then reports a false mismatch on every fresh checkout.
-    # QLC+ parses this as XML and does not care about line endings.
-    def _qxf_content(p):
-        return p.read_bytes().replace(b"\r\n", b"\n")
-
-    same = _qxf_content(QXF_INSTALLED) == _qxf_content(QXF_PROJECT)
-    check("installed fixture def matches project copy", same,
-          "" if same else "the two .qxf copies differ -- QLC+ will load the stale one; "
-          "recopy the project version and restart QLC+")
+# --- 4. fixture def: moved to scripts/preflight.py's rig step (see above) --
 
 # --- 5. a backup exists --------------------------------------------------
 backups = sorted(BACKUP_DIR.glob("despacio-*.qxw")) if BACKUP_DIR.exists() else []

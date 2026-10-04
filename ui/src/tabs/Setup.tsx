@@ -129,7 +129,16 @@ export function SetupTab({ state, send, name, setName }: {
                onChange={(e) => jog(pan, Number(e.target.value))} />
       </Card>
 
-      <Card title="Capture" right={
+      <Card title="Capture" help={<>
+        <p>A capture records where a head is pointing and which point in the room
+          it's aimed at. Two or more, from different angles, let the solver work
+          out the head's calibration.</p>
+        <p><b>Solve (preview)</b> shows the result in <b>Notices</b>. The residual
+          is how much the captures disagree, in degrees.</p>
+        <p><b>Solve &amp; write</b> saves it and snapshots the old calibration. It
+          won't save a head with a residual over 5°, which usually means a capture
+          was taken before the head was jogged. Restart the engine to load it.</p>
+      </>} right={
         <button className="small" onClick={() => send({ type: "capture_clear" })}>
           Clear all
         </button>
@@ -181,7 +190,16 @@ export function SetupTab({ state, send, name, setName }: {
         </p>
       </Card>
 
-      <Card title="Drift check">
+      {/* Says how it is run today, because the card has no button: the
+          engine's drift command wants a ball reading per head, and nothing in
+          the console sends one yet. */}
+      <Card title="Drift check" help={<>
+        <p>This card shows drift results but can't run a check yet. To check, jog
+          each head onto the ball, note its Pan and Tilt, and run:</p>
+        <p><code>python -m engine.calibrate drift P,T P,T …</code></p>
+        <p>One reading per head, in rig order. A head that's moved 3° or more
+          needs re-aiming.</p>
+      </>}>
         <p className="small muted" style={{ marginTop: 0 }}>
           Park every head on the ball and compare against the stored
           calibration. A ten-second go/no-go instead of finding out mid-set.
