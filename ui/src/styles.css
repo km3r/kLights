@@ -429,3 +429,5 @@ button { max-width: 100%; overflow-wrap: anywhere; }
   overflow-wrap: normal;
   white-space: nowrap;
 }
+
+.warn-text { color: var(--warn); }

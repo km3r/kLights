@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import blocks as blocksmod
+from . import outputs as outputsmod
 from . import program as programmod
 from . import state as statemod
 from . import templates as templatesmod
@@ -193,6 +194,9 @@ class TrackPlayer:
         self._precompiling: set[int] = set()
         self._pregen = 0                # bumped when the rig or folder changes
         self._held: Optional[float] = None      # a paused clock beat
+        # The programs that began this frame, for the other outputs (milestone
+        # 3): (source, key prefix, program), the track's timeline first.
+        self.stage: tuple = ()
 
     # -- settings ----------------------------------------------------------
 
@@ -480,6 +484,19 @@ class TrackPlayer:
                 lanes[slot] = "idle"
             else:
                 lanes[slot] = "fallback"
+        stage: list = []
+        if prog is not None and mode in ("timeline", "preview"):
+            prefix = (f"timeline:{self._seq}" if mode == "timeline"
+                      else f"preview:{self.preview.track_id}")
+            stage.append((mode, prefix, prog))
+        if templating:
+            for playing in filter(None, (self.template.current, self.template.outgoing)):
+                cue = playing.cue
+                stage.append(("template", f"template:{cue.key}@{cue.start:g}",
+                              playing.prog))
+        if mode == "idle" and self.idle is not None:
+            stage.append(("idle", "idle", self.idle))
+        self.stage = tuple(stage)
         shown = prog if prog is not None else self.program
         problems = list(shown.problems) if shown is not None else []
         if self.cset is not None:
@@ -490,6 +507,27 @@ class TrackPlayer:
                              self.set_id, self.pending, self.sets,
                              self.template.status() if templating else None)
         return show
+
+    def output_frame(self, extra: tuple = ()) -> outputsmod.ProgramFrame:
+        """This frame, for the other outputs: what is on stage (plus `extra`,
+        a routine pad), where in which track, and its external items."""
+        stage = self.stage + tuple(extra)
+        st, sample, pinned = self.status, self._sample, self._pinned()
+        matched = (pinned is not None and sample is not None
+                   and pinned.track_seq == sample.track_seq
+                   and pinned.match is not None and pinned.match.track_id is not None)
+        cue = self.template.cue if st.template is not None else None
+        palette = {}
+        for _, _, prog in stage:
+            palette = dict(getattr(prog, "_palette", {}) or {})
+            break
+        return outputsmod.ProgramFrame(
+            mode=st.mode, beat=st.beat,
+            track_id=pinned.match.track_id if matched else None,
+            time_s=sample.time_s if matched else None,
+            playing=sample is not None and sample.state == transportmod.PLAYING,
+            phrase=cue.label if cue is not None else self._clock_phrase()[0],
+            palette=palette, active=outputsmod.gather(stage))
 
     def _decide_preview(self, fallback, now):
         pv = self.preview

@@ -273,10 +273,90 @@
       ]
     },
     {
-      "id": "vj1",
+      "id": "vj-clips",
       "type": "external",
-      "output": "vj",
-      "label": "VJ layer 1 (milestone 3)"
+      "output": "osc",
+      "label": "Resolume layer 1",
+      "items": [
+        {
+          "id": "vj-intro",
+          "at": 0,
+          "len": 128,
+          "on": {
+            "address": "/composition/layers/1/clips/1/connect",
+            "args": [
+              1
+            ]
+          }
+        },
+        {
+          "id": "vj-build",
+          "at": 128,
+          "len": 32,
+          "on": {
+            "address": "/composition/layers/1/clips/2/connect",
+            "args": [
+              1
+            ]
+          },
+          "while": {
+            "address": "/composition/layers/1/video/effects/blur/opacity",
+            "args": [
+              "$progress"
+            ]
+          }
+        },
+        {
+          "id": "vj-drop",
+          "at": 160,
+          "len": 64,
+          "on": {
+            "address": "/composition/layers/1/clips/3/connect",
+            "args": [
+              1
+            ]
+          },
+          "off": {
+            "address": "/composition/layers/1/clear",
+            "args": [
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "vj-opacity",
+      "type": "external",
+      "output": "osc",
+      "label": "Layer 1 opacity",
+      "address": "/composition/layers/1/video/opacity",
+      "args": [
+        "$value"
+      ],
+      "points": [
+        [
+          0,
+          0.5
+        ],
+        [
+          128,
+          0.5
+        ],
+        [
+          160,
+          1.0,
+          "ease"
+        ],
+        [
+          224,
+          1.0
+        ],
+        [
+          256,
+          0.5
+        ]
+      ]
     }
   ]
 }

@@ -161,8 +161,9 @@ KLIGHTS_V1 = {
 }
 
 
-def parse_osc(data: bytes) -> Optional[dict]:
-    """One OSC message as a flat dict, or None if it is not one we understand.
+def decode_osc(data: bytes) -> Optional[tuple[str, list]]:
+    """One OSC message as (address, args), or None if it is not one we
+    understand.
 
     Deliberately partial. OSC is a big spec and this needs four scalar types off
     a single message -- bundles, blobs, arrays and timetags are things
@@ -201,7 +202,16 @@ def parse_osc(data: bytes) -> Optional[dict]:
                 return None                        # a type we do not model
     except (ValueError, struct.error, UnicodeDecodeError):
         return None
+    return address, args
 
+
+def parse_osc(data: bytes) -> Optional[dict]:
+    """One OSC message as a flat dict of sync fields, or None if it is not one
+    we understand."""
+    decoded = decode_osc(data)
+    if decoded is None:
+        return None
+    address, args = decoded
     parts = [p for p in address.lower().strip("/").split("/") if p]
     if parts[:2] == ["klights", "v1"]:
         return klights_fields(parts[2:], args)

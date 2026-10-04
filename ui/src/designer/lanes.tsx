@@ -125,12 +125,16 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
                      selected={selected} onSelect={onSelect} />;
   }
   if (row.type === "external") {
+    if (row.output === "osc") {
+      return <OscLane row={row} index={index} x={x} width={width} zoom={zoom}
+                      selected={selected} onSelect={onSelect} history={history} beat={beat} />;
+    }
     return (
       <div className="d-row d-external">
         <div className="d-head">{row.label ?? `${row.output ?? "external"} · ${row.id}`}
-          <span className="muted small"> (later)</span></div>
+          <Editor.LaneMenu row={row} index={index} history={history} /></div>
         <div className="d-empty muted small" style={{ width }}>
-          Output: {row.output} -- carried in the file, played from milestone 3</div>
+          Output: {row.output} -- kept in the file; not editable here</div>
       </div>
     );
   }
@@ -158,6 +162,55 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
       </div>
       <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                       onSelect={onSelect} history={history} />
+    </div>
+  );
+}
+
+/** An OSC lane (milestone 3): cues the VJ app as the track plays -- or, with
+ *  points, a curve whose value is sent to one address. */
+function OscLane({ row, index, x, width, zoom, selected, onSelect, history, beat }: {
+  row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
+  selected: string | null; onSelect: (id: string | null) => void;
+  history: Edits; beat: number;
+}) {
+  const curve = row.points != null;
+  const now = curve ? curveValue(row.points ?? [], beat) : null;
+  const set = (fields: Partial<Row>) => history.apply((d) => {
+    const r = d.rows.find((q) => q.id === row.id);
+    if (r) Object.assign(r, fields);
+  });
+  return (
+    <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
+      <div className="d-head">
+        <span>OSC<span className="muted small"> · {row.label ?? row.id}</span>
+          {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</span>
+        {curve
+          ? <input className="small mono d-osc-address" aria-label={`${row.id} address`}
+                   value={row.address ?? ""} placeholder="/address"
+                   onChange={(e) => set({ address: e.target.value })} />
+          : <button className="small" aria-label={`add a cue to ${row.id}`}
+                    onClick={() => {
+                      if (!history.doc) return;
+                      // Named first: the edit itself runs later, inside React's update.
+                      const id = Editor.uniqueId(history.doc, "cue");
+                      const at = history.snapBeat(beat);
+                      history.apply((d) => {
+                        const r = d.rows.find((q) => q.id === row.id);
+                        if (!r) return;
+                        r.items = [...(r.items ?? []), {
+                          id, at, len: 16,
+                          on: { address: "/composition/layers/1/clips/1/connect", args: [1] },
+                        }];
+                      });
+                      onSelect(id);
+                    }}>+ cue</button>}
+        <Editor.LaneMenu row={row} index={index} history={history} />
+      </div>
+      {curve
+        ? <Editor.AutoSvg row={row} x={x} width={width} history={history}
+                          selected={selected} onSelect={onSelect} />
+        : <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
+                          onSelect={onSelect} history={history} />}
     </div>
   );
 }

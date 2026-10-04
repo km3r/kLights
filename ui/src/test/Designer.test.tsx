@@ -144,7 +144,7 @@ describe("designer", () => {
     expect(screen.getByText(/8 phrases · timeline/)).toBeInTheDocument();
   });
 
-  it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
+  it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
     await open();
     expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
     const lanes = screen.getByRole("region", { name: "lanes" });
@@ -155,7 +155,10 @@ describe("designer", () => {
     expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("flash at bar 41.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("automation master")).toBeInTheDocument();
-    expect(within(lanes).getByText(/Output: vj/)).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("clips/3/connect at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("automation vj-opacity")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("vj-opacity address"))
+      .toHaveValue("/composition/layers/1/video/opacity");
     // Lane order is the file's: the movement lane sits above the scene lane.
     const order = screen.getAllByLabelText(/^lane /).map((el) => el.getAttribute("aria-label"));
     expect(order.slice(0, 2)).toEqual(["lane move", "lane scene"]);
@@ -263,6 +266,50 @@ describe("designer", () => {
     const scene = save.doc.rows.find((r) => r.id === "scene")!;
     expect(scene.items!.find((i) => i.id === "chorus1")!.variation).toBe("tight");
     expect(await screen.findByRole("button", { name: "Saved" })).toBeDisabled();
+  });
+
+  it("cues a VJ app over OSC: a lane, a cue, its messages, saved", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // The example's drop cue: on when it starts, a clear when it ends.
+    fireEvent.pointerDown(within(lanes).getByLabelText("clips/3/connect at bar 41.1")
+      .querySelector("rect")!);
+    let inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/3/connect");
+    expect(within(inspector).getByLabelText("off address"))
+      .toHaveValue("/composition/layers/1/clear");
+    expect(within(inspector).queryByText("Fade in")).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const address = within(inspector).getByLabelText("on address");
+    await user.clear(address);
+    await user.type(address, "/layer/2/go");
+    const args = within(inspector).getByLabelText("on args");
+    await user.clear(args);
+    await user.type(args, "1, $bar, club");
+    await user.tab();
+    await user.click(within(inspector).getByRole("button", { name: "+ off message" }));
+    const off = within(inspector).getByLabelText("off address");
+    await user.clear(off);
+    await user.type(off, "/layer/2/clear");
+    expect(within(lanes).getByLabelText(/layer\/2\/go at bar 1.1/)).toBeInTheDocument();
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:cccccccccccc" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "osc")!;
+    expect(row).toMatchObject({ type: "external", output: "osc" });
+    expect(row.items![0]).toMatchObject({
+      at: 0, len: 16, on: { address: "/layer/2/go", args: [1, "$bar", "club"] },
+      off: { address: "/layer/2/clear", args: [] },
+    });
   });
 
   it("refuses to save while the engine says the draft is invalid", async () => {
@@ -536,6 +583,20 @@ describe("routine editor", () => {
     expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", bars: 4 });
     expect(saved.doc.rows[0]).toMatchObject({ type: "clips", target: "color", role: "movers" });
     expect(saved.doc.rows[0]!.items![0]!.args).toEqual({ color: "@primary" });
+  });
+
+  it("gives a routine an OSC lane, so wherever it plays it can cue a VJ app", async () => {
+    const user = userEvent.setup();
+    await open("#designer/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/osc cue on osc/)).toBeInTheDocument();
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/1/connect");
+    await user.click(within(inspector).getByRole("button", { name: "+ while message" }));
+    expect(within(inspector).getByLabelText("while address")).toHaveValue("/");
   });
 
   it("shows what the engine says will not work on this rig", async () => {

@@ -191,6 +191,11 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    the next downbeat when pressed. With CDJs, what the other decks have loaded
    is matched and its show built while the DJ cues it, so a master switch is on
    its timeline from the first frame.
+5. **VJ.** An OSC lane in the designer cues a VJ app (Resolume, or anything
+   that takes OSC) as the track plays -- clip triggers on, off and while
+   playing, and curves -- and a routine can carry one too, so templates cue
+   it on tracks nobody drew. Say where under `outputs.osc` in show.json, or
+   per machine in `klights.local.json`.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking
@@ -253,7 +258,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 28 suites, no test framework
+python -m engine.tests    # 29 suites, no test framework
 cd ui && npm test         # the console and the designer
 ```
 

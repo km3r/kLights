@@ -65,7 +65,14 @@ arbitrary, the reason is next to it.
 | Set switch | A set switched mid-track takes over on the **next downbeat**, crossfading over the new set's `transition.fade_beats` (milestone 2, with the user). Not saved: show.json's `template_set` is the start-up default. |
 | Pad routines | A preset pad holding a routine starts it on the **next downbeat** (milestone 2, with the user). |
 | CDJ phrases | Guest tracks on CDJs get phrase templates: the beat-link-trigger expressions are **extended to send the USB's phrase analysis** (milestone 2, with the user; unverified on hardware until captures). |
-| VJ | Later, and both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
+| VJ | Both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
+| VJ app | **Generic OSC, user-mapped** (milestone 3, with the user): an OSC lane's cues name their own addresses and arguments -- `on`, `off`, and `while` (sent on change, at most 30 a second) -- and a curve lane sends its value to one address. No app is built in. |
+| MIDI | Through an **optional sidecar** with its own pinned dependency, fed by the engine over local UDP (milestone 3, with the user). |
+| Timecode | Art-Net ArtTimeCode carries **the matched track's position** -- it jumps with loops and hot cues, and stops when nothing matched is playing (milestone 3, with the user). |
+| Visuals | **Both** generative scenes and a video clip player, on a `#visuals` page (milestone 3, with the user). |
+| Output ownership | A track's timeline with rows for an output **owns** that output for the track, and the template's rows for it are silent; a timeline with none leaves it to the template (settled like the lanes' owning mode). |
+| Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued. A routine pad's cues play whenever the pad does. |
+| OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
 
 ## The designer: layout B
 
@@ -155,6 +162,10 @@ bridge and no hardware:
 bar-count fallback, the template-set switcher, routines on preset pads.
 
 **Milestone 3:** VJ outputs.
+
+| stage | what |
+|---|---|
+| F21a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
 
 ## Things to verify on hardware
 

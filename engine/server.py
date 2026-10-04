@@ -34,6 +34,7 @@ import json
 import queue
 import secrets
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -63,6 +64,7 @@ from . import showfiles
 from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import outputs as outputsmod
 from . import templates as templatesmod
 from . import timeline as timelinemod
 from . import tracks as tracksmod
@@ -234,8 +236,13 @@ class ShowController:
 
     def __init__(self, event_dir: Path, artnet: Optional[str] = None,
                  fps: float = 40.0, bpm: float = 124.0,
-                 show_dir: Optional[Path] = None):
+                 show_dir: Optional[Path] = None,
+                 local_outputs: Optional[dict] = None):
         self.event_dir = Path(event_dir)
+        # The other outputs (milestone 3): OSC and friends, pointed where the
+        # show folder says -- or this machine's klights.local.json, which wins.
+        self.outputs = outputsmod.Outputs()
+        self.local_outputs = dict(local_outputs or {})
         self.rig = rigmod.load_rig(self.event_dir)
         errors = self.rig.validate()
         if errors:
@@ -483,6 +490,7 @@ class ShowController:
         self.runner.stop()
         self.worker.stop()
         self.output.close()
+        self.outputs.close()
         try:
             patchmod.lock_path(str(self.event_dir)).unlink(missing_ok=True)
         except OSError:
@@ -508,7 +516,14 @@ class ShowController:
                        base_palette=self._base_palette())
             fallback = prog.show
         sample = self._frame_sample or self.transport.sample(now)
-        return self.player.choose(fallback, sample, now)
+        show = self.player.choose(fallback, sample, now)
+        if self.outputs.active:
+            extra = ()
+            if pad is not None:
+                extra = (("pad", f"pad:{pad['name']}@{pad['start']:g}",
+                          pad["program"]),)
+            self.outputs.send(self.player.output_frame(extra), now)
+        return show
 
     # routines on pads (milestone 2) -----------------------------------------
 
@@ -744,6 +759,10 @@ class ShowController:
             # again against this one and build what changed.
             self.player.drop_precompiled()
             self._rematch_decks()
+            said = self.outputs.configure((library.folder.show or {}).get("outputs"),
+                                          self.local_outputs)
+            if said is not None and previous is not None:
+                self.note(said)
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -2331,6 +2350,7 @@ class ShowController:
             "show": _show_status(self),
             "program": _program_status(self),
             "pad": _pad_status(self),
+            "outputs": self.outputs.public(),
             "preview": (self.player.preview.public()
                         if self.player is not None and self.player.preview
                         else None),
@@ -3139,8 +3159,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     token = None if args.no_token else (args.token or secrets.token_urlsafe(6))
 
     show_dir = showfiles.resolve_show_dir(args.show_dir)
+    # This machine's own output addresses (milestone 3), over the show's.
+    local_outputs = showfiles.read_local_config().get("outputs")
+    problems: list[str] = []
+    if local_outputs is not None:
+        configmod._check(local_outputs, showfiles.SHOW["outputs"],
+                         "klights.local.json outputs", problems)
+    if problems:
+        print("outputs klights.local.json is ignored:\n  " + "\n  ".join(problems),
+              file=sys.stderr)
+        local_outputs = None
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
-                                bpm=args.bpm, show_dir=show_dir)
+                                bpm=args.bpm, show_dir=show_dir,
+                                local_outputs=local_outputs)
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
@@ -3191,6 +3222,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         problems = (f" -- {len(f.errors)} errors, see `python -m "
                     f"engine.showfiles check {library.root}`" if f.errors else "")
         print(f"shows   {library.root}: {library.describe()}{problems}")
+        print(f"outputs {controller.outputs.describe()}")
         if controller.player is not None:
             print("follow  " + ("ARMED -- a matched track's timeline drives the "
                                 "rig" if controller.player.armed else

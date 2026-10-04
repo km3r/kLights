@@ -11,6 +11,29 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F21a: OSC out, for a VJ app
+
+- **OSC lanes** (decided with the user: generic OSC, mapped by you). In the
+  designer, `+ lane` → **OSC cues** adds a lane of cues; each cue sends an
+  `on` message when it starts, an optional `off` when it ends, and an
+  optional `while` as it plays (only when it changes, at most 30 a second).
+  **OSC curve** sends a drawn curve's value to one address. Arguments are
+  numbers and text, or `$beat`, `$bar`, `$phase`, `$progress` and `$value`.
+- **Routines can carry OSC lanes too**, so a template set cues the VJ app on
+  any track; each pass of a looping routine fires again. A track's timeline
+  that has its own OSC lanes owns OSC for that track.
+- Cues follow the deck like the lights: a loop or hot cue into a cue turns it
+  on, out of one turns it off; Follow gates it, and disarming turns
+  everything off.
+- Where: `outputs.osc {host, port}` in show.json, overridden per machine by
+  `klights.local.json`'s `outputs`. An IPv4 address, never a name. Printed at
+  startup; the phone's Track card shows the target, how many cues are on, and
+  any failed sends.
+- The example show folder's VJ row is now two OSC lanes (Resolume-style clip
+  triggers and an opacity curve). Timeline and routine schemas gain the
+  external row's fields; show.json gains `outputs`.
+- New suite `test_outputs` (29 suites).
+
 ### Added — F20e: per-deck pre-matching
 
 - **A track's show is built before the DJ fades it in.** The beat-link-trigger

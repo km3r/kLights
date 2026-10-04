@@ -3,7 +3,7 @@ import { apiFetch } from "../useEngine";
 import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type {
-  Command, DeckLoaded, EngineState, LaneSource, Preset, Slot, TrackMatch,
+  Command, DeckLoaded, EngineState, LaneSource, OutputsState, Preset, Slot, TrackMatch,
 } from "../types";
 
 /**
@@ -489,6 +489,7 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
           {track.match && <MatchLine match={track.match} />}
         </div>
       )}
+      {state.outputs && <OutputsLine outputs={state.outputs} />}
       {(track?.decks?.length ?? 0) > 0 && (
         <div className="small muted" aria-label="other decks">
           {track!.decks!.map((d) => (
@@ -591,6 +592,21 @@ const MATCH_VIA: Record<string, string> = {
   alias: "by manual link", title_artist_album: "by title, artist and album",
   title_artist: "by title and artist",
 };
+
+/** Where the show's cues for a VJ app go, and whether they are getting there. */
+function OutputsLine({ outputs }: { outputs: OutputsState }) {
+  const osc = outputs.osc;
+  return (
+    <div className="small muted" aria-label="outputs">
+      {osc && <div>
+        OSC → {osc.target}{osc.on > 0 && <> · <b>{osc.on}</b> on</>}
+        {osc.errors > 0 && <span className="warn-text"> · {osc.errors} failed
+          {osc.last_error ? ` (${osc.last_error})` : ""}</span>}
+      </div>}
+      {outputs.problems.map((p) => <div key={p} className="warn-text">{p}</div>)}
+    </div>
+  );
+}
 
 /** What a deck's loaded track will bring when it becomes the master. */
 function deckShow(d: DeckLoaded): string {

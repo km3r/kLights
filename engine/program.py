@@ -266,6 +266,12 @@ class Program:
         # Slots the operator has taken (F19i): the fallback show -- the
         # operator's own selection -- runs there instead of the timeline.
         self.grabbed: frozenset[str] = frozenset()
+        # Rows for the other outputs (milestone 3), this frame: (where, frame)
+        # -- "" for the timeline's own, "row/item#pass" for a routine clip's.
+        self.external: tuple[tuple[str, timelinemod.ExternalFrame], ...] = ()
+        self._has_external = bool(self.timeline.external_rows) or any(
+            isinstance(src, RoutineSource) and src.inst.timeline.external_rows
+            for src in self.sources.values())
 
     # -- each frame --------------------------------------------------------
 
@@ -325,6 +331,10 @@ class Program:
         return list(seen.values())
 
     def _collect(self, beat: float, prev: Optional[float], jumped: bool) -> None:
+        external: list = []
+        if self._has_external:
+            external.extend(("", e) for e in self.timeline.external_at(beat, prev,
+                                                                        jumped))
         hits: list[tuple[str, float, frozenset[int]]] = []
         for hit in self.timeline.hits(beat, prev, jumped):
             role = hit.item.data.get("role")
@@ -348,8 +358,16 @@ class Program:
                 factor = 1.0 - clip.weight + clip.weight * master.value(sched)
                 for fid in inst.fixtures:
                     masters[fid] = masters.get(fid, 1.0) * factor
+            if self._has_external and inst.timeline.external_rows:
+                # Each pass of a looping routine is its own: its cues fire again.
+                n = (int(max(clip.local, 0.0) // inst.length)
+                     if inst.loop and inst.length > 0 else 0)
+                where = f"{clip.row}/{clip.item.id}#{n}"
+                external.extend((where, e) for e in inst.timeline.external_at(
+                    sched, prev_sched, again))
         self._hits = hits
         self._masters = masters
+        self.external = tuple(external)
 
     # -- the layers --------------------------------------------------------
 

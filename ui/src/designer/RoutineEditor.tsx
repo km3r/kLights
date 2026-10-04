@@ -3,11 +3,12 @@ import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, DESIGNER_CHUNK, EASINGS, PARAM_TYPES,
-  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem,
+  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, itemName,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
 import {
-  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, parsePointId, uniqueId,
+  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, externalRow, parsePointId,
+  uniqueId,
   useEditorKeys, useHistory,
 } from "./edit";
 import type { History } from "./edit";
@@ -214,6 +215,10 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    // A routine can cue a VJ app too, wherever it plays: on a
+                    // track, from a template, on a pad (milestone 3).
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits" ? { id, type: "hits", items: [] }
                       : { id, type: "clips", target, role: roles[0] ?? "", items: [] });
@@ -222,6 +227,8 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
           <option value="">+ lane</option>
           {SLOTS.map((s) => <option key={s} value={s}>{LANE_NAMES[s]}</option>)}
           <option value="hits">Hits</option>
+          <option value="osc">OSC cues</option>
+          <option value="osc-curve">OSC curve</option>
         </select>
         <select aria-label="add automation" value=""
                 onChange={(e) => {
@@ -574,6 +581,30 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
   });
   const paramsOf = (...types: string[]) =>
     Object.entries(params).filter(([, p]) => types.includes(p.type)).map(([n]) => n);
+  const remove = () => {
+    history.apply((d) => {
+      for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== it.id);
+    });
+    onDeleted();
+  };
+
+  if (row.type === "external") {
+    return (
+      <footer className="d-inspector" aria-label="inspector">
+        <div className="d-insp-head">
+          <b>{itemName(it)}</b>
+          <span className="muted"> · {row.output} cue on {row.id}</span>
+          <span className="muted mono"> · beat {it.at} → {it.at + it.len} ({it.len} beats)</span>
+          <span className="grow" />
+          <button onClick={remove}>Delete</button>
+        </div>
+        <div className="d-insp-grid">
+          {row.output === "osc" &&
+            <Editor.OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+        </div>
+      </footer>
+    );
+  }
 
   return (
     <footer className="d-inspector" aria-label="inspector">

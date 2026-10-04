@@ -44,6 +44,7 @@ calling thread. The engine calls them from its worker, never the output thread.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -163,6 +164,16 @@ SHOW = {
                          "someone arms it"),
         "min_track_change_s": S(N, min=0, max=60),
     }),
+    # Where the other outputs go (milestone 3). klights.local.json's own
+    # "outputs" overrides this per machine -- the VJ laptop's address is the
+    # venue's business, not the show's.
+    "outputs": S(dict, of={
+        "osc": S(dict, of={
+            "host": S(str, non_empty=True, fix="the VJ machine, e.g. 127.0.0.1"),
+            "port": S(int, required=True, min=1, max=65535,
+                      fix="the port the VJ app listens on (Resolume: 7000)"),
+        }),
+    }),
 }
 
 TRACK = {
@@ -239,9 +250,41 @@ _HIT = S(dict, of={
 
 _ROW_COMMON = {"id": S(str, required=True, non_empty=True), "label": S(str)}
 
-# `external` rows belong to outputs other than the lights -- VJ, in milestone 3.
-# They are carried and preserved, never evaluated here, so a timeline written by
-# a newer designer with a video lane still loads and saves on this engine.
+# `external` rows belong to outputs other than the lights (milestone 3): OSC to
+# a VJ app or anything else, MIDI through the sidecar, the built-in visuals.
+# Items are windows like hits; a row may also carry a curve (`points`). An
+# output this engine does not know is a warning, not an error, and the row is
+# kept untouched -- a timeline from a newer designer still loads and saves.
+OUTPUTS = ("osc", "midi", "visuals")
+OUTPUT_ALIASES = {"vj": "visuals"}      # the name milestone 1's example used
+# What an OSC argument may say instead of a literal, filled in as it is sent.
+ARG_TOKENS = ("$beat", "$bar", "$phase", "$progress", "$value")
+
+_OSC_MESSAGE = S(dict, of={
+    "address": S(str, required=True, non_empty=True,
+                 fix='an OSC address, e.g. "/composition/layers/1/clips/2/connect"'),
+    "args": S(list, fix='numbers and text, or "$beat", "$bar", "$phase" (0-1 '
+                        'through the bar), "$progress" (0-1 through the item) '
+                        'or "$value" (the row\'s curve)'),
+})
+
+_EXTERNAL_ITEM = S(dict, of={
+    **_ITEM,
+    "on": _OSC_MESSAGE,          # OSC: sent when the item comes on
+    "off": _OSC_MESSAGE,         # ... when it goes off
+    "while": _OSC_MESSAGE,       # ... while it is on, when it changes, <= 30 Hz
+})
+
+_EXTERNAL_ROW = {
+    "output": S(str, required=True, non_empty=True,
+                fix="osc, midi or visuals"),
+    "items": S(list, each=_EXTERNAL_ITEM),
+    "points": S(list, fix='[[beat, value], [beat, value, "ease"], ...] -- sent '
+                          'as $value'),
+    "address": S(str, fix="OSC: where a curve's value is sent"),
+    "args": S(list, fix='OSC: what a curve sends; default ["$value"]'),
+}
+
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "clips": {"target": S(str, required=True, choices=CLIP_TARGETS),
               "gap": S(str, choices=("fill", "exclusive"),
@@ -254,7 +297,7 @@ _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True,
                                fix='[[beat, value], [beat, value, "ease"], ...]')},
-    "external": {"output": S(str, required=True, non_empty=True)},
+    "external": _EXTERNAL_ROW,
 }))
 
 _PALETTES = S(dict, fix='{"Cool": {"primary": "#3b82f6", "secondary": ..., '
@@ -285,6 +328,7 @@ _ROUTINE_ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "hits": {"items": S(list, required=True, each=_HIT)},
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True)},
+    "external": _EXTERNAL_ROW,
 }))
 
 ROUTINE = {
@@ -471,6 +515,80 @@ def _check_items(row: dict, result: Result, where: str) -> None:
                 f"earlier one wins until it ends")
 
 
+def output_name(row: dict) -> str:
+    """An external row's output, aliases resolved."""
+    output = row.get("output") or ""
+    return OUTPUT_ALIASES.get(output, output)
+
+
+def _check_external(row: dict, result: Result, where: str) -> None:
+    """An external row: its items' windows, its curve, and -- for an output
+    this engine plays -- what each item says."""
+    output = output_name(row)
+    items = row.get("items") or []
+    points = row.get("points")
+    # Windows and a curve every output shares -- the timeline core builds them
+    # whatever the output, so they must be sound even for one not played here.
+    _check_items(row, result, where)
+    if points is not None:
+        _check_curve(points, result, where)
+    if output not in OUTPUTS:
+        result.warnings.append(f"{where}: this engine does not play output "
+                               f"{row['output']!r} (only {', '.join(OUTPUTS)}); "
+                               f"the row is kept as it is")
+        return
+    if not items and not points:
+        result.warnings.append(f"{where} has no items and no points, so it "
+                               f"sends nothing")
+    if output == "osc":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            if not any(item.get(k) for k in ("on", "off", "while")):
+                result.errors.append(f"{at} says nothing: give it an on, off or "
+                                     f"while message")
+            for key in ("on", "off", "while"):
+                if item.get(key):
+                    _check_osc(item[key], result, f"{at} {key}")
+        if points is not None:
+            if not row.get("address"):
+                result.errors.append(f"{where} has points but no address to "
+                                     f"send their value to")
+            else:
+                _check_osc({"address": row["address"],
+                            "args": row.get("args", ["$value"])}, result, where)
+
+
+def _check_osc(message: dict, result: Result, where: str) -> None:
+    address = message.get("address") or ""
+    if not address.startswith("/") or any(c in address for c in " #*,?[]{}"):
+        result.errors.append(f"{where}: {address!r} is not an OSC address -- it "
+                             f"starts with / and has no spaces or # * , ? [ ] {{ }}")
+    for n, arg in enumerate(message.get("args") or []):
+        if isinstance(arg, str) and arg.startswith("$") and arg not in ARG_TOKENS:
+            result.errors.append(f"{where} arg {n}: {arg!r} is not one of "
+                                 + ", ".join(ARG_TOKENS))
+        elif isinstance(arg, bool) or not isinstance(arg, (int, float, str)):
+            result.errors.append(f"{where} arg {n}: {arg!r} -- OSC arguments here "
+                                 f"are numbers or text")
+
+
+def _check_curve(points: list, result: Result, where: str) -> None:
+    prev = None
+    for i, point in enumerate(points):
+        at = f"{where} point {i}"
+        if (not isinstance(point, list) or len(point) not in (2, 3)
+                or not _num(point[0]) or not _num(point[1])):
+            result.errors.append(f"{at} must be [beat, value] or [beat, value, "
+                                 f"curve] with numbers, got {point!r}")
+            continue
+        if len(point) == 3 and point[2] not in CURVES:
+            result.errors.append(f"{at} curve {point[2]!r} must be one of "
+                                 + ", ".join(CURVES))
+        if prev is not None and point[0] <= prev:
+            result.errors.append(f"{at} is not after the point before it")
+        prev = point[0]
+
+
 def _check_points(row: dict, result: Result, where: str,
                   allow_params: bool) -> None:
     target = row["target"]
@@ -531,7 +649,26 @@ def _check_palettes(doc: dict, result: Result) -> None:
                              f"palettes ({', '.join(palettes) or 'none'})")
 
 
+def host_problem(host: Any) -> Optional[str]:
+    """Why an output cannot be sent to `host`, or None. An IPv4 address (or
+    "localhost") only: resolving a name could block the output thread."""
+    if host == "localhost":
+        return None
+    try:
+        if isinstance(host, str) and ipaddress.ip_address(host).version == 4:
+            return None
+    except ValueError:
+        pass
+    return (f"{host!r} is not an IPv4 address -- give the machine's address "
+            f"(e.g. 192.168.1.20), not its name")
+
+
 def _semantic_show(doc: dict, result: Result) -> None:
+    for name, conf in (doc.get("outputs") or {}).items():
+        if isinstance(conf, dict) and "host" in conf:
+            problem = host_problem(conf["host"])
+            if problem:
+                result.errors.append(f"outputs.{name}.host: {problem}")
     for name, src in (doc.get("sources") or {}).items():
         if not isinstance(src, dict):
             result.errors.append(f"sources.{name} must be an object")
@@ -577,7 +714,8 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
         where = f"row {row['id']!r}"
         kind = row["type"]
         if kind == "external":
-            continue                               # another output's business
+            _check_external(row, result, where)
+            continue
         if kind == "automation":
             _check_points(row, result, where, allow_params=True)
             continue
@@ -662,6 +800,9 @@ def _semantic_routine(doc: dict, result: Result) -> None:
         where = f"row {row['id']!r}"
         if row["type"] == "automation":
             _check_points(row, result, where, allow_params=False)
+            continue
+        if row["type"] == "external":
+            _check_external(row, result, where)
             continue
         _check_items(row, result, where)
         role = row.get("role")

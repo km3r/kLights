@@ -3,9 +3,11 @@ import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub,
+  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub, oscArgsText, parseOscArgs,
 } from "./model";
-import type { Item, Point, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
+import type {
+  Item, OscMessage, Point, RoutineSummary, Row, TimelineDoc, TrackDoc,
+} from "./model";
 
 /**
  * Editing a timeline: an undo/redo history over the whole document, and the
@@ -105,6 +107,8 @@ export type History<D extends RowsDoc = TimelineDoc> = ReturnType<typeof useHist
 
 /** What the lanes need of a history -- the same for a timeline and a routine. */
 export interface Edits {
+  /** The document as it is now -- to name a new item before adding it. */
+  readonly doc: RowsDoc | null;
   apply(change: (draft: RowsDoc) => void): void;
   snap: Snap;
   snapBeat(beat: number): number;
@@ -548,7 +552,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 
   return (
     <svg width={width} height={LANE_H} className="d-lane d-auto-svg"
-         aria-label={`automation ${row.target}`}
+         aria-label={`automation ${row.target ?? row.id}`}
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target !== e.currentTarget) return;
@@ -694,8 +698,19 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 
 const NEW_LANES: [string, string][] = [
   ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
-  ["palette", "Palette"], ["hits", "Hits"],
+  ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
 ];
+
+/** A new lane for another output (milestone 3), or undefined for a lights lane. */
+export function externalRow(d: RowsDoc, kind: string): Row | undefined {
+  if (kind === "osc") return { id: uniqueId(d, "osc"), type: "external", output: "osc", items: [] };
+  if (kind === "osc-curve") {
+    return { id: uniqueId(d, "osc-curve"), type: "external", output: "osc",
+             address: "/composition/layers/1/video/opacity", args: ["$value"],
+             points: [[0, 1]] };
+  }
+  return undefined;
+}
 
 /** A new automation lane for `target`, starting at its neutral value. */
 export function automationRow(d: RowsDoc, target: string): Row {
@@ -717,6 +732,8 @@ function AddLane({ history }: { history: History }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits"
                       ? { id, type: "hits", items: [] }
@@ -968,7 +985,10 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         }}>Delete</button>
       </div>
       <div className="d-insp-grid">
-        {!it.hit && (
+        {row.type === "external" && row.output === "osc" && (
+          <OscCue item={it} set={set} />
+        )}
+        {!it.hit && row.type !== "external" && (
           <div>
             <span className="small muted">Fade in</span>
             <div className="d-chips">
@@ -1066,6 +1086,51 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
   );
 }
 
+const OSC_WHEN: Record<"on" | "while" | "off", string> = {
+  on: "When it starts", while: "While it plays (on change, 30/s at most)",
+  off: "When it ends",
+};
+
+/** An OSC cue's three messages, for the track and routine inspectors. */
+function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  return (
+    <>
+      {(["on", "while", "off"] as const).map((k) => (
+        <OscField key={`${item.id}-${k}`} which={k} message={item[k]}
+                  onChange={(m) => set({ [k]: m })} />))}
+    </>
+  );
+}
+
+/** One OSC message of a cue: its address and arguments, or none. */
+function OscField({ which, message, onChange }: {
+  which: "on" | "while" | "off"; message?: OscMessage;
+  onChange: (m: OscMessage | undefined) => void;
+}) {
+  if (!message) {
+    return (
+      <div>
+        <span className="small muted">{OSC_WHEN[which]}</span>
+        <div><button className="small" onClick={() => onChange({ address: "/", args: [] })}>
+          + {which} message</button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="d-osc">
+      <span className="small muted">{OSC_WHEN[which]}</span>
+      <input className="mono" aria-label={`${which} address`} value={message.address}
+             onChange={(e) => onChange({ ...message, address: e.target.value })} />
+      <input className="mono" aria-label={`${which} args`}
+             defaultValue={oscArgsText(message.args)}
+             placeholder="1, $bar, $progress"
+             onBlur={(e) => onChange({ ...message, args: parseOscArgs(e.target.value) })} />
+      <button className="small" aria-label={`remove ${which} message`}
+              onClick={() => onChange(undefined)}>×</button>
+    </div>
+  );
+}
+
 function Param({ name, param, value, onChange }: {
   name: string; param: { type: string; default?: unknown; min?: number; max?: number; unit?: string };
   value: unknown; onChange: (v: unknown) => void;
@@ -1150,5 +1215,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector,
+  PointInspector, uniqueId, OscCue,
 };

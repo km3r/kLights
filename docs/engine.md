@@ -271,6 +271,23 @@ or a template driving it grabs every lane like any preset. Picking a look, a
 plain preset or a cue puts it away. Its program is built on the worker when the
 folder loads, when it is saved, and after a rig reload.
 
+**The other outputs** ([`outputs.py`](../engine/outputs.py), milestone 3):
+`external` rows -- in a timeline or a routine -- carry cues for things that
+are not lights. Their items are windows like hits (`timeline.ExternalRow`,
+`Timeline.external_at`), and a row may carry a curve. Each program collects
+its own rows and its routine clips' rows (per loop pass) as it begins a
+frame; the player lists what is on stage (`TrackPlayer.stage`) and
+`output_frame()` gathers it into one immutable `ProgramFrame`. Each output
+compares one frame's items with the last's by key, so a jump into a cue turns
+it on, a jump out turns it off, and a cue shorter than a frame still fires
+once in forward play. A timeline with rows for an output owns it for its
+track; the template's rows for it are silent. **OSC** (`OscOut`) sends `on`,
+`off`, and `while` (on change, at most 30 a second) to an IPv4 address from
+show.json's `outputs.osc {host, port}`, overridden per machine by
+klights.local.json's `outputs`; arguments may be `$beat`, `$bar`, `$phase`,
+`$progress` and `$value`. A failed send is counted in the snapshot's
+`outputs`, never raised. Follow gates it: disarmed, nothing is cued.
+
 **Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
 says what any deck has loaded, as `loaded_*` sync fields that never touch the
 transport. The controller matches it against the folder at once and the player

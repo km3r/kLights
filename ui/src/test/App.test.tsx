@@ -1094,6 +1094,33 @@ describe("follow dj (track card)", () => {
     expect(decks).toHaveTextContent("Deck 4: Someone Else's · not in the show folder");
   });
 
+  it("says where the VJ app's cues go, and when they are failing", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: { target: "192.168.1.20:7000", sent: 120, errors: 3,
+                           last_error: "network is unreachable", on: 2 },
+                    problems: [] };
+    })));
+    const line = screen.getByLabelText("outputs");
+    expect(line).toHaveTextContent("OSC → 192.168.1.20:7000 · 2 on");
+    expect(line).toHaveTextContent("3 failed (network is unreachable)");
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: false, engaged: false, mode: "fallback", reason: "disarmed", beat: null,
+        bar: null, lanes: {}, grabbed: [], policy: "idle", problems: 0,
+        first_problem: null, latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: null,
+                    problems: ["outputs.osc: 'vj.local' is not an IPv4 address; OSC is off"] };
+    })));
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("OSC is off");
+  });
+
   it("says nothing about other decks when none have anything loaded", () => {
     const socket = mount();
     act(() => socket.push(program()));

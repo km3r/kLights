@@ -241,6 +241,13 @@ export interface TrackState {
   decks?: DeckLoaded[];
 }
 
+export interface OutputsState {
+  osc: { target: string; sent: number; errors: number; last_error: string | null;
+         on: number } | null;
+  /** Why an output is off: a bad address in show.json or klights.local.json. */
+  problems: string[];
+}
+
 /** A track loaded on a deck that is not the master. `ready`: its timeline is
  *  built, so it drives from its first frame when the DJ makes it the master. */
 export interface DeckLoaded {
@@ -386,6 +393,9 @@ export interface EngineState {
   preview?: PreviewState | null;
   /** A routine pad, waiting for its downbeat or playing. Absent before F20d. */
   pad?: { name: string; routine: string; waiting: boolean } | null;
+  /** The other outputs (milestone 3): where OSC goes and how it is doing.
+   *  Null when none is configured; absent before F21a. */
+  outputs?: OutputsState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What is loaded into each of the three independent slots. */
