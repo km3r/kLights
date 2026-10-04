@@ -973,6 +973,56 @@ controller.apply({"type": "capture_clear"}, None)
 controller.apply({"type": "jog_clear"}, None)
 
 
+# -- 10b. a drift check reads the jog, and refuses a head nobody aimed --------
+# The console's Check button sends no readings: it holds one pan/tilt pair for
+# the selected head, not one per head, so the engine reads its own jog dict.
+print("\n10b. drift check from the jog")
+heads = controller.rig.geometry.heads
+stored = {h.name: h.calibrated_ball_dmx for h in heads}
+controller.last_drift = None
+for h in heads[:-1]:
+    controller.apply({"type": "jog", "fixture": h.name,
+                      "pan": stored[h.name][0], "tilt": stored[h.name][1]}, None)
+try:
+    controller.apply({"type": "drift"}, None)
+    check("a drift check with a head not jogging is refused", False, "it ran")
+except ValueError as exc:
+    check("a drift check with a head not jogging is refused, naming only it",
+          "not jogging" in str(exc) and heads[-1].name in str(exc)
+          and heads[0].name not in str(exc), str(exc)[:90])
+check("and publishes no result", controller.snapshot()["drift"] is None)
+
+last = heads[-1]
+controller.apply({"type": "jog", "fixture": last.name,
+                  "pan": stored[last.name][0] + 20,
+                  "tilt": stored[last.name][1]}, None)
+controller.apply({"type": "drift"}, None)
+rows = controller.snapshot()["drift"]
+check("one row per head, in rig order",
+      [r["head"] for r in rows] == [h.name for h in heads], f"{rows}")
+check("heads jogged onto their stored reading are ok",
+      not any(r["significant"] for r in rows[:-1]), f"{rows[:-1]}")
+check("the head jogged 20 DMX off it is MOVED -- the check read the jog",
+      rows[-1]["significant"], f"{rows[-1]}")
+
+# The CLI's shape, which used to drop the heads past the end of a short list
+# and report a go for them without a reading.
+try:
+    controller.apply({"type": "drift",
+                      "readings": [list(stored[h.name]) for h in heads[:-1]]}, None)
+    check("a short readings list is refused", False, "it ran")
+except ValueError as exc:
+    check("a short readings list is refused",
+          f"expected {len(heads)} readings" in str(exc), str(exc)[:70])
+controller.apply({"type": "drift",
+                  "readings": [list(stored[h.name]) for h in heads]}, None)
+check("a full readings list still checks, regardless of the jog",
+      not any(r["significant"] for r in controller.last_drift),
+      f"{controller.last_drift}")
+controller.apply({"type": "jog_clear"}, None)
+controller.last_drift = None
+
+
 # -- 11. a tap is timed when it ARRIVES, not at the next frame ----------------
 print("\n11. tap timestamps")
 controller.commands.queue.clear()
@@ -1407,10 +1457,19 @@ with tempfile.TemporaryDirectory() as tmp:
               live.pending_patch and len(live.rig.fixtures) == before,
               f"pending={live.pending_patch} fixtures={len(live.rig.fixtures)}")
 
+        live.apply({"type": "drift", "readings": [
+            list(h.calibrated_ball_dmx) for h in live.rig.geometry.heads]}, None)
+        check("a saved, unapplied edit leaves the drift result alone",
+              live.snapshot()["drift"] is not None)
+
         applied_at = time.monotonic()
         live.apply({"type": "patch_apply"}, None)
         check("applying it swaps the rig in place",
               len(live.rig.fixtures) == before + 1, f"{len(live.rig.fixtures)}")
+        # Measured against the rig just replaced: a moved head decodes the same
+        # DMX to different degrees, so its old "ok" would be a go nobody checked.
+        check("and drops the drift result measured against the old rig",
+              live.snapshot()["drift"] is None)
         check("and clears the pending flag", not live.pending_patch)
         check("the context sees the new rig too",
               live.ctx.rig is live.rig and len(live.ctx.rig.fixtures) == before + 1)

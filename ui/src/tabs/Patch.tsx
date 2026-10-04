@@ -86,13 +86,33 @@ export function PatchSection({ state, send }: {
   );
 }
 
+/** Where a fixture is, as the three fields show it: x, height, z. */
+const AXES = ["X", "Height", "Z"] as const;
+
 /** One patched unit. Address is the field that gets edited at a venue; tags are
- *  the field that gets edited when a look is scoped wrongly. */
+ *  the field that gets edited when a look is scoped wrongly; position is the
+ *  one that gets edited when the room is not the one the rig was drawn for. */
 function FixtureRow({ fixture, send }: {
   fixture: EngineState["fixtures"][number]; send: (c: Command) => void;
 }) {
   const [address, setAddress] = useState(String(fixture.address));
   const [tags, setTags] = useState(fixture.tags.join(", "));
+  const [position, setPosition] = useState(
+    fixture.position?.map((v) => String(v)) ?? ["", "", ""]);
+
+  // Committed when focus leaves the three fields, not each one: a position is
+  // one value, and moving a head one axis at a time writes rig.json once per
+  // axis, each with its own "calibration no longer lines up" notice. Nothing
+  // is sent until all three are numbers -- a fixture with no position yet has
+  // to be typed in whole, and half of one is not somewhere to put it.
+  const commitPosition = () => {
+    const next = position.map((v) => (v.trim() === "" ? NaN : Number(v)));
+    if (!next.every(Number.isFinite)) return;
+    const current = fixture.position;
+    if (current && next.every((v, i) => v === current[i])) return;
+    send({ type: "patch_position", name: fixture.name,
+           position: { x: next[0]!, y: next[1]!, z: next[2]! } });
+  };
 
   return (
     <div className="fixture">
@@ -137,6 +157,24 @@ function FixtureRow({ fixture, send }: {
                     send({ type: "patch_remove", name: fixture.name });
                   }
                 }}>Remove</button>
+      </div>
+      <div className="row tight" style={{ gap: "0.4rem", marginTop: "0.4rem" }}
+           onBlur={(e) => {
+             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+               commitPosition();
+             }
+           }}>
+        {AXES.map((axis, i) => (
+          <label key={axis} className="field" style={{ flex: 1, minWidth: 0 }}>
+            {axis} (mm)
+            <input className="mono" inputMode="numeric" value={position[i]}
+                   aria-label={`${fixture.name} ${axis.toLowerCase()}`}
+                   style={{ width: "100%" }}
+                   onChange={(e) => setPosition(
+                     position.map((v, j) => (j === i ? e.target.value : v)))}
+                   onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+          </label>
+        ))}
       </div>
     </div>
   );

@@ -325,6 +325,7 @@ class ShowController:
         self.flashing: set[str] = set()
         self.jog: dict[str, tuple[int, int]] = {}
         self.captures: dict[str, list[calibmod.Capture]] = {}
+        self.last_drift: Optional[list[dict]] = None
 
         self.latest_states: dict[int, statemod.FixtureState] = {}
         self.notices: list[str] = []
@@ -1232,15 +1233,43 @@ class ShowController:
         self.note(f"wrote {path.name}; restart the engine to load it")
 
     def _cmd_drift(self, m: dict, now: float) -> None:
-        """Compare fresh ball readings against the stored calibration."""
+        """Compare fresh ball readings against the stored calibration.
+
+        With no `readings`, the readings ARE the jog positions: the operator
+        jogs every head onto the ball from the Setup tab and presses Check, and
+        the jog dict is the only place those numbers exist. The console holds
+        one pan/tilt pair for whichever head is selected, not one per head, so
+        it cannot send them -- and a list it remembered would be wrong after a
+        second phone jogged, a reload, or Stop all.
+
+        Refuses, naming them, if any head is not jogging. Same guard as
+        capture, for the same reason: a head nobody aimed has no reading.
+        Checking it against (0, 0) reports it MOVED by tens of degrees, and
+        skipping it reports a go for a head nobody looked at. `readings` (one
+        [pan, tilt] per head in rig order, the CLI's shape) must have exactly
+        one per head for the second reason; it used to drop the extras' heads.
+        """
         if self.rig.geometry is None:
             raise ValueError("no geometry to check drift against")
-        readings = m["readings"]
         heads = self.rig.geometry.heads
+        if "readings" in m:
+            readings = [(int(r[0]), int(r[1])) for r in m["readings"]]
+            if len(readings) != len(heads):
+                raise ValueError(
+                    f"expected {len(heads)} readings, one per head in rig "
+                    f"order, got {len(readings)}")
+        else:
+            idle = [h.name for h in heads if h.name not in self.jog]
+            if idle:
+                raise ValueError(
+                    f"not jogging: {', '.join(idle)} -- jog every head onto the "
+                    f"ball, then check. The check compares where each head IS "
+                    f"against the calibration, and a head that has not been "
+                    f"aimed is not anywhere yet.")
+            readings = [self.jog[h.name] for h in heads]
         drifts = [calibmod.drift_for_head(h, self.rig.venue.ball,
-                                          self.rig.geometry.mount_mode,
-                                          tuple(readings[i]))
-                  for i, h in enumerate(heads) if i < len(readings)]
+                                          self.rig.geometry.mount_mode, r)
+                  for h, r in zip(heads, readings)]
         self.last_drift = [{"head": d.head_name,
                             "bearing": round(d.bearing_deg, 2),
                             "elevation": round(d.elevation_deg, 2),
@@ -1891,6 +1920,10 @@ class ShowController:
         # instantly. Starting at 0 makes the limiter fade it in.
         self.ctx._taper_prev = {f.fid: 0.0 for f in new_rig.fixtures}
         self._prune_targets()
+        # Measured against the rig that was just replaced. A moved head decodes
+        # the same DMX to different degrees, so the old rows would show "ok"
+        # for a head nobody has checked since.
+        self.last_drift = None
         self._recompose()
         self.pending_patch = False
         if self.player is not None:
@@ -1905,8 +1938,7 @@ class ShowController:
             self.note(f"rig reloaded, and the moving heads CHANGED "
                       f"({len(old_heads)} -> {len(new_heads)}). Every pose is an "
                       f"offset from a head's calibrated ball aim, so check the "
-                      f"calibration before trusting one: "
-                      f"python -m engine.calibrate drift")
+                      f"calibration before trusting one: Drift check, on Setup")
         else:
             self.note(f"rig reloaded live -- {len(new_rig.fixtures)} fixtures, "
                       f"no restart needed")
@@ -2186,7 +2218,7 @@ class ShowController:
             "notices": list(self.notices[-8:]),
             "warnings": self.rig.warnings(),
             "last_error": self.runner.last_error,
-            "drift": getattr(self, "last_drift", None),
+            "drift": self.last_drift,
         }
 
 

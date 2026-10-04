@@ -774,6 +774,62 @@ describe("setup tab", () => {
     expect(screen.getByText("MOVED")).toBeInTheDocument();
     expect(screen.getByText(/\+18\.90° elev/)).toBeInTheDocument();
   });
+
+  it("checks drift against the jog positions the engine holds", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.forEach((f) => { if (f.head != null) f.jogging = true; });
+    })));
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: "Check all heads" }));
+    // No readings: this tab holds one pan/tilt pair for the selected head, not
+    // one per head, so any list it sent would be partly invented. The engine
+    // reads each head's own jog position.
+    expect(socket.last()).toEqual({ type: "drift" });
+  });
+
+  it("will not check drift until every head is jogging, and names the rest", async () => {
+    const user = userEvent.setup();
+    // The fixture has only Moving Head #1 jogging. A head nobody aimed has no
+    // reading: checking it against (0, 0) would call it MOVED by tens of
+    // degrees, and skipping it would call the rig a go without looking.
+    const socket = mount();
+    await openSetup(user);
+    const check = screen.getByRole("button", { name: "Check all heads" });
+    expect(check).toBeDisabled();
+    const banner = screen.getByText(/onto the\s+ball first/);
+    expect(banner).toHaveTextContent("MH #2, MH #3, MH #4");
+    expect(banner).not.toHaveTextContent("MH #1");
+
+    const before = socket.sent.length;
+    await user.click(check);
+    expect(socket.sent.length).toBe(before);
+
+    // One left: still refused, and it says which.
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.forEach((f) => { f.jogging = f.name !== "Moving Head #3"; });
+    })));
+    expect(screen.getByRole("button", { name: "Check all heads" })).toBeDisabled();
+    expect(screen.getByText(/onto the\s+ball first/)).toHaveTextContent(
+      /MH #3 onto the ball first .* that one hasn't been aimed/);
+  });
+
+  it("asks only for the heads the engine checks", async () => {
+    const user = userEvent.setup();
+    // A mover with no position is not in the rig's geometry, so the engine
+    // wants no reading from it -- waiting on it would disable the check for good.
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.forEach((f) => {
+        if (f.name === "Moving Head #4") { f.head = null; f.jogging = false; }
+        else if (f.head != null) f.jogging = true;
+      });
+    })));
+    await openSetup(user);
+    expect(screen.getByRole("button", { name: "Check all heads" })).toBeEnabled();
+    expect(screen.queryByText(/onto the\s+ball first/)).toBeNull();
+  });
 });
 
 describe("venue (now part of Setup)", () => {
@@ -935,6 +991,45 @@ describe("patch", () => {
     await user.click(field);
     await user.tab();
     expect(socket.commands.some((c) => c.type === "patch_tags")).toBe(false);
+  });
+
+  it("sends a position once, when focus leaves all three axes", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Unlock to edit/i }));
+
+    const [, y, z] = despacioState.fixtures
+      .find((f) => f.name === "Pinspot #1")!.position!;
+    const x = screen.getByLabelText("Pinspot #1 x");
+    await user.clear(x);
+    await user.type(x, "8000");
+    // Into the next axis: still the same position being typed, so nothing yet.
+    // Per axis, a two-axis move would write rig.json twice, through a position
+    // nobody asked for.
+    await user.tab();
+    expect(screen.getByLabelText("Pinspot #1 height")).toHaveFocus();
+    expect(socket.commands.some((c) => c.type === "patch_position")).toBe(false);
+
+    await user.tab();
+    await user.tab();
+    expect(socket.last()).toEqual({
+      type: "patch_position", name: "Pinspot #1", position: { x: 8000, y, z },
+    });
+  });
+
+  it("does not send a position that is unchanged or half entered", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await openSetup(user);
+    await user.click(screen.getByRole("button", { name: /Unlock to edit/i }));
+
+    await user.click(screen.getByLabelText("Moving Head #2 z"));
+    await user.tab();
+    const z = screen.getByLabelText("Pinspot #2 z");
+    await user.clear(z);
+    await user.tab();
+    expect(socket.commands.some((c) => c.type === "patch_position")).toBe(false);
   });
 
   it("says so, permanently, when a saved patch is not the running one", async () => {
@@ -1782,11 +1877,15 @@ describe("help", () => {
     }
   });
 
-  it("says how a drift check is actually run, since the card cannot start one", async () => {
+  it("says how a drift check is run from the card, and what it needs first", async () => {
     const user = userEvent.setup();
     mount();
     await goTo(user, /Setup/);
     await user.click(screen.getByRole("button", { name: "Help: Drift check" }));
-    expect(screen.getByRole("note")).toHaveTextContent("python -m engine.calibrate drift");
+    const note = screen.getByRole("note");
+    expect(note).toHaveTextContent("Check all heads");
+    expect(note).toHaveTextContent(/Every head has to be jogging/);
+    // It used to send operators to the CLI, whose result never reached here.
+    expect(note).not.toHaveTextContent("python -m");
   });
 });
