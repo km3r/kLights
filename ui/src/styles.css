@@ -327,6 +327,23 @@ input[type="range"]::-moz-range-thumb {
 }
 .chip.taper { border-color: var(--warn); color: var(--warn); }
 .chip.jog { border-color: var(--bad); color: var(--bad); }
+/* At the end of its own travel: a condition worth knowing, like a taper, not
+   an emergency like a jog. */
+.chip.limit { border-color: var(--warn); color: var(--warn); }
+/* A routine, not a stored table -- it has knobs. Accent rather than warn: this
+   is a capability, not a condition, and the other two chips both mean
+   "something is happening to this fixture that you should know about". */
+.chip.tunable {
+  border-color: var(--accent); color: var(--accent);
+  margin-left: 0.35rem; vertical-align: middle;
+}
+
+/* One parameter, rendered from what the engine declared. Spaced rather than
+   packed because these stack -- an orbit has three, a scatter five -- and a run
+   of unseparated sliders on a phone is impossible to aim a thumb at. */
+.param { margin-bottom: 0.7rem; }
+.param:last-child { margin-bottom: 0; }
+.param .swatch { flex: 0 0 auto; }
 
 .bar { height: 6px; border-radius: 3px; background: var(--panel); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--accent); }

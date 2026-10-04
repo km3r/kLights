@@ -420,6 +420,51 @@ class RigGeometry:
         return (abs(norm180(got.bearing_delta - aim.bearing_delta)),
                 abs(got.elev_deg - aim.elev_deg))
 
+    def reach(self, i: int) -> tuple[tuple[float, float], tuple[float, float]]:
+        """How far head `i` can travel from its own ball aim, per axis.
+
+        ((bearing_lo, bearing_hi), (elevation_lo, elevation_hi)) in degrees, as
+        OFFSETS from the calibrated ball point -- the same frame every look,
+        block and macro works in. Read off what the two rails of each channel
+        decode to, through the same maths `encode` uses, so it accounts for the
+        fixture's own pan and tilt ranges, the mount mode's channel swap, the
+        inverts and where calibration put the ball within the travel.
+
+        Additive and read-only: nothing that encodes or decodes changes, so the
+        golden parity vectors the C++ previz port is held to are untouched.
+        """
+        f = self.frame(i)
+        res = self.resolution
+        rails = (0, res.span)
+        bearings = [from_dmx_centered(v, f.bearing_max, f.bearing_invert, res)
+                    for v in rails]
+        elevations = [decode_elev(v, f.elevation_max, f.elevation_invert,
+                                  f.elevation_anchor, res) - f.elevation_offset
+                      for v in rails]
+        ball = self.aim_at_ball(i)
+        return ((min(bearings) - ball.bearing_delta,
+                 max(bearings) - ball.bearing_delta),
+                (min(elevations) - ball.elev_deg,
+                 max(elevations) - ball.elev_deg))
+
+    def rig_reach(self) -> dict[str, tuple[float, float]]:
+        """The widest any head can reach, per axis -- the UNION of `reach`.
+
+        The union rather than the intersection, deliberately. Fixtures differ:
+        a 540-degree pan beside a 360-degree one is ordinary. Bounding the
+        centre macro by the LEAST capable head would cut the better fixture
+        short for the sake of the worse one; bounding it by the most capable
+        lets every head go as far as it can, and a head asked past its own rail
+        stops there -- which `reach_error` measures and the console reports.
+        """
+        if not self.heads:
+            return {}
+        per_head = [self.reach(i) for i in range(len(self.heads))]
+        return {"bearing": (min(b[0] for b, _ in per_head),
+                            max(b[1] for b, _ in per_head)),
+                "elevation": (min(e[0] for _, e in per_head),
+                              max(e[1] for _, e in per_head))}
+
     # -- aiming primitives -------------------------------------------------
 
     def aim_at_ball(self, i: int) -> Aim:

@@ -2,13 +2,10 @@ import { useState } from "react";
 import { Card, Fader, RateCard } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import { LookPicker } from "../LookPicker";
+import { ModulationCard, TweakCard } from "../Params";
 import type { Command, EngineState } from "../types";
+import { groupLabel } from "../groups";
 
-const GROUP_LABELS: Record<string, string> = {
-  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
-  pars: "Pars", bars: "Bars",
-};
-const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
 
 /**
  * Hand dimming, per group and per fixture.
@@ -128,6 +125,12 @@ export function BrightTab({ state, send }: {
     <>
       <LookPicker state={state} send={send} slot="level" title="Bright pattern"
                   empty="Nothing loaded — every fixture is at its full level." />
+
+      {/* The loaded routine's own knobs. Renders nothing when the slot
+          holds only ported looks, which have no parameters to turn. */}
+      <TweakCard state={state} send={send} slot="level" />
+
+      <ModulationCard state={state} send={send} slot="level" />
 
       <RateCard state={state} send={send} slot="level" hint={
         <>
@@ -252,8 +255,15 @@ function Flash({ state, send }: { state: EngineState; send: (c: Command) => void
     <Card title="Flash">
       <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
         {targets.map((t) => (
+          // Named for what it flashes. The picker above this card has its own
+          // "All" pill for the fixture-type filter, and two controls whose
+          // accessible name is the identical word are ambiguous to anyone not
+          // reading the layout -- the same reasoning as the Rate card's reset.
+          // It became reachable the moment the level slot gained a pinspot
+          // routine, which is what makes the picker show its group pills here.
           <button key={t} style={{ flex: 1, minWidth: 96, minHeight: 56 }}
                   className={state.flashing.includes(t) ? "on" : ""}
+                  aria-label={`flash ${t === "all" ? "all" : groupLabel(t)}`}
                   onPointerDown={() => send({ type: "flash", target: t })}
                   onPointerUp={() => release(t)}
                   onPointerLeave={() => release(t)}

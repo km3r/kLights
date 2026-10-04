@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/parametric_looks.schema.json",
+  "title": "cosmos parametric_looks",
+  "description": "Hand-authored looks built from blocks, and the ported looks they retire. Kept apart from looks.json because that file is generated.",
+  "type": "object",
+  "properties": {
+    "looks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "block": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the name of a block in engine/blocks.py, e.g. \"orbit\" or \"hue_cycle\""
+          },
+          "args": {
+            "type": "object",
+            "description": "the block's own arguments, e.g. {\"radius\": 18, \"bars\": 8}"
+          },
+          "groups": {
+            "type": "array",
+            "description": "which rig groups this writes, e.g. [\"corner movers\"]. A movement look with none moves the movers; any other look, everything",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "supersedes": {
+            "type": "boolean",
+            "description": "true to take over the ported look of this name; it must reproduce it exactly"
+          }
+        },
+        "required": [
+          "name",
+          "block"
+        ]
+      }
+    },
+    "retired": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "replaced_by": {
+            "type": "string",
+            "description": "the look that covers this one now, so the picker can point at it"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

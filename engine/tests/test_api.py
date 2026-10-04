@@ -328,6 +328,17 @@ stale = [name for name, text in dump_designer_fixtures.render().items()
 check("the designer's fixtures are what the engine says today (else run "
       "engine/tests/dump_designer_fixtures.py)", not stale, f"stale: {stale}")
 
+# The block table is not a test fixture but the UI's source for every block's
+# controls, so a stale one is a console offering the wrong ranges, not just a
+# test comparing against the wrong numbers.
+ui_src = REPO / "ui" / "src"
+stale_ui = [name for name, text in dump_designer_fixtures.render_ui().items()
+            if not (ui_src / name).is_file()
+            or (ui_src / name).read_text(encoding="utf-8") != text]
+check("the UI's block table is what blocks.py declares today (else run "
+      "engine/tests/dump_designer_fixtures.py)", not stale_ui,
+      f"stale: {stale_ui}")
+
 dist = REPO / "ui" / "dist"
 html = (dist / "index.html").read_text(encoding="utf-8")
 entries = re.findall(r'<script[^>]*\bsrc="\.?/?([^"]+\.js)"', html)

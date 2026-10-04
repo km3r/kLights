@@ -36,17 +36,28 @@ library.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional, Sequence
 
 from . import auto as autom
+from . import config as configmod
 from . import geometry as geo
 from . import motion
 from . import state as statemod
 
 EASINGS = {"linear": motion.linear, "ease_in_out": motion.ease_in_out,
            "ease_out": motion.ease_out}
+
+# Which `kind` a parametric look gets. Derived from its block's slot rather
+# than declared, so a look cannot claim a kind its block contradicts -- the file
+# says `"block": "orbit"` and the taxonomy follows, which is what keeps
+# `LookPicker`'s grouping and `LibraryEntry.slot` working unchanged.
+KIND_FOR_SLOT = {"movement": "path", "color": "color_path",
+                 "level": "level_path"}
+# Except a block that holds still: an `offset` is a place, so it files under
+# "Positions" with the poses it replaces rather than under "Moves".
+KIND_FOR_BLOCK = {"offset": "pose"}
 
 
 @dataclass(frozen=True)
@@ -104,6 +115,30 @@ class LibraryEntry:
     # Per fixture, present only where the scene dimmed fixtures differently.
     intensities: Optional[dict[str, float]] = None
     source: str = ""
+
+    # ------------------------------------------------------------ parametric --
+    # Set when this entry is a BLOCK rather than a table: one of the building
+    # blocks in `blocks.py` -- the same ones a show folder's routines are made
+    # of -- and the arguments to build it with. Everything above is data ported
+    # out of QLC+; these two are what a look authored in this engine looks
+    # like. One building-block system, used two ways: routines play blocks on a
+    # timeline, and the console plays them as looks you can turn live.
+    block: Optional[str] = None
+    args: dict = field(default_factory=dict)
+    # Hidden from the picker by name, from `parametric_looks.json`'s `retired`
+    # list. A
+    # retired entry is still loaded, still evaluable and still round-trips --
+    # `looks.json` is a generated artifact whose parity proof depends on every
+    # entry staying in it. This only says the operator has something better.
+    retired: bool = False
+    replaced_by: Optional[str] = None
+    notes: str = ""
+    # Takes over the ported look of the same name -- see `merge`.
+    supersedes: bool = False
+
+    @property
+    def is_parametric(self) -> bool:
+        return self.block is not None
 
     @property
     def is_movement(self) -> bool:
@@ -447,6 +482,104 @@ def strobe_layer(strobes: dict[str, float]):
     return layer
 
 
+# ------------------------------------------------------------- parametric --
+#
+# A parametric look is a block from `blocks.py` with its arguments, so a look
+# authored here and a routine in a show folder are made of the same parts and
+# move the same way. Everything downstream -- slots, cues, presets, the picker --
+# treats one exactly like a ported look.
+
+_NO_AUTOMATION = lambda name: None                      # noqa: E731
+
+
+def _blocks():
+    """`blocks`, imported when first needed rather than at module load.
+
+    `blocks` imports this module (for `LibraryEntry`, `EASINGS` and the ported
+    look adapters), so importing it at the top here would be a cycle. By the
+    time a look is composed both modules are fully loaded, so a call-time
+    import costs nothing and needs no restructuring of either.
+    """
+    from . import blocks as blocksmod
+    return blocksmod
+
+
+def resolve_args(entry: LibraryEntry) -> dict:
+    """The look's arguments over its block's declared defaults.
+
+    Unknown keys are DROPPED rather than refused: this is file-sourced, and a
+    `parametric_looks.json` hand-edited at a venue against a slightly older
+    engine should lose the key it does not understand and still light the
+    room. A command from the console is the opposite case and is strict -- see
+    `server._cmd_look_params`.
+
+    Values are NOT clamped to the declared range, for the same reason a routine
+    file's are not (`blocks.PARAMS`): the range describes the controls; what an
+    author wrote is what plays.
+    """
+    declared = _blocks().PARAMS.get(entry.block or "", ())
+    out = {p.name: p.default for p in declared}
+    for key, value in (entry.args or {}).items():
+        if key in out:
+            out[key] = value
+    return out
+
+
+def block_layer(entry: LibraryEntry, slot: str,
+                roles: Optional[dict] = None):
+    """One parametric look as a single layer, bound to whatever rig is running.
+
+    Bound LAZILY, on the first frame and again whenever the patch changes, and
+    cached on the fixture NAMES -- the reasoning `column_for` spells out about
+    `id()` reuse after a rig reload applies here too. Composing a look must not
+    need a rig: auto mode's set list builds every look up front, before there
+    is necessarily one to bind to.
+
+    Every NUMERIC argument is handed to the block as a `$name` reference, with
+    the value itself in the block's Env. That is not indirection for its own
+    sake: it is how the block reads the value per frame, which is what lets a
+    modulator swing it -- through `Env.automate`, the very mechanism a show
+    folder's automation rows use -- without rebuilding anything. A literal
+    number would be read once and baked in.
+    """
+    blocksmod = _blocks()
+    values = resolve_args(entry)
+    numeric = {p.name for p in blocksmod.PARAMS.get(entry.block or "", ())
+               if p.kind in ("number", "integer")}
+    args = {k: (f"${k}" if k in numeric else v) for k, v in values.items()
+            if v is not None or k in numeric}
+    env = blocksmod.Env(params={k: v for k, v in values.items() if k in numeric})
+    if roles:
+        env.palette.update(roles)
+    name = entry.name
+    cache: dict[tuple[str, ...], object] = {}
+
+    def fixtures_for(rig) -> tuple:
+        rigging = blocksmod.Rigging(rig=rig, entries={})
+        wanted = entry.groups or (("movers",) if slot == "movement" else ())
+        if not wanted:
+            return tuple(rig.fixtures)
+        seen: dict[int, object] = {}
+        for group in wanted:
+            for fixture in rigging.tagged(group):
+                seen.setdefault(fixture.fid, fixture)
+        return tuple(seen.values())
+
+    def layer(ctx: statemod.EvalContext, out: dict) -> None:
+        live = ctx.live_params.get(name)
+        env.automate = live.get if live else _NO_AUTOMATION
+        key = tuple(f.name for f in ctx.rig.fixtures)
+        built = cache.get(key)
+        if built is None:
+            built = blocksmod.make(entry.block or "", args, fixtures_for(ctx.rig),
+                                   slot, env, blocksmod.Rigging(rig=ctx.rig, entries={}),
+                                   where=name)
+            cache[key] = built
+        for sub in built.layers:
+            sub(ctx, out)
+    return layer
+
+
 # ------------------------------------------------------------------- slots --
 
 DEFAULT_BARS = 8.0
@@ -480,6 +613,14 @@ def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
     """
     if entry is None:
         return
+    if entry.is_parametric:
+        # Scoped to the look's own groups rather than to "movers" flat, so a rig
+        # with two families of moving head can run a different route on each.
+        # Ported entries keep the old unscoped behaviour, because that is what
+        # they were authored against and changing it would move the parity
+        # sweep.
+        show.movement.append(block_layer(entry, "movement"))
+        return
     if entry.offsets is not None:
         show.movement.append(statemod.move_layer(
             pose_offsets(entry.offsets, entry.fixtures), tags=("movers",)))
@@ -498,7 +639,8 @@ def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
             tags=("movers",)))
 
 
-def color_layers(show: statemod.Show, entry: LibraryEntry) -> None:
+def color_layers(show: statemod.Show, entry: LibraryEntry,
+                 roles: Optional[dict] = None) -> None:
     """One colour look, scoped to the fixtures it actually writes.
 
     The scoping is the fix for a real defect: "Pin Ball Glow" writes two
@@ -508,6 +650,12 @@ def color_layers(show: statemod.Show, entry: LibraryEntry) -> None:
     the same time.
     """
     tags = tuple(entry.groups) or None
+    if entry.is_parametric:
+        # `roles` is the console's palette as "@primary"/"@secondary"/"@accent",
+        # so a parametric colour follows the palette the operator is rotating,
+        # the same way a routine's palette roles follow its show's palette.
+        show.color.append(block_layer(entry, "color", roles))
+        return
     if entry.color is not None:
         show.color.append(statemod.color_layer(tuple(entry.color), tags=tags))
     elif entry.colors is not None:
@@ -529,6 +677,9 @@ def level_layers(show: statemod.Show, entry: LibraryEntry) -> None:
     instead wipe them.
     """
     tags = tuple(entry.groups) or None
+    if entry.is_parametric:
+        show.fx.append(block_layer(entry, "level"))
+        return
     if entry.levels is not None:
         show.fx.append(level_frames_layer(entry.levels, entry.strobe_steps,
                                           entry.bars or DEFAULT_BARS,
@@ -548,8 +699,9 @@ def level_layers(show: statemod.Show, entry: LibraryEntry) -> None:
 def compose(movement: Optional[LibraryEntry],
             colors: Sequence[LibraryEntry] = (),
             levels: Sequence[LibraryEntry] = (),
-            palette_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
-            ) -> statemod.Show:
+            palette_color: tuple[float, float, float] = (1.0, 1.0, 1.0),
+            movement_extra: Sequence[LibraryEntry] = (),
+            palette_roles: Optional[dict] = None) -> statemod.Show:
     """The slots, plus the base and the auto-mode effects, as one Show.
 
     `colors` and `levels` are LISTS because each slot is filled per fixture
@@ -560,13 +712,31 @@ def compose(movement: Optional[LibraryEntry],
     The palette goes down first and unscoped, so any group with no colour look
     of its own still gets a colour rather than rendering whatever the last look
     left behind.
+
+    `movement_extra` STACKS more movement on top of the base route, and it works
+    because every movement layer ADDS a degree offset -- only the base
+    `pose_layer` assigns. A slow orbit under a fast small jitter is therefore
+    just two layers, and it is a class of routine this rig has never produced:
+    the old console could only store the sum of two moves as a third scene, and
+    only at one relative phase.
+
+    Order matters only for the level layers a cued chase contributes; the
+    offsets themselves commute, because addition does.
     """
     show = statemod.Show()
     base_layers(show)
     show.color.append(statemod.color_layer(palette_color))
+    # A parametric colour look names palette ROLES ("@primary"). Without a
+    # palette to read them from, every role is the current palette colour --
+    # which is what a single-colour palette means anyway.
+    roles = palette_roles or {"primary": palette_color,
+                              "secondary": palette_color,
+                              "accent": palette_color}
     for entry in colors:
-        color_layers(show, entry)
+        color_layers(show, entry, roles)
     movement_layers(show, movement)
+    for entry in movement_extra:
+        movement_layers(show, entry)
     for entry in levels:
         level_layers(show, entry)
     show.fx.append(autom.energy_intensity_layer())
@@ -588,14 +758,139 @@ def build_look(entry: LibraryEntry) -> autom.Look:
                                    [entry] if entry.is_level else [], color),
         # Levels and resets stay reachable by hand but must never be picked by a
         # timer -- the same reasoning as a blackout parked in the set list.
+        # A RETIRED entry is manual-only for the same reason: it is still there
+        # so an operator can go back to it deliberately, and auto mode selecting
+        # one would be the timer undoing the retirement.
         manual_only=entry.is_level or "reset" in entry.name.lower()
-        or entry.step_of is not None)
+        or entry.step_of is not None or entry.retired)
 
 
-def load_setlist(path: Path) -> tuple[autom.SetList, list[LibraryEntry]]:
+def load_parametric(path: Path) -> tuple[list[LibraryEntry], dict[str, dict]]:
+    """Hand-authored parametric looks, and the ported entries they retire.
+
+    Validated through `config.load` rather than read straight out of JSON,
+    because this is the one library file a person edits by hand at a venue --
+    which is exactly the case `config.py` exists for. A misspelled block should
+    say so by name, once, with the alternatives listed, rather than surfacing as
+    an empty layer on the first frame.
+
+    The rig-bound adapters (`look`, `snapshot`) are refused here. A parametric
+    look that only wraps a ported look IS that look, under a second name; and a
+    look named in a block would tie this file to one rig, which is the property
+    blocks exist not to have.
+    """
+    path = Path(path)
+    cfg = configmod.load(path, configmod.PARAMETRIC_LOOKS)
+    blocksmod = _blocks()
+
+    out: list[LibraryEntry] = []
+    for raw in cfg.get("looks", []):
+        name, block = raw["name"], raw["block"]
+        if block not in blocksmod.BLOCKS:
+            raise configmod.ConfigError(path, [
+                f"{name!r} names block {block!r}, which does not exist"
+                f"\n      fix: one of {', '.join(blocksmod.BLOCKS)}"])
+        slot = blocksmod.SLOT_OF[block]
+        if slot is None:
+            raise configmod.ConfigError(path, [
+                f"{name!r} uses {block!r}, which plays a ported look or preset "
+                f"rather than being one\n      fix: select that look directly"])
+        # Checked here, against the block's own declarations, so a bad value is
+        # reported with the file name at load -- not built into an empty block
+        # that quietly claims nothing on stage.
+        args = dict(raw.get("args", {}))
+        env = blocksmod.Env(params={})
+        rigging = blocksmod.Rigging(rig=_NoRig(), entries={})
+        problems = blocksmod._check_args(block, args, env, rigging)
+        if problems:
+            raise configmod.ConfigError(path, [
+                f"{name!r}: {problem}" for problem in problems])
+        out.append(LibraryEntry(
+            name=name, kind=KIND_FOR_BLOCK.get(block, KIND_FOR_SLOT[slot]),
+            tags=(), groups=tuple(raw.get("groups", [])),
+            block=block, args=args, notes=raw.get("notes", ""),
+            supersedes=bool(raw.get("supersedes", False)),
+            source=path.name))
+
+    retired = {r["name"]: r for r in cfg.get("retired", [])}
+    return out, retired
+
+
+class _NoRig:
+    """Enough of a rig for `_check_args` at load time: no fixtures, so no
+    single-colour looks, so a colour argument has to be a palette role, a hex
+    colour or [r, g, b] -- which is what keeps a parametric look portable."""
+    fixtures: tuple = ()
+
+
+def merge(ported: Sequence[LibraryEntry], parametric: Sequence[LibraryEntry],
+          retired: Optional[dict[str, dict]] = None) -> list[LibraryEntry]:
+    """The library the show sees: the port, plus the parametric looks, minus
+    nothing.
+
+    Name collisions are a LOAD ERROR rather than a silent override. Everything
+    downstream addresses a look by name -- cues, presets, the picker, auto
+    mode's set list -- so two entries with one name means the cue list and the
+    operator can disagree about what "Ball Wave" is, and neither would ever find
+    out. Naming both sources is the whole content of the message.
+
+    Retirement is applied here rather than at load, because it names entries in
+    the OTHER file: `parametric_looks.json` says which ported looks it
+    supersedes, and
+    that can only be resolved once both are in hand.
+    """
+    seen = {e.name: e for e in ported}
+    # A look that SUPERSEDES must name a ported look that exists. Otherwise a
+    # typo in the name would quietly add a new button claiming to replace
+    # nothing, and the original it was meant to take over would stay up beside
+    # it.
+    orphans = [r.name for r in parametric if r.supersedes and r.name not in seen]
+    if orphans:
+        raise ValueError(
+            "parametric_looks.json supersedes "
+            + ", ".join(repr(o) for o in sorted(orphans))
+            + ", which looks.json does not have -- check the name, or drop "
+              "\"supersedes\" to add it as a new look")
+    taking_over = {r.name: r for r in parametric if r.supersedes}
+    clashes = [r.name for r in parametric
+               if r.name in seen and not r.supersedes]
+    if clashes:
+        raise ValueError(
+            "parametric_looks.json and looks.json both define "
+            + ", ".join(repr(c) for c in sorted(clashes))
+            + " -- rename the parametric look; a look is addressed by name from "
+              "cues, presets and the picker, so two with one name is ambiguous "
+              "everywhere")
+
+    # In place, so a superseded button keeps its position in the picker and
+    # in auto mode's set list. The ported entry leaves the console's library
+    # but not looks.json, so the port's round-trip proof is untouched.
+    entries = [taking_over.get(e.name, e) for e in ported]
+    entries += [r for r in parametric if not r.supersedes]
+    if not retired:
+        return entries
+    return [replace(e, retired=True,
+                    replaced_by=retired[e.name].get("replaced_by"),
+                    notes=retired[e.name].get("note", e.notes))
+            if e.name in retired else e
+            for e in entries]
+
+
+def load_setlist(path: Path, parametric_path: Optional[Path] = None
+                 ) -> tuple[autom.SetList, list[LibraryEntry]]:
+    """The whole library, from the generated port and the hand-authored file.
+
+    `parametric_path` absent, or pointing at a file that is not there, is
+    normal: every event that predates it has none and must keep loading.
+    """
     entries = load_entries(path)
     if not entries:
         raise ValueError(f"{path} contains no looks")
+    parametric: list[LibraryEntry] = []
+    retired: dict[str, dict] = {}
+    if parametric_path is not None and Path(parametric_path).exists():
+        parametric, retired = load_parametric(Path(parametric_path))
+    entries = merge(entries, parametric, retired)
     return autom.SetList([build_look(e) for e in entries]), entries
 
 

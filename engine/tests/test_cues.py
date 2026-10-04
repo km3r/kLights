@@ -147,6 +147,65 @@ try:
     controller.apply({"type": "cue_reset"}, None)
     check("reset rewinds to before the first cue",
           controller.cues.current is None)
+
+    print("\n4. a cue can state a routine's own parameters")
+    # Same rule as `macro` and `rates`: absent leaves whatever is dialled in
+    # alone, so every cue written before this existed still behaves identically.
+    tuning_cue = cuesmod.Cue(
+        name="Tuned", movement={"corner movers": "Ball Orbit"},
+        fade=0.0, params={"Ball Orbit": {"radius": 36.0}})
+    plain_cue = cuesmod.Cue(
+        name="Plain", movement={"corner movers": "Ball Orbit"}, fade=0.0)
+
+    controller.apply({"type": "look_params", "name": "Ball Orbit",
+                      "values": {"radius": 7}}, None)
+    controller.take_cue(plain_cue)
+    check("a cue with no params block leaves the operator's tuning alone",
+          controller.look_params.get("Ball Orbit") == {"radius": 7.0},
+          f"{controller.look_params.get('Ball Orbit')}")
+
+    controller.take_cue(tuning_cue)
+    check("a cue that states a parameter sets it",
+          controller.look_params.get("Ball Orbit") == {"radius": 36.0},
+          f"{controller.look_params.get('Ball Orbit')}")
+
+    # The property that makes a cue list a cue list: where you end up must not
+    # depend on the route you took to get there.
+    empty_cue = cuesmod.Cue(
+        name="Authored", movement={"corner movers": "Ball Orbit"},
+        fade=0.0, params={})
+    controller.take_cue(empty_cue)
+    check("a cue with an empty params block returns the routine to authored",
+          "Ball Orbit" not in controller.look_params,
+          f"{controller.look_params.get('Ball Orbit')}")
+
+    controller.take_cue(tuning_cue)
+    controller.take_cue(cuesmod.Cue(
+        name="Other", movement={"corner movers": "Ball Orbit"},
+        fade=0.0, params={"Ball Orbit": {"elongation": 2.0}}))
+    check("and a cue that names a routine but not a parameter clears it",
+          controller.look_params.get("Ball Orbit") == {"elongation": 2.0},
+          "a radius left over from an earlier cue would make where you end up "
+          "depend on how you got there")
+
+    # `params` is exhaustive over the looks a cue NAMES, and only those. A cue
+    # that switches to a ported look must not reach over and clear tuning on a
+    # routine it never mentions -- that routine may still be up in another slot.
+    controller.apply({"type": "look_params", "name": "Ball Orbit",
+                      "values": {"radius": 19}}, None)
+    # Captured rather than written out: `look_params` merges sparsely, so
+    # whatever an earlier cue left is still in here and the claim under test is
+    # that this cue does not touch it -- not what it happens to contain.
+    before = dict(controller.look_params.get("Ball Orbit", {}))
+    controller.take_cue(cuesmod.Cue(
+        name="Ported", movement={"corner movers": "Ball Wave"},
+        fade=0.0, params={}))
+    check("a cue only clears tuning on routines it actually names",
+          controller.look_params.get("Ball Orbit") == before,
+          f"{before} -> {controller.look_params.get('Ball Orbit')}")
+
+    controller.apply({"type": "look_params", "name": "Ball Orbit",
+                      "reset": True}, None)
 finally:
     controller.stop()
 

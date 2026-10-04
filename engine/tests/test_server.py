@@ -27,6 +27,8 @@ sys.path.insert(0, str(REPO))
 from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
+from engine import blocks as blocksmod
+from engine import params as parammod
 from engine import server as servermod
 from engine.server import ShowController, ShowServer, load_presets
 
@@ -530,6 +532,37 @@ check("clearing a trim hands the fixture back to the pattern",
       not after["level_overrides"], f"{after['level_overrides']}")
 client.send({"type": "clear_slot", "slot": "level"})
 
+# A cue with a hold is supposed to advance on its own -- that is the entire
+# meaning of "hold", and the Show tab tells the operator "auto after N" on the
+# strength of it. Swapped in here rather than authored into despacio's own
+# cues.json, which runs the real show and deliberately holds nothing (every
+# cue there waits for GO by design).
+print("\n2c. a cue's hold actually fires (F19 -- CueList.due() was dead code)")
+from engine import cues as cuesmod
+
+real_cues, real_beat = controller.cues, controller.ctx.beat
+try:
+    controller.cues = cuesmod.CueList(name="due-test", cues=[
+        cuesmod.Cue(name="one", fade=0.0, hold=0.0),
+        cuesmod.Cue(name="two", fade=0.0, hold=4.0),
+        cuesmod.Cue(name="three", fade=0.0, hold=0.0),
+    ])
+    controller.ctx.beat = 0.0
+    controller.cues.go(controller.ctx.beat)             # manual GO onto "one"
+    controller.cues.go(controller.ctx.beat)             # manual GO onto "two"
+    controller._drain()
+    check("not due yet: index unchanged", controller.cues.index == 1,
+          controller.cues.index)
+    controller.ctx.beat = 5.0                            # 5 beats into a 4-beat hold
+    controller._drain()
+    check("due: advanced onto the next cue on its own",
+          controller.cues.index == 2 and controller.cues.current.name == "three",
+          f"index={controller.cues.index}")
+    controller._drain()
+    check("holding at the end: no cue after the last one to advance to",
+          controller.cues.index == 2)
+finally:
+    controller.cues, controller.ctx.beat = real_cues, real_beat
 
 
 # -- safety is visible, and jog says it is bypassed ----------------------------
@@ -1148,6 +1181,394 @@ controller.stop()
 # do anything" stopped being an acceptable default. The threat is not an
 # attacker; it is the guest who opens the URL you showed someone and starts
 # pressing things between sets.
+print("\n11d. tuning a routine's own parameters")
+# The thing a ported look cannot have. A stored look is a table of DMX, so
+# every variation of it had to be another stored entry -- which is how 103
+# poses accumulated. A routine names a generator, so its numbers are knobs.
+
+
+def orbit_offsets(ctrl):
+    """Each head's aim minus its own calibrated ball aim, at a fixed phase.
+
+    The offset rather than the aim: four heads in four corners have four
+    different ball aims, so raw aims cannot show whether a route changed.
+    """
+    show = ctrl.director.rebuild()
+    ctrl.ctx.set_phase(2.0)
+    states = statemod.evaluate_stack(ctrl.ctx, show)
+    out = []
+    for fixture in ctrl.rig.fixtures:
+        if fixture.head is None or states[fixture.fid].aim is None:
+            continue
+        base = ctrl.rig.geometry.aim_at_ball(fixture.head)
+        aim = states[fixture.fid].aim
+        out.append((round(aim.bearing_delta - base.bearing_delta, 2),
+                    round(aim.elev_deg - base.elev_deg, 2)))
+    return out
+
+
+controller.apply({"type": "select_look", "name": "Ball Orbit"}, None)
+authored = orbit_offsets(controller)
+check("a generated routine is selectable like any other look",
+      controller.setlist.current().name == "Ball Orbit")
+
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 30}}, None)
+widened = orbit_offsets(controller)
+check("turning a knob changes where the heads actually point",
+      widened != authored, f"{authored[0]} -> {widened[0]}")
+check("and it is the parameter that moved, not something else",
+      abs(widened[0][0]) > abs(authored[0][0]),
+      f"{authored[0][0]} -> {widened[0][0]}")
+
+# Sparse, so a second edit does not discard the first and neither detaches the
+# routine from the values it was authored with.
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"bars": 32}}, None)
+check("a second parameter composes with the first",
+      controller.look_params["Ball Orbit"] == {"radius": 30.0, "bars": 32.0},
+      f"{controller.look_params['Ball Orbit']}")
+check("the authored values are untouched underneath",
+      controller.by_name["Ball Orbit"].args["radius"] == 10.0)
+check("and the snapshot publishes the override separately from the authored",
+      controller.snapshot()["look_params"]["Ball Orbit"]["radius"] == 30.0)
+
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+check("reset returns it to what parametric_looks.json authored",
+      orbit_offsets(controller) == authored)
+check("and drops the override entirely",
+      "Ball Orbit" not in controller.snapshot()["look_params"])
+
+# The failure paths. A typo'd key from the console means the UI and the engine
+# disagree about what this routine has, and dropping it silently would give an
+# operator a slider that appears to work and changes nothing.
+for label, message, expect_in in (
+    ("a typo'd parameter", {"type": "look_params", "name": "Ball Orbit",
+                            "values": {"raduis": 5}}, "no parameter named"),
+    ("a ported look, which has nothing to tune",
+     {"type": "look_params", "name": "Ball Wave", "values": {"radius": 5}},
+     "ported look"),
+    ("an unknown look", {"type": "look_params", "name": "Nope",
+                         "values": {"x": 1}}, "no look named"),
+    ("no values and no reset", {"type": "look_params", "name": "Ball Orbit"},
+     "needs values"),
+):
+    try:
+        controller.apply(message, None)
+        check(f"{label} is refused", False, "accepted")
+    except (ValueError, KeyError) as exc:
+        check(f"{label} is refused", expect_in in str(exc), str(exc)[:70])
+
+# Clamped, not refused: one bad number must not discard the good ones sent
+# alongside it in the same message.
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 9999, "elongation": 2.0}}, None)
+check("an out-of-range value is clamped rather than refusing the message",
+      controller.look_params["Ball Orbit"] == {"radius": 90.0,
+                                               "elongation": 2.0},
+      f"{controller.look_params['Ball Orbit']}")
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+
+print("\n11d2. a preset carries the tuning of the routines it names")
+# A preset is "get back to this picture". A routine's radius IS the picture, so
+# unlike `rates` -- a ride the operator keeps a hand on -- it is stored even when
+# it sits at the authored value.
+controller.apply({"type": "select_look", "name": "Ball Orbit"}, None)
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 28, "elongation": 2.5}}, None)
+tuned = orbit_offsets(controller)
+controller.apply({"type": "preset_save", "name": "Tuned Orbit"}, None)
+saved = next(p for p in controller.presets if p["name"] == "Tuned Orbit")
+check("the preset stored the routine's parameters",
+      saved.get("params", {}).get("Ball Orbit")
+      == {"radius": 28.0, "elongation": 2.5}, f"{saved.get('params')}")
+
+# Dial it somewhere else, then recall.
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 5}}, None)
+check("moving the knob afterwards really does change the picture",
+      orbit_offsets(controller) != tuned)
+controller.apply({"type": "preset_apply", "name": "Tuned Orbit"}, None)
+check("applying the preset puts the tuning back",
+      controller.look_params["Ball Orbit"]
+      == {"radius": 28.0, "elongation": 2.5},
+      f"{controller.look_params.get('Ball Orbit')}")
+check("and the heads point where they did when it was saved",
+      orbit_offsets(controller) == tuned)
+
+# The case that decides whether this is trustworthy: a preset saved at the
+# authored values must CLEAR tuning dialled in later, not leave it. Storing only
+# non-default values would silently fail exactly here.
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+authored_again = orbit_offsets(controller)
+controller.apply({"type": "preset_save", "name": "Plain Orbit"}, None)
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 50}}, None)
+controller.apply({"type": "preset_apply", "name": "Plain Orbit"}, None)
+check("a preset saved at authored values clears tuning set after it",
+      "Ball Orbit" not in controller.look_params,
+      f"{controller.look_params.get('Ball Orbit')}")
+check("and really does restore the authored picture",
+      orbit_offsets(controller) == authored_again)
+
+# A preset over ported looks only carries no params block at all, so nothing
+# about this feature can disturb a preset saved before it existed.
+controller.apply({"type": "select_look", "name": "Ball Wave"}, None)
+controller.apply({"type": "preset_save", "name": "Ported Only"}, None)
+ported_preset = next(p for p in controller.presets if p["name"] == "Ported Only")
+check("a preset naming no routine carries no params block",
+      "params" not in ported_preset, f"{ported_preset.get('params')}")
+
+# File-sourced, so a stale key is dropped with a notice rather than refusing the
+# preset mid-set -- the opposite of a typo'd key from the console.
+controller.apply({"type": "select_look", "name": "Ball Orbit"}, None)
+stale = next(p for p in controller.presets if p["name"] == "Tuned Orbit")
+stale["params"] = {"Ball Orbit": {"radius": 20, "wobble": 3}}
+controller.apply({"type": "preset_apply", "name": "Tuned Orbit"}, None)
+check("a preset with a parameter this engine no longer has still applies",
+      controller.look_params["Ball Orbit"] == {"radius": 20.0},
+      f"{controller.look_params.get('Ball Orbit')}")
+check("and says what it dropped",
+      any("wobble" in n for n in controller.notices),
+      f"{controller.notices[-1:]}")
+
+for name in ("Tuned Orbit", "Plain Orbit", "Ported Only"):
+    controller.apply({"type": "preset_delete", "name": name}, None)
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+
+print("\n11d3. movement routines stack, because their offsets add")
+# Only the base pose layer ASSIGNS an aim; every movement layer after it adds a
+# degree offset. So stacking is free, and it is a shape the old console could
+# only store as a third scene at one baked-in relative phase.
+
+
+def track(ctrl, phases=(0.0, 1.0, 2.0, 3.0, 5.0)):
+    out = []
+    for phase in phases:
+        show = ctrl.director.rebuild()
+        ctrl.ctx.set_phase(phase)
+        states = statemod.evaluate_stack(ctrl.ctx, show)
+        fixture = next(f for f in ctrl.rig.fixtures if f.head is not None)
+        base_aim = ctrl.rig.geometry.aim_at_ball(fixture.head)
+        aim = states[fixture.fid].aim
+        out.append((round(aim.bearing_delta - base_aim.bearing_delta, 3),
+                    round(aim.elev_deg - base_aim.elev_deg, 3)))
+    return out
+
+
+controller.apply({"type": "select_look", "name": "Ball Orbit"}, None)
+alone = track(controller)
+controller.apply({"type": "movement_add", "name": "Nod"}, None)
+stacked = track(controller)
+check("stacking changes where the heads go", stacked != alone)
+# "Nod" is a VERTICAL pendulum, so it must move elevation and leave bearing
+# exactly alone. That is what proves the offsets are adding per axis rather
+# than one layer replacing the other.
+check("a vertical routine stacked on an orbit moves only elevation",
+      all(a[0] == b[0] for a, b in zip(alone, stacked))
+      and any(a[1] != b[1] for a, b in zip(alone, stacked)),
+      f"{alone[1]} -> {stacked[1]}")
+check("the stack is published", controller.snapshot()["movement_extra"] == ["Nod"])
+controller.apply({"type": "movement_remove", "all": True}, None)
+check("removing the stack restores the base route exactly",
+      track(controller) == alone)
+
+for label, message, expect in (
+    ("stacking the base route on itself",
+     {"type": "movement_add", "name": "Ball Orbit"}, "already the base"),
+    ("stacking a colour look",
+     {"type": "movement_add", "name": "MH Pink"}, "only movement looks stack"),
+    ("stacking an unknown look",
+     {"type": "movement_add", "name": "Nope"}, "no look named"),
+    ("unstacking something that is not stacked",
+     {"type": "movement_remove", "name": "Nod"}, "is not stacked"),
+):
+    try:
+        controller.apply(message, None)
+        check(f"{label} is refused", False, "accepted")
+    except (ValueError, KeyError) as exc:
+        check(f"{label} is refused", expect in str(exc), str(exc)[:60])
+
+for name in ("Nod", "Drift", "Restless"):
+    controller.apply({"type": "movement_add", "name": name}, None)
+try:
+    controller.apply({"type": "movement_add", "name": "Wide Sweep"}, None)
+    check("the stack is capped", False, "accepted a fourth")
+except ValueError as exc:
+    check("the stack is capped", "limit" in str(exc))
+controller.apply({"type": "movement_remove", "all": True}, None)
+
+print("\n11d4. variation is random-looking and reproducible")
+# engine/ had no `random` import before this, and the reason is that previz, the
+# parity sweep and the port all depend on the same inputs giving the same frame.
+# A seeded Random keeps that; the module RNG would not.
+controller.apply({"type": "vary", "name": "Ball Orbit",
+                  "amount": 0.4, "seed": 11}, None)
+first = dict(controller.look_params["Ball Orbit"])
+controller.apply({"type": "vary", "name": "Ball Orbit",
+                  "amount": 0.4, "seed": 11}, None)
+check("the same seed gives the same variation",
+      controller.look_params["Ball Orbit"] == first, f"{first}")
+controller.apply({"type": "vary", "name": "Ball Orbit",
+                  "amount": 0.4, "seed": 12}, None)
+check("a different seed gives a different one",
+      controller.look_params["Ball Orbit"] != first)
+
+# From the AUTHORED values every time, not from whatever is dialled in.
+# Compounding would random-walk to an extreme in four presses, and no seed
+# would describe where you had ended up.
+controller.apply({"type": "vary", "name": "Ball Orbit",
+                  "amount": 0.4, "seed": 11}, None)
+check("varying twice from one seed lands in the same place, not further out",
+      controller.look_params["Ball Orbit"] == first)
+
+check("the cycle length is never varied -- it is a musical decision",
+      "bars" not in controller.look_params["Ball Orbit"],
+      f"{sorted(controller.look_params['Ball Orbit'])}")
+
+orbit_params = blocksmod.PARAMS["orbit"]
+for amount in (0.1, 0.5, 1.0):
+    for seed in range(6):
+        controller.apply({"type": "vary", "name": "Ball Orbit",
+                          "amount": amount, "seed": seed}, None)
+        for key, value in controller.look_params["Ball Orbit"].items():
+            spec = parammod.find(orbit_params, key)
+            if not (spec.min <= value <= spec.max):
+                check("variation stays inside every declared range", False,
+                      f"{key}={value} outside {spec.min}..{spec.max}")
+                break
+        else:
+            continue
+        break
+else:
+    check("variation stays inside every declared range", True,
+          "18 combinations of amount and seed")
+
+before = controller.vary_seed
+controller.apply({"type": "vary", "name": "Ball Orbit"}, None)
+check("omitting the seed picks the next one and publishes it",
+      controller.vary_seed == before + 1
+      and controller.snapshot()["vary_seed"] == before + 1)
+
+try:
+    controller.apply({"type": "vary", "name": "Ball Wave"}, None)
+    check("varying a ported look is refused", False, "accepted")
+except ValueError as exc:
+    check("varying a ported look is refused", "no parameters to vary" in str(exc))
+
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+
+print("\n11d5. the centre goes as far as the rig's heads can, and no further")
+# Fixtures travel different distances, so a fixed +-180 / +-90 was wrong both
+# ways: it offered places no head could reach and refused ones every head
+# could. The range is now read off the rig's own geometry.
+reach = controller.snapshot()["reach"]
+check("the rig's reach is published, per axis",
+      set(reach) == {"bearing", "elevation"}
+      and all(lo < 0 < hi for lo, hi in reach.values()), f"{reach}")
+geo = controller.rig.geometry
+heads = range(len(geo.heads))
+widest = max(geo.reach(i)[0][1] for i in heads)
+check("it is the WIDEST any head can go, so a better fixture is not held back",
+      reach["bearing"][1] >= widest - 1e-9, f"{reach['bearing'][1]} vs {widest:.2f}")
+
+past_180 = min(reach["bearing"][1], 190.0)
+controller.apply({"type": "macro", "center": [past_180, 0]}, None)
+check("the centre can go past the old 180-degree cap when the rig can",
+      controller.ctx.move_center[0] == past_180 > 180.0,
+      f"{controller.ctx.move_center}")
+controller.apply({"type": "macro", "center": [-170, 0]}, None)
+check("and stops where the heads stop, rather than offering the impossible",
+      controller.ctx.move_center[0] == reach["bearing"][0],
+      f"{controller.ctx.move_center} vs reach {reach['bearing']}")
+
+# A modulator on the centre swings as far as the slider for it would.
+controller.apply({"type": "modulate", "param": "bearing", "shape": "ramp",
+                  "bars": 4}, None)
+swing = next(m for m in controller.snapshot()["modulators"]
+             if m["param"] == "bearing")
+check("a modulator on the centre spans the rig's reach, not the fallback",
+      (swing["low"], swing["high"]) == tuple(reach["bearing"]), f"{swing}")
+controller.apply({"type": "modulate_clear", "all": True}, None)
+controller.apply({"type": "macro", "reset": True}, None)
+
+print("\n11d6. a head asked past its own rail says so")
+# The centre is bounded by the MOST capable head, so a less capable one can be
+# asked for somewhere it cannot go. It stops at the rail -- the clamp in
+# `geometry.encode` -- and this is the part that tells the operator, per head.
+controller.apply({"type": "select_look", "name": "Heads - Ball"}, None)
+
+
+def publish_now():
+    """One evaluated frame into `latest_states`, as the frame clock would."""
+    show = controller.director.rebuild()
+    controller._attach_overrides(show)
+    controller.latest_states = statemod.evaluate(controller.ctx, show)
+    return {f["name"]: f for f in controller.snapshot()["fixtures"]}
+
+
+fixtures_now = publish_now()
+check("on the ball, no head is at a limit",
+      not any("at_limit" in f for f in fixtures_now.values()))
+
+# Find the head with the least bearing travel and send the centre just past it.
+least = min(heads, key=lambda i: geo.reach(i)[0][1])
+target = geo.reach(least)[0][1] + 3.0
+if target <= reach["bearing"][1]:
+    controller.apply({"type": "macro", "center": [target, 0]}, None)
+    fixtures_now = publish_now()
+    short = fixtures_now[geo.heads[least].name]
+    check("the head that cannot reach is flagged at its bearing limit",
+          short.get("at_limit") == ["bearing"], f"{short.get('at_limit')}")
+    able = [fixtures_now[geo.heads[i].name] for i in heads
+            if geo.reach(i)[0][1] >= target + 0.5]
+    check("while the heads that can reach are not",
+          able and not any("at_limit" in f for f in able),
+          f"{len(able)} able heads")
+else:
+    check("this rig's heads differ enough to test a lesser one", False,
+          "every head reaches equally far")
+controller.apply({"type": "macro", "reset": True}, None)
+
+print("\n11e. the descriptors the console renders controls from")
+# They reach the UI as a generated file, not in this snapshot: they are
+# constants of the build, and the snapshot goes out ten times a second.
+sys.path.insert(0, str(REPO / "engine" / "tests"))
+import dump_designer_fixtures  # noqa: E402
+
+table = dump_designer_fixtures.block_table()
+snap = controller.snapshot()
+check("the snapshot no longer carries constants of the build",
+      not {"generators", "macro_params", "modulator_shapes"} & set(snap))
+check("every block is in the UI's table", set(table["blocks"])
+      == set(blocksmod.BLOCKS))
+check("each with its arguments, labelled",
+      all(all("label" in p for p in b["params"])
+          for b in table["blocks"].values()))
+check("the shape macros are described the same way",
+      {p["name"] for p in table["macros"]} == {"size", "spread", "bearing", "elev"})
+# A parametric look in the snapshot names its block, which is what the console
+# looks up in that table to render a control panel for it.
+orbit_look = next(l for l in snap["looks"] if l["name"] == "Ball Orbit")
+check("a parametric look names its block and carries its arguments",
+      orbit_look["block"] == "orbit" and orbit_look["args"]["radius"] == 10.0)
+# The whole point of publishing them: the clamp and the control now read the
+# same declaration, so a range cannot drift between the two ends the way it did
+# while it was a literal in each.
+size_spec = next(p for p in table["macros"] if p["name"] == "size")
+controller.apply({"type": "macro", "size": 99}, None)
+check("the macro clamp agrees with the range it publishes",
+      controller.ctx.move_size == size_spec["max"],
+      f"clamped to {controller.ctx.move_size}, published max {size_spec['max']}")
+controller.apply({"type": "macro", "reset": True}, None)
+check("and reset returns the published default",
+      controller.ctx.move_size == size_spec["default"])
+
 print("\n12. access tiers")
 guarded = ShowController(REPO / "events" / "despacio")
 guarded_server = ShowServer(guarded, port=8788, token="secret123")

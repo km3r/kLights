@@ -55,6 +55,16 @@ class Cue:
     # dialled in alone. A cue that wants the colours crawling while the movers
     # run flat out says so here rather than needing a look stored at that rate.
     rates: Optional[dict] = None
+    # Per-routine tuning, by look name: `{"Ball Orbit": {"radius_deg": 24}}`.
+    #
+    # Absent leaves every routine alone, like `macro` and `rates` -- which is
+    # what a cue written before this existed means, and what one with no opinion
+    # about tuning means. Present, it is EXHAUSTIVE over the looks this cue
+    # names: a routine the cue names but does not list goes back to its authored
+    # values. Without that, taking a cue could leave a radius from three cues
+    # ago on stage, and a cue list whose result depends on the route you took
+    # through it is not a cue list.
+    params: Optional[dict] = None
     speed: Optional[float] = None
     master: Optional[float] = None
     notes: str = ""
@@ -159,6 +169,9 @@ CUES_SCHEMA = {
         "macro": configmod.Spec(dict),
         "rates": configmod.Spec(dict,
             fix="per-slot chase rates, e.g. {\"color\": 0.5, \"movement\": 2}"),
+        "params": configmod.Spec(dict,
+            fix="per-routine parameter values, by look name, e.g. "
+                "{\"Ball Orbit\": {\"radius_deg\": 24}}"),
         "notes": configmod.Spec(str),
     })),
 }
@@ -174,6 +187,7 @@ def load(path: Path) -> CueList:
                 hold=float(c.get("hold", 0.0)),
                 macro=c.get("macro"),
                 rates=c.get("rates"),
+                params=c.get("params"),
                 speed=(None if c.get("speed") is None else float(c["speed"])),
                 master=(None if c.get("master") is None else float(c["master"])),
                 notes=c.get("notes", ""))

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, DESIGNER_CHUNK, EASINGS, PARAM_TYPES,
+  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
   RIG_BOUND, SLOTS, barBeat, blocksFor, findItem,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
@@ -698,7 +698,7 @@ function ArgField({ spec, value, params, onChange, engine }: {
     field = <span className="mono small">{String(value)}</span>;
   } else if (spec.kind === "number") {
     field = (
-      <input type="number" step={spec.step ?? "any"} style={{ width: 70 }}
+      <input type="number" step={spec.step ?? "any"} min={spec.min} max={spec.max} style={{ width: 70 }}
              value={typeof value === "number" ? value : ""}
              placeholder={spec.default === undefined ? "auto" : String(spec.default)}
              aria-label={spec.name}
@@ -707,8 +707,10 @@ function ArgField({ spec, value, params, onChange, engine }: {
   } else if (spec.kind === "bool") {
     field = <input type="checkbox" checked={value === true} aria-label={spec.name}
                    onChange={() => onChange(value === true ? undefined : true)} />;
-  } else if (spec.kind === "order" || spec.kind === "easing") {
-    const choices = spec.kind === "order" ? CHASE_ORDERS : EASINGS;
+  } else if (spec.kind === "choice") {
+    // Every choice argument from its declaration -- a chase's order, an
+    // easing, a spiral's direction -- rather than one hardcoded list each.
+    const choices = spec.choices ?? [];
     field = (
       <select value={typeof value === "string" ? value : String(spec.default)} aria-label={spec.name}
               onChange={(e) => onChange(e.target.value === spec.default ? undefined : e.target.value)}>
