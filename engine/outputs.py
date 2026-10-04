@@ -43,6 +43,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+import json
 import socket
 import struct
 from dataclasses import dataclass, field
@@ -183,23 +184,24 @@ def render(args: Optional[Sequence[Any]], active: Active,
     return out
 
 
-class OscOut:
-    """A frame's OSC items, sent to one address."""
+class _UdpOut:
+    """One non-blocking UDP socket to one address, with its counts. A send
+    that fails is counted, never raised into the output thread."""
 
-    def __init__(self, host: str, port: int, sock: Optional[socket.socket] = None):
+    def __init__(self, host: str, port: int, sock: Optional[socket.socket] = None,
+                 broadcast: bool = True):
         self.host = "127.0.0.1" if host == "localhost" else host
         self.port = int(port)
         self.target = (self.host, self.port)
         if sock is None:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setblocking(False)
-            try:     # a .255 address reaches a whole subnet of VJ machines
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            except OSError:
-                pass
+            if broadcast:     # a .255 address reaches a whole subnet
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                except OSError:
+                    pass
         self.sock = sock
-        self._on: dict[str, Active] = {}            # items that are on
-        self._last: dict[str, tuple[bytes, float]] = {}   # continuous: last sent
         self.sent = 0
         self.errors = 0
         self.last_error: Optional[str] = None
@@ -214,61 +216,171 @@ class OscOut:
         try:
             self.sock.sendto(data, self.target)
             self.sent += 1
-        except OSError as exc:              # never into the output thread
+        except OSError as exc:
             self.errors += 1
             self.last_error = str(exc) or type(exc).__name__
 
-    def _message(self, msg: Optional[Mapping], active: Active,
-                 frame: ProgramFrame) -> None:
-        if msg and msg.get("address"):
-            self._send(osc_encode(msg["address"], render(msg.get("args"), active,
-                                                         frame)))
 
-    def _continuous(self, key: str, msg: Optional[Mapping], active: Active,
-                    frame: ProgramFrame, now: float) -> None:
-        if not msg or not msg.get("address"):
-            return
-        data = osc_encode(msg["address"], render(msg.get("args"), active, frame))
+class _Edges(_UdpOut):
+    """What OSC and MIDI share: one frame's items against the last's, by key.
+    A subclass says what an item does when it starts, while it plays, and
+    when it stops, and what a row's curve sends."""
+    output = ""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._on: dict[str, Active] = {}                  # items that are on
+        self._last: dict[str, tuple[Any, float]] = {}     # continuous: last sent
+
+    def _start(self, a: Active, frame: ProgramFrame) -> None: ...
+    def _stop(self, a: Active, frame: ProgramFrame) -> None: ...
+    def _during(self, key: str, a: Active, frame: ProgramFrame, now: float) -> None: ...
+    def _curve(self, key: str, a: Active, frame: ProgramFrame, now: float) -> None: ...
+    def _flush(self) -> None: ...
+
+    def _due(self, key: str, data: Any, now: float) -> bool:
+        """Whether a continuous value should go now: it changed, and the last
+        one went at least 1/RATE_HZ ago. Records it if so."""
         last = self._last.get(key)
         if last is not None and (data == last[0] or now - last[1] < 1.0 / RATE_HZ):
-            return
-        self._send(data)
+            return False
         self._last[key] = (data, now)
+        return True
 
     def send(self, frame: Optional[ProgramFrame], now: float) -> None:
         """This frame's messages. `frame` None: nothing is on any more."""
-        empty = ProgramFrame(mode="off")
-        current = {a.key: a for a in frame.of("osc")} if frame is not None else {}
-        frame = frame if frame is not None else empty
+        current = ({a.key: a for a in frame.of(self.output)} if frame is not None
+                   else {})
+        frame = frame if frame is not None else ProgramFrame(mode="off")
         # Off first, so a cue that replaces another ends it before it begins.
         for key in [k for k in self._on if k not in current]:
-            was = self._on.pop(key)
-            self._message(was.item.data.get("off"), was, frame)
+            self._stop(self._on.pop(key), frame)
             self._last.pop(key, None)
         for key, a in current.items():
             if a.item is None:                       # a row's curve
-                self._continuous(key, {"address": a.row.data.get("address"),
-                                       "args": a.row.data.get("args", ["$value"])},
-                                 a, frame, now)
+                self._curve(key, a, frame, now)
                 continue
-            data = a.item.data
             if a.crossed:                            # on and over between frames
-                self._message(data.get("on"), a, frame)
-                self._message(data.get("off"), a, frame)
+                self._start(a, frame)
+                self._stop(a, frame)
                 continue
             if key not in self._on:
-                self._on[key] = a
-                self._message(data.get("on"), a, frame)
-            else:
-                self._on[key] = a                    # its latest progress, for off
-            self._continuous(key, data.get("while"), a, frame, now)
+                self._start(a, frame)
+            self._on[key] = a                        # its latest progress, for off
+            self._during(key, a, frame, now)
         for key in [k for k in self._last if k not in current]:
             del self._last[key]
+        self._flush()
 
     def public(self) -> dict:
         return {"target": f"{self.host}:{self.port}", "sent": self.sent,
                 "errors": self.errors, "last_error": self.last_error,
                 "on": len(self._on)}
+
+
+class OscOut(_Edges):
+    """A frame's OSC items, sent to one address."""
+    output = "osc"
+
+    def _message(self, msg: Optional[Mapping], a: Active,
+                 frame: ProgramFrame) -> None:
+        if msg and msg.get("address"):
+            self._send(osc_encode(msg["address"], render(msg.get("args"), a, frame)))
+
+    def _continuous(self, key: str, msg: Optional[Mapping], a: Active,
+                    frame: ProgramFrame, now: float) -> None:
+        if not msg or not msg.get("address"):
+            return
+        data = osc_encode(msg["address"], render(msg.get("args"), a, frame))
+        if self._due(key, data, now):
+            self._send(data)
+
+    def _start(self, a, frame):
+        self._message(a.item.data.get("on"), a, frame)
+
+    def _stop(self, a, frame):
+        self._message(a.item.data.get("off"), a, frame)
+
+    def _during(self, key, a, frame, now):
+        self._continuous(key, a.item.data.get("while"), a, frame, now)
+
+    def _curve(self, key, a, frame, now):
+        self._continuous(key, {"address": a.row.data.get("address"),
+                               "args": a.row.data.get("args", ["$value"])},
+                         a, frame, now)
+
+
+# -- MIDI, through the sidecar -----------------------------------------------------
+
+MIDI_WIRE = "klights.midi/1"
+
+
+class MidiOut(_Edges):
+    """A frame's MIDI items, as one small JSON datagram to the MIDI sidecar
+    (`bridges/midi/midi_out.py`), which owns the MIDI port -- so the engine
+    stays stdlib-only and a MIDI driver can never stall the lights.
+
+    A note item plays its note from start to end; a CC item sends its value
+    at the start and `off_value`, if it has one, at the end; a program item
+    sends its program at the start. A row's curve (0-1) goes to its `cc` as
+    0-127, on change and at most 30 times a second. Channels are 1-16, the
+    item's, else the row's, else 1."""
+    output = "midi"
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("broadcast", False)
+        super().__init__(*args, **kwargs)
+        self._batch: list[dict] = []
+
+    @staticmethod
+    def _channel(a: Active) -> int:
+        item = a.item.data if a.item is not None else {}
+        return int(item.get("channel") or a.row.data.get("channel") or 1)
+
+    def _start(self, a, frame):
+        d, ch = a.item.data, self._channel(a)
+        if d.get("note") is not None:
+            self._batch.append({"type": "note_on", "channel": ch, "note": d["note"],
+                                "velocity": d.get("velocity", 100)})
+        elif d.get("cc") is not None:
+            self._batch.append({"type": "control_change", "channel": ch,
+                                "control": d["cc"], "value": d.get("value", 127)})
+        elif d.get("pc") is not None:
+            self._batch.append({"type": "program_change", "channel": ch,
+                                "program": d["pc"]})
+
+    def _stop(self, a, frame):
+        d, ch = a.item.data, self._channel(a)
+        if d.get("note") is not None:
+            self._batch.append({"type": "note_off", "channel": ch, "note": d["note"],
+                                "velocity": 0})
+        elif d.get("cc") is not None and d.get("off_value") is not None:
+            self._batch.append({"type": "control_change", "channel": ch,
+                                "control": d["cc"], "value": d["off_value"]})
+
+    def _during(self, key, a, frame, now):
+        pass
+
+    def _curve(self, key, a, frame, now):
+        cc = a.row.data.get("cc")
+        if cc is None or a.value is None:
+            return
+        value = int(round(max(0.0, min(1.0, a.value)) * 127))
+        if self._due(key, value, now):
+            self._batch.append({"type": "control_change", "channel": self._channel(a),
+                                "control": cc, "value": value})
+
+    def _flush(self):
+        if self._batch:
+            batch, self._batch = self._batch, []
+            self._send(json.dumps({"klights": MIDI_WIRE, "messages": batch},
+                                  separators=(",", ":")).encode("utf-8"))
+
+    def close(self) -> None:
+        """Every note still sounding is stopped first: a stuck note on a
+        synth outlives the engine."""
+        self.send(None, 0.0)
+        super().close()
 
 
 # -- timecode ---------------------------------------------------------------------
@@ -296,35 +408,16 @@ def timecode_text(tc: tuple[int, int, int, int], fps: float) -> str:
     return f"{hours:02d}:{mins:02d}:{secs:02d}{sep}{frames:02d}"
 
 
-class TimecodeOut:
+class TimecodeOut(_UdpOut):
     """ArtTimeCode, from the matched track's position."""
 
     def __init__(self, host: str = "255.255.255.255",
                  port: int = artnetmod.ARTNET_PORT, fps: float = 30,
                  sock: Optional[socket.socket] = None):
-        self.host = "127.0.0.1" if host == "localhost" else host
-        self.port = int(port)
-        self.target = (self.host, self.port)
+        super().__init__(host, port, sock)
         self.fps = fps
         self.kind = artnetmod.TIMECODE_TYPES[fps]
-        if sock is None:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setblocking(False)
-            try:     # the default goes to everyone on the network
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            except OSError:
-                pass
-        self.sock = sock
         self.last: Optional[tuple[int, int, int, int]] = None
-        self.sent = 0
-        self.errors = 0
-        self.last_error: Optional[str] = None
-
-    def close(self) -> None:
-        try:
-            self.sock.close()
-        except OSError:
-            pass
 
     def send(self, frame: Optional[ProgramFrame], now: float) -> None:
         if (frame is None or not frame.armed or not frame.playing
@@ -335,12 +428,7 @@ class TimecodeOut:
         if tc == self.last:
             return
         self.last = tc
-        try:
-            self.sock.sendto(artnetmod.build_arttimecode(*tc, self.kind), self.target)
-            self.sent += 1
-        except OSError as exc:
-            self.errors += 1
-            self.last_error = str(exc) or type(exc).__name__
+        self._send(artnetmod.build_arttimecode(*tc, self.kind))
 
     def public(self) -> dict:
         return {"target": f"{self.host}:{self.port}", "fps": self.fps,
@@ -362,78 +450,89 @@ def merge(show: Optional[Mapping], local: Optional[Mapping]) -> dict:
     return out
 
 
+MIDI_PORT = 9123            # where the MIDI sidecar listens, by default
+
+# name -> (label, default host, default port); timecode also takes an fps.
+_PLACES = {
+    "osc": ("OSC", "127.0.0.1", None),
+    "midi": ("MIDI", "127.0.0.1", MIDI_PORT),
+    "timecode": ("timecode", "255.255.255.255", artnetmod.ARTNET_PORT),
+}
+
+
 class Outputs:
     """Every output this engine sends to. Configured from the show folder on
     each load; fed a ProgramFrame every frame on the output thread."""
 
     def __init__(self) -> None:
         self.osc: Optional[OscOut] = None
+        self.midi: Optional[MidiOut] = None
         self.timecode: Optional[TimecodeOut] = None
         self.config: dict = {}
         self.problems: list[str] = []
 
     @property
+    def outs(self) -> tuple:
+        return tuple(o for o in (self.osc, self.midi, self.timecode) if o is not None)
+
+    @property
     def active(self) -> bool:
-        return self.osc is not None or self.timecode is not None
+        return bool(self.outs)
 
     def configure(self, show: Optional[Mapping], local: Optional[Mapping] = None
                   ) -> Optional[str]:
         """Point the outputs where the folder (and this machine) say. Returns a
-        line saying what changed, or None if nothing did."""
+        line saying what changed, or None if nothing did. An output whose
+        place is unchanged keeps its state -- the cues it knows are on."""
         config = merge(show, local)
         if config == self.config:
             return None
         self.config = config
         self.problems = []
-        osc = config.get("osc")
-        old = self.osc
-        self.osc = None
-        if osc is not None:
-            host, port = osc.get("host", "127.0.0.1"), osc.get("port")
-            problem = showfiles.host_problem(host)
-            if problem is None and not (isinstance(port, int)
-                                        and not isinstance(port, bool)
-                                        and 1 <= port <= 65535):
-                problem = f"port {port!r} must be a whole number from 1 to 65535"
-            if problem is not None:
-                self.problems.append(f"outputs.osc: {problem}; OSC is off")
-            elif old is not None and old.target == (
-                    "127.0.0.1" if host == "localhost" else host, port):
-                self.osc, old = old, None             # same place: keep its state
-            else:
-                self.osc = OscOut(host, port)
-        if old is not None:
-            old.close()
-        self._configure_timecode(config.get("timecode"))
+        self.osc = self._place("osc", config.get("osc"), self.osc)
+        self.midi = self._place("midi", config.get("midi"), self.midi)
+        self.timecode = self._place("timecode", config.get("timecode"), self.timecode)
         return "outputs: " + self.describe()
 
-    def _configure_timecode(self, conf: Optional[Mapping]) -> None:
-        old, self.timecode = self.timecode, None
+    def _place(self, name: str, conf: Optional[Mapping], old):
+        label, host_default, port_default = _PLACES[name]
+        out = None
         if conf is not None:
-            host = conf.get("host", "255.255.255.255")
-            port = conf.get("port", artnetmod.ARTNET_PORT)
+            host = conf.get("host", host_default)
+            port = conf.get("port", port_default)
             fps = conf.get("fps", 30)
             problem = showfiles.host_problem(host)
             if problem is None and not (isinstance(port, int)
                                         and not isinstance(port, bool)
                                         and 1 <= port <= 65535):
                 problem = f"port {port!r} must be a whole number from 1 to 65535"
-            if problem is None and fps not in artnetmod.TIMECODE_TYPES:
+            if problem is None and name == "timecode" \
+                    and fps not in artnetmod.TIMECODE_TYPES:
                 problem = f"fps {fps!r} must be 24, 25, 29.97 or 30"
             if problem is not None:
-                self.problems.append(f"outputs.timecode: {problem}; timecode is off")
-            elif old is not None and (old.target, old.fps) == (
-                    ("127.0.0.1" if host == "localhost" else host, port), fps):
-                self.timecode, old = old, None
+                self.problems.append(f"outputs.{name}: {problem}; {label} is off")
             else:
-                self.timecode = TimecodeOut(host, port, fps)
+                target = ("127.0.0.1" if host == "localhost" else host, port)
+                same = (old is not None and old.target == target
+                        and (name != "timecode" or old.fps == fps))
+                if same:
+                    out, old = old, None
+                elif name == "osc":
+                    out = OscOut(host, port)
+                elif name == "midi":
+                    out = MidiOut(host, port)
+                else:
+                    out = TimecodeOut(host, port, fps)
         if old is not None:
             old.close()
+        return out
 
     def describe(self) -> str:
         parts = []
         if self.osc is not None:
             parts.append(f"OSC to {self.osc.host}:{self.osc.port}")
+        if self.midi is not None:
+            parts.append(f"MIDI to the sidecar at {self.midi.host}:{self.midi.port}")
         if self.timecode is not None:
             parts.append(f"ArtTimeCode ({self.timecode.fps:g} fps) to "
                          f"{self.timecode.host}:{self.timecode.port}")
@@ -441,21 +540,18 @@ class Outputs:
         return "; ".join(parts) if parts else "none"
 
     def send(self, frame: Optional[ProgramFrame], now: float) -> None:
-        if self.osc is not None:
-            self.osc.send(frame, now)
-        if self.timecode is not None:
-            self.timecode.send(frame, now)
+        for out in self.outs:
+            out.send(frame, now)
 
     def public(self) -> Optional[dict]:
         if not self.active and not self.problems:
             return None
-        return {"osc": self.osc.public() if self.osc is not None else None,
-                "timecode": (self.timecode.public() if self.timecode is not None
-                             else None),
-                "problems": list(self.problems)}
+        return {name: (out.public() if out is not None else None)
+                for name, out in (("osc", self.osc), ("midi", self.midi),
+                                  ("timecode", self.timecode))} | {
+            "problems": list(self.problems)}
 
     def close(self) -> None:
-        for out in (self.osc, self.timecode):
-            if out is not None:
-                out.close()
-        self.osc = self.timecode = None
+        for out in self.outs:
+            out.close()
+        self.osc = self.midi = self.timecode = None

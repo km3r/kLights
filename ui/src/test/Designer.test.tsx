@@ -312,6 +312,42 @@ describe("designer", () => {
     });
   });
 
+  it("plays MIDI through the sidecar: a note cue made a CC, and a CC curve", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi");
+    await user.click(await screen.findByRole("button", { name: "add a cue to midi" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(lanes).getByLabelText("note 60 at bar 1.1")).toBeInTheDocument();
+    await user.click(within(within(inspector).getByRole("group", { name: "midi kind" }))
+      .getByRole("button", { name: "CC" }));
+    const cc = within(inspector).getByLabelText("midi cc");
+    await user.clear(cc);
+    await user.type(cc, "7");
+    const then = within(inspector).getByLabelText("midi off_value");
+    await user.type(then, "0");
+    const channel = within(inspector).getByLabelText("midi channel");
+    await user.clear(channel);
+    await user.type(channel, "3");
+    expect(within(lanes).getByLabelText("cc 7 at bar 1.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi-curve");
+    expect(await screen.findByLabelText("midi-curve cc")).toHaveValue(1);
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:dddddddddddd" }) as
+      Command & { doc: TimelineDoc };
+    const sent = JSON.parse(JSON.stringify(save.doc)) as TimelineDoc;
+    const item = sent.rows.find((r) => r.id === "midi")!.items![0]!;
+    expect(item).toMatchObject({ cc: 7, value: 127, off_value: 0, channel: 3 });
+    expect(item.note).toBeUndefined();
+    expect(sent.rows.find((r) => r.id === "midi-curve")).toMatchObject({
+      type: "external", output: "midi", channel: 1, cc: 1, points: [[0, 0]] });
+  });
+
   it("refuses to save while the engine says the draft is invalid", async () => {
     const user = userEvent.setup();
     const socket = await open();

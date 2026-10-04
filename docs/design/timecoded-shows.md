@@ -168,6 +168,7 @@ bar-count fallback, the template-set switcher, routines on preset pads.
 |---|---|
 | F21a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
 | F21b | Art-Net ArtTimeCode from the matched track's position |
+| F21c | MIDI through the sidecar (`bridges/midi/`): note, CC and program cues, CC curves |
 
 ## Things to verify on hardware
 

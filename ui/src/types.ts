@@ -244,6 +244,9 @@ export interface TrackState {
 export interface OutputsState {
   osc: { target: string; sent: number; errors: number; last_error: string | null;
          on: number } | null;
+  /** The MIDI sidecar: what is on is notes and CCs held. Absent before F21c. */
+  midi?: { target: string; sent: number; errors: number; last_error: string | null;
+           on: number } | null;
   /** Art-Net timecode: the matched track's position. `now` is the last time
    *  sent, null while silent (paused, disarmed, nothing matched). Absent
    *  before F21b. */

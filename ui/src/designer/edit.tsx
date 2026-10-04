@@ -699,6 +699,7 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 const NEW_LANES: [string, string][] = [
   ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
   ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
+  ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"],
 ];
 
 /** A new lane for another output (milestone 3), or undefined for a lights lane. */
@@ -708,6 +709,11 @@ export function externalRow(d: RowsDoc, kind: string): Row | undefined {
     return { id: uniqueId(d, "osc-curve"), type: "external", output: "osc",
              address: "/composition/layers/1/video/opacity", args: ["$value"],
              points: [[0, 1]] };
+  }
+  if (kind === "midi") return { id: uniqueId(d, "midi"), type: "external", output: "midi", items: [] };
+  if (kind === "midi-curve") {
+    return { id: uniqueId(d, "midi-curve"), type: "external", output: "midi",
+             channel: 1, cc: 1, points: [[0, 0]] };
   }
   return undefined;
 }
@@ -988,6 +994,9 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         {row.type === "external" && row.output === "osc" && (
           <OscCue item={it} set={set} />
         )}
+        {row.type === "external" && row.output === "midi" && (
+          <MidiCue item={it} set={set} />
+        )}
         {!it.hit && row.type !== "external" && (
           <div>
             <span className="small muted">Fade in</span>
@@ -1098,6 +1107,43 @@ function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => voi
       {(["on", "while", "off"] as const).map((k) => (
         <OscField key={`${item.id}-${k}`} which={k} message={item[k]}
                   onChange={(m) => set({ [k]: m })} />))}
+    </>
+  );
+}
+
+const MIDI_KINDS = { note: "Note", cc: "CC", pc: "Program" } as const;
+
+/** A MIDI cue: a note held for its length, a CC (and the value it leaves
+ *  behind), or a program change -- on a channel. */
+function MidiCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const kind = item.note != null ? "note" : item.cc != null ? "cc" : "pc";
+  const num = (label: string, field: keyof Item, value: number | undefined,
+               lo: number, hi: number, optional = false) => (
+    <label className="small">{label}{" "}
+      <input type="number" className="d-num" min={lo} max={hi} aria-label={`midi ${field}`}
+             value={value ?? ""} placeholder={optional ? "none" : undefined}
+             onChange={(e) => set({ [field]: e.target.value === "" && optional
+               ? undefined : Number(e.target.value) })} />
+    </label>
+  );
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="midi kind">
+        {(Object.keys(MIDI_KINDS) as (keyof typeof MIDI_KINDS)[]).map((k) => (
+          <button key={k} className={kind === k ? "on" : ""}
+                  onClick={() => set({
+                    note: k === "note" ? 60 : undefined, velocity: k === "note" ? 100 : undefined,
+                    cc: k === "cc" ? 1 : undefined, value: k === "cc" ? 127 : undefined,
+                    off_value: undefined, pc: k === "pc" ? 0 : undefined })}>
+            {MIDI_KINDS[k]}</button>))}
+      </div>
+      {num("Channel", "channel", item.channel ?? 1, 1, 16)}
+      {kind === "note" && <>{num("Note", "note", item.note, 0, 127)}
+        {num("Velocity", "velocity", item.velocity ?? 100, 1, 127)}</>}
+      {kind === "cc" && <>{num("CC", "cc", item.cc, 0, 127)}
+        {num("Value", "value", item.value ?? 127, 0, 127)}
+        {num("Then", "off_value", item.off_value, 0, 127, true)}</>}
+      {kind === "pc" && num("Program", "pc", item.pc, 0, 127)}
     </>
   );
 }
@@ -1215,5 +1261,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector, uniqueId, OscCue,
+  PointInspector, uniqueId, OscCue, MidiCue,
 };

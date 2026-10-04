@@ -294,6 +294,13 @@ changes, at 24, 25, 29.97 drop-frame or 30 fps (`outputs.timecode {host,
 port, fps}`, default broadcast on 6454 at 30). Silent while paused, disarmed,
 or with nothing matched; the designer's preview sends its own position.
 `shared/tools/artnet_listener.py --timecode` prints what arrives.
+**MIDI** (`MidiOut`) never opens a MIDI port: each frame's MIDI messages go as
+one JSON datagram (`klights.midi/1`) to the sidecar in
+[`bridges/midi/`](../bridges/midi/README.md), which owns the port and has its
+own pinned dependencies (`outputs.midi {host, port}`, default this machine on
+9123). A note cue holds its note for its length, a CC cue sets a value (and
+`off_value` at its end), a program cue sends a program change; a curve drives
+one CC, 0-1 as 0-127. Closing stops every note still sounding.
 
 **Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
 says what any deck has loaded, as `loaded_*` sync fields that never touch the

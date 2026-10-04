@@ -194,7 +194,9 @@ python -m engine.server --show-dir shows/ --sync-port 9000
 5. **VJ.** An OSC lane in the designer cues a VJ app (Resolume, or anything
    that takes OSC) as the track plays -- clip triggers on, off and while
    playing, and curves -- and a routine can carry one too, so templates cue
-   it on tracks nobody drew. For a VJ app with its own timeline per track,
+   it on tracks nobody drew. MIDI lanes do the same for MIDI gear, through a
+   small sidecar ([`bridges/midi/`](bridges/midi/README.md)) that owns the
+   MIDI port. For a VJ app with its own timeline per track,
    `outputs.timecode` sends Art-Net timecode at the DJ's position in the
    track -- it jumps with loops and hot cues. Say where under `outputs` in
    show.json, or per machine in `klights.local.json`.

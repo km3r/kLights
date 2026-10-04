@@ -1,7 +1,8 @@
 """
 Tests for the other outputs (milestone 3): external rows in the timeline core,
-collected through routines and templates into a ProgramFrame, and sent as OSC;
-and Art-Net timecode carrying the matched track's position.
+collected through routines and templates into a ProgramFrame, and sent as OSC
+and as MIDI (through the sidecar in bridges/midi, run here with --fake); and
+Art-Net timecode carrying the matched track's position.
 
 The OSC goes over a real UDP socket to a listener in this process, and is
 decoded by the engine's own OSC reader. The last section runs a whole
@@ -12,18 +13,23 @@ Run: python engine/tests/test_outputs.py
 """
 
 import json
+import queue
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "bridges" / "prolink"))
+sys.path.insert(0, str(REPO / "bridges" / "midi"))
 
 import bridge as bridgemod  # noqa: E402
+import midi_out as sidecarmod  # noqa: E402
 from engine import outputs as outputsmod  # noqa: E402
 from engine.output import artnet as artnetmod  # noqa: E402
 from engine import program as programmod  # noqa: E402
@@ -363,6 +369,144 @@ try:
           not sf.validate("show", {"kind": "klights.show", "version": 1,
                                    "outputs": {"timecode": {"fps": 60}}}).ok)
     outs.close()
+
+    # -- 6c. MIDI ----------------------------------------------------------------------
+    print("\n6c. MIDI, through the sidecar")
+    MIDI_ROWS = [
+        {"id": "keys", "type": "external", "output": "midi", "channel": 2, "items": [
+            {"id": "n", "at": 0, "len": 4, "note": 60, "velocity": 90},
+            {"id": "c", "at": 4, "len": 4, "cc": 7, "value": 100, "off_value": 0},
+            {"id": "p", "at": 8, "len": 0.01, "pc": 5, "channel": 10},
+            {"id": "z", "at": 12, "len": 4, "note": 64}]},
+        {"id": "fader", "type": "external", "output": "midi", "cc": 1,
+         "points": [[0, 0.0], [16, 1.0]]},
+    ]
+    for row in MIDI_ROWS:
+        check(f"the MIDI rows validate: {row['id']}",
+              sf.validate("timeline", {"kind": "klights.timeline", "version": 1,
+                                       "track": "x", "rows": [row]}).ok)
+    midi_tl = tl.Timeline.from_rows(MIDI_ROWS)
+    mp = Prog(midi_tl)
+    midi_ear = Listener()
+    mo = outputsmod.MidiOut("127.0.0.1", midi_ear.port)
+
+    def batches():
+        return [json.loads(d) for d in midi_ear.raw()]
+
+    mo.send(frame(mp, 0.5), 0.0)
+    got = batches()
+    check("one datagram a frame, in the sidecar's wire format",
+          len(got) == 1 and got[0]["klights"] == "klights.midi/1", f"{got}")
+    msgs = got[0]["messages"]
+    check("a note cue starts its note, on the lane's channel, at its velocity",
+          {"type": "note_on", "channel": 2, "note": 60, "velocity": 90} in msgs, f"{msgs}")
+    check("the curve's 0-1 goes to its CC as 0-127",
+          any(m["type"] == "control_change" and m["control"] == 1
+              and m["value"] == 4 for m in msgs), f"{msgs}")
+    mo.send(frame(mp, 0.6, 0.5), 0.01)
+    check("nothing new, nothing sent -- the curve is still on 4 and too soon anyway",
+          batches() == [])
+    mo.send(frame(mp, 4.5, 0.6), 1.0)
+    msgs = [m for b in batches() for m in b["messages"]]
+    check("leaving the note stops it; the CC cue sets its value",
+          {"type": "note_off", "channel": 2, "note": 60, "velocity": 0} in msgs
+          and {"type": "control_change", "channel": 2, "control": 7, "value": 100} in msgs,
+          f"{msgs}")
+    mo.send(frame(mp, 8.5, 4.5), 2.0)
+    msgs = [m for b in batches() for m in b["messages"]]
+    check("a CC cue's off_value is what it leaves behind",
+          {"type": "control_change", "channel": 2, "control": 7, "value": 0} in msgs)
+    check("a program change shorter than a frame still goes, on its own channel",
+          {"type": "program_change", "channel": 10, "program": 5} in msgs, f"{msgs}")
+    mo.send(frame(mp, 13.0, 8.5), 3.0)
+    batches()
+    mo.close()
+    msgs = [m for b in batches() for m in b["messages"]]
+    check("closing stops every note still sounding -- a stuck note outlives us",
+          msgs == [{"type": "note_off", "channel": 2, "note": 64, "velocity": 0}], f"{msgs}")
+    midi_ear.close()
+
+    outs = outputsmod.Outputs()
+    said = outs.configure({"midi": {}}, None)
+    check("midi: {} is the sidecar on this machine at its default port",
+          outs.midi.target == ("127.0.0.1", 9123)
+          and "MIDI to the sidecar at 127.0.0.1:9123" in said, f"{said}")
+    outs.close()
+
+    print("\n6d. the sidecar")
+
+    class Played:
+        name = "recorder"
+
+        def __init__(self):
+            self.messages = []
+
+        def send(self, m):
+            self.messages.append(m)
+
+        def close(self):
+            pass
+
+    rec = Played()
+    car = sidecarmod.Sidecar(rec)
+    wire = lambda *ms: json.dumps({"klights": "klights.midi/1",  # noqa: E731
+                                   "messages": list(ms)}).encode()
+    car.handle(wire({"type": "note_on", "channel": 1, "note": 60, "velocity": 100},
+                    {"type": "note_on", "channel": 3, "note": 67, "velocity": 80}))
+    car.handle(wire({"type": "note_off", "channel": 1, "note": 60, "velocity": 0}))
+    check("the sidecar plays what arrives, and keeps track of what is sounding",
+          len(rec.messages) == 3 and car.sounding == {(3, 67)})
+    bad = [
+        (b"not json", "not JSON"),
+        (json.dumps({"klights": "other", "messages": []}).encode(), "not a klights.midi/1"),
+        (wire({"type": "sysex", "channel": 1}), "type must be"),
+        (wire({"type": "note_on", "channel": 0, "note": 60, "velocity": 1}), "channel must be 1-16"),
+        (wire({"type": "note_on", "channel": 1, "note": 128, "velocity": 1}), "note must be 0-127"),
+        (wire({"type": "control_change", "channel": 1, "control": 7, "value": True}),
+         "value must be 0-127"),
+        (wire(*[{"type": "program_change", "channel": 1, "program": 1}] * 257),
+         "at most 256"),
+    ]
+    for data, why in bad:
+        messages, reason = sidecarmod.decode(data)
+        check(f"the sidecar refuses: {why}", messages is None and why in reason, f"{reason}")
+    before = len(rec.messages)
+    car.handle(wire({"type": "note_on", "channel": 1, "note": 61, "velocity": 1},
+                    {"type": "note_on", "channel": 1, "note": 999, "velocity": 1}))
+    check("a datagram with one bad message plays none of it -- never half-played",
+          len(rec.messages) == before and car.rejected == 1)
+    car.panic()
+    check("on the way out it stops every note it started",
+          rec.messages[-1] == {"type": "note_off", "channel": 3, "note": 67, "velocity": 0}
+          and car.sounding == set())
+
+    proc = subprocess.Popen([sys.executable, str(REPO / "bridges" / "midi" / "midi_out.py"),
+                             "--fake", "--port", "0"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines: "queue.Queue[str]" = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(l.rstrip()) for l in proc.stdout],
+                     daemon=True).start()
+    try:
+        first = lines.get(timeout=10)
+        port = int(first.split()[2].rstrip(",").rsplit(":", 1)[1])
+        check("the sidecar runs with --fake, no MIDI library, and says where it listens",
+              first.startswith("listening on 127.0.0.1:") and "playing to fake" in first,
+              first)
+        engine_side = outputsmod.MidiOut("127.0.0.1", port)
+        engine_side.send(frame(Prog(midi_tl), 0.5), 0.0)
+        heard = []
+        try:
+            while len(heard) < 2:
+                heard.append(lines.get(timeout=5))
+        except queue.Empty:
+            pass
+        check("and plays what the engine's MidiOut sends it",
+              "note_on ch2 note=60 velocity=90" in heard
+              and "control_change ch1 control=1 value=4" in heard, f"{heard}")
+        engine_side.sock.close()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
 
     # -- 7. a whole engine ----------------------------------------------------------
     print("\n7. through a whole engine")

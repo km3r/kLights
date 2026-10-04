@@ -229,6 +229,8 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
           <option value="hits">Hits</option>
           <option value="osc">OSC cues</option>
           <option value="osc-curve">OSC curve</option>
+          <option value="midi">MIDI cues</option>
+          <option value="midi-curve">MIDI curve</option>
         </select>
         <select aria-label="add automation" value=""
                 onChange={(e) => {
@@ -601,6 +603,8 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
         <div className="d-insp-grid">
           {row.output === "osc" &&
             <Editor.OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+          {row.output === "midi" &&
+            <Editor.MidiCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
         </div>
       </footer>
     );

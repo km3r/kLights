@@ -1106,10 +1106,13 @@ describe("follow dj (track card)", () => {
                            last_error: "network is unreachable", on: 2 },
                     timecode: { target: "255.255.255.255:6454", fps: 30, sent: 900,
                                 errors: 0, last_error: null, now: "00:01:15:21" },
+                    midi: { target: "127.0.0.1:9123", sent: 40, errors: 0,
+                            last_error: null, on: 1 },
                     problems: [] };
     })));
     const line = screen.getByLabelText("outputs");
     expect(line).toHaveTextContent("Timecode → 255.255.255.255:6454 · 00:01:15:21 (30 fps)");
+    expect(line).toHaveTextContent("MIDI → sidecar 127.0.0.1:9123 · 1 on");
     expect(line).toHaveTextContent("OSC → 192.168.1.20:7000 · 2 on");
     expect(line).toHaveTextContent("3 failed (network is unreachable)");
     act(() => socket.push(stateWith((s) => {

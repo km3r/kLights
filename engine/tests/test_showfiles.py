@@ -245,6 +245,41 @@ refused("routine: and its OSC rows are checked the same way",
             {"id": "vj", "type": "external", "output": "osc",
              "items": [{"id": "go", "at": 0, "len": 4,
                         "on": {"address": "go"}}]})), "is not an OSC address")
+def midi_row(d, **row):
+    d["rows"].append({"id": "midi", "type": "external", "output": "midi", **row})
+
+
+check("timeline: a MIDI lane of a note, a CC and a program change",
+      sf.validate("timeline", edit(TIMELINE, lambda d: midi_row(d, channel=2, items=[
+          {"id": "n", "at": 0, "len": 4, "note": 60, "velocity": 90},
+          {"id": "c", "at": 4, "len": 4, "cc": 7, "value": 100, "off_value": 0},
+          {"id": "p", "at": 8, "len": 1, "pc": 3, "channel": 10}]))).ok)
+refused("timeline: a MIDI cue must be exactly one thing",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, items=[
+            {"id": "n", "at": 0, "len": 4, "note": 60, "cc": 7}])),
+        "exactly one of a note, a cc or a pc, not note and cc")
+refused("timeline: or something at all",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, items=[
+            {"id": "n", "at": 0, "len": 4, "channel": 3}])), "exactly one of")
+refused("timeline: a note past 127",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, items=[
+            {"id": "n", "at": 0, "len": 4, "note": 128}])), "note must be at most 127")
+refused("timeline: channel 0 -- channels are 1-16, as on the gear",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, items=[
+            {"id": "n", "at": 0, "len": 4, "note": 60, "channel": 0}])),
+        "channel must be at least 1")
+warned("timeline: a velocity on a CC means nothing, and says so",
+       "timeline", edit(TIMELINE, lambda d: midi_row(d, items=[
+           {"id": "c", "at": 0, "len": 4, "cc": 7, "velocity": 90}])),
+       "velocity means nothing without a cc")
+refused("timeline: a MIDI curve needs a cc to drive",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, points=[[0, 0], [8, 1]])),
+        "no cc")
+refused("timeline: and runs 0-1",
+        "timeline", edit(TIMELINE, lambda d: midi_row(d, cc=7, points=[[0, 0], [8, 64]])),
+        "runs 0-1")
+check("show.json: the MIDI sidecar, {} for the default",
+      sf.validate("show", edit(SHOW, lambda d: d.update(outputs={"midi": {}}))).ok)
 check("show.json: where OSC goes",
       sf.validate("show", edit(SHOW, lambda d: d.update(
           outputs={"osc": {"host": "10.0.0.5", "port": 7000}}))).ok)

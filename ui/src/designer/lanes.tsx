@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { BEATS_PER_BAR, curveValue } from "./model";
-import type { Grid, Row, TrackDoc, Wave } from "./model";
+import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
 import { Editor } from "./edit";
 import type { Edits } from "./edit";
 
@@ -125,9 +125,10 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
                      selected={selected} onSelect={onSelect} />;
   }
   if (row.type === "external") {
-    if (row.output === "osc") {
-      return <OscLane row={row} index={index} x={x} width={width} zoom={zoom}
-                      selected={selected} onSelect={onSelect} history={history} beat={beat} />;
+    if (row.output === "osc" || row.output === "midi") {
+      return <ExternalLane row={row} index={index} x={x} width={width} zoom={zoom}
+                           selected={selected} onSelect={onSelect} history={history}
+                           beat={beat} />;
     }
     return (
       <div className="d-row d-external">
@@ -166,9 +167,16 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   );
 }
 
-/** An OSC lane (milestone 3): cues the VJ app as the track plays -- or, with
- *  points, a curve whose value is sent to one address. */
-function OscLane({ row, index, x, width, zoom, selected, onSelect, history, beat }: {
+/** A new cue on an OSC or MIDI lane, before its author says what it sends. */
+function newCue(output: string): Partial<Item> {
+  return output === "midi"
+    ? { note: 60, velocity: 100 }
+    : { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
+}
+
+/** An OSC or MIDI lane (milestone 3): cues as the track plays -- or, with
+ *  points, a curve sent to one OSC address or one MIDI controller. */
+function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history, beat }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
   history: Edits; beat: number;
@@ -179,16 +187,27 @@ function OscLane({ row, index, x, width, zoom, selected, onSelect, history, beat
     const r = d.rows.find((q) => q.id === row.id);
     if (r) Object.assign(r, fields);
   });
+  const midi = row.output === "midi";
   return (
     <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
       <div className="d-head">
-        <span>OSC<span className="muted small"> · {row.label ?? row.id}</span>
+        <span>{midi ? "MIDI" : "OSC"}<span className="muted small"> · {row.label ?? row.id}</span>
           {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</span>
-        {curve
-          ? <input className="small mono d-osc-address" aria-label={`${row.id} address`}
-                   value={row.address ?? ""} placeholder="/address"
-                   onChange={(e) => set({ address: e.target.value })} />
-          : <button className="small" aria-label={`add a cue to ${row.id}`}
+        {curve && !midi && (
+          <input className="small mono d-osc-address" aria-label={`${row.id} address`}
+                 value={row.address ?? ""} placeholder="/address"
+                 onChange={(e) => set({ address: e.target.value })} />)}
+        {curve && midi && (
+          <span className="small">
+            cc <input type="number" className="d-num" min={0} max={127}
+                      aria-label={`${row.id} cc`} value={row.cc ?? 0}
+                      onChange={(e) => set({ cc: Number(e.target.value) })} />
+            {" "}ch <input type="number" className="d-num" min={1} max={16}
+                           aria-label={`${row.id} channel`} value={row.channel ?? 1}
+                           onChange={(e) => set({ channel: Number(e.target.value) })} />
+          </span>)}
+        {!curve && (
+          <button className="small" aria-label={`add a cue to ${row.id}`}
                     onClick={() => {
                       if (!history.doc) return;
                       // Named first: the edit itself runs later, inside React's update.
@@ -197,13 +216,11 @@ function OscLane({ row, index, x, width, zoom, selected, onSelect, history, beat
                       history.apply((d) => {
                         const r = d.rows.find((q) => q.id === row.id);
                         if (!r) return;
-                        r.items = [...(r.items ?? []), {
-                          id, at, len: 16,
-                          on: { address: "/composition/layers/1/clips/1/connect", args: [1] },
-                        }];
+                        r.items = [...(r.items ?? []), { id, at, len: 16,
+                                                          ...newCue(row.output ?? "") }];
                       });
                       onSelect(id);
-                    }}>+ cue</button>}
+                    }}>+ cue</button>)}
         <Editor.LaneMenu row={row} index={index} history={history} />
       </div>
       {curve

@@ -11,6 +11,22 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — F21c: MIDI, through a sidecar
+
+- **MIDI lanes** (decided with the user: through an optional sidecar). A cue
+  is a note held for its length, a CC value (and an optional value left at
+  its end), or a program change, on channel 1-16; a **MIDI curve** drives one
+  CC from a drawn 0-1 curve. Routines can carry them too. In the designer:
+  `+ lane` → MIDI cues / MIDI curve.
+- `bridges/midi/midi_out.py` owns the MIDI port, with its own pinned
+  `mido` and `python-rtmidi`; the engine sends it one JSON datagram a frame
+  over local UDP and stays stdlib-only. `--list`, `--midi NAME`, `--virtual
+  NAME`, and `--fake` (prints; needs no MIDI library). It validates every
+  datagram whole, listens on this machine only by default, and stops every
+  note it started on the way out. The engine stops its own notes on close.
+- `outputs.midi {}` in show.json or `klights.local.json`; the Track card
+  shows it.
+
 ### Added — F21b: Art-Net timecode
 
 - **ArtTimeCode carries the matched track's position** (decided with the

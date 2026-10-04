@@ -147,3 +147,4 @@
 .designer .d-osc button { grid-column: 2; grid-row: 2; }
 .designer .d-osc-address { width: 11rem; min-width: 0; }
 .designer .d-external .d-clip rect:first-child { fill: rgba(140, 110, 255, 0.35); }
+.designer .d-num { width: 4.2rem; }

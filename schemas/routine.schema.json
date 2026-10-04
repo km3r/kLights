@@ -327,6 +327,48 @@
                       "required": [
                         "address"
                       ]
+                    },
+                    "channel": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 16,
+                      "description": "a MIDI channel, 1-16"
+                    },
+                    "note": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a note number, 0-127 (60 is middle C)"
+                    },
+                    "velocity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 127,
+                      "description": "1-127; default 100"
+                    },
+                    "cc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a controller number, 0-127"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the start, 0-127; default 127"
+                    },
+                    "off_value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the end, if any"
+                    },
+                    "pc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a program number, 0-127"
                     }
                   },
                   "required": [
@@ -338,7 +380,7 @@
               },
               "points": {
                 "type": "array",
-                "description": "[[beat, value], [beat, value, \"ease\"], ...] -- sent as $value"
+                "description": "[[beat, value], [beat, value, \"ease\"], ...] -- sent as $value (OSC) or as a CC, 0-1 scaled to 0-127 (MIDI)"
               },
               "address": {
                 "type": "string",
@@ -347,6 +389,18 @@
               "args": {
                 "type": "array",
                 "description": "OSC: what a curve sends; default [\"$value\"]"
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "a MIDI channel, 1-16"
+              },
+              "cc": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127,
+                "description": "MIDI: the controller a curve drives"
               }
             },
             "required": [

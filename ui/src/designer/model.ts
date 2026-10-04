@@ -61,6 +61,14 @@ export interface Item {
   on?: OscMessage;
   off?: OscMessage;
   while?: OscMessage;
+  /** A MIDI cue: one of a note, a CC or a program change, on a channel 1-16. */
+  channel?: number;
+  note?: number;
+  velocity?: number;
+  cc?: number;
+  value?: number;
+  off_value?: number;
+  pc?: number;
   [key: string]: unknown;
 }
 
@@ -80,6 +88,9 @@ export interface Row {
   /** OSC: where a curve's value goes, and what it sends (default `$value`). */
   address?: string;
   args?: (number | string)[];
+  /** MIDI: the lane's channel, and the CC a curve drives. */
+  channel?: number;
+  cc?: number;
   [key: string]: unknown;
 }
 
@@ -312,6 +323,9 @@ export function itemName(it: Item): string {
   if (it.hit) return it.hit;
   const osc = it.on ?? it.while ?? it.off;
   if (osc?.address) return shortAddress(osc.address);
+  if (it.note != null) return `note ${it.note}`;
+  if (it.cc != null) return `cc ${it.cc}`;
+  if (it.pc != null) return `program ${it.pc}`;
   if (it.kind === "routine") return it.routine ?? "routine";
   if (it.kind === "look") return it.look ?? "look";
   if (it.kind === "snapshot") return it.preset ?? "snapshot";
@@ -326,6 +340,11 @@ export function itemSub(it: Item): string {
   if (it.on?.args?.length) parts.push(oscArgsText(it.on.args));
   if (it.while) parts.push("while");
   if (it.off) parts.push("off");
+  if (it.note != null) parts.push(`vel ${it.velocity ?? 100}`);
+  if (it.cc != null) {
+    parts.push(`→ ${it.value ?? 127}${it.off_value != null ? `, then ${it.off_value}` : ""}`);
+  }
+  if (it.channel != null) parts.push(`ch ${it.channel}`);
   if (it.variation) parts.push(it.variation);
   for (const [k, v] of Object.entries(it.params ?? {})) parts.push(`${k} ${String(v)}`);
   for (const [k, v] of Object.entries(it.args ?? {})) {

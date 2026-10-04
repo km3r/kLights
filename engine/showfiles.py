@@ -173,6 +173,13 @@ SHOW = {
             "port": S(int, required=True, min=1, max=65535,
                       fix="the port the VJ app listens on (Resolume: 7000)"),
         }),
+        # The MIDI sidecar (bridges/midi/), which owns the MIDI port. {} is
+        # the default: the sidecar on this machine at its default port.
+        "midi": S(dict, of={
+            "host": S(str, non_empty=True, fix="default 127.0.0.1, this machine"),
+            "port": S(int, min=1, max=65535,
+                      fix="the sidecar's --port; default 9123"),
+        }),
         # Art-Net ArtTimeCode: the matched track's position, for a VJ app
         # with its own per-track timeline. {} turns it on with the defaults.
         "timecode": S(dict, of={
@@ -277,11 +284,23 @@ _OSC_MESSAGE = S(dict, of={
                         'or "$value" (the row\'s curve)'),
 })
 
+_MIDI_7BIT = dict(min=0, max=127)
+_MIDI_CHANNEL = S(int, min=1, max=16, fix="a MIDI channel, 1-16")
+
 _EXTERNAL_ITEM = S(dict, of={
     **_ITEM,
     "on": _OSC_MESSAGE,          # OSC: sent when the item comes on
     "off": _OSC_MESSAGE,         # ... when it goes off
     "while": _OSC_MESSAGE,       # ... while it is on, when it changes, <= 30 Hz
+    # MIDI (through the sidecar): one of a note, a CC or a program change.
+    "channel": _MIDI_CHANNEL,
+    "note": S(int, **_MIDI_7BIT, fix="a note number, 0-127 (60 is middle C)"),
+    "velocity": S(int, min=1, max=127, fix="1-127; default 100"),
+    "cc": S(int, **_MIDI_7BIT, fix="a controller number, 0-127"),
+    "value": S(int, **_MIDI_7BIT, fix="the CC value at the start, 0-127; "
+                                      "default 127"),
+    "off_value": S(int, **_MIDI_7BIT, fix="the CC value at the end, if any"),
+    "pc": S(int, **_MIDI_7BIT, fix="a program number, 0-127"),
 })
 
 _EXTERNAL_ROW = {
@@ -289,9 +308,11 @@ _EXTERNAL_ROW = {
                 fix="osc, midi or visuals"),
     "items": S(list, each=_EXTERNAL_ITEM),
     "points": S(list, fix='[[beat, value], [beat, value, "ease"], ...] -- sent '
-                          'as $value'),
+                          'as $value (OSC) or as a CC, 0-1 scaled to 0-127 (MIDI)'),
     "address": S(str, fix="OSC: where a curve's value is sent"),
     "args": S(list, fix='OSC: what a curve sends; default ["$value"]'),
+    "channel": _MIDI_CHANNEL,
+    "cc": S(int, **_MIDI_7BIT, fix="MIDI: the controller a curve drives"),
 }
 
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
@@ -565,6 +586,29 @@ def _check_external(row: dict, result: Result, where: str) -> None:
             else:
                 _check_osc({"address": row["address"],
                             "args": row.get("args", ["$value"])}, result, where)
+    elif output == "midi":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            kinds = [k for k in ("note", "cc", "pc") if item.get(k) is not None]
+            if len(kinds) != 1:
+                result.errors.append(
+                    f"{at} must be exactly one of a note, a cc or a pc"
+                    + (f", not {' and '.join(kinds)}" if kinds else ""))
+            stray = [k for k, kind in (("velocity", "note"), ("value", "cc"),
+                                       ("off_value", "cc")) if k in item
+                     and kind not in kinds]
+            if stray:
+                result.warnings.append(f"{at}: {', '.join(stray)} means nothing "
+                                       f"without a {kinds[0] if kinds else 'note or cc'}")
+        if points is not None:
+            if row.get("cc") is None:
+                result.errors.append(f"{where} has points but no cc for them to "
+                                     f"drive")
+            for i, point in enumerate(points):
+                if (isinstance(point, list) and len(point) >= 2 and _num(point[1])
+                        and not 0 <= point[1] <= 1):
+                    result.errors.append(f"{where} point {i}: a MIDI curve runs "
+                                         f"0-1 (sent as 0-127), got {point[1]}")
 
 
 def _check_osc(message: dict, result: Result, where: str) -> None:
