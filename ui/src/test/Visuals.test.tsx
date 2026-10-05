@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { VisualsState } from "../types";
 import {
-  MAX_FLASH_HZ, RUN_ON_S, beatNow, flashesPerBeat, reanchor, resolveColor, strobeLevel,
+  MAX_FLASH_HZ, RUN_ON_S, beatNow, flashesPerBeat, pulsePhase, reanchor, resolveColor,
+  strobeLevel,
 } from "../visuals/scenes";
 import { paintFrame } from "../visuals/Visuals";
 import { currentSocket, installMockSocket, stateWith } from "./mockSocket";
@@ -54,6 +55,14 @@ describe("visuals: the strobe obeys the strobe policy", () => {
     expect(strobeLevel(0.05, 120, 1, ON, 8)).toBe(0);         // run out
     expect(strobeLevel(0.05, 0, 1, ON, 0)).toBe(0);           // paused
   });
+
+  it("pulses a whole-screen wash no faster either: once a beat, or every two", () => {
+    expect(pulsePhase(160.5, 120)).toBeCloseTo(0.5);      // 2 Hz: once a beat
+    expect(pulsePhase(161, 200)).toBeCloseTo(0.5);        // 3.3 Hz a beat: every two
+    for (const bpm of [60, 128, 174, 200, 300]) {
+      expect(flashesPerBeat(1, bpm) * bpm / 60).toBeLessThanOrEqual(MAX_FLASH_HZ);
+    }
+  });
 });
 
 /** A canvas context that only remembers what was asked of it. */
@@ -98,6 +107,26 @@ describe("visuals: a frame", () => {
     expect(calls).toEqual([{ op: "fill", style: "rgba(255, 255, 255, 0.600)" }]);
   });
 
+  it("pulses a wash at the capped rate, from the snapshot's tempo", () => {
+    const { ctx, calls } = recorder();
+    const live = { vis: vis([{ scene: "wash", params: { color: "@primary", pulse: 1 } }],
+                            { bpm: 200 }),
+                   policy: ON, snapBeat: 161 };
+    paintFrame(ctx, 100, 50, live, { beat: 161, bpm: 200, at: 0 }, new Map(), 0);
+    // Half way through a two-beat pulse, not the start of a one-beat one.
+    expect(calls).toEqual([{ op: "fill", style: "rgba(255, 45, 111, 0.500)" }]);
+  });
+
+  it("flashes one strobe item at a time, however many are on", () => {
+    const { ctx, calls } = recorder();
+    const since = new Map<string, number>();
+    const live = { vis: vis([{ scene: "strobe" }, { scene: "strobe", params: { rate: 2 } }]),
+                   policy: ON, snapBeat: 160 };
+    paintFrame(ctx, 10, 10, live, { beat: 160, bpm: 120, at: 0 }, since, 0);
+    expect(calls).toEqual([{ op: "fill", style: "rgba(255, 255, 255, 0.600)" }]);
+    expect([...since.keys()]).toEqual(["k0"]);
+  });
+
   it("times a strobe from when it came on, and forgets it once it goes", () => {
     const { ctx, calls } = recorder();
     const since = new Map<string, number>();
@@ -112,9 +141,20 @@ describe("visuals: a frame", () => {
 });
 
 describe("the #visuals page", () => {
+  // Plain functions, not setup.ts's mocks: restoreAllMocks below runs before
+  // the page unmounts, and would leave a mocked release() returning nothing.
+  const wakeRequests: string[] = [];
   beforeEach(() => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     sessionStorage.setItem("klights.token", "tok");
+    wakeRequests.length = 0;
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: { request: async (type: string) => {
+        wakeRequests.push(type);
+        return { release: async () => {} };
+      } },
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -143,6 +183,14 @@ describe("the #visuals page", () => {
     expect(video.getAttribute("src")).toBe("/api/media/intro.mp4?token=tok");
     expect(video.muted).toBe(true);
     expect(container.querySelector(".tabs")).toBeNull();   // not the console
+  });
+
+  it("keeps the projector awake", async () => {
+    location.hash = "#visuals";
+    installMockSocket();
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".visuals")).not.toBeNull());
+    await waitFor(() => expect(wakeRequests).toContain("screen"));
   });
 
   it("is black with nothing on, and says so only while the engine is away", async () => {

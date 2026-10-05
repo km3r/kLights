@@ -63,7 +63,7 @@ arbitrary, the reason is next to it.
 | Phone | Now playing and match state, which source drives each lane, Follow armed/safe, grab and release per lane, and (milestone 2) the template-set switcher. |
 | Template scope | Templates run **only while a DJ track plays and Follow is armed**; otherwise auto mode or the operator's show, as before (milestone 2, with the user). |
 | Set switch | A set switched mid-track takes over on the **next downbeat**, crossfading over the new set's `transition.fade_beats` (milestone 2, with the user). Not saved: show.json's `template_set` is the start-up default. |
-| Pad routines | A preset pad holding a routine starts it on the **next downbeat** (milestone 2, with the user). |
+| Pad routines | A preset pad holding a routine starts it on the **next downbeat** (milestone 2, with the user). One whose routine cannot be built lands its looks alone on that downbeat, with a notice. Saving the pad again keeps its routine unless the console says `routine: null` (settled in the PR #13 review). |
 | CDJ phrases | Guest tracks on CDJs get phrase templates: the beat-link-trigger expressions are **extended to send the USB's phrase analysis** (milestone 2, with the user; unverified on hardware until captures). |
 | VJ | Both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
 | VJ app | **Generic OSC, user-mapped** (milestone 3, with the user): an OSC lane's cues name their own addresses and arguments -- `on`, `off`, and `while` (sent on change, at most 30 a second) -- and a curve lane sends its value to one address. No app is built in. |
@@ -74,6 +74,8 @@ arbitrary, the reason is next to it.
 | Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued and timecode is silent. A routine pad's cues play whenever the pad does. The designer's preview counts as armed (it needs the token). |
 | Projector strobe | The `#visuals` strobe obeys the engine's strobe policy (off, ceiling as brightness, `max_seconds`) and never flashes more than **three times a second** -- the broadcast limit for photosensitive viewers -- halving its rate to stay on the beat. A whole screen flashing is the strongest trigger there is. |
 | Visuals layering | Videos play underneath the generative scenes; a scene's `opacity` lets one through. Media are served with the token only, like audio. |
+| Failures | Nothing outside the lights can cost the lights a frame. If the other outputs raise, that frame's outputs are skipped and said once per message, at most every ten seconds. If the timeline or template code raises, that frame shows the operator's show, counted with the show errors. A waiting set switch whose set leaves the folder, or will not build, is called off with a notice (settled in the PR #13 review). |
+| Projector pulses | A wash's `pulse` is a full-screen flash, so it keeps to the strobe's three a second, pulsing every two or four beats at fast tempos. Only one strobe item flashes at a time (settled in the PR #13 review). |
 | Timecode details | Silent while the deck is paused (a stopped clock), sent only when its frame changes; 30 fps non-drop by default, to the broadcast address on Art-Net's port. |
 | OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
 

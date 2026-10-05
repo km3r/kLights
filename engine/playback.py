@@ -163,6 +163,10 @@ class TrackPlayer:
         self._seq: Optional[int] = None
         self._jump: Optional[int] = None
         self._last_play: Optional[tuple[float, float, float]] = None
+        # Which beat the show ran on last frame: the track's grid, or the
+        # clock's. The two count from different places, so a change between
+        # them is a jump, not a few beats of forward play.
+        self._domain: Optional[str] = None
         self._paused_since: Optional[float] = None
         self.engaged = False
         self.status = Status(False, False, "fallback", "disarmed", None, {}, (),
@@ -184,6 +188,10 @@ class TrackPlayer:
         self._pending_cset: Optional[templatesmod.CompiledSet] = None
         self._pending_ready = False
         self._pending_bar: Optional[int] = None
+        self._pending_key: Optional[tuple] = None
+        # Bumped when the rig changes: a set built for the old rig is dropped
+        # when it lands, rather than put on stage.
+        self._riggen = 0
         # The active set, rebuilt after a folder edit: like any folder change
         # it waits for the next track rather than changing under this one.
         self._next_cset: Optional[templatesmod.CompiledSet] = None
@@ -261,6 +269,11 @@ class TrackPlayer:
             self.program, self._program_for = pre[1], key
             return
         self._compiling_for = key
+        if id(pinned.timeline) in self._precompiling:
+            # Already being built for another deck (the master moved to it
+            # mid-build): that build lands it, rather than a second one queued
+            # behind it.
+            return
         timeline = pinned.timeline
         routines = pinned.library.folder.routines if pinned.library else {}
         rigging = self._rigging()
@@ -273,24 +286,27 @@ class TrackPlayer:
             except Exception as exc:                        # noqa: BLE001
                 return exc
 
-        def done(prog) -> None:
-            if self._compiling_for == key:
-                self._compiling_for = None
-            if isinstance(prog, Exception):
-                self._failed_for = key
-                self._note(f"{track}: its show could not be built ({prog}); "
-                           f"the operator's show runs")
-                return
-            current = self._pinned()
-            if current is None or (current.track_seq, id(current.timeline)) != key:
-                return
-            self.program, self._program_for = prog, key
-            if prog.problems:
-                more = (f" (+{len(prog.problems) - 1} more)"
-                        if len(prog.problems) > 1 else "")
-                self._note(f"{track}: {prog.problems[0]}{more}")
+        self._submit(build, lambda prog: self._landed(key, track, prog),
+                     f"compiling {track}")
 
-        self._submit(build, done, f"compiling {track}")
+    def _landed(self, key: tuple, track: str, prog) -> None:
+        """A playing track's program came back from the worker: on stage if
+        that track is still the one playing; said once if it failed."""
+        if self._compiling_for == key:
+            self._compiling_for = None
+        if isinstance(prog, Exception):
+            self._failed_for = key
+            self._note(f"{track}: its show could not be built ({prog}); "
+                       f"the operator's show runs")
+            return
+        current = self._pinned()
+        if current is None or (current.track_seq, id(current.timeline)) != key:
+            return
+        self.program, self._program_for = prog, key
+        if prog.problems:
+            more = (f" (+{len(prog.problems) - 1} more)"
+                    if len(prog.problems) > 1 else "")
+            self._note(f"{track}: {prog.problems[0]}{more}")
 
     PRECOMPILE_MAX = 8
 
@@ -314,8 +330,15 @@ class TrackPlayer:
             if gen != self._pregen:
                 return                  # built for a rig or load since replaced
             self._precompiling.discard(key)
+            waiting = self._compiling_for
+            if waiting is not None and waiting[1] == key:
+                # The master switched to this deck while it was building.
+                current = self._pinned()
+                track = (current.match.track_id if current is not None
+                         and current.match is not None else label)
+                self._landed(waiting, track, prog)
             if isinstance(prog, Exception):
-                return                  # compile_for will say so if it plays
+                return                  # said above if it was playing
             while len(self._precompiled) >= self.PRECOMPILE_MAX:
                 self._precompiled.pop(next(iter(self._precompiled)))
             self._precompiled[key] = (timeline, prog)
@@ -327,6 +350,11 @@ class TrackPlayer:
         still building is thrown away when it lands: it was built against the
         old rig, and a cached program is never checked again."""
         self._pregen += 1
+        waiting = self._compiling_for
+        if waiting is not None and waiting[1] in self._precompiling:
+            # The playing track was waiting on one of those: it will not land
+            # now, so the next frame builds it itself.
+            self._compiling_for = None
         self._precompiled.clear()
         self._precompiling.clear()
 
@@ -364,6 +392,10 @@ class TrackPlayer:
         docs = library.folder.templates if library is not None else {}
         self.sets = tuple((sid, str(doc.get("name") or sid))
                           for sid, doc in sorted(docs.items()))
+        if self.pending not in (None, NO_SET):
+            # A switch waiting for its downbeat is rebuilt from this load too
+            # -- or called off, if its set has gone.
+            self._compile_pending()
         if self.set_id is not None and self.set_id not in docs:
             self._note(f"template set {self.set_id!r} is not in templates/; "
                        f"templates are off")
@@ -372,7 +404,7 @@ class TrackPlayer:
             self.cset, self._cset_key = None, None
             return
         doc = docs[self.set_id]
-        key = (self.set_id, id(doc))
+        key = (self.set_id, id(doc), self._riggen)
         if key == self._cset_key:
             return
         self._cset_key = key
@@ -380,15 +412,37 @@ class TrackPlayer:
 
         def done(cset) -> None:
             if self._cset_key != key:
-                return                       # switched or reloaded since
+                return                       # switched, reloaded or re-rigged since
+            if isinstance(cset, Exception):
+                # The set as it was runs on, if it is this one; otherwise
+                # templates are off until the folder or rig changes.
+                if self.cset is not None and self.cset.id != set_id:
+                    self.cset = None
+                self._next_cset = None
+                self._note(f"template set {set_id!r} could not be built ({cset}); "
+                           + ("the last build of it runs" if self.cset is not None
+                              else "templates are off"))
+                return
             self._report(cset)
             if self.cset is None or self.template.cue is None:
                 self.cset = cset
             else:
                 self._next_cset = cset
 
-        self._submit(lambda: templatesmod.compile_set(set_id, doc, routines, rigging),
-                     done, f"compiling template set {set_id!r}")
+        self._submit(self._set_builder(set_id, doc, routines, rigging), done,
+                     f"compiling template set {set_id!r}")
+
+    @staticmethod
+    def _set_builder(set_id, doc, routines, rigging):
+        """compile_set for the worker, returning what it raises: the worker
+        never calls `done` for a job that raised, and a switch waiting on one
+        would wait for ever."""
+        def build():
+            try:
+                return templatesmod.compile_set(set_id, doc, routines, rigging)
+            except Exception as exc:                        # noqa: BLE001
+                return exc
+        return build
 
     def _report(self, cset) -> None:
         if cset.problems:
@@ -406,22 +460,48 @@ class TrackPlayer:
         target = set_id if set_id is not None else NO_SET
         if target == (self.set_id or NO_SET) and self.pending is None:
             return
+        self._cancel_pending()
         self.pending = target
-        self._pending_cset, self._pending_ready, self._pending_bar = None, False, None
         if set_id is None:
             self._pending_ready = True
             return
-        doc = self._library.folder.templates[set_id]
+        self._compile_pending()
+
+    def _compile_pending(self) -> None:
+        """Build the set a switch is waiting for, from the current load and
+        rig. A build for an older one is dropped when it lands."""
+        set_id = self.pending
+        doc = (self._library.folder.templates.get(set_id)
+               if self._library is not None else None)
+        if doc is None:
+            self._note(f"template set {set_id!r} is no longer in templates/; "
+                       f"the switch to it is off")
+            self._cancel_pending()
+            return
+        key = (set_id, id(doc), self._riggen)
+        if key == self._pending_key:
+            return
+        self._pending_key = key
+        self._pending_cset, self._pending_ready, self._pending_bar = None, False, None
         routines, rigging = self._library.folder.routines, self._rigging()
 
         def done(cset) -> None:
-            if self.pending != set_id:
+            if self._pending_key != key:
+                return                  # switched again, reloaded or re-rigged
+            if isinstance(cset, Exception):
+                self._note(f"template set {set_id!r} could not be built ({cset}); "
+                           f"the switch to it is off")
+                self._cancel_pending()
                 return
             self._report(cset)
             self._pending_cset, self._pending_ready = cset, True
 
-        self._submit(lambda: templatesmod.compile_set(set_id, doc, routines, rigging),
-                     done, f"compiling template set {set_id!r}")
+        self._submit(self._set_builder(set_id, doc, routines, rigging), done,
+                     f"compiling template set {set_id!r}")
+
+    def _cancel_pending(self) -> None:
+        self.pending, self._pending_cset, self._pending_key = None, None, None
+        self._pending_ready, self._pending_bar = False, None
 
     def _switch_if_due(self, beat: Optional[float]) -> Optional[float]:
         """Make a waiting switch, if its downbeat has come. Returns the fade
@@ -437,18 +517,19 @@ class TrackPlayer:
                     return None
             elif bar == self._pending_bar:
                 return None
-        target, cset = self.pending, self._pending_cset
-        self.pending, self._pending_cset = None, None
-        self._pending_ready, self._pending_bar = False, None
+        target, cset, key = self.pending, self._pending_cset, self._pending_key
+        self._cancel_pending()
         self.set_id = None if target == NO_SET else target
         self.cset = cset
         self._next_cset = None
-        self._cset_key = ((self.set_id, id(self._library.folder.templates[self.set_id]))
-                          if self.set_id and self._library else None)
+        # What it was built from, so the next load rebuilds it only if it
+        # changed -- and never a lookup into a folder it may have left.
+        self._cset_key = key
         return cset.fade if cset is not None else 0.0
 
     def recompile(self) -> None:
         """The rig changed under the programs: build them again."""
+        self._riggen += 1
         self.program, self._program_for, self._compiling_for = None, None, None
         self._failed_for = None
         self.drop_precompiled()
@@ -568,6 +649,7 @@ class TrackPlayer:
             self.template.reset()
             self._adopt_reloaded()
             self._switch_if_due(None)
+            self._domain = None             # the next frame on a beat is a jump
             return fallback, "fallback", ("disarmed" if not self.armed
                                           else "no track"), None
         current = pinned is not None and pinned.track_seq == sample.track_seq
@@ -576,6 +658,7 @@ class TrackPlayer:
         timeline = pinned.timeline if matched else None
         if timeline is None and self.cset is None and not self._pending_ready:
             self.template.reset()
+            self._domain = None
             reason = ("matching" if not current
                       else "not in the show folder" if not matched
                       else "no timeline")
@@ -586,6 +669,9 @@ class TrackPlayer:
         self._jump, self._seq = sample.jump_seq, sample.track_seq
         if new_track:
             self._adopt_reloaded()
+            # "continue" runs on from where THIS track last played, never
+            # from the previous track's beat.
+            self._last_play = None
 
         # -- the pause policy ------------------------------------------------
         paused = sample.state == transportmod.PAUSED
@@ -629,6 +715,16 @@ class TrackPlayer:
             else:
                 self._held = None
                 beat = clock
+        # The track's grid and the clock count from different places: moving
+        # from one to the other (a grid arriving, a position lost) is a jump,
+        # so nothing fires for the beats "crossed" between the two counts. So
+        # is coming back after frames that ran on no beat at all (disarmed,
+        # say): the last beat seen is from before them, and every cue since
+        # would otherwise fire at once.
+        domain = "track" if on_track else "clock"
+        if domain != self._domain:
+            jumped = True
+        self._domain = domain
         prev = None if jumped else self._beat
 
         # -- the template ------------------------------------------------------

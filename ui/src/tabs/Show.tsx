@@ -169,6 +169,10 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
                                              variations: string[] }[]>([]);
   const [routine, setRoutine] = useState("");
   const [variation, setVariation] = useState("");
+  // Whether the operator chose the routine here. Untouched, a save leaves the
+  // pad's routine as it is (re-recording a routine pad's looks keeps it);
+  // "none" chosen sends null, which makes it a pad of looks again.
+  const [routineTouched, setRoutineTouched] = useState(false);
   const showFolder = state.program != null;
   useEffect(() => {
     if (!showFolder) return;
@@ -193,8 +197,8 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
     const trimmed = name.trim();
     if (!trimmed) return;
     const where = cell ?? target;
-    const pad = routine
-      ? { routine: { id: routine, ...(variation ? { variation } : {}) } } : {};
+    const pad = !routineTouched ? {}
+      : { routine: routine ? { id: routine, ...(variation ? { variation } : {}) } : null };
     send(where == null
       ? { type: "preset_save", name: trimmed, ...pad }
       : { type: "preset_save", name: trimmed, bank, cell: where, ...pad });
@@ -202,6 +206,17 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
     setTarget(null);
     setRoutine("");
     setVariation("");
+    setRoutineTouched(false);
+  };
+
+  // Typing an existing preset's name shows the routine its pad has, so what
+  // is on screen is what a save keeps.
+  const named = (value: string) => {
+    setName(value);
+    if (routineTouched) return;
+    const same = state.presets.find((p) => p.name === value.trim());
+    setRoutine(same?.routine?.id ?? "");
+    setVariation(same?.routine?.variation ?? "");
   };
 
   const tapped = (p: Preset | undefined, cell: number) => {
@@ -316,7 +331,7 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
         <input className="field" value={name} aria-label="preset name"
                placeholder={target == null
                  ? "name this picture…" : `name it — goes to ${bank}.${target + 1}`}
-               onChange={(e) => setName(e.target.value)}
+               onChange={(e) => named(e.target.value)}
                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
                style={{
                  flex: "1 1 10rem", minWidth: 0, padding: "0.55rem", minHeight: 44,
@@ -329,14 +344,16 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
         <div className="row tight" style={{ marginTop: "0.4rem", flexWrap: "wrap" }}>
           <label className="small muted">With a routine{" "}
             <select value={routine} aria-label="pad routine"
-                    onChange={(e) => { setRoutine(e.target.value); setVariation(""); }}>
+                    onChange={(e) => {
+                      setRoutine(e.target.value); setVariation(""); setRoutineTouched(true);
+                    }}>
               <option value="">none — the looks only</option>
               {routines.map((r) => <option key={r.id} value={r.id}>{r.name ?? r.id}</option>)}
             </select>
           </label>
           {chosen && chosen.variations.length > 0 && (
             <select value={variation} aria-label="pad routine variation"
-                    onChange={(e) => setVariation(e.target.value)}>
+                    onChange={(e) => { setVariation(e.target.value); setRoutineTouched(true); }}>
               <option value="">default</option>
               {chosen.variations.map((v) => <option key={v} value={v}>{v}</option>)}
             </select>

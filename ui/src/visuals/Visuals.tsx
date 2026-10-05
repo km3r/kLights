@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { apiUrl } from "../useEngine";
+import { apiUrl, useWakeLock } from "../useEngine";
 import type { useEngine } from "../useEngine";
 import type { VisualItem, VisualsState } from "../types";
 import { SCENES, VISUALS_CHUNK, beatNow, reanchor, strobeLevel } from "./scenes";
@@ -15,7 +15,9 @@ import "./visuals.css";
  * snapshots at the show's tempo (`scenes.reanchor`). Generative scenes are
  * painted on a canvas every animation frame; videos from the show folder's
  * media/ play underneath them (give a scene an opacity to see one through it).
- * Tap for full screen.
+ * Tap for full screen. The screen is kept awake, as the console's is: a
+ * projector laptop that sleeps mid-set is a black screen until someone walks
+ * over to it.
  */
 
 type Engine = ReturnType<typeof useEngine>;
@@ -36,6 +38,7 @@ export default function Visuals({ engine }: { engine: Engine }) {
   const anchor = useRef<Anchor | null>(null);
   const live = useRef<Live>({ vis: null, policy: OFF, snapBeat: 0 });
   const strobeSince = useRef(new Map<string, number>());
+  useWakeLock(true);
 
   useEffect(() => {
     if (vis && vis.beat != null) {
@@ -83,6 +86,8 @@ export default function Visuals({ engine }: { engine: Engine }) {
 }
 
 /** One frame of the generative scenes, in the order the snapshot lists them.
+ *  Only the first strobe item flashes: two at different rates would add up
+ *  to more than MAX_FLASH_HZ between them, whatever each one keeps to.
  *  Exported for tests, with a recording context in place of a canvas's. */
 export function paintFrame(ctx: CanvasRenderingContext2D, w: number, h: number,
                            live: Live, anchor: Anchor | null,
@@ -91,18 +96,22 @@ export function paintFrame(ctx: CanvasRenderingContext2D, w: number, h: number,
   const beat = beatNow(anchor, now);
   const on = new Set<string>();
   if (vis && beat != null) {
+    const bpm = vis.bpm ?? 0;
+    let strobing = false;
     for (const item of vis.items) {
       const paint = SCENES[item.scene];
       if (!paint) continue;
       let strobe = 0;
       if (item.scene === "strobe") {
+        if (strobing) continue;
+        strobing = true;
         on.add(item.key);
         if (!strobeSince.has(item.key)) strobeSince.set(item.key, now);
         const rate = typeof item.params.rate === "number" ? item.params.rate : 1;
-        strobe = strobeLevel(beat, vis.bpm ?? 0, rate, policy,
+        strobe = strobeLevel(beat, bpm, rate, policy,
                              (now - strobeSince.get(item.key)!) / 1000);
       }
-      paint({ ctx, w, h, beat, elapsed: item.elapsed + (beat - snapBeat),
+      paint({ ctx, w, h, beat, bpm, elapsed: item.elapsed + (beat - snapBeat),
               params: item.params, palette: vis.palette, strobe });
     }
   }

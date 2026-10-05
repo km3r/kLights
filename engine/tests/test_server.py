@@ -616,7 +616,17 @@ client.send({"type": "level", "target": "pinspots", "clear": True})
 after = client.wait_for(lambda s: not s["level_overrides"])
 check("clearing a trim hands the fixture back to the pattern",
       not after["level_overrides"], f"{after['level_overrides']}")
-client.send({"type": "clear_slot", "slot": "level"})
+# Waited for: section 2c below swaps in a stand-in timeline, and this
+# operator choice landing after that grabbed its level lane -- one run in a
+# dozen under load failed "an expiring hold advances without grabbing".
+client.send({"type": "clear_slot", "slot": "level", "id": "level-cleared"})
+_deadline = time.time() + 6.0
+while True:
+    _msg = client.recv()
+    if _msg.get("type") == "reply" and _msg.get("id") == "level-cleared":
+        break
+    if time.time() > _deadline:
+        raise AssertionError("clear_slot was never applied")
 
 # A cue with a hold is supposed to advance on its own -- that is the entire
 # meaning of "hold", and the Show tab tells the operator "auto after N" on the

@@ -601,7 +601,7 @@ export type Command =
    *  cycle length is a musical decision, not a shape one. */
   | { type: "vary"; name: string; amount?: number; seed?: number }
   | { type: "preset_save"; name: string; bank?: number; cell?: number;
-      tags?: string[]; routine?: PadRoutine }
+      tags?: string[]; routine?: PadRoutine | null }
   | { type: "preset_apply"; name: string }
   | { type: "preset_delete"; name: string }
   | { type: "preset_move"; name: string; bank: number; cell: number }

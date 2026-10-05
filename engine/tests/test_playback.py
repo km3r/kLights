@@ -453,6 +453,281 @@ try:
           status()["mode"] == "timeline" and sc.pinned.timeline is synth_tl)
     play(170.2, 0.2)
 
+    # -- 2e. the PR #13 review --------------------------------------------------
+    print("\n2e. review fixes")
+
+    # The master moves to a deck whose show is still being built in advance:
+    # that build lands it, rather than a second compile queued behind it.
+    gate = threading.Event()
+
+    def hold_worker():
+        sc.worker.submit(lambda: gate.wait(10.0), lambda _: None, "a slow job")
+
+    def master_to_synth_while_building():
+        global t
+        gate.clear()
+        t += 2.5
+        blt(t, "Guest Before", "Guest DJ", "", 200.0, rid=6)
+        t += 0.01
+        play(10, 0.2)
+        settle()
+        sc.player.drop_precompiled()
+        hold_worker()                   # the next build waits behind this
+        compile_threads.clear()
+        loaded(t, "2", "synthetic 128", "kLights", "test track", 180.0)
+        st = first_frame_of_synth()
+        play(170.04, 0.1)
+        return st
+
+    st = master_to_synth_while_building()
+    check("a master switch to a deck still building waits for that build",
+          st["reason"] == "compiling" and status()["reason"] == "compiling"
+          and sc.player._compiling_for is not None, f"{st}")
+    gate.set()
+    settle()
+    play(170.2, 0.1)
+    check("and drives once it lands, built once, not twice",
+          status()["mode"] == "timeline" and compile_threads == ["klights-worker"],
+          f"{status()} {compile_threads}")
+
+    master_to_synth_while_building()
+    sc.player.drop_precompiled()        # a reload while it waits
+    gate.set()
+    settle()
+    play(170.2, 0.04)
+    settle()
+    play(170.3, 0.1)
+    check("a reload dropping that build hands the wait back: the next frame "
+          "builds it itself, rather than 'compiling' for ever",
+          status()["mode"] == "timeline", f"{status()}")
+
+    # "continue" runs on from where THIS track last played.
+    sc.player.policy = "continue"
+    play(171, 0.4)                       # synth playing: a last play at ~171
+    t += 2.5
+    blt(t, "no timeline tune", "kLights", "test track", 180.0, rid=3)
+    t += 0.01
+    play(40, 0.4, playing=False)         # loaded paused at beat 40
+    settle()
+    play(40, 0.2, playing=False)
+    st = status()
+    check("a new track paused under 'continue' holds its own beat, never runs "
+          "on from the last track's",
+          st["mode"] == "template" and st["beat"] is not None
+          and abs(st["beat"] - 40) < 1.0, f"{st}")
+    sc.player.policy = "idle"
+
+    # Moving from the clock's beat to the track's is a jump: rkbx_link sending
+    # the title but not yet master/time (off in its default config), then the
+    # time turned on.
+    seen = []
+    real_begin = sc.player.template.begin
+
+    def spy_begin(cset, cue, beat, prev=None, jumped=False, **kw):
+        seen.append((round(beat, 2), prev is None or jumped))
+        return real_begin(cset, cue, beat, prev=prev, jumped=jumped, **kw)
+
+    sc.player.template.begin = spy_begin
+    t += 2.5
+    sc.apply({"type": "sync", "source": "rkbx", "title": "synthetic 128",
+              "artist": "kLights", "album": "test track"}, None, t)
+    for _ in range(12):                  # matched, no position: the clock's beat
+        frame(t)
+        t += 0.04
+    clock_frames = list(seen)
+    for i in range(4):                   # master/time arrives: the track's beat
+        sc.apply({"type": "sync", "source": "rkbx",
+                  "track_time": (60 + i * 0.08) * BEAT_S}, None, t)
+        frame(t)
+        t += 0.04
+    sc.player.template.begin = real_begin
+    after = seen[len(clock_frames):]
+    check("the first frame on the track's grid after the clock's is a jump, so "
+          "nothing fires for the beats between the two counts",
+          # (rkbx's identity settles a few frames in: its new track is a jump
+          # of its own, so only the steady frames after it are looked at)
+          len(clock_frames) >= 6 and not any(j for _, j in clock_frames[-3:])
+          and after and after[0][1] is True and abs(after[0][0] - 60) < 1.0
+          and not any(j for _, j in after[1:]),
+          f"{clock_frames[-3:]} then {after}")
+
+    # A switch waiting for its downbeat, whose set leaves the folder.
+    chill = json.loads((shows / "templates" / "club.json").read_text())
+    chill.update(id="chill", name="Chill")
+    (shows / "templates" / "chill.json").write_text(json.dumps(chill, indent=2))
+    sc.reload_library()
+    settle()
+    errors_before = sc.runner.stats.eval_errors
+    sc.apply({"type": "template_set", "id": "chill"}, None, t)
+    (shows / "templates" / "chill.json").unlink()
+    sc.reload_library()
+    settle()
+    play(61, 2.5)
+    check("a set removed from the folder while a switch waits for it: the switch "
+          "is off, said, and the downbeat passes without an error",
+          sc.player.pending is None and status()["set"] == "club"
+          and sc.runner.stats.eval_errors == errors_before
+          and any("chill" in n and "no longer" in n for n in sc.notices),
+          f"{status()['set']} {status()['pending']} {sc.notices[-3:]}")
+
+    # A set whose build raises: the switch is off, not waiting for ever.
+    (shows / "templates" / "chill.json").write_text(json.dumps(chill, indent=2))
+    sc.reload_library()
+    settle()
+    real_compile_set = templatesmod.compile_set
+
+    def broken_compile_set(set_id, *a, **kw):
+        if set_id == "chill":
+            raise RuntimeError("deliberate template bug")
+        return real_compile_set(set_id, *a, **kw)
+
+    templatesmod.compile_set = broken_compile_set
+    try:
+        sc.apply({"type": "template_set", "id": "chill"}, None, t)
+        settle()
+    finally:
+        templatesmod.compile_set = real_compile_set
+    play(64, 0.2)
+    check("a set whose build raises: the switch is off and said, never 'next "
+          "downbeat' for ever",
+          sc.player.pending is None and status()["set"] == "club"
+          and any("deliberate template bug" in n for n in sc.notices), f"{status()}")
+
+    # A rig change while a switch's set is building: built again for the new
+    # rig, and the old build is dropped when it lands.
+    built = []
+
+    def counting_compile_set(set_id, doc, routines, rigging):
+        cset = real_compile_set(set_id, doc, routines, rigging)
+        built.append((set_id, cset))
+        return cset
+
+    templatesmod.compile_set = counting_compile_set
+    try:
+        gate.clear()
+        hold_worker()
+        sc.apply({"type": "template_set", "id": "chill"}, None, t)
+        sc.player.recompile()
+        gate.set()
+        settle()
+    finally:
+        templatesmod.compile_set = real_compile_set
+    chills = [c for sid, c in built if sid == "chill"]
+    check("a rig change while a switch waits builds its set again, and only the "
+          "new rig's build is the one waiting",
+          len(chills) == 2 and sc.player._pending_cset is chills[-1]
+          and sc.player.pending == "chill", f"{len(chills)} {sc.player.pending}")
+    play(65, 2.5)
+    check("which then takes over on its downbeat", status()["set"] == "chill",
+          f"{status()}")
+    sc.apply({"type": "template_set", "id": "club"}, None, t)
+    settle()
+    play(68, 2.5)
+    t += 2.5
+    synth()
+    play(172, 0.2)
+    settle()
+    play(172.2, 0.2)
+
+    # Re-recording a routine pad's looks keeps its routine; null clears it.
+    sc.apply({"type": "follow", "armed": False}, None, t)
+    play(172.4, 0.04)                    # a frame disarmed: looks grab nothing
+    sc.apply({"type": "select_look", "name": "MH Red"}, None, t)
+    sc.apply({"type": "preset_save", "name": "Keep pad",
+              "routine": {"id": "move-only"}}, None, t)
+    sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
+    sc.apply({"type": "preset_save", "name": "Keep pad"}, None, t)
+    kept = next(p for p in sc.presets if p["name"] == "Keep pad")
+    check("saving a routine pad again without saying `routine` keeps it -- "
+          "re-recording its looks is the common case",
+          kept.get("routine") == {"id": "move-only"}, f"{kept}")
+    sc.apply({"type": "preset_save", "name": "Keep pad", "routine": None}, None, t)
+    cleared = next(p for p in sc.presets if p["name"] == "Keep pad")
+    check("and routine: null makes it a pad of looks again",
+          "routine" not in cleared, f"{cleared}")
+    sc.apply({"type": "preset_delete", "name": "Keep pad"}, None, t)
+
+    # A pad whose routine cannot be built lands its looks on the downbeat,
+    # rather than waiting for a build that never comes.
+    ghost = json.loads((shows / "routines" / "move-only.json").read_text())
+    ghost.update(id="ghost", name="Ghost")
+    (shows / "routines" / "ghost.json").write_text(json.dumps(ghost, indent=2))
+    sc.reload_library()
+    settle()
+    sc.apply({"type": "select_look", "name": "MH Red"}, None, t)
+    sc.apply({"type": "preset_save", "name": "Ghost pad",
+              "routine": {"id": "ghost"}}, None, t)
+    settle()
+    (shows / "routines" / "ghost.json").unlink()
+    sc.reload_library()                  # rebuilt against a folder without it
+    settle()
+    check("a routine pad that cannot be built for this load is said",
+          any("Ghost pad" in n and "could not be built" in n for n in sc.notices),
+          f"{sc.notices[-3:]}")
+    sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
+    sc.apply({"type": "preset_apply", "name": "Ghost pad"}, None, t)
+    downbeat = templatesmod.next_downbeat(sc.clock.beat(t))
+    while sc.clock.beat(t) < downbeat + 0.3:
+        play(173, 0.04)
+    after = play(173, 0.1)
+    check("pressed, it lands its looks on the downbeat, says why, and is not "
+          "left waiting",
+          sc.pad is None and sc._pad_pending is None
+          and all(abs(after[f.fid].color[0] - 1.0) < 1e-6 and after[f.fid].color[2] == 0.0
+                  for f in MOVERS)
+          and any("applied its looks" in n for n in sc.notices),
+          f"{sc._pad_pending} {after[MOVERS[0].fid].color} {sc.notices[-2:]}")
+    sc.apply({"type": "preset_delete", "name": "Ghost pad"}, None, t)
+    sc.apply({"type": "follow", "armed": True}, None, t)
+    play(173.2, 0.1)
+
+    # The other outputs never cost the lights a frame.
+    real_output_frame = sc.player.output_frame
+
+    def broken_output_frame(extra=()):
+        raise RuntimeError("deliberate output bug")
+
+    errors_before = sc.runner.stats.eval_errors
+    said_before = sum("other outputs failed" in n for n in sc.notices)
+    sc.player.output_frame = broken_output_frame
+    try:
+        a = play(174, 0.04)
+        b = play(174, 0.2)
+        for _ in range(4):               # failing every other frame: a flap
+            sc.player.output_frame = real_output_frame
+            play(174.2, 0.04)
+            sc.player.output_frame = broken_output_frame
+            play(174.2, 0.04)
+    finally:
+        sc.player.output_frame = real_output_frame
+    check("an output that raises costs only itself: the show is chosen and "
+          "evaluated, nothing counted against the lights",
+          status()["mode"] == "timeline" and a and b and sc._output_frame is None
+          and sc.runner.stats.eval_errors == errors_before, f"{status()['mode']}")
+    check("said once, not every frame -- nor every time it flaps",
+          sum("other outputs failed" in n for n in sc.notices) == said_before + 1)
+    play(174.5, 0.1)
+    check("and the next good frame carries on", sc._output_frame is not None)
+
+    # Re-armed on the same track: the beat it last ran on is from before the
+    # disarm, and every short cue since would fire in one frame. A jump.
+    seen = []
+    sc.player.template.begin = spy_begin
+    try:
+        play(175, 0.2)
+        sc.apply({"type": "follow", "armed": False}, None, t)
+        play(175.4, 1.0)                 # the same track plays on, disarmed
+        sc.apply({"type": "follow", "armed": True}, None, t)
+        before = len(seen)
+        play(177.5, 0.12)
+    finally:
+        sc.player.template.begin = real_begin
+    back = seen[before:]
+    check("re-armed on the same track, the first frame back is a jump: nothing "
+          "fires for what played while disarmed",
+          back and back[0][1] is True and not any(j for _, j in back[1:]),
+          f"{back}")
+
     # -- 3. pause policies ---------------------------------------------------
     print("\n3. pausing")
     sc.player.policy = "freeze"

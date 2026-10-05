@@ -16,6 +16,68 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — F22/F23 review
+
+From a review of F22 and F23 before merging (PR #13); each one has a test
+that fails without it.
+
+- **The lights never pay for the rest.** An exception anywhere in the
+  timeline, template, pad or output code used to end the output thread. Now
+  that frame shows the operator's own show, the error is counted with the
+  show errors, and the runner carries on. The other outputs (OSC, MIDI,
+  timecode, visuals) are fenced off on their own: if they fail, they skip that
+  frame and the lights still get the show. The failure is said once per
+  message, and again at most every ten seconds, even if it fails only every
+  other frame.
+- **OSC numbers past a 32-bit float** (a curve times `1e40`, a huge integer)
+  are sent as the largest float there is, rather than raising out of the frame.
+- **Template set switches.**
+  - A switch waiting for its downbeat is called off, and said, if its set
+    leaves the folder. Before, the downbeat raised a KeyError.
+  - A set whose build fails calls its switch off, rather than showing "next
+    downbeat" for ever.
+  - A rig change rebuilds a waiting set for the new rig, and a build for the
+    old rig is dropped when it lands. The same goes for the active set.
+- **The beat.**
+  - Going from the clock's beat to the track's grid counts as a jump, so cues
+    and hits never fire for the beats "crossed" between the two counts. One
+    example: rkbx_link sending the title first and `master/time` later.
+  - Re-arming Follow on a track that played on while disarmed is a jump too.
+    Before, every hit, MIDI note and OSC cue from the disarmed stretch fired
+    in one frame. The same goes for any return from frames that ran on no
+    beat.
+  - Under the `continue` pause policy, a new track no longer runs on from
+    where the previous track last played.
+- **Pre-matching:** a master switch to a deck whose show is still being built
+  waits for that build, rather than queueing the same compile again. A reload
+  that drops the build hands the wait back.
+- **Routine pads.** A pad whose routine cannot be built (it left the folder,
+  say) used to wait for its build for ever. Now it lands its looks on the
+  downbeat and says why. Saving a routine pad again without `routine` keeps
+  its routine, and `routine: null` clears it. The console sends null only when
+  "none" is chosen, and typing a preset's name shows the routine its pad has.
+- **`#visuals`.**
+  - The page keeps the screen awake, as the console does.
+  - A wash's `pulse` is a full-screen flash, so it now keeps to the same three
+    flashes a second as the strobe, pulsing every two or four beats at fast
+    tempos.
+  - Only one strobe item flashes at a time: two at different rates could have
+    added up to more than three flashes a second.
+- **klights.local.json `outputs`** is an override, so it is checked for shape
+  only. An OSC host there with show.json's port works. A bad field turns off
+  only its own output; before, the whole override was thrown away.
+- **beat-link-trigger expressions:** for a moment after a new track loads,
+  BLT's latest phrase analysis can still be the previous track's. It was
+  cached under the new track. Now the analysis held when the track changes is
+  never used for the new track, nor is any analysis while the deck's metadata
+  still names another track, and the phrases are worked out again when the
+  analysis changes. These expressions have not yet been run against hardware.
+- **MIDI sidecar:** if the driver refuses a message (a port unplugged, say),
+  only that message is lost, and the sidecar says so once per reason. Before,
+  the sidecar exited with every note still sounding. On the way out, every
+  note-off and the port close are each tried, whatever happened to the one
+  before.
+
 ### Added — F23d: built-in visuals
 
 - **`#visuals`** (decided with the user: generative scenes and a video

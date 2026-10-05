@@ -371,8 +371,13 @@ source said the last phrase would end), else the bar cycle on the clock. The
 template's Show is the timeline program's fallback, so a fill gap shows it. A
 switch lands on the next bar line, crossfading over the new set's transition; a
 folder edit of the active set, like any folder change, waits for the next
-track. The Track card's lanes say `template`, and it shows the phrase, the
-routine and the set switcher.
+track. A waiting switch is rebuilt from each new load and after a rig change,
+and it is called off, with a notice, if its set leaves the folder or fails to
+build. The Track card's lanes say `template`, and it shows the phrase, the
+routine and the set switcher. Moving between the clock's beat and the track's
+grid is a jump, as a hot cue is: the two count from different places. So is
+the first frame back after frames on no beat (Follow disarmed, say), so the
+cues of the stretch in between never fire all at once.
 
 **A preset pad can carry a routine** (`routine: {id, variation?, params?}` in
 presets.json, saved from the console with a show folder). Pressed, it waits for
@@ -380,7 +385,9 @@ the clock's next downbeat and then lands whole: its looks, and the routine over
 them from the routine's beat 0, as the operator's show -- so with the timeline
 or a template driving it grabs every lane like any preset. Picking a look, a
 plain preset or a cue puts it away. Its program is built on the worker when the
-folder loads, when it is saved, and after a rig reload.
+folder loads, when it is saved, and after a rig reload; one that cannot be
+built lands its looks alone on the downbeat, with a notice. A save that does
+not mention `routine` keeps the pad's routine, and `routine: null` clears it.
 
 **The other outputs** ([`outputs.py`](../engine/outputs.py), milestone 3):
 `external` rows -- in a timeline or a routine -- carry cues for things that
@@ -397,7 +404,13 @@ track; the template's rows for it are silent. **OSC** (`OscOut`) sends `on`,
 show.json's `outputs.osc {host, port}`, overridden per machine by
 klights.local.json's `outputs`; arguments may be `$beat`, `$bar`, `$phase`,
 `$progress` and `$value`. A failed send is counted in the snapshot's
-`outputs`, never raised. Follow gates it: disarmed, nothing is cued.
+`outputs`, never raised. Follow gates it: disarmed, nothing is cued. The
+outputs run inside the runner's `choose_show` hook, but fenced off from the
+lights: if they raise, that frame's outputs are skipped and the failure is
+said once per message (again after ten seconds), while the show goes on stage
+regardless. Anything else that raises
+in the hook shows the operator's own show for that frame, counted with the
+show errors, as `render_once` does.
 **Timecode** (`TimecodeOut`) sends Art-Net ArtTimeCode (OpCode 0x9700,
 `output/artnet.build_arttimecode`) carrying the matched track's position --
 latency applied, so it lines up with the lights -- whenever its frame

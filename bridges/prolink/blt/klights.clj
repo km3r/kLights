@@ -68,35 +68,67 @@
   [v]
   (if (number? v) (long v) (long (.id v))))
 
+;; Per player: {:id rekordbox-id :stale tag :tag tag :phrases [...]}. BLT's
+;; "latest analysis" for a player can still be the PREVIOUS track's for a
+;; moment after a new one loads; cached under the new track's id, the old
+;; phrases would have driven the new track's templates until it was unloaded.
+
+(defn klights-pssi-tag
+  "BLT's latest phrase analysis (the PSSI tag of the .EXT file) for `player`,
+  or nil. A lookup in BLT's own cache, cheap enough for every tick."
+  [player]
+  (.getLatestTrackAnalysisFor
+   (org.deepsymmetry.beatlink.data.AnalysisTagFinder/getInstance)
+   (int player) ".EXT" "PSSI"))
+
+(defn klights-note-track
+  "Called every tick for every deck. When a deck's track changes, remember
+  the analysis BLT holds for it at that moment: it is the previous track's
+  until the new one's arrives, so it is never read as the new track's. On
+  the first tick nothing came before, and what is there is this track's."
+  [player rekordbox-id]
+  (let [seen (get-in @globals [:klights-structure player])]
+    (when (not= rekordbox-id (:id seen))
+      (swap! globals assoc-in [:klights-structure player]
+             {:id rekordbox-id :stale (when seen (klights-pssi-tag player))}))))
+
 (defn klights-song-structure
   "The phrases of the track `player` has loaded, from the rekordbox analysis
-  on the DJ's own USB (the PSSI tag of the .EXT file), as
-  [[start-beat end-beat label] ...] in beat numbers -- or nil when the track
-  has none (exported by rekordbox 5, or never analysed). Cached per track, so
-  the 25 Hz tick is a map lookup."
+  on the DJ's own USB, as [[start-beat end-beat label] ...] in beat numbers --
+  or nil when the track has none (exported by rekordbox 5, or never
+  analysed), or its analysis has not arrived yet. Worked out again only when
+  BLT's analysis object changes, so the 25 Hz tick is a lookup. Never from
+  an analysis that was there before this track loaded, nor while the deck's
+  metadata still describes another track."
   [player rekordbox-id]
-  (let [k [player rekordbox-id]]
-    (if-let [hit (get-in @globals [:klights-structure k])]
-      (:phrases hit)
-      (let [tag (.getLatestTrackAnalysisFor
-                 (org.deepsymmetry.beatlink.data.AnalysisTagFinder/getInstance)
-                 (int player) ".EXT" "PSSI")
-            phrases
-            (when tag
-              (let [body    (.body tag)
-                    mood    (keyword (clojure.string/lower-case (str (.mood body))))
-                    entries (vec (.entries body))
-                    ends    (concat (map #(.beat %) (rest entries))
-                                    [(.endBeat body)])]
-                (mapv (fn [e end]
-                        [(.beat e) end
-                         (klights-phrase-label mood (klights-id (.kind e))
-                                               (.k1 e) (.k2 e) (.k3 e))])
-                      entries ends)))]
-        ;; Only a found analysis is cached: it can arrive a moment after the
-        ;; track loads, and a nil remembered would stick for the whole track.
-        (when phrases
-          (swap! globals assoc :klights-structure {k {:phrases phrases}}))
+  (let [tag      (klights-pssi-tag player)
+        seen     (get-in @globals [:klights-structure player])
+        metadata (.getLatestMetadataFor
+                  (org.deepsymmetry.beatlink.data.MetadataFinder/getInstance) player)]
+    (cond
+      (or (nil? tag)
+          (not= rekordbox-id (:id seen))
+          (identical? tag (:stale seen))
+          (nil? metadata)
+          (not= rekordbox-id (.rekordboxId (.trackReference metadata))))
+      nil
+
+      (identical? tag (:tag seen))
+      (:phrases seen)
+
+      :else
+      (let [body    (.body tag)
+            mood    (keyword (clojure.string/lower-case (str (.mood body))))
+            entries (vec (.entries body))
+            ends    (concat (map #(.beat %) (rest entries))
+                            [(.endBeat body)])
+            phrases (mapv (fn [e end]
+                            [(.beat e) end
+                             (klights-phrase-label mood (klights-id (.kind e))
+                                                   (.k1 e) (.k2 e) (.k3 e))])
+                          entries ends)]
+        (swap! globals update-in [:klights-structure player]
+               assoc :tag tag :phrases phrases)
         phrases))))
 
 (defn klights-send-phrase
@@ -154,6 +186,7 @@
             :when (instance? org.deepsymmetry.beatlink.CdjStatus status)]
       (let [player (.getDeviceNumber status)
             id     (.getRekordboxId status)]
+        (klights-note-track player id)
         (when (and (not= id (get loaded player))
                    (if (zero? id)
                      (do (overtone.osc/osc-send client "/klights/v1/deck"

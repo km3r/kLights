@@ -112,6 +112,8 @@ export interface Paint {
   w: number;
   h: number;
   beat: number;
+  /** The show's tempo, for anything that flashes. */
+  bpm: number;
   /** Beats into the item. */
   elapsed: number;
   params: Record<string, unknown>;
@@ -134,10 +136,19 @@ export function hash(i: number): number {
 
 const frac = (x: number) => ((x % 1) + 1) % 1;
 
+/** How far into its pulse a whole-screen wash is, 0-1: once a beat, or once
+ *  every two or four at a tempo where a beat each would pass MAX_FLASH_HZ --
+ *  a full-screen pulse is a flash like the strobe's. */
+export function pulsePhase(beat: number, bpm: number): number {
+  const perBeat = flashesPerBeat(1, bpm);
+  return perBeat > 0 ? frac(beat * perBeat) : 0;
+}
+
 function wash(p: Paint) {
   const color = resolveColor(p.params.color ?? "@primary", p.palette);
   const pulse = num(p.params, "pulse", 0);
-  p.ctx.fillStyle = rgba(color, num(p.params, "opacity", 1) * (1 - pulse * frac(p.beat)));
+  p.ctx.fillStyle = rgba(color, num(p.params, "opacity", 1)
+                                * (1 - pulse * pulsePhase(p.beat, p.bpm)));
   p.ctx.fillRect(0, 0, p.w, p.h);
 }
 

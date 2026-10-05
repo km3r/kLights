@@ -171,9 +171,13 @@ def _pad(raw: bytes) -> bytes:
     return raw + b"\0" * (4 - len(raw) % 4)
 
 
+FLOAT32_MAX = 3.4028234663852886e38
+
+
 def osc_encode(address: str, args: Sequence[Any] = ()) -> bytes:
     """One OSC message: int -> i, float -> f, text -> s. An integer too big
-    for 32 bits goes as a float rather than failing."""
+    for 32 bits goes as a float, and a number too big for a 32-bit float is
+    clamped to the largest one, rather than failing."""
     tags, payload = "", b""
     for arg in args:
         if isinstance(arg, bool):
@@ -182,8 +186,11 @@ def osc_encode(address: str, args: Sequence[Any] = ()) -> bytes:
             tags += "i"
             payload += struct.pack(">i", arg)
         elif isinstance(arg, (int, float)):
+            value = float(arg)
+            if value == value:                      # NaN passes through as NaN
+                value = max(-FLOAT32_MAX, min(FLOAT32_MAX, value))
             tags += "f"
-            payload += struct.pack(">f", float(arg))
+            payload += struct.pack(">f", value)
         else:
             tags += "s"
             payload += _pad(str(arg).encode("utf-8"))
@@ -474,6 +481,20 @@ def merge(show: Optional[Mapping], local: Optional[Mapping]) -> dict:
             if isinstance(conf, Mapping):
                 out[name] = {**out.get(name, {}), **conf}
     return out
+
+
+def local_override(raw) -> tuple[Optional[dict], Optional[str]]:
+    """klights.local.json's `outputs`, checked for shape only: (it, None), or
+    (None, why) when it is not one. Not against show.json's schema -- it is
+    an override, so a field may be left to show.json (an OSC host, with the
+    show's port), and a bad host, port or fps turns off just that output,
+    said by Outputs.configure, rather than this machine's whole override."""
+    if raw is None:
+        return None, None
+    if isinstance(raw, Mapping) and all(isinstance(v, Mapping) for v in raw.values()):
+        return dict(raw), None
+    return None, ('klights.local.json "outputs" must be {"osc": {...}, '
+                  '"midi": {...}, "timecode": {...}}; it is ignored')
 
 
 MIDI_PORT = 9123            # where the MIDI sidecar listens, by default

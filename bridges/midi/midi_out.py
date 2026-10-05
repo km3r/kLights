@@ -146,6 +146,8 @@ class Sidecar:
         self.played = 0
         self.rejected = 0
         self.last_reject: Optional[str] = None
+        self.failed = 0
+        self.last_failure: Optional[str] = None
 
     def handle(self, data: bytes) -> None:
         messages, why = decode(data)
@@ -161,14 +163,30 @@ class Sidecar:
                 self.sounding.add(note)
             elif m["type"] in ("note_on", "note_off"):
                 self.sounding.discard(note)
+            if self._send(m):
+                self.played += 1
+
+    def _send(self, m: dict) -> bool:
+        """One message out. A driver error (a port unplugged, a value the
+        driver refuses) costs that message, said once per reason -- never the
+        sidecar, which would leave every note sounding with nobody to stop it."""
+        try:
             self.out.send(m)
-            self.played += 1
+            return True
+        except Exception as exc:                    # noqa: BLE001 -- the driver's own
+            self.failed += 1
+            why = f"{type(exc).__name__}: {exc}"
+            if why != self.last_failure:
+                print(f"could not send {describe(m)}: {why}", file=sys.stderr, flush=True)
+            self.last_failure = why
+            return False
 
     def panic(self) -> None:
-        """Stop every note this process started."""
+        """Stop every note this process started -- each one tried, whatever
+        the one before it did."""
         for ch, note in sorted(self.sounding):
-            self.out.send({"type": "note_off", "channel": ch, "note": note,
-                           "velocity": 0})
+            self._send({"type": "note_off", "channel": ch, "note": note,
+                        "velocity": 0})
         self.sounding.clear()
 
 
@@ -242,11 +260,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        sidecar.panic()
-        port_out.close()
+        sidecar.panic()                   # each send guarded: it never raises
+        try:
+            port_out.close()
+        except Exception as exc:                    # noqa: BLE001 -- the driver's own
+            print(f"could not close the MIDI output: {exc}", file=sys.stderr)
         sock.close()
-        print(f"stopped: {sidecar.played} played, {sidecar.rejected} rejected",
-              flush=True)
+        print(f"stopped: {sidecar.played} played, {sidecar.rejected} rejected"
+              + (f", {sidecar.failed} failed" if sidecar.failed else ""), flush=True)
     return 0
 
 

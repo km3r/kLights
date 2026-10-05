@@ -251,6 +251,8 @@ class ShowController:
         self.outputs = outputsmod.Outputs()
         self.local_outputs = dict(local_outputs or {})
         self._output_frame: Optional[outputsmod.ProgramFrame] = None
+        # The last outputs failure said, and when: (message, engine time).
+        self._output_said: Optional[tuple[str, float]] = None
         self.rig = rigmod.load_rig(self.event_dir)
         self.reach = rig_reach(self.rig)
         errors = self.rig.validate()
@@ -429,7 +431,10 @@ class ShowController:
         # waiting for its downbeat, and every routine pad built for this rig.
         self.pad: Optional[dict] = None
         self._pad_pending: Optional[dict] = None
+        # A routine that could not be built is kept here as its exception:
+        # the pad then lands its looks alone, rather than waiting for ever.
         self._pad_programs: dict[str, Any] = {}
+        self._pad_gen = 0               # bumped when the rig or folder changes
         if self.show_dir is not None:
             self.player = playbackmod.TrackPlayer(
                 self.transport, pinned=lambda: self.pinned,
@@ -581,10 +586,22 @@ class ShowController:
             extra = (("pad", f"pad:{pad['name']}@{pad['start']:g}", pad["program"]),)
         # Every frame, for the outputs and for the snapshot's visuals section
         # (a #visuals page may be open whether or not anything else is on).
-        frame = self.player.output_frame(extra)
-        self._output_frame = frame
-        if self.outputs.active:
-            self.outputs.send(frame, now)
+        try:
+            frame = self.player.output_frame(extra)
+            self._output_frame = frame
+            if self.outputs.active:
+                self.outputs.send(frame, now)
+        except Exception as exc:                            # noqa: BLE001
+            # The other outputs never cost the lights a frame: the show chosen
+            # above goes on stage whatever an OSC, MIDI or timecode send did.
+            # Said once per message, or again after a while -- not 40 times a
+            # second, nor once per flap of one that fails every other frame.
+            self._output_frame = None
+            said = f"the other outputs failed and are skipped: {exc}"
+            last = self._output_said
+            if last is None or last[0] != said or now - last[1] >= OUTPUT_NOTE_S:
+                self._output_said = (said, now)
+                self.note(said)
         return show
 
     # routines on pads (milestone 2) -----------------------------------------
@@ -607,21 +624,33 @@ class ShowController:
         pick = {"routine": routine.get("id"), "variation": routine.get("variation"),
                 "params": routine.get("params")}
         routines, rigging, name = library.folder.routines, self._rigging(), preset["name"]
+        gen = self._pad_gen
 
         def build():
-            if pick["routine"] not in routines:
-                raise ValueError(f"routine {pick['routine']!r} is not in routines/")
-            return programmod.compile(templatesmod.pick_timeline({}, pick), routines,
-                                      rigging, f"preset {name!r}")
+            # Returned, not raised: the worker never calls `done` for a job
+            # that raised, and a pad waiting on it would wait for ever.
+            try:
+                if pick["routine"] not in routines:
+                    raise ValueError(f"routine {pick['routine']!r} is not in routines/")
+                return programmod.compile(templatesmod.pick_timeline({}, pick),
+                                          routines, rigging, f"preset {name!r}")
+            except Exception as exc:                        # noqa: BLE001
+                return exc
 
         def done(prog) -> None:
+            if gen != self._pad_gen:
+                return                  # built for a rig or load since replaced
             self._pad_programs[key] = prog
-            if prog.problems:
+            if isinstance(prog, Exception):
+                self.note(f"preset {name!r}: its routine could not be built "
+                          f"({prog}); the pad applies its looks")
+            elif prog.problems:
                 self.note(f"preset {name!r}: {prog.problems[0]}")
 
         self.worker.submit(build, done, label=f"building preset {name!r}'s routine")
 
     def _compile_pads(self) -> None:
+        self._pad_gen += 1
         self._pad_programs = {}
         for preset in self.presets:
             if preset.get("routine"):
@@ -649,6 +678,12 @@ class ShowController:
             return
         self._pad_pending = None
         self._apply_preset_looks(pending["preset"], now)
+        if isinstance(prog, Exception):
+            # Its routine could not be built: the looks alone, on the same
+            # downbeat, and said -- each press, as each press is a choice.
+            self.note(f"preset {pending['preset']['name']!r}: its routine could "
+                      f"not be built ({prog}); applied its looks")
+            return
         self.pad = {"name": pending["preset"]["name"],
                     "routine": pending["preset"]["routine"].get("id"),
                     "start": pending["start"], "program": prog}
@@ -1488,7 +1523,10 @@ class ShowController:
                  for p in others):
             raise ValueError(f"bank {where[0]} cell {where[1]} is already taken")
         tags = m.get("tags")
-        routine = self._preset_routine(m.get("routine"))
+        # Absent keeps the pad's routine (re-recording its looks is the
+        # common case); null clears it, making it a pad of looks again.
+        routine = (self._preset_routine(m["routine"]) if "routine" in m
+                   else previous.get("routine") if previous is not None else None)
         captured = self.capture_look_params(self.looks_named(self.selection))
         # Built whole and rebound once. Appending to the live list and then
         # sorting it in place is what let the broadcast thread serialise an
@@ -3069,6 +3107,9 @@ class ShowController:
         }
 
 
+# The same failure of the other outputs is said again after this long.
+OUTPUT_NOTE_S = 10.0
+
 BANK_SIZE = configmod.BANK_SIZE
 
 
@@ -3964,15 +4005,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     show_dir = showfiles.resolve_show_dir(args.show_dir)
     # This machine's own output addresses (milestone 3), over the show's.
-    local_outputs = showfiles.read_local_config().get("outputs")
-    problems: list[str] = []
-    if local_outputs is not None:
-        configmod._check(local_outputs, showfiles.SHOW["outputs"],
-                         "klights.local.json outputs", problems)
-    if problems:
-        print("outputs klights.local.json is ignored:\n  " + "\n  ".join(problems),
-              file=sys.stderr)
-        local_outputs = None
+    local_outputs, problem = outputsmod.local_override(
+        showfiles.read_local_config().get("outputs"))
+    if problem is not None:
+        print(f"outputs: {problem}", file=sys.stderr)
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
                                 bpm=args.bpm, show_dir=show_dir,
                                 local_outputs=local_outputs)

@@ -244,7 +244,16 @@ class Runner:
             show = self.director.update(position, self.clock.phrase_measured)
             self.director.apply(self.ctx)
             if self.choose_show is not None:
-                show = self.choose_show(show)
+                try:
+                    show = self.choose_show(show)
+                except Exception:                          # noqa: BLE001
+                    # The timeline, templates, pads and other outputs all run
+                    # in here. Whatever goes wrong in them, this frame shows
+                    # the operator's own show, it is counted with the show
+                    # errors, and the clock keeps running -- the same promise
+                    # render_once makes, rather than ending the output thread.
+                    self.stats.eval_errors += 1
+                    self.last_error = traceback.format_exc()
             self.set_show(show)
         if self.on_show is not None:
             self.on_show(self.show)

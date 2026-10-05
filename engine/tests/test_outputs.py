@@ -12,6 +12,8 @@ listener, and plays the synthetic track and a guest through it.
 Run: python engine/tests/test_outputs.py
 """
 
+import contextlib
+import io
 import json
 import queue
 import shutil
@@ -204,6 +206,11 @@ try:
     check("an integer too big for 32 bits goes as a float, not an exception",
           syncmod.decode_osc(outputsmod.osc_encode("/x", [2 ** 40]))[1]
           == [float(2 ** 40)])
+    big = outputsmod.osc_encode("/x", [1e39, 10 ** 40, -1e300, float("inf")])
+    check("a number past a 32-bit float's range is sent as its largest, not an "
+          "exception out of a frame -- a curve of $value * 1e40 is a typo, not a crash",
+          syncmod.decode_osc(big)[1] == [outputsmod.FLOAT32_MAX] * 2
+          + [-outputsmod.FLOAT32_MAX, outputsmod.FLOAT32_MAX], f"{syncmod.decode_osc(big)}")
     f = outputsmod.ProgramFrame(mode="timeline", beat=161.0)
     act = outputsmod.Active("k", "osc", CORE.external_rows[0], None, 0.25, 0.75)
     check("tokens: $beat, $bar, $phase, $progress, $value",
@@ -283,6 +290,20 @@ try:
     check("show.json says where; this machine's klights.local.json wins, key by key",
           outs.osc.target == ("127.0.0.1", 7000) and said == "outputs: OSC to 127.0.0.1:7000",
           f"{said}")
+    local, why = outputsmod.local_override({"osc": {"host": "127.0.0.1"}})
+    check("this machine's override is checked for shape only: a host with "
+          "show.json's port is a fine override", local == {"osc": {"host": "127.0.0.1"}}
+          and why is None, f"{why}")
+    local, why = outputsmod.local_override({"osc": {"host": "vj.local"},
+                                            "timecode": {"fps": 31}})
+    check("and a bad field in it is left for configure to turn off that one output, "
+          "not the whole override",
+          local is not None and why is None)
+    for bad in (["osc"], {"osc": "127.0.0.1"}, "127.0.0.1"):
+        check(f"one that is not outputs at all is ignored, said why: {bad!r}",
+              outputsmod.local_override(bad)[0] is None
+              and "must be" in (outputsmod.local_override(bad)[1] or ""))
+    check("and none is none", outputsmod.local_override(None) == (None, None))
     kept = outs.osc
     check("the same again changes nothing", outs.configure(
         {"osc": {"host": "10.0.0.5", "port": 7000}}, {"osc": {"host": "127.0.0.1"}})
@@ -479,6 +500,34 @@ try:
     check("on the way out it stops every note it started",
           rec.messages[-1] == {"type": "note_off", "channel": 3, "note": 67, "velocity": 0}
           and car.sounding == set())
+
+    class Unplugged(Played):
+        """A port whose driver refuses notes above 64, as an unplugged or
+        confused one might -- every one of them, each time."""
+
+        def send(self, m):
+            if m.get("note", 0) > 64:
+                raise OSError("device unplugged")
+            super().send(m)
+
+    flaky = Unplugged()
+    car = sidecarmod.Sidecar(flaky)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        car.handle(wire({"type": "note_on", "channel": 1, "note": 70, "velocity": 9},
+                        {"type": "note_on", "channel": 1, "note": 60, "velocity": 9},
+                        {"type": "note_on", "channel": 2, "note": 71, "velocity": 9}))
+        car.handle(wire({"type": "note_on", "channel": 1, "note": 62, "velocity": 9}))
+        car.panic()
+    check("a send the driver refuses costs that message, never the sidecar: the "
+          "rest still play, and the next datagram too",
+          [m.get("note") for m in flaky.messages[:2]] == [60, 62]
+          and car.played == 2 and car.failed >= 2, f"{flaky.messages} {car.failed}")
+    check("said once per reason, not once a message",
+          err.getvalue().count("device unplugged") == 1, err.getvalue())
+    check("and on the way out every note is still tried, whatever the one before did",
+          {(m["channel"], m["note"]) for m in flaky.messages[2:]} == {(1, 60), (1, 62)}
+          and car.sounding == set(), f"{flaky.messages}")
 
     proc = subprocess.Popen([sys.executable, str(REPO / "bridges" / "midi" / "midi_out.py"),
                              "--fake", "--port", "0"],

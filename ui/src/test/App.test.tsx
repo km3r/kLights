@@ -284,6 +284,40 @@ describe("presets", () => {
     }
   });
 
+  it("re-recording a routine pad keeps its routine unless 'none' is chosen", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      // Its name shows the routine its pad has: what a save keeps.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      expect(pick).toHaveValue("fan-drop");
+      expect(screen.getByLabelText("pad routine variation")).toHaveValue("wide");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+      // Choosing "none" says so, rather than saying nothing.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.selectOptions(pick, "");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop", routine: null });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("will not save an unnamed preset", () => {
     mount();
     expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
