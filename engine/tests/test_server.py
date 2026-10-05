@@ -1511,6 +1511,38 @@ controller.apply({"type": "macro", "reset": True}, None)
 controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
                  None)
 
+print("\n11d1. an RGBW white override, per target")
+# A white channel is not on every fixture, so white rides beside the RGB
+# override rather than inside it -- and a palette tap, which only knows RGB,
+# must not forget a white the operator dialled in a moment ago.
+held_whites = controller.white_overrides
+controller.apply({"type": "color", "target": "movers", "color": [1, 0, 0],
+                  "white": 0.6}, None)
+check("a white override is stored, published, and rebound rather than edited",
+      controller.white_overrides == {"movers": 0.6}
+      and controller.snapshot()["white_overrides"] == {"movers": 0.6}
+      and controller.white_overrides is not held_whites and not held_whites)
+show = controller.director.rebuild()
+controller._attach_overrides(show)
+mover = next(f for f in controller.rig.fixtures if "movers" in f.tags)
+check("and reaches the targeted fixtures' state",
+      statemod.evaluate(controller.ctx, show)[mover.fid].white == 0.6)
+controller.apply({"type": "color", "target": "movers", "color": [0, 1, 0]},
+                 None)
+check("a colour with no white leaves the white alone",
+      controller.white_overrides == {"movers": 0.6})
+controller.apply({"type": "color", "target": "movers", "color": [0, 1, 0],
+                  "white": None}, None)
+check("white: null clears just the white",
+      controller.white_overrides == {} and "movers" in controller.color_overrides)
+controller.apply({"type": "color", "target": "movers", "color": [0, 0, 0],
+                  "white": 0.2}, None)
+controller.apply({"type": "color", "target": "movers", "color": [0, 0, 0],
+                  "clear": True}, None)
+check("clearing the target clears both",
+      controller.white_overrides == {}
+      and "movers" not in controller.color_overrides)
+
 print("\n11d2. a preset carries the tuning of the routines it names")
 # A preset is "get back to this picture". A routine's radius IS the picture, so
 # unlike `rates` -- a ride the operator keeps a hand on -- it is stored even when

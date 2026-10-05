@@ -1551,9 +1551,13 @@ class ShowController:
         """
         color = tuple(max(0.0, min(1.0, float(c))) for c in m["color"])
         target = m.get("target", "all")
+        # `white_overrides` is REBOUND, never edited: the snapshot thread
+        # publishes it, and a dict changing size under that copy fails the
+        # broadcast. (`color_overrides` is not published.)
+        whites = {k: v for k, v in self.white_overrides.items() if k != target}
         if m.get("clear"):
             self.color_overrides.pop(target, None)
-            self.white_overrides.pop(target, None)
+            self.white_overrides = whites
         else:
             self.color_overrides[target] = color
             # "white" absent (the quick palette, most colour picks) leaves any
@@ -1564,9 +1568,10 @@ class ShowController:
             if "white" in m:
                 white = m.get("white")
                 if white is None:
-                    self.white_overrides.pop(target, None)
+                    self.white_overrides = whites
                 else:
-                    self.white_overrides[target] = max(0.0, min(1.0, float(white)))
+                    self.white_overrides = {
+                        **whites, target: max(0.0, min(1.0, float(white)))}
         self._rebuild_overrides()
 
     def _cmd_palette_select(self, m: dict, now: float) -> None:
