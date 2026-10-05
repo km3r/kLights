@@ -8,7 +8,7 @@ import {
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
 import {
   AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
-  routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
+  parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
 } from "./edit";
 import type { History, LaneSpecs } from "./edit";
 import { Lane, Ruler } from "./lanes";
@@ -128,6 +128,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const rigBound = usesRig(doc);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
   const paramLanes = routineLaneSpecs(doc);
 
   return (
@@ -195,6 +196,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
       {history.listView
         ? <Editor.EventList history={history} />
+        : waveRow
+          ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow
           ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                    onSelect={setSelected} />

@@ -57,6 +57,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             parameter on every routine that has it.</>,
           <>On a curve, click to add a point and drag to move it. Select a
             point to choose how it arrives: linear, step or ease.</>,
+          <><b>∿</b> on a curve adds a wave on top of its points: a sine,
+            triangle, ramp, saw, square or hold every few bars. Depth is how
+            far above the points it swings; negative swings below.</>,
           <><b>List</b> shows every item in order, with nudge buttons for exact
             timing.</>,
         ],
@@ -123,6 +126,10 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <><b>+ automation</b> also lists each parameter, so it can change
             over the routine on its own lane. A lane overrides the clip's or
             variation's value. Look parameters can't be automated.</>,
+          <>It lists each block's number and colour arguments too, like{" "}
+            <code>orbit.radius</code>, so one item can move without making a
+            parameter. A lane on a cycle length makes the block jump: use a{" "}
+            rate lane to change speed.</>,
           <>A colour can be a palette role, a fixed colour or a parameter. Use
             roles and the routine follows the track's palette.</>,
           <>Blocks under <b>This rig only</b> use this event's own looks or

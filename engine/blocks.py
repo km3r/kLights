@@ -69,6 +69,12 @@ SLOT_OF: dict[str, Optional[str]] = {
 RGB = tuple[float, float, float]
 WHITE: RGB = (1.0, 1.0, 1.0)
 
+# A routine's `arg.<item>.<arg>` lane drives one item's argument. It plays as a
+# hidden parameter of that very name, which the item's argument is pointed at
+# (`routines.instantiate`) -- so it is read per frame exactly as a `$param` is,
+# with no second path into the blocks.
+ARG_PREFIX = "arg."
+
 
 # -- what each block takes ------------------------------------------------------
 #
@@ -315,10 +321,13 @@ class Blend:
 
 def automation_value(curve: Any, beat: float) -> Any:
     """A `timeline.Curve` at a beat, as a parameter reads it: a number, or a
-    Blend for a colour curve, which only `Env.color` knows how to mix."""
+    Blend for a colour curve, which only `Env.color` knows how to mix -- with a
+    colour wave, the points' blend blended again toward the wave's colour."""
     if curve.numeric:
         return curve.value(beat)
-    return Blend(*curve.segment(beat))
+    value = Blend(*curve.segment(beat))
+    pull = curve.pull(beat)
+    return value if pull is None else Blend(value, pull[0], pull[1])
 
 
 def parse_hex(text: str) -> Optional[RGB]:
@@ -360,8 +369,9 @@ class Env:
         # The routine's lane is how the routine moves its parameter; a track
         # drawing the same parameter is the show taking it over for that
         # track, so the track wins -- the same way a use's values beat the
-        # routine's defaults.
-        auto = self.automate(name)
+        # routine's defaults. An argument lane's hidden parameter is the
+        # routine's alone: no timeline can name one item's argument.
+        auto = None if name.startswith(ARG_PREFIX) else self.automate(name)
         if auto is None:
             auto = self.lanes(name)
         return self.params.get(name) if auto is None else auto

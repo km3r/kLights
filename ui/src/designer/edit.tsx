@@ -3,12 +3,14 @@ import { HelpHeading } from "../components";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
+import { WAVE_SHAPES } from "../blocks";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue, itemName,
-  itemSub, oscArgsText, parseOscArgs,
+  itemSub, laneValue, oscArgsText, parseOscArgs, waveLevel,
 } from "./model";
 import type {
   Item, OscMessage, Point, PointValue, RoutineSummary, Row, TimelineDoc, TrackDoc, VisualRule,
+  WaveSpec,
 } from "./model";
 
 /**
@@ -118,6 +120,49 @@ export function routineLaneSpecs(doc: { params?: Record<string, ParamLike>; rows
   for (const [name, def] of Object.entries(doc.params ?? {})) {
     const spec = paramSpec(name, def, fed[name]);
     if (spec) out[`param.${name}`] = spec;
+  }
+  Object.assign(out, argLaneSpecs(doc.rows));
+  return out;
+}
+
+/** The kinds of block argument a lane can move (`showfiles.LANE_ARG_KINDS`):
+ *  read per frame, with a halfway between two values. */
+const LANE_ARG_KINDS = new Set(["number", "color"]);
+
+/**
+ * `arg.<item>.<argument>`: one item's argument, moved without declaring a
+ * parameter. Offered for each number and colour argument of each block item,
+ * except one already fed by a `$param` -- that parameter's lane is the way to
+ * move it. Ranged by the block's own declaration; an absolute angle's range is
+ * only the fallback for a rig the editor does not know, so it is drawn but not
+ * enforced (the engine only warns past it).
+ */
+function argLaneSpecs(rows: Row[]): LaneSpecs {
+  const out: LaneSpecs = {};
+  for (const row of rows) {
+    if (row.type !== "clips") continue;
+    for (const it of row.items ?? []) {
+      for (const spec of BLOCK_ARGS[it.block ?? ""] ?? []) {
+        if (!LANE_ARG_KINDS.has(spec.kind)) continue;
+        const literal = it.args?.[spec.name];
+        if (typeof literal === "string" && literal.startsWith("$")) continue;
+        const label = `${it.id}.${spec.name}`;
+        const unit = spec.unit?.trim() ?? "";
+        if (spec.kind === "color") {
+          out[`arg.${label}`] = { label, unit, kind: "color", lo: 0, hi: 1,
+                                  start: (literal ?? spec.default ?? "@primary") as PointValue };
+          continue;
+        }
+        const lo = spec.min ?? 0;
+        const hi = spec.max !== undefined && spec.max > lo ? spec.max : lo + 1;
+        const value = typeof literal === "number" ? literal
+          : typeof spec.default === "number" ? spec.default : lo;
+        out[`arg.${label}`] = {
+          label, unit, kind: "number", lo, hi,
+          min: spec.reach ? undefined : spec.min, max: spec.reach ? undefined : spec.max,
+          start: value };
+      }
+    }
   }
   return out;
 }
@@ -347,6 +392,12 @@ export function useEditorKeys({ history, selected, setSelected, playPause }: {
 
 /** Remove an item, or an automation point, by its selection id. */
 export function removeSelected(d: RowsDoc, id: string): void {
+  const waved = parseWaveId(id);
+  if (waved) {
+    const r = rowOf(d, waved);
+    if (r) delete r.wave;
+    return;
+  }
   const pt = parsePointId(id);
   if (pt) {
     const r = rowOf(d, pt.row);
@@ -634,6 +685,33 @@ export function parsePointId(id: string | null): { row: string; beat: number } |
   return m ? { row: m[1]!, beat: Number(m[2]) } : null;
 }
 
+/** A lane's wave's selection id: a row has at most one. */
+export function waveId(rowId: string): string {
+  return `wave:${rowId}`;
+}
+
+export function parseWaveId(id: string | null): string | null {
+  return id?.startsWith("wave:") ? id.slice(5) : null;
+}
+
+/**
+ * A new wave for a lane, sized to stay in range: a number lane's swings a
+ * quarter of its drawn range, upward if its points leave more room above
+ * than below, else downward -- and no further than that room, so the engine
+ * accepts it as drawn. A colour lane's swings all the way to the accent.
+ */
+export function defaultWave(row: Row, spec: LaneSpec): WaveSpec {
+  if (spec.kind === "color") return { shape: "sine", bars: 4, toward: "@accent", depth: 1 };
+  const nums = (row.points ?? []).map((p) => p[1]).filter((v): v is number => typeof v === "number");
+  const top = Math.max(spec.lo, ...nums);
+  const bottom = Math.min(spec.hi, ...nums);
+  const up = (spec.max ?? spec.hi) - top;
+  const down = bottom - (spec.min ?? spec.lo);
+  const quarter = (spec.hi - spec.lo) / 4;
+  const depth = up >= down ? Math.min(up, quarter) : -Math.min(down, quarter);
+  return { shape: "sine", bars: 4, depth: Math.round(depth * 100) / 100 };
+}
+
 const CURVES = ["linear", "step", "ease"] as const;
 
 /** A colour value as CSS, or null for one only the show can resolve -- a
@@ -710,6 +788,26 @@ function ColourBand({ points, x, width, id }: {
   );
 }
 
+/** A colour lane's wave: the colour it swings toward, laid over the band as
+ *  strongly as the wave pulls at each beat. One it cannot paint (a palette
+ *  role) is drawn in the band's own named-colour grey. */
+function ColourWave({ wave, x, width }: { wave: WaveSpec; x: (b: number) => number; width: number }) {
+  const perBeat = x(1) - x(0);
+  const end = width / perBeat;
+  const step = Math.max(end / 2000, Math.min(0.5, (wave.bars * BEATS_PER_BAR) / 16));
+  const fill = cssColour(wave.toward);
+  const strips: React.ReactNode[] = [];
+  for (let b = 0, i = 0; b < end; b += step, i++) {
+    const pull = Math.max(0, Math.min(1, waveLevel(wave, b + step / 2)));
+    if (pull > 0.02) {
+      strips.push(<rect key={i} x={x(b)} y={8} width={step * perBeat + 0.5} height={LANE_H - 16}
+                        fill={fill ?? undefined} className={fill ? undefined : "d-band-named"}
+                        opacity={fill ? pull * 0.85 : pull * 0.4} />);
+    }
+  }
+  return <g pointerEvents="none" aria-label="wave">{strips}</g>;
+}
+
 /**
  * An automation lane. Click empty space to add a point there; click a point to
  * select it (the inspector edits its value and the curve that arrives at it);
@@ -737,7 +835,17 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
       : p)).sort((a, b) => a[0] - b[0])
     : points;
   const samples: string[] = [];
-  if (shown.length) {
+  if (shown.length && row.wave && !colour) {
+    // A wave never settles, so the whole lane is sampled, finely enough to
+    // show its shape and no more finely than a few thousand points.
+    const end = width / perBeat;
+    const step = Math.max(end / 4000, Math.min(0.5, (row.wave.bars * BEATS_PER_BAR) / 24));
+    const waved = { ...row, points: shown };
+    for (let b = 0; b <= end; b += step) {
+      const v = laneValue(waved, b);
+      if (v != null) samples.push(`${x(b)},${y(Math.max(lo, Math.min(hi, v)))}`);
+    }
+  } else if (shown.length) {
     const first = shown[0]![0];
     const last = shown[shown.length - 1]![0];
     const lead = curveValue(shown, first);
@@ -809,6 +917,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
       {colour
         ? <ColourBand points={shown} x={x} width={width} id={row.id} />
         : <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />}
+      {colour && row.wave && <ColourWave wave={row.wave} x={x} width={width} />}
       {shown.map((p, i) => {
         const id = pointId(row.id, drag && p[0] === drag.beat + drag.dBeat ? drag.beat : p[0]);
         return (
@@ -919,6 +1028,104 @@ function PointInspector({ row, beat, history, onSelect }: {
   );
 }
 
+/**
+ * A lane's wave: its shape, its cycle in bars, how far it swings, where in its
+ * cycle it starts. It rides on the points -- they are where the lane rests,
+ * the wave lifts it by up to `depth` (lowers it, negative) -- so the swing is
+ * checked against the lane's range at every point, as the engine checks it.
+ */
+function WaveInspector({ row, history, onSelect }: {
+  row: Row; history: Edits; onSelect: (id: string | null) => void;
+}) {
+  const spec = useLaneSpec(row);
+  const wave = row.wave;
+  if (!wave) return null;
+  const set = (patch: Partial<WaveSpec>) => history.apply((d) => {
+    const r = rowOf(d, row.id);
+    if (!r?.wave) return;
+    const next: WaveSpec = { ...r.wave, ...patch };
+    for (const k of Object.keys(next) as (keyof WaveSpec)[]) {
+      if (next[k] === undefined) delete next[k];
+    }
+    r.wave = next;
+  });
+  const num = (label: string, key: "bars" | "depth" | "phase" | "seed", step: number,
+               lo?: number, hi?: number) => (
+    <label className="small">{label}{" "}
+      <input type="number" step={step} min={lo} max={hi} value={wave[key] ?? ""}
+             aria-label={`wave ${key}`} style={{ width: 64 }}
+             onChange={(e) => {
+               if (e.target.value === "") return;
+               const v = Number(e.target.value);
+               if ((lo === undefined || v >= lo) && (hi === undefined || v <= hi)) set({ [key]: v });
+             }} />
+    </label>
+  );
+  // Where the swing would go past what the lane accepts: said here, before the
+  // engine refuses the draft, with the point that does it.
+  let over: string | null = null;
+  if (spec.kind === "number" && typeof wave.depth === "number") {
+    for (const p of row.points ?? []) {
+      if (typeof p[1] !== "number") continue;
+      const reach = p[1] + wave.depth;
+      if ((spec.max !== undefined && reach > spec.max) || (spec.min !== undefined && reach < spec.min)) {
+        over = `At bar ${barBeat(p[0])} it reaches ${Math.round(reach * 100) / 100}, `
+          + `outside ${spec.min ?? "any"} to ${spec.max ?? "any"}.`;
+        break;
+      }
+    }
+  }
+  const towardRole = typeof wave.toward === "string" && wave.toward.startsWith("@")
+    ? wave.toward.slice(1) : null;
+  return (
+    <footer className="d-inspector" aria-label="inspector">
+      <div className="d-insp-head">
+        <b>{laneTitle(row.target ?? "", spec)}</b>
+        <span className="muted"> · wave on {row.id}</span>
+        <span className="grow" />
+        <button onClick={() => {
+          history.apply((d) => { const r = rowOf(d, row.id); if (r) delete r.wave; });
+          onSelect(null);
+        }}>Remove wave</button>
+      </div>
+      <div className="d-insp-grid">
+        <div>
+          <span className="small muted">Shape</span>
+          <div className="d-chips" role="group" aria-label="wave shape">
+            {WAVE_SHAPES.map((s) => (
+              <button key={s} className={wave.shape === s ? "on" : ""}
+                      onClick={() => set({ shape: s })}>{s}</button>))}
+          </div>
+        </div>
+        {num("Cycle (bars)", "bars", 0.25, 0.25, 256)}
+        {spec.kind === "color" ? (
+          <div>
+            <span className="small muted">Toward</span>
+            <div className="d-chips" role="group" aria-label="wave toward">
+              {ROLES.map((r) => (
+                <button key={r} className={towardRole === r ? "on" : ""}
+                        onClick={() => set({ toward: `@${r}` })}>{r}</button>))}
+              <input type="color" aria-label="wave toward direct colour"
+                     value={typeof wave.toward === "string" && wave.toward.startsWith("#")
+                       ? wave.toward : "#ffffff"}
+                     onChange={(e) => set({ toward: e.target.value })} />
+            </div>
+            {num("How far (0-1)", "depth", 0.05, 0, 1)}
+          </div>
+        ) : (
+          <div>
+            {num(`Depth${spec.unit ? ` (${spec.unit})` : ""}`, "depth", (spec.hi - spec.lo) / 100)}
+            <div className="small muted">Above the points; negative swings below.</div>
+          </div>
+        )}
+        {num("Starts at (cycles)", "phase", 0.05, 0, 1)}
+        {wave.shape === "hold" && num("Seed", "seed", 1)}
+        {over && <div className="small d-error" role="alert">{over}</div>}
+      </div>
+    </footer>
+  );
+}
+
 function GapToggle({ row, history }: { row: Row; history: Edits }) {
   const owns = row.gap === "exclusive";
   return (
@@ -983,8 +1190,10 @@ export function externalRow(d: RowsDoc, kind: string): Row | undefined {
 /** A lane's name as its head, its menu entry and the inspector show it: a
  *  parameter as `$name` with its unit, the way a block argument refers to it. */
 export function laneTitle(target: string, spec: LaneSpec): string {
-  if (!target.startsWith("param.")) return spec.label;
-  return `$${spec.label}${spec.unit ? ` (${spec.unit})` : ""}`;
+  const unit = spec.unit ? ` (${spec.unit})` : "";
+  if (target.startsWith("param.")) return `$${spec.label}${unit}`;
+  if (target.startsWith("arg.")) return `${spec.label}${unit}`;
+  return spec.label;
 }
 
 /** A new automation lane for `target`, starting where it already is: a macro
@@ -1008,8 +1217,10 @@ export function AutomationMenu({ history, params }: {
   if (!doc) return null;
   const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
   const macros = Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t));
-  const open = Object.entries(params).filter(([t]) => !automated.has(t))
+  const free = Object.entries(params).filter(([t]) => !automated.has(t));
+  const open = free.filter(([t]) => t.startsWith("param."))
     .sort(([a], [b]) => a.localeCompare(b));
+  const args = free.filter(([t]) => t.startsWith("arg."));
   return (
     <select aria-label="add automation" value=""
             onChange={(e) => {
@@ -1025,6 +1236,11 @@ export function AutomationMenu({ history, params }: {
           {open.map(([t, spec]) => (
             <option key={t} value={t}>
               {laneTitle(t, spec)}{spec.reaches ? ` · ${spec.reaches.join(", ")}` : ""}</option>))}
+        </optgroup>
+      )}
+      {args.length > 0 && (
+        <optgroup label="Block arguments">
+          {args.map(([t, spec]) => <option key={t} value={t}>{laneTitle(t, spec)}</option>)}
         </optgroup>
       )}
     </select>
@@ -1676,5 +1892,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector, uniqueId, OscCue, MidiCue, VisualCue,
+  PointInspector, WaveInspector, uniqueId, OscCue, MidiCue, VisualCue,
 };

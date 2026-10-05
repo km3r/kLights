@@ -29,6 +29,7 @@ from engine import safety as safetymod  # noqa: E402
 from engine import showfiles as sf  # noqa: E402
 from engine import state as statemod  # noqa: E402
 from engine import timeline as tl  # noqa: E402
+from engine import waves  # noqa: E402
 
 failures: list[str] = []
 
@@ -394,6 +395,113 @@ s = frame(build([clips("scene", "scene", [use("a", "ftint", 16, 64)])],
                 [fade_tint]), 20)
 check("a colour param's own lane blends between its points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
+
+# An argument lane: one item's argument, moved without declaring a param.
+argo = routine("argo", [
+    clips("m", "movement", [block("o", "orbit", 0, 8, radius=20, bars=1,
+                                  spread=0)]) | {"role": "movers"},
+    {"id": "rad", "type": "automation", "target": "arg.o.radius",
+     "points": [[0, 10.0], [8, 30.0]]}], bars=2)
+p = build([clips("scene", "scene", [use("a", "argo", 4, 32)])], [argo])
+check("an argument lane drives that item's argument, in the routine's beats",
+      close(bearing_at(p, 5), 12.5, 1e-6), f"{bearing_at(p, 5)}")
+p = build([clips("scene", "scene", [use("a", "argo", 4, 32)]),
+           {"id": "tr", "type": "automation", "target": "param.arg.o.radius",
+            "points": [[0, 5.0]]}], [argo])
+check("and no timeline can reach it, even by naming its hidden parameter",
+      close(bearing_at(p, 5), 12.5, 1e-6), f"{bearing_at(p, 5)}")
+red_solid = routine("rs", [
+    clips("c", "color", [block("s", "solid", 0, 32, color="#ff0000")]) | {"role": "movers"},
+    {"id": "sc", "type": "automation", "target": "arg.s.color",
+     "points": [[0, "#ff0000"], [8, "#0000ff"]]}])
+s = frame(build([clips("scene", "scene", [use("a", "rs", 0, 64)])], [red_solid]), 4)
+check("a colour argument's lane blends between its points",
+      rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
+
+# Every argument the format lets a lane drive must really be read per frame:
+# one read once at build time would accept a lane and ignore it. So for each,
+# the same item under a lane held at one end of its range and then the other
+# must put some fixture somewhere different at some beat.
+NEEDS = {"solid": {"color": "#ffffff"}, "color_chase": {"colors": ["#ff0000", "#00ff00"]},
+         "aim_points": {"points": [[0.2, 0.2, 0.0], [0.8, 0.8, 0.0]]},
+         # its default roles are both white with no palette, and at blend 0
+         # its cycle trades nothing
+         "duo": {"color_a": "#ff0000", "color_b": "#0000ff", "blend": 0.5}}
+SLOT_ROW = {"movement": "movement", "color": "color", "level": "level"}
+
+
+def picture(prog):
+    out = []
+    for b in (0.3, 1.1, 2.7, 5.9, 9.4):
+        s = frame(prog, b)
+        out.append(tuple((round(s[f.fid].aim.bearing_delta, 6), round(s[f.fid].aim.elev_deg, 6),
+                          tuple(round(c, 6) for c in s[f.fid].color),
+                          round(s[f.fid].intensity, 6), round(s[f.fid].strobe, 6))
+                         for f in MOVERS))
+    return out
+
+
+deaf = []
+for name, declared in blocksmod.PARAMS.items():
+    slot = blocksmod.SLOT_OF.get(name)
+    if slot is None:
+        continue
+    for spec in declared:
+        if spec.kind not in sf.LANE_ARG_KINDS:
+            continue
+        if spec.kind == "color":
+            ends = ("#ff0000", "#0000ff")
+        else:
+            # The bottom and the MIDDLE of the range: the two ends of a hue
+            # are the same colour.
+            lo = spec.min if spec.min is not None else 0.0
+            hi = spec.max if spec.max is not None else lo + 10.0
+            ends = (lo, (lo + hi) / 2.0)
+        pics = []
+        for end in ends:
+            doc = routine(f"deaf-{name}-{spec.name}", [
+                clips("r", SLOT_ROW[slot], [block("i", name, 0, 32, **NEEDS.get(name, {}))])
+                | {"role": "movers"},
+                {"id": "a", "type": "automation", "target": f"arg.i.{spec.name}",
+                 "points": [[0, end]]}])
+            pics.append(picture(build([clips("scene", "scene", [use(
+                "u", doc["id"], 0, 64)])], [doc])))
+        if pics[0] == pics[1]:
+            deaf.append(f"{name}.{spec.name}")
+check("every block argument a lane may drive moves the lights when it does",
+      deaf == [], f"{deaf}")
+
+# Waves: on top of the points, any lane.
+p = build([{"id": "m", "type": "automation", "target": "master",
+            "points": [[0, 0.5]], "wave": {"shape": "square", "bars": 1, "depth": 0.5}}])
+low, high = frame(p, 1)[MOVERS[0].fid].intensity, frame(p, 3)[MOVERS[0].fid].intensity
+check("a square wave on master: the points' 0.5 in the first half bar, 1.0 in "
+      "the second", high > 0 and close(low / high, 0.5, 1e-9), f"{low} {high}")
+red = {"id": "pc", "type": "automation", "target": "param.color",
+       "points": [[0, "#ff0000"]]}
+s1 = frame(build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
+                  red | {"wave": {"shape": "square", "bars": 1, "toward": "#0000ff"}}],
+                 [tinted]), 1)
+s3 = frame(build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
+                  red | {"wave": {"shape": "square", "bars": 1, "toward": "#0000ff",
+                                  "depth": 0.5}}], [tinted]), 3)
+check("a colour lane's wave swings toward its colour, as far as its depth",
+      rgb_close(s1[MOVERS[0].fid].color, (1, 0, 0))
+      and rgb_close(s3[MOVERS[0].fid].color, (0.5, 0, 0.5)),
+      f"{s1[MOVERS[0].fid].color} {s3[MOVERS[0].fid].color}")
+wobble = {"shape": "sine", "bars": 1, "depth": 1.0}
+wavy = build([clips("scene", "scene", [use("a", "orb", 0, 64)]),
+              {"id": "r", "type": "automation", "target": "rate.movement",
+               "points": [[0, 1.0]], "wave": wobble}], [orbit])
+direct = bearing_at(wavy, 13.3)
+motion_beats = 13.3 + waves.Wave("sine", 1, 1.0).integral(13.3)
+want = 20.0 * math.sin(2 * math.pi * (motion_beats / 4.0))
+check("a wave on a rate lane is integrated exactly: the orbit is where the "
+      "closed-form phase puts it", close(direct, want, 1e-6), f"{direct} vs {want}")
+for b in [x * 0.025 for x in range(0, 533)]:
+    wavy.begin(b, fallback=FALLBACK)
+check("and playing up to the beat lands where jumping to it does",
+      close(bearing_at(wavy, 13.3), direct, 1e-12))
 
 slow = build([clips("scene", "scene", [use("a", "orb", 0, 64)])], [orbit])
 fast = build([clips("scene", "scene", [use("a", "orb", 0, 64)]),

@@ -365,6 +365,90 @@ refused("timeline: a param lane value that is neither",
         "timeline", edit(TIMELINE, lambda d: d["rows"].append(
             lane("param.color", [[0, True]]))), "a number or a colour")
 
+# Argument lanes: arg.<item>.<argument>, a routine's only, ranged by the
+# block's own declaration of the argument (blocks.PARAMS).
+check("routine: lanes on a number argument and a colour argument are accepted",
+      sf.validate("routine", edit(FAN, lambda d: (
+          row(d, "c")["items"][0]["args"].update(color="#ff0000"),
+          d["rows"].extend([
+              lane("arg.fan.spread", [[0, 0.5], [16, 1.0]], "lane-s"),
+              lane("arg.chase.width", [[0, 0.25], [8, 0.5, "step"]], "lane-cw"),
+              lane("arg.solid.color", [[0, "#ff0000"], [8, "@accent"]], "lane-sc")])
+      ))).errors == [])
+refused("routine: an argument lane on an item it does not have",
+        "routine", with_lane("arg.nope.width", [[0, 1]]), "no item 'nope'")
+refused("routine: an argument the block does not take",
+        "routine", with_lane("arg.fan.radius", [[0, 1]]), "fan_sweep has no argument 'radius'")
+refused("routine: a choice argument -- no halfway between x and -x",
+        "routine", with_lane("arg.chase.order", [[0, 1]]), "is a choice")
+refused("routine: an argument already fed by a $param -- automate the param",
+        "routine", with_lane("arg.fan.width", [[0, 30]]), "automate param.width")
+refused("routine: an argument lane past the block's declared range",
+        "routine", with_lane("arg.fan.spread", [[0, 0.5], [8, 2]]), "above the maximum 1")
+refused("routine: a number on a colour argument's lane",
+        "routine", edit(with_lane("arg.solid.color", [[0, 0.5]]),
+                        lambda d: row(d, "c")["items"][0]["args"].update(color="#ff0000")),
+        "not a colour")
+with_offset = edit(FAN, lambda d: row(d, "m")["items"].append(
+    {"id": "off", "at": 0, "len": 4, "block": "offset", "args": {"bearing": 0}}))
+warned("routine: an absolute angle past the fallback range only warns -- its "
+       "real bound is the playing rig's reach",
+       "routine", with_lane("arg.off.bearing", [[0, 300]], with_offset), "above the maximum 270")
+warned("routine: a lane on a cycle length warns that the block will jump",
+       "routine", with_lane("arg.fan.bars", [[0, 4], [16, 2]]), "makes the block jump")
+refused("timeline: an argument lane -- a timeline has no blocks",
+        "timeline", edit(TIMELINE, lambda d: d["rows"].append(
+            lane("arg.fan.spread", [[0, 0.5]]))), "a timeline has no blocks")
+refused("routine: a param named like an argument lane would be shadowed by one",
+        "routine", edit(FAN, lambda d: d["params"].update(
+            {"arg.fan.spread": {"type": "number"}})), "kept for argument lanes")
+
+# Waves, on top of any lane's points.
+def with_wave(doc, rid, wave):
+    return edit(doc, lambda d: row(d, rid).update(wave=wave))
+
+
+check("timeline: a wave on a macro lane that stays in range is accepted",
+      sf.validate("timeline", with_wave(TIMELINE, "size",
+                                        {"shape": "sine", "bars": 4, "depth": 0.5})).ok)
+refused("timeline: a wave that lifts master past 1 at some point (0.6 + 0.5)",
+        "timeline", with_wave(TIMELINE, "master", {"shape": "sine", "bars": 4, "depth": 0.5}),
+        "at point 0 it reaches 1.1")
+refused("timeline: a number lane's wave with no depth",
+        "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 4}), "needs a depth")
+refused("timeline: a number lane's wave swinging toward a colour",
+        "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 4, "depth": 0.2,
+                                                 "toward": "#ff0000"}), "has a toward colour")
+refused("timeline: a wave shape that does not exist",
+        "timeline", with_wave(TIMELINE, "size", {"shape": "wobble", "bars": 4, "depth": 0.2}),
+        "wobble")
+refused("timeline: a wave with no cycle length",
+        "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 0, "depth": 0.2}),
+        "bars must be at least")
+colour_lane = lambda w: edit(FAN, lambda d: d["rows"].append(  # noqa: E731
+    lane("param.color", [[0, "@primary"]]) | {"wave": w}))
+check("routine: a colour lane's wave toward another colour is accepted",
+      sf.validate("routine", colour_lane({"shape": "square", "bars": 1,
+                                          "toward": "@accent", "depth": 0.5})).ok)
+refused("routine: a colour lane's wave with nowhere to swing to",
+        "routine", colour_lane({"shape": "sine", "bars": 1}), "needs toward")
+refused("routine: a colour lane's wave toward a role that does not exist",
+        "routine", colour_lane({"shape": "sine", "bars": 1, "toward": "@tertiary"}),
+        "not a palette role")
+refused("routine: a colour lane's wave more than all the way there",
+        "routine", colour_lane({"shape": "sine", "bars": 1, "toward": "#ffffff",
+                                "depth": 1.5}), "0 to 1")
+refused("routine: a wave on a param lane that swings past the param's max",
+        "routine", edit(with_lane("param.width", [[0, 100]]),
+                        lambda d: row(d, "lane").update(
+                            wave={"shape": "triangle", "bars": 2, "depth": 30})),
+        "it reaches 130")
+warned("routine: a wave whose cycle does not fit the loop jumps every pass",
+       "routine", edit(with_lane("param.width", [[0, 20]]),
+                       lambda d: row(d, "lane").update(
+                           wave={"shape": "sine", "bars": 3, "depth": 10})),
+       "does not fit")
+
 # A timeline's param lanes, against the routines it places (fan-drop, idle-orbit,
 # verse-sweep, build-rise). Warnings: the routine is another file.
 ROUTINES = {r: load(f"routines/{r}.json")
@@ -382,6 +466,11 @@ check("timeline: a param lane point past a placed routine's max is named, "
                               and "point 1" in x for x in w), f"{w}")
 w = lane_warnings("param.radius", [[0, 30]])
 check("timeline: and one within range says nothing", w == [], f"{w}")
+w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
+    lane("param.width", [[0, 100]]) | {"wave": {"shape": "sine", "bars": 4, "depth": 30}})),
+    ROUTINES)
+check("timeline: a param lane's wave that swings past a placed routine's max",
+      any("it reaches 130" in x and "'fan-drop'" in x for x in w), f"{w}")
 w = lane_warnings("param.color", [[0, 0.5]])
 check("timeline: a number lane for a param every routine has as a colour",
       sum("not a colour" in x for x in w) >= 2, f"{w}")

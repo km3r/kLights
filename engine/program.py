@@ -79,7 +79,10 @@ BAR = float(tracktime.BEATS_PER_BAR)
 TABLE_STEP = 1.0 / 16.0           # beats, for a rate warp with two curves
 # How far such a table reaches. Past it the warp runs on at its last rate --
 # exact once both curves have settled, which a curve does after its last
-# point. Bounded so one long clip cannot ask for millions of entries.
+# point. Bounded so one long clip cannot ask for millions of entries. A curve
+# with a wave never settles, so on a clip longer than this with rate lanes in
+# both the timeline and its routine, the far end drifts; the horizon is the
+# clip's own length, so that is a clip of over half an hour.
 TABLE_MAX_BEATS = 8192.0
 ROLES = showfiles.PALETTE_ROLES
 WHITE = blocksmod.WHITE

@@ -27,7 +27,7 @@ whole stack: a modulated beam is tapered exactly as a static one is.
 **Nothing here is stateful.** Every shape is a pure function of musical position
 (and, for `hold`, a hash of the cycle number). That is what keeps the rig, the
 plan view and previz agreeing after a dropped frame, and it is the same
-reasoning as `motion.sampled`.
+reasoning as `waves.sampled`.
 """
 
 from __future__ import annotations
@@ -36,13 +36,14 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from . import motion
 from . import params as parammod
+from . import waves
 
 
 # The shapes, and what each is for. Kept small: a shape nobody can name the use
 # of is a control that gets scrolled past.
-SHAPES = ("sine", "triangle", "ramp", "saw", "square", "hold", "energy")
+# `energy` is the console's alone: a show folder has no room to listen to.
+SHAPES = waves.SHAPES + ("energy",)
 
 # Which of them ignore `bars` entirely, because they are not functions of
 # musical position at all.
@@ -93,25 +94,9 @@ class Modulator:
             # voltage: the routine responds to the room rather than to a clock.
             return max(0.0, min(1.0, energy))
 
-        p = (bar / self.bars + self.phase) % 1.0
-        if self.shape == "sine":
-            # Starts at `low` and returns to it, rather than starting mid-swing.
-            # A breathing size that begins halfway open looks like a glitch on
-            # the bar it is switched on.
-            return 0.5 - 0.5 * math.cos(2.0 * math.pi * p)
-        if self.shape == "triangle":
-            return 2.0 * p if p < 0.5 else 2.0 - 2.0 * p
-        if self.shape in ("ramp", "saw"):
-            # ramp climbs and resets; saw is its mirror. Both snap once per
-            # cycle, which is the point -- it is the shape of a build.
-            return p if self.shape == "ramp" else 1.0 - p
-        if self.shape == "square":
-            return 0.0 if p < 0.5 else 1.0
-        # hold: a fresh random level each cycle, held flat. `int(bar / bars)` is
-        # the cycle number and is hashed rather than accumulated, so the same
-        # bar always gives the same value however long the show has been up.
-        cycle = int(bar / self.bars + self.phase)
-        return (motion.sampled(self.seed, cycle) + 1.0) * 0.5
+        # The same shapes a show-folder lane's wave follows (`waves`), so a
+        # sine dialled in here and one drawn in a routine are one sine.
+        return waves.unit(self.shape, bar / self.bars + self.phase, self.seed)
 
     def value(self, bar: float, energy: float = 0.0) -> float:
         return self.low + (self.high - self.low) * self.unit(bar, energy)

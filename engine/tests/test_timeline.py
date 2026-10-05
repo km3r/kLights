@@ -52,17 +52,25 @@ def close(a, b, tol=1e-9):
 
 # -- 0. output-generic --------------------------------------------------------
 print("\n0. it knows nothing about lights")
-tree = ast.parse((REPO / "engine" / "timeline.py").read_text(encoding="utf-8"))
-imported = set()
-for node in ast.walk(tree):
-    if isinstance(node, ast.Import):
-        imported.update(a.name.split(".")[0] for a in node.names)
-    elif isinstance(node, ast.ImportFrom):
-        imported.add("." * node.level + (node.module or ""))
+def imports_of(name):
+    tree = ast.parse((REPO / "engine" / name).read_text(encoding="utf-8"))
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.add("." * node.level + (node.module or ""))
+    return out
+
+
 STDLIB = {"__future__", "bisect", "dataclasses", "types", "typing", "math"}
-check("timeline.py imports only the standard library -- a VJ output must be "
-      "able to use it without the lights coming along",
-      imported <= STDLIB, f"{sorted(imported - STDLIB)}")
+imported = imports_of("timeline.py")
+check("timeline.py imports only the standard library and waves.py -- a VJ "
+      "output must be able to use it without the lights coming along",
+      imported <= STDLIB | {".waves"}, f"{sorted(imported - STDLIB)}")
+check("and waves.py, the shapes a lane's wave follows, imports only the "
+      "standard library itself", imports_of("waves.py") <= STDLIB,
+      f"{sorted(imports_of('waves.py') - STDLIB)}")
 
 
 # -- 1. one row ---------------------------------------------------------------

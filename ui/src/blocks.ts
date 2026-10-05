@@ -36,3 +36,7 @@ export const MACRO_PARAMS = table.macros as unknown as ParamSpec[];
 
 /** The waveforms a modulator can follow. */
 export const MODULATOR_SHAPES: string[] = table.modulator_shapes;
+
+/** The waveforms an automation lane's wave can follow (`waves.SHAPES`): the
+ *  modulator's, less `energy`, which a show folder has no room to listen to. */
+export const WAVE_SHAPES: string[] = table.wave_shapes;

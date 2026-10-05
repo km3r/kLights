@@ -5,14 +5,16 @@ import App from "../App";
 import type { Command } from "../types";
 import {
   BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave,
+  decodeWave, laneValue, waveUnit,
   whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, paramSpec, routineLaneSpecs, timelineLaneSpecs,
+  AUTOMATION_RANGES, defaultWave, paramSpec, routineLaneSpecs, timelineLaneSpecs,
 } from "../designer/edit";
+import { WAVE_SHAPES } from "../blocks";
 import blockLists from "../designer/__fixtures__/blocks.json";
-import type { RoutineDoc, TimelineDoc } from "../designer/model";
+import waveVectors from "../designer/__fixtures__/wave-vectors.json";
+import type { Point, RoutineDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
 import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
@@ -127,6 +129,45 @@ describe("designer model", () => {
       { min: 10, max: 90, reaches: ["fan-drop", "verse-sweep"] });
     expect(specs["param.radius"]!.reaches).toEqual(["idle-orbit"]);
     expect(specs["param.gobo"]).toBeUndefined();
+  });
+
+  it("draws every wave shape exactly as the engine computes it, hold's hash included", () => {
+    expect(WAVE_SHAPES).toEqual(Object.keys(waveVectors));
+    for (const [shape, rows] of Object.entries(waveVectors)) {
+      for (const [p, seed, want] of rows as [number, number, number][]) {
+        expect(waveUnit(shape, p, seed), `${shape} at ${p} seed ${seed}`).toBeCloseTo(want, 12);
+      }
+    }
+    // a lane's value is its points plus its wave
+    const row = { id: "s", type: "automation" as const, target: "size",
+                  points: [[0, 1]] as Point[],
+                  wave: { shape: "square", bars: 1, depth: 0.5 } };
+    expect(laneValue(row, 1)).toBe(1);
+    expect(laneValue(row, 3)).toBe(1.5);
+  });
+
+  it("offers a lane per block argument, and none for one a $param already feeds", () => {
+    const specs = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    expect(specs["arg.fan.spread"]).toMatchObject(
+      { kind: "number", min: -1, max: 1, start: 0.5, label: "fan.spread" });
+    expect(specs["arg.chase.width"]).toMatchObject({ kind: "number" });
+    // width is $width: the param's own lane moves it
+    expect(specs["arg.fan.width"]).toBeUndefined();
+    // a choice has no halfway
+    expect(specs["arg.chase.order"]).toBeUndefined();
+    // an absolute angle is only drawn on its fallback range, not held to it
+    const offset = routineLaneSpecs({ rows: [{ id: "m", type: "clips", target: "movement",
+      items: [{ id: "o", at: 0, len: 4, block: "offset", args: { bearing: 10 } }] }] });
+    expect(offset["arg.o.bearing"]).toMatchObject({ lo: -270, hi: 270, min: undefined, start: 10 });
+  });
+
+  it("starts a wave that stays inside its lane's range", () => {
+    const spec = routineLaneSpecs(fanDrop as unknown as RoutineDoc)["param.width"]!;
+    const near = defaultWave({ id: "w", type: "automation", points: [[0, 110]] }, spec);
+    // 10 of room above, 110 below: it swings down, a quarter of the range
+    expect(near.depth).toBe(-30);
+    const low = defaultWave({ id: "w", type: "automation", points: [[0, 10]] }, spec);
+    expect(low.depth).toBe(30);
   });
 
   it("offers the blocks the console's parametric looks are built from", () => {
@@ -757,6 +798,43 @@ describe("routine editor", () => {
       .toMatchObject({ type: "automation", points: [[0, 40], [16, 90]] });
     expect(doc.rows.find((r) => r.target === "param.color"))
       .toMatchObject({ points: [[0, "@primary"], [8, "@accent"]] });
+  });
+
+  it("moves one block's argument on its own lane, and puts a wave on any lane", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    expect(within(menu).getByRole("option", { name: "fan.spread" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("option", { name: /fan\.width/ })).toBeNull();
+    await user.selectOptions(menu, "arg.fan.spread");
+    const spread = within(lanes).getByLabelText("automation arg.fan.spread");
+    expect(within(spread).getByLabelText("point at bar 1.1: 0.5")).toBeInTheDocument();
+
+    // a wave on it: the lane's ∿ adds one in range and opens it
+    await user.click(within(lanes).getByRole("button", { name: /^wave on arg[.-]fan[.-]spread/ }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/wave on arg[.-]fan[.-]spread/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "wave shape" }))
+      .getByRole("button", { name: "triangle" }));
+    fireEvent.change(within(inspector).getByLabelText("wave bars"), { target: { value: "2" } });
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "0.8" } });
+    // 0.5 + 0.8 is past spread's 1: said here, before the engine refuses it
+    expect(within(inspector).getByRole("alert")).toHaveTextContent(/reaches 1.3/);
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "-0.5" } });
+    expect(within(inspector).queryByRole("alert")).toBeNull();
+
+    // and on a macro lane, then taken off again with Delete
+    await user.selectOptions(menu, "size");
+    await user.click(within(lanes).getByRole("button", { name: /^wave on size/ }));
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    expect(screen.queryByText(/wave on size/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:g" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "arg.fan.spread")).toMatchObject({
+      points: [[0, 0.5]], wave: { shape: "triangle", bars: 2, depth: -0.5 } });
+    expect(doc.rows.find((r) => r.target === "size")!.wave).toBeUndefined();
   });
 
   it("starts a new routine and saves it as a new file", async () => {

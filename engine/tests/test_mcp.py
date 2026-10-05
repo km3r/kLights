@@ -283,6 +283,18 @@ with tempfile.TemporaryDirectory() as tmp:
                             ops=[{"op": "remove_item", "id": "ghost"}])
     check("an op that cannot apply says which", err and "no item 'ghost'"
           in nope["errors"][0])
+    waved, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                             ops=[{"op": "set_wave", "row": "size",
+                                   "wave": {"shape": "sine", "bars": 4, "depth": 0.5}}])
+    check("set_wave puts a wave on an automation lane, checked like any edit",
+          not err and waved["ok"] and any("sine wave" in c for c in waved["changes"])
+          and next(r for r in waved["doc"]["rows"] if r["id"] == "size")["wave"]["depth"]
+          == 0.5, f"{waved.get('errors')}")
+    over, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                            ops=[{"op": "set_wave", "row": "master",
+                                  "wave": {"shape": "sine", "bars": 4, "depth": 0.5}}])
+    check("and one that swings master past 1 is refused, saying where",
+          err and any("it reaches" in e for e in over["errors"]), f"{over.get('errors')}")
 
     routine, _ = server.tool("get_routine", show_dir=sd, id="fan-drop")
     doc = routine["doc"]
