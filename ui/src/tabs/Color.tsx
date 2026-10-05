@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Card, RateCard, rgbCss } from "../components";
 import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
+import { ModulationCard, TweakCard } from "../Params";
 import type { Command, EngineState, RGB } from "../types";
 
 /**
@@ -32,9 +33,21 @@ export function ColorTab({ state, send }: {
   }, [state.fixtures]);
 
   const applied = state.color_overrides[target];
+  const appliedWhite = state.white_overrides[target];
   // Opened by default when the current target IS a fixture, so a colour set on
   // one head does not appear to have been forgotten after a reload.
   const single = !groups.includes(target);
+
+  // Whether ANY fixture the current target reaches has a white channel at
+  // all — a tag or "all" can span RGB-only and RGBW fixtures at once, and the
+  // white control should only appear when it would do something.
+  const targetHasWhite = useMemo(() => {
+    if (target === "all") return state.fixtures.some((f) => f.has_white);
+    if (groups.includes(target)) {
+      return state.fixtures.some((f) => f.tags.includes(target) && f.has_white);
+    }
+    return state.fixtures.find((f) => f.name === target)?.has_white ?? false;
+  }, [target, groups, state.fixtures]);
 
   const swatch = (t: string) => (
     <button key={t} className={target === t ? "on" : ""} onClick={() => setTarget(t)}>
@@ -53,6 +66,12 @@ export function ColorTab({ state, send }: {
     <>
       <LookPicker state={state} send={send} slot="color" title="Colour look"
                   empty="Nothing loaded — colour comes from the palette." />
+
+      {/* The loaded routine's own knobs. Renders nothing when the slot
+          holds only ported looks, which have no parameters to turn. */}
+      <TweakCard state={state} send={send} slot="color" />
+
+      <ModulationCard state={state} send={send} slot="color" />
 
       <RateCard state={state} send={send} slot="color" hint={
         <>
@@ -87,7 +106,7 @@ export function ColorTab({ state, send }: {
         // Present always, disabled with nothing overridden. Appearing the
         // instant a swatch is tapped, it made the heading taller and pushed the
         // palette down — out from under the finger that had just tapped it.
-        <button className="small" disabled={!applied}
+        <button className="small" disabled={!applied && appliedWhite === undefined}
                 onClick={() => send({ type: "color", target, color: [1, 1, 1], clear: true })}>
           Clear
         </button>
@@ -118,7 +137,8 @@ export function ColorTab({ state, send }: {
         </p>
       </Card>
 
-      <Picker target={target} send={send} current={applied} />
+      <Picker target={target} send={send} current={applied}
+              hasWhite={targetHasWhite} currentWhite={appliedWhite} />
 
       {/* A readout, not a control — it changes nothing, so Perform mode does
           without it. The information is still one tap away in Design. */}
@@ -135,7 +155,8 @@ export function ColorTab({ state, send }: {
                   }} />
                 </div>
                 <div className="small muted">
-                  {f.is_mover ? "colour wheel — snapped to nearest slot" : "RGBW"}
+                  {f.is_mover ? "colour wheel — snapped to nearest slot"
+                    : f.has_white ? "RGBW" : "RGB"}
                 </div>
               </div>
             ))}
@@ -146,12 +167,14 @@ export function ColorTab({ state, send }: {
   );
 }
 
-function Picker({ target, send, current }: {
+function Picker({ target, send, current, hasWhite, currentWhite }: {
   target: string; send: (c: Command) => void; current?: RGB;
+  hasWhite: boolean; currentWhite?: number;
 }) {
   const [hue, setHue] = useState(210);
   const [sat, setSat] = useState(1);
   const [val, setVal] = useState(1);
+  const [white, setWhite] = useState(0);
   const rgb = hsvToRgb(hue, sat, val);
 
   return (
@@ -179,9 +202,22 @@ function Picker({ target, send, current }: {
         <input type="range" min={0} max={1} step={0.01} value={val}
                onChange={(e) => setVal(Number(e.target.value))} />
       </label>
+      {hasWhite && (
+        // Only shown when the target reaches at least one RGBW fixture — an
+        // RGB-only fixture has no channel this could ever move, so a visible
+        // slider there would be a control that lies about doing something.
+        <label className="field">
+          White
+          <input type="range" min={0} max={1} step={0.01} value={white}
+                 onChange={(e) => setWhite(Number(e.target.value))} />
+        </label>
+      )}
       <div className="row" style={{ marginTop: "0.5rem" }}>
         <button className="on" style={{ flex: 1 }}
-                onClick={() => send({ type: "color", target, color: rgb })}>
+                onClick={() => send({
+                  type: "color", target, color: rgb,
+                  ...(hasWhite ? { white } : {}),
+                })}>
           Apply to {target}
         </button>
       </div>
@@ -189,7 +225,10 @@ function Picker({ target, send, current }: {
         <p className="small muted" style={{ marginBottom: 0 }}>
           Currently overridden to <span className="mono">
             {current.map((c) => c.toFixed(2)).join(", ")}
-          </span>.
+          </span>
+          {currentWhite !== undefined && (
+            <>, white <span className="mono">{currentWhite.toFixed(2)}</span></>
+          )}.
         </p>
       )}
     </Card>

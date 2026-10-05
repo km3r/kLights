@@ -63,6 +63,10 @@ export interface FixtureState {
   universe: number;
   address: number;
   is_mover: boolean;
+  /** Whether this fixture's profile has a white channel at all — not every
+   *  fixture does, and the Colour tab uses this to decide whether to offer
+   *  a white control for the current target. */
+  has_white: boolean;
   /** [x, y, z] in mm — present only for fixtures with geometry. */
   position?: [number, number, number];
   beam_deg?: number;
@@ -84,7 +88,15 @@ export interface FixtureState {
   lands_at?: [number, number, number];
   jogging?: boolean;
   captures?: number;
+  /** Asked to go further than its own travel allows, so it has stopped at the
+   *  rail on these axes. A rig can mix fixtures with different travel, and the
+   *  centre is bounded by the most capable head -- so a lesser one can be
+   *  asked for somewhere it cannot reach. Absent when it is where it was sent. */
+  at_limit?: Axis[];
 }
+
+/** The two axes a head travels on, as offsets from its own ball aim. */
+export type Axis = "bearing" | "elevation";
 
 export interface VenueState {
   name?: string;
@@ -144,6 +156,72 @@ export interface LookInfo {
    *  watches the rig start blinking should be able to tell the routine from a
    *  fault. */
   cued?: boolean;
+  /** The block behind a parametric look, keyed into `BLOCK_PARAMS` (see
+   *  blocks.ts). Null on every ported look, which is the honest answer — a
+   *  stored table of DMX has nothing to tune. Its presence is what makes the
+   *  Tweak card appear. */
+  block?: string | null;
+  /** The look's own arguments, over its block's declared defaults. */
+  args?: Record<string, ParamValue>;
+  /** Hidden from the picker because something covers it now. Hidden, never
+   *  removed: looks.json is generated and its round-trip proof needs every
+   *  entry present, so going back to the original is one toggle away. */
+  retired?: boolean;
+  replaced_by?: string | null;
+}
+
+/** Anything a parameter can be. Matches `params.KINDS` in the engine. */
+export type ParamValue = number | boolean | string | RGB;
+
+/** One knob, as the engine declares it.
+ *
+ *  The UI renders a control from this rather than hardcoding one per parameter.
+ *  That is the whole point of the descriptor: a range used to be written out in
+ *  the engine's clamp, in a config Spec and again in a slider's arguments here,
+ *  with nothing keeping the three in step. */
+export interface ParamSpec {
+  name: string;
+  label: string;
+  /** The last four are block arguments the routine editor renders and the
+   *  console's Tweak card does not: a colour list, room points, and names in
+   *  THIS rig's library. They are validated by the engine against a rig. */
+  kind: "number" | "integer" | "bool" | "choice" | "color"
+      | "colors" | "points" | "look" | "preset";
+  /** Null where there is no fixed default — a fan's sweep is half its width
+   *  unless given — so an editor can say "auto" rather than a wrong number. */
+  default: ParamValue | unknown[] | null;
+  /** Absent rather than null when unbounded — the engine omits these keys. */
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  choices?: string[];
+  /** The sentence shown under the control. */
+  help?: string;
+  /** An absolute angle from the ball: its real range is the rig's reach on
+   *  this axis (`EngineState.reach`), and `min`/`max` only the fallback for
+   *  when there is no rig -- the routine editor, which is rig-free. */
+  reach?: Axis;
+}
+
+/** A parameter that is moving on its own.
+ *
+ *  `look` absent means it drives a shape macro; otherwise it names the routine
+ *  whose parameter is being swung. Two fields rather than one dotted string
+ *  because look names contain spaces and slashes ("Duo Pink/Cyan"). */
+export interface ModulatorSpec {
+  param: string;
+  look?: string;
+  shape: string;
+  /** Cycle length in bars — musical, so it does not change when a slot rate
+   *  does. `energy` ignores it entirely. */
+  bars: number;
+  low: number;
+  high: number;
+  /** In CYCLES, like every other offset here, so two modulators a half-cycle
+   *  apart stay that way at any period. */
+  phase: number;
+  seed?: number;
 }
 
 /** Per slot, per fixture group: which look is loaded. A pinspot colour and a
@@ -166,6 +244,13 @@ export interface Preset extends Selection {
    *  alone" — a preset that always wrote 1× would silently undo a rate set
    *  after it was saved. */
   rates?: Partial<Record<Slot, number>>;
+  /** Per-look tuning for the parametric looks this preset names.
+   *
+   *  Unlike `rates`, an entry is written even when a routine sits at its
+   *  authored values — a rate is a ride the operator keeps a hand on, while a
+   *  look's radius is part of the picture the preset exists to get back to.
+   *  Absent entirely when the preset names no parametric look. */
+  params?: Record<string, Record<string, ParamValue>>;
   /** Where it sits on the grid: a page counting from 1, and a position within
    *  that page. A FIXED place, not a sort order — the whole point of a bank is
    *  that a preset stays where you put it when its neighbours change. The
@@ -432,6 +517,28 @@ export interface EngineState {
   visuals?: VisualsState | null;
   auto: AutoState;
   looks: LookInfo[];
+  /** What the operator has turned on each parametric look, by look name,
+   *  over what parametric_looks.json authored. Sparse — only the keys actually moved — and sent
+   *  separately from `looks[].params` so the UI can tell "dialled in" from
+   *  "authored" and offer a Reset that means something. */
+  look_params: Record<string, Record<string, ParamValue>>;
+  /** Parameters that are moving on their own. A list, not a map: the key is a
+   *  (look, param) pair and the UI shows them as a rack of running modulators. */
+  modulators: ModulatorSpec[];
+  /** How far this rig's heads can travel from the ball, per axis: the widest
+   *  any head can go. The real range of every reach-bounded control. Empty for
+   *  a rig with no moving heads. */
+  reach: Partial<Record<Axis, [number, number]>>;
+  /** Movement routines stacked over the base route, in the order added. Their
+   *  offsets ADD — only the base pose layer assigns — which is why stacking
+   *  works at all and why the sum is well defined. */
+  movement_extra: string[];
+  /** How many may be stacked. A cap for legibility, not a limit the maths
+   *  needs; sent so the UI and engine cannot disagree about it. */
+  movement_stack_max: number;
+  /** The seed the last `vary` used, so a variation worth keeping can be
+   *  written down and reproduced exactly. */
+  vary_seed: number;
   /** What is loaded into each of the three independent slots. */
   selection: Selection;
   presets: Preset[];
@@ -446,6 +553,10 @@ export interface EngineState {
   blackout: boolean;
   panicked: boolean;
   color_overrides: Record<string, RGB>;
+  /** RGBW white by target, 0..1. Separate from color_overrides since a
+   *  target can mix fixtures with and without a white channel — only present
+   *  for a target where white was explicitly set. */
+  white_overrides: Record<string, number>;
   /** Hand dimming by target ("all", a group, or a fixture name), 0..1. A
    *  multiplier over whatever the Bright pattern is doing. */
   level_overrides: Record<string, number>;
@@ -467,6 +578,28 @@ export type Command =
   | { type: "hello"; name: string }
   | { type: "select_look"; name: string; hold?: boolean; slot?: Slot }
   | { type: "clear_slot"; slot: Slot; group?: string }
+  /** Turn a routine's own knobs. Only the keys being changed are sent; the
+   *  engine keeps the rest. `reset` drops every override and returns the
+   *  look to what parametric_looks.json authored. Refused for a ported look, which
+   *  is a stored table of DMX and has nothing to tune. */
+  | { type: "look_params"; name: string;
+      values?: Record<string, ParamValue>; reset?: boolean }
+  /** Bind a parameter to a musical waveform. Omit `look` for a shape macro.
+   *  `low`/`high` default to the target's full declared range and are clamped
+   *  to it, so a modulator can only sweep where a finger could have dragged.
+   *  Binding the same target twice replaces rather than stacking. */
+  | { type: "modulate"; param: string; look?: string; shape?: string;
+      bars?: number; low?: number; high?: number; phase?: number; seed?: number }
+  | { type: "modulate_clear"; param?: string; look?: string; all?: boolean }
+  /** Stack another movement routine over the base route. Refused for a look
+   *  that is not movement, for the base route itself, and past the cap. */
+  | { type: "movement_add"; name: string }
+  | { type: "movement_remove"; name?: string; all?: boolean }
+  /** Nudge a routine's numbers within their declared ranges, reproducibly.
+   *  `amount` is the fraction of each range to move within. Omit `seed` and the
+   *  engine picks the next one and publishes it. `bars` is never varied — the
+   *  cycle length is a musical decision, not a shape one. */
+  | { type: "vary"; name: string; amount?: number; seed?: number }
   | { type: "preset_save"; name: string; bank?: number; cell?: number;
       tags?: string[]; routine?: PadRoutine }
   | { type: "preset_apply"; name: string }
@@ -487,7 +620,7 @@ export type Command =
   | { type: "auto"; axis: keyof AutoAxes; on: boolean }
   | { type: "auto_interval"; axis: "looks" | "palette"; value: number }
   | { type: "energy"; source: "manual" | "phrase"; value?: number }
-  | { type: "color"; target: string; color: RGB; clear?: boolean }
+  | { type: "color"; target: string; color: RGB; white?: number | null; clear?: boolean }
   | { type: "level"; target: string; value?: number; clear?: boolean }
   | { type: "palette_select"; index: number }
   | { type: "jog"; fixture: string; pan: number; tilt: number }

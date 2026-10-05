@@ -517,6 +517,296 @@ else:
           "level rate")
 
 
+print("\n13. hand-authored parametric looks merge in beside the port")
+# The separation is the whole design: looks.json is generated and its parity
+# proof depends on every entry staying in it, so a look authored in this engine
+# lives in parametric_looks.json and the two are merged at load.
+from engine import blocks as blocksmod                              # noqa: E402
+
+parametric_path = EVENT / "parametric_looks.json"
+check("the event has a parametric looks file", parametric_path.exists())
+parametric, retired_map = libmod.load_parametric(parametric_path)
+check("it carries looks", len(parametric) > 0, f"{len(parametric)}")
+check("every one names a block that exists",
+      all(r.block in blocksmod.BLOCKS for r in parametric))
+# A held place files with the poses; everything else by its slot.
+check("their kind is derived from the block, never declared",
+      all(r.kind == libmod.KIND_FOR_BLOCK.get(
+              r.block, libmod.KIND_FOR_SLOT[blocksmod.SLOT_OF[r.block]])
+          for r in parametric))
+# One building-block system: the console's looks and a show folder's routines
+# must be made of the same parts, or the two drift into dialects.
+check("they are built from the same blocks a show folder's routines use",
+      {r.block for r in parametric} <= set(blocksmod.BLOCKS))
+
+merged = libmod.merge(entries, parametric, retired_map)
+# A superseding look REPLACES its ported original rather than adding to it.
+added = [r for r in parametric if not r.supersedes]
+check("the merged library is the port plus the looks it does not replace",
+      len(merged) == len(entries) + len(added),
+      f"{len(entries)} + {len(added)} = {len(merged)}")
+check("and looks.json itself is untouched by the merge",
+      len(libmod.load_entries(EVENT / "looks.json")) == len(entries))
+
+print("\n14. a name collision is refused, naming both files")
+# Everything downstream addresses a look BY NAME -- cues, presets, the picker,
+# auto mode's set list. Two entries with one name means the cue list and the
+# operator can disagree about what "Ball Wave" is and neither would find out.
+clash = libmod.LibraryEntry(name=entries[0].name, kind="path", tags=(),
+                            block="orbit", args={})
+try:
+    libmod.merge(entries, [clash])
+    check("a parametric look that shadows a ported one is refused", False,
+          "accepted")
+except ValueError as exc:
+    check("a parametric look that shadows a ported one is refused", True)
+    check("and the message names the collision",
+          entries[0].name in str(exc) and "parametric_looks.json" in str(exc))
+
+print("\n14b. a bad parametric looks file says what is wrong, by name")
+import json as _json                                                # noqa: E402
+import tempfile                                                     # noqa: E402
+
+_tmp = Path(tempfile.mkdtemp())
+
+
+def _load(doc):
+    path = _tmp / "parametric_looks.json"
+    path.write_text(_json.dumps(doc), encoding="utf-8")
+    return libmod.load_parametric(path)
+
+
+for label, doc, expect in (
+    ("an unknown block", {"looks": [{"name": "X", "block": "swirl"}]},
+     "does not exist"),
+    ("a rig-bound adapter, which would tie the file to one rig",
+     {"looks": [{"name": "X", "block": "look", "args": {"look": "MH Red"}}]},
+     "select that look directly"),
+    ("a choice that is not one of the choices",
+     {"looks": [{"name": "X", "block": "spiral",
+                 "args": {"direction": "sideways"}}]}, "direction must be"),
+    ("a number that is not a number",
+     {"looks": [{"name": "X", "block": "orbit", "args": {"radius": "big"}}]},
+     "must be a number"),
+    # Load time has no rig, so a look name cannot resolve -- which is the
+    # point: a parametric look's colours are portable or they are refused.
+    ("a colour that only one rig's library could resolve",
+     {"looks": [{"name": "X", "block": "duo", "args": {"color_a": "MH Red"}}]},
+     "color_a"),
+):
+    try:
+        _load(doc)
+        check(f"{label} is refused", False, "accepted")
+    except Exception as exc:                                        # noqa: BLE001
+        check(f"{label} is refused", expect in str(exc), str(exc)[:90])
+        check(f"and the message names the look and the file",
+              "'X'" in str(exc) and "parametric_looks.json" in str(exc))
+# Lenient on keys it does not know: a file hand-edited against a slightly older
+# engine should drop what it does not understand and still light the room.
+loaded, _ = _load({"looks": [{"name": "X", "block": "orbit",
+                              "args": {"radius": 9, "wobble": 3}}]})
+check("an argument this engine does not know is dropped, not fatal",
+      "wobble" not in libmod.resolve_args(loaded[0])
+      and libmod.resolve_args(loaded[0])["radius"] == 9)
+
+print("\n15. every parametric look evaluates to a real frame")
+# Same claim section 5 makes about ported entries. A block that renders NaN at
+# one phase in sixty-four is a look that works in rehearsal and drops a head in
+# the room.
+generated = [e for e in merged if e.is_parametric]
+check("there are parametric looks to check", len(generated) > 0)
+broke: list[str] = []
+static: list[str] = []
+for entry in generated:
+    show = libmod.build_look(entry).make((1.0, 1.0, 1.0))
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    seen: set = set()
+    bars = 16.0
+    for step in range(65):
+        ctx.set_phase(step / 64.0 * bars)
+        ctx.time = step * 0.025
+        try:
+            states = statemod.evaluate(ctx, show)
+            statemod.render(ctx, states)
+        except Exception as exc:                                # noqa: BLE001
+            broke.append(f"{entry.name}: {exc!r}")
+            break
+        for fixture in rig.fixtures:
+            state = states[fixture.fid]
+            if entry.slot == "movement" and state.aim is not None:
+                seen.add((round(state.aim.bearing_delta, 3),
+                          round(state.aim.elev_deg, 3)))
+            elif entry.slot == "level":
+                seen.add(round(state.intensity, 5))
+            elif entry.slot == "color":
+                seen.add(tuple(round(c, 4) for c in state.color))
+    if len(seen) <= 1:
+        static.append(entry.name)
+check("every parametric look renders at every phase", not broke, str(broke[:2]))
+check("and every one of them actually changes something", not static,
+      f"static: {static}")
+
+print("\n16. a parametric look obeys the same live controls a ported look does")
+# Spread has to mean ONE thing. The block's own `spread` argument ADDS to the
+# operator's Spread macro (`blocks._spread`), so with the look's set to 0 the
+# single slider does exactly what it does on a ported path.
+orbit_entry = next(e for e in generated if e.name == "Ball Orbit")
+show = libmod.compose(orbit_entry, [], [])
+
+
+def offsets_at(spread: float, size: float = 1.0, phase: float = 1.0):
+    """Each head's aim MINUS its own calibrated ball aim.
+
+    The offset is the thing under test, not the aim: four heads in four corners
+    have four different ball aims, so comparing raw aims would report "the heads
+    differ" for a route that has them in perfect unison.
+    """
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    ctx.move_spread, ctx.move_size = spread, size
+    ctx.set_phase(phase)
+    states = statemod.evaluate_stack(ctx, show)
+    out = []
+    for fixture in rig.fixtures:
+        if fixture.head is None or states[fixture.fid].aim is None:
+            continue
+        base = rig.geometry.aim_at_ball(fixture.head)
+        aim = states[fixture.fid].aim
+        out.append((round(aim.bearing_delta - base.bearing_delta, 4),
+                    round(aim.elev_deg - base.elev_deg, 4)))
+    return out
+
+
+unison = offsets_at(0.0)
+spread_out = offsets_at(1.0)
+check("there are several heads to compare", len(unison) > 1, f"{len(unison)}")
+check("spread 0 puts every head on the same offset",
+      len(set(unison)) == 1, str(unison))
+check("spread 1 lags them apart", len(set(spread_out)) > 1, str(spread_out))
+check("size 0 collapses the route onto each head's own ball aim",
+      set(offsets_at(0.0, 0.0)) == {(0.0, 0.0)}, str(offsets_at(0.0, 0.0)))
+check("and the route really does move between phases",
+      offsets_at(0.0, 1.0, phase=0.0) != offsets_at(0.0, 1.0, phase=2.0))
+
+print("\n17. retiring hides an entry without removing it")
+sample = entries[0].name
+hidden = libmod.merge(entries, [], {sample: {"replaced_by": "Ball Orbit",
+                                            "note": "covered by the orbit"}})
+found = next(e for e in hidden if e.name == sample)
+check("the entry is still in the library", found is not None)
+check("it is flagged retired", found.retired)
+check("and points at what replaced it", found.replaced_by == "Ball Orbit")
+# Reachable by hand, never by a timer -- the same rule a blackout parked in the
+# set list follows. Auto mode selecting a retired look would be the timer
+# undoing the retirement.
+check("auto mode will not select it",
+      libmod.build_look(found).manual_only)
+
+print("\n17b. a superseding look IS the ported look it replaces")
+# `supersedes` takes over a ported look's NAME -- cues, presets and the picker
+# all now get the block instead -- so it is only allowed for an exact
+# replacement, and this is where "exact" is measured rather than asserted:
+# every head, through the real layers on the real rig, under the shape macros
+# an operator might have up, to a hundredth of a degree.
+ported_by_name = {e.name: e for e in entries}
+superseding = [r for r in parametric if r.supersedes]
+check("there are superseding looks to measure", len(superseding) >= 6,
+      f"{len(superseding)}")
+
+
+def aims(entry, size, centre):
+    ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
+    ctx.move_size, ctx.move_center = size, centre
+    out = []
+    for phase in (0.0, 3.0):
+        ctx.set_phase(phase)
+        states = statemod.evaluate_stack(ctx, libmod.compose(entry))
+        out.extend((states[f.fid].aim.bearing_delta, states[f.fid].aim.elev_deg)
+                   for f in rig.fixtures if states[f.fid].aim is not None)
+    return out
+
+
+worst_super = 0.0
+worst_name = ""
+for look in superseding:
+    original = ported_by_name.get(look.name)
+    if original is None:
+        check(f"{look.name!r} supersedes a ported look", False, "none by that name")
+        continue
+    for size, centre in ((1.0, (0.0, 0.0)), (2.0, (30.0, -20.0)), (0.5, (-40.0, 10.0))):
+        for (ab, ae), (bb, be) in zip(aims(original, size, centre),
+                                      aims(look, size, centre)):
+            err = max(abs(ab - bb), abs(ae - be))
+            if err > worst_super:
+                worst_super, worst_name = err, look.name
+check("every superseding look reproduces its original on every head",
+      worst_super < 0.01,
+      f"worst {worst_super:.4f} degrees ({worst_name or 'none'})")
+
+merged_view = libmod.merge(entries, parametric, retired_map)
+names = [e.name for e in merged_view]
+check("a superseded name appears once, as the block",
+      names.count("Heads - Floor") == 1
+      and next(e for e in merged_view if e.name == "Heads - Floor").block == "offset")
+check("and in the position the ported look held",
+      names.index("Heads - Floor") == [e.name for e in entries].index("Heads - Floor"))
+check("a held position files under Positions, not Moves",
+      next(e for e in merged_view if e.name == "Heads - Floor").kind == "pose")
+check("looks.json itself still has the original",
+      ported_by_name["Heads - Floor"].offsets is not None)
+
+orphan = libmod.LibraryEntry(name="Heads - Nowhere", kind="pose", tags=(),
+                             block="offset", args={}, supersedes=True)
+try:
+    libmod.merge(entries, [orphan])
+    check("superseding a look that does not exist is refused", False, "accepted")
+except ValueError as exc:
+    check("superseding a look that does not exist is refused",
+          "Heads - Nowhere" in str(exc) and "does not have" in str(exc))
+
+print("\n18. the retirement audit refuses to report a fit that means nothing")
+# The tool exists so retirement is a measurement rather than a hunch, which
+# only helps if the measurement cannot be fooled. Both guards here were real
+# false positives in its first run.
+from shared.tools import audit_library as audit                      # noqa: E402
+
+
+def pose(name, offsets):
+    return libmod.LibraryEntry(name=name, kind="pose", tags=(),
+                               offsets=offsets)
+
+
+ball = pose("Ball", [[0.0, 0.0]] * 4)
+floor = pose("Floor", [[0.0, -25.0]] * 4)
+cross = pose("Cross", [[45.0, 0.0], [-45.0, 0.0], [45.0, 0.0], [-45.0, 0.0]])
+wide = pose("Wide", [[90.0, 0.0], [-90.0, 0.0], [90.0, 0.0], [-90.0, 0.0]])
+
+check("a pose whose heads all agree has no shape", not audit.has_shape(ball))
+check("and one whose heads differ does", audit.has_shape(cross))
+
+# Scaling ANY reference by zero produces the ball, so without a floor on size
+# every uniform pose "matches" everything at 0.00 degrees. That is what the
+# first run reported, and it was all false positives.
+check("a uniform pose is not reported as a scaled version of a shaped one",
+      audit.fit_pose(ball, cross) is None)
+check("nor a shaped pose against a uniform reference",
+      audit.fit_pose(cross, ball) is None)
+check("two uniform poses are not fitted against each other",
+      audit.fit_pose(ball, floor) is None)
+
+# The fit that IS meaningful: same shape, different scale.
+fit = audit.fit_pose(wide, cross)
+check("a genuine scale relationship is found", fit is not None)
+if fit is not None:
+    check("and it recovers the right size", "size 2.00" in fit.detail,
+          fit.detail)
+    check("with no residual", fit.rms_deg < 1e-6, f"{fit.rms_deg}")
+
+# A fit needing a centre the operator could not dial in is not a fit.
+far = pose("Far", [[45.0 + 300.0, 0.0], [-45.0 + 300.0, 0.0],
+                   [45.0 + 300.0, 0.0], [-45.0 + 300.0, 0.0]])
+check("a fit outside the centre macro's range is refused",
+      audit.fit_pose(far, cross) is None)
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

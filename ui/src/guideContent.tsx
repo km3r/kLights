@@ -152,6 +152,8 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
             auto mode changes the look.</>,
           <>Long-press a swatch (right-click with a mouse) to set the palette's
             current colour instead. Looks and auto rotation use that one.</>,
+          <>Colour looks marked <b>tune</b> have their own knobs under{" "}
+            <b>Tweak</b>, and <b>Modulation</b> can move them in time.</>,
           <>Movers with a colour wheel can't mix, so they snap to the nearest
             colour on the wheel.</>,
           <><b>Rate</b> changes how fast a colour chase steps, without
@@ -180,6 +182,10 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
             <b>Centre |</b> raises or lowers it.</>,
           <><b>Rate</b> speeds up or slows down just the movement. <b>hold</b>{" "}
             freezes it.</>,
+          <>Routes marked <b>tune</b> have knobs of their own. Pick one and
+            the <b>Tweak</b> card shows them: how big, how fast, how flat.</>,
+          <><b>Vary</b> nudges those knobs somewhere nearby. Press it again for
+            somewhere else, or <b>Reset</b> to go back.</>,
         ],
       },
       {
@@ -187,6 +193,16 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
         notes: [
           <>Shape and Rate stay set when the route changes. <b>Reset</b> puts
             them back.</>,
+          <><b>Modulation</b> makes a knob move on its own, in time with the
+            music: Size breathing, say. Pick the knob, then a wave.{" "}
+            <b>Stop all</b> ends it.</>,
+          <><b>Layers</b> adds another route on top of this one. Their movements
+            add together, so a slow circle plus a small fast wobble is two
+            layers.</>,
+          <><b>Centre</b> goes as far as your heads can actually reach. If a head
+            runs out of travel it stops there, and the Shape card says so.</>,
+          <>Some old routes are hidden because a tunable one replaced them. The
+            <b>retired</b> button at the bottom of the list brings them back.</>,
           <>There's no Clear here. Without a route, the heads would just stay
             where they are.</>,
           <>A beam ringed in amber is being dimmed by the safety taper, because
@@ -228,6 +244,8 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
             what's set.</>,
           <><b>Rate</b> here only affects level chases. Moves that travel dark
             keep their own timing.</>,
+          <>Patterns marked <b>tune</b> have their own knobs under{" "}
+            <b>Tweak</b>: how deep, how fast.</>,
         ],
       },
     ],

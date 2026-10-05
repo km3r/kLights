@@ -1,19 +1,30 @@
 {
  "slots": {
+  "offset": "movement",
   "orbit": "movement",
   "pendulum": "movement",
   "fan_sweep": "movement",
+  "figure8": "movement",
+  "spiral": "movement",
+  "scatter": "movement",
   "aim_points": "movement",
   "solid": "color",
   "color_chase": "color",
+  "hue_cycle": "color",
+  "duo": "color",
   "chase": "level",
   "pulse": "level",
+  "breathe": "level",
   "dim": "level",
   "strobe": "level",
   "look": null,
   "snapshot": null
  },
  "numeric": {
+  "offset": [
+   "bearing",
+   "elevation"
+  ],
   "orbit": [
    "radius",
    "bars",
@@ -32,6 +43,26 @@
    "spread",
    "rate"
   ],
+  "figure8": [
+   "width",
+   "height",
+   "bars",
+   "spread"
+  ],
+  "spiral": [
+   "radius",
+   "turns",
+   "elongation",
+   "bars",
+   "spread"
+  ],
+  "scatter": [
+   "radius",
+   "stations",
+   "seed",
+   "bars",
+   "spread"
+  ],
   "aim_points": [
    "bars"
   ],
@@ -40,11 +71,28 @@
    "spread",
    "fade"
   ],
+  "hue_cycle": [
+   "hue",
+   "span",
+   "saturation",
+   "brightness",
+   "bars",
+   "spread"
+  ],
+  "duo": [
+   "blend",
+   "bars"
+  ],
   "chase": [
    "bars",
    "width"
   ],
   "pulse": [
+   "depth",
+   "bars",
+   "spread"
+  ],
+  "breathe": [
    "depth",
    "bars",
    "spread"

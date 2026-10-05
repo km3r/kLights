@@ -1,9 +1,12 @@
-import { useState } from "react";
 import { Card, RateCard } from "../components";
 import { DesignOnly } from "../mode";
 import { LookPicker } from "../LookPicker";
+import {
+  anyChanged, ModulationCard, ParamList, StackCard, TweakCard,
+} from "../Params";
+import { MACRO_PARAMS } from "../blocks";
 import { PlanView } from "../Plan";
-import type { Command, EngineState } from "../types";
+import type { Command, EngineState, ParamValue } from "../types";
 
 /**
  * Movement: the route, the rate, and what each head is doing about it.
@@ -27,6 +30,15 @@ export function MoveTab({ state, send }: {
 
       <LookPicker state={state} send={send} slot="movement" title="Route"
                   empty="Nothing loaded — the heads are holding still." />
+
+      {/* The loaded routine's own knobs. Renders nothing when the slot
+          holds only ported looks, which have no parameters to turn. */}
+      <TweakCard state={state} send={send} slot="movement" />
+
+      <ModulationCard state={state} send={send} slot="movement" />
+
+      {/* Move only: the colour and level slots have nothing that adds. */}
+      <StackCard state={state} send={send} />
 
       {/* This card used to be a second copy of the Show tab's global Speed,
           which was two controls doing one thing in two places. It is the
@@ -57,6 +69,11 @@ export function MoveTab({ state, send }: {
                 <div className="name">
                   <span className="grow">{f.name}</span>
                   {f.jogging && <span className="chip jog">JOG</span>}
+                  {f.at_limit && (
+                    <span className="chip limit"
+                          title={`at the end of its ${f.at_limit.join(" and ")} travel`}>
+                      LIMIT</span>
+                  )}
                   {taper < 1 && (
                     <span className="chip taper">{Math.round(taper * 100)}%</span>
                   )}
@@ -105,63 +122,58 @@ export function MoveTab({ state, send }: {
  *
  * They apply to whatever route is up and survive an auto look change, because
  * they live on the engine's context rather than in the composed look.
+ *
+ * The four sliders used to be written out here by hand, with their ranges
+ * repeated from the engine's clamp in `_cmd_macro`. They are now rendered from
+ * `MACRO_PARAMS` — generated from the declarations the engine clamps against — so
+ * the two cannot drift, and this card is the same generic control that renders
+ * a routine's own parameters one section down.
  */
 function Shape({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
   const macro = state.macro;
-  const [drag, setDrag] = useState<Partial<Record<string, number>>>({});
-  const value = (key: "size" | "spread" | "bearing" | "elev") => {
-    if (drag[key] !== undefined) return drag[key]!;
-    if (key === "size") return macro.size;
-    if (key === "spread") return macro.spread;
-    return key === "bearing" ? macro.center[0] : macro.center[1];
+  const specs = MACRO_PARAMS;
+
+  // The engine holds these as two scalars and a pair; the descriptors name four
+  // flat parameters. Mapping between the two here rather than reshaping the
+  // command keeps `macro` on the wire exactly as it was.
+  const values: Record<string, ParamValue> = {
+    size: macro.size, spread: macro.spread,
+    bearing: macro.center[0], elev: macro.center[1],
   };
 
-  const changed = macro.size !== 1 || macro.spread !== 0
-    || macro.center[0] !== 0 || macro.center[1] !== 0;
+  const changed = anyChanged(specs, values);
+  const limited = state.fixtures.filter((f) => f.at_limit?.length).map((f) => f.name);
 
-  const row = (key: "size" | "spread" | "bearing" | "elev",
-               label: string, min: number, max: number, step: number,
-               fmt: (v: number) => string, hint: string) => (
-    <div style={{ marginBottom: "0.6rem" }}>
-      <div className="row tight">
-        <label className="small grow" htmlFor={`macro-${key}`}>{label}</label>
-        <span className="small muted mono">{fmt(value(key))}</span>
-      </div>
-      <input id={`macro-${key}`} type="range" style={{ width: "100%" }}
-             min={min} max={max} step={step} value={value(key)}
-             aria-label={label}
-             onChange={(e) => {
-               const v = Number(e.target.value);
-               setDrag((d) => ({ ...d, [key]: v }));
-               // Sent live, not on release: these are performance controls and
-               // watching the rig respond is how you find the value you want.
-               if (key === "size") send({ type: "macro", size: v });
-               else if (key === "spread") send({ type: "macro", spread: v });
-               else send({ type: "macro",
-                           center: key === "bearing"
-                             ? [v, value("elev")] : [value("bearing"), v] });
-             }}
-             onPointerUp={() => setDrag((d) => ({ ...d, [key]: undefined }))}
-             onBlur={() => setDrag((d) => ({ ...d, [key]: undefined }))} />
-      <p className="small muted" style={{ margin: 0 }}>{hint}</p>
-    </div>
-  );
+  const apply = (name: string, value: ParamValue) => {
+    const v = Number(value);
+    if (name === "size") send({ type: "macro", size: v });
+    else if (name === "spread") send({ type: "macro", spread: v });
+    else if (name === "bearing") send({ type: "macro", center: [v, macro.center[1]] });
+    else if (name === "elev") send({ type: "macro", center: [macro.center[0], v] });
+  };
 
   return (
     <Card title="Shape" right={
       <button className="small" disabled={!changed}
+              aria-label="reset shape"
               onClick={() => send({ type: "macro", reset: true })}>Reset</button>
     }>
-      {row("size", "Size", 0, 3, 0.05, (v) => `${v.toFixed(2)}×`,
-           "How far the route travels. 0 parks every head on the mirror ball.")}
-      {row("spread", "Spread", -1, 1, 0.02, (v) => v.toFixed(2),
-           "Lags each head along its own route. 0 is unison, 1 spreads them evenly around one cycle.")}
-      {row("bearing", "Centre —", -180, 180, 1, (v) => `${v.toFixed(0)}° round`,
-           "Swings the whole look around the room.")}
-      {row("elev", "Centre |", -90, 90, 1, (v) => `${v.toFixed(0)}° up/down`,
-           "Drops or lifts the whole look. The safety taper still runs after this, so aiming down does not bypass it.")}
+      <ParamList specs={specs} values={values} onChange={apply}
+                 reach={state.reach} />
+      {/* The centre is bounded by the MOST capable head, so a less capable one
+          can be asked for somewhere it cannot go. It stops at its rail, which
+          is a sensible place to stop -- but the operator turning this knob is
+          the one who needs to know, in either mode, so it is said here rather
+          than only in the Design-mode heads readout. */}
+      {limited.length > 0 && (
+        <p className="small" style={{ color: "var(--warn)", marginBottom: 0 }}>
+          {limited.length === 1 ? `${limited[0]} is` : `${limited.length} heads are`}{" "}
+          at the end of {limited.length === 1 ? "its" : "their"} travel — they
+          stop at the rail while the others go on.
+        </p>
+      )}
     </Card>
   );
 }

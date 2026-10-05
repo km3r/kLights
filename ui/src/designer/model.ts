@@ -10,6 +10,9 @@
  * what a routine does to a fixture) is asked of the engine instead.
  */
 
+import { BLOCK_PARAMS, BLOCK_SLOTS } from "../blocks";
+import type { ParamSpec } from "../types";
+
 /** Marks every designer page. It is only in the designer's own chunk: a build
  *  check greps the console's entry script to prove a phone never loads it. */
 export const DESIGNER_CHUNK = "klights-designer";
@@ -435,57 +438,55 @@ export function decodeWave(doc: { preview?: string;
 /** What one argument of a block is, for the routine editor's fields. */
 export interface ArgSpec {
   name: string;
-  kind: "number" | "color" | "colors" | "order" | "points" | "bool" | "easing"
+  label: string;
+  kind: "number" | "color" | "colors" | "choice" | "points" | "bool"
       | "look" | "preset";
-  /** What the engine uses when the argument is left out. */
+  /** What the engine uses when the argument is left out. Undefined where it
+   *  has no fixed default, so the field says "auto". */
   default?: unknown;
   step?: number;
+  min?: number;
+  max?: number;
   unit?: string;
+  choices?: string[];
   help?: string;
 }
 
-const n = (name: string, def: number, step = 1, unit?: string, help?: string): ArgSpec =>
-  ({ name, kind: "number", default: def, step, unit, help });
+/** One engine declaration as an editor field. Integers are numbers to a field;
+ *  a unit that only repeats the argument's name ("bars (bars)") is dropped. */
+function argSpec(p: ParamSpec): ArgSpec {
+  const unit = p.unit?.trim();
+  return {
+    name: p.name, label: p.label,
+    kind: p.kind === "integer" ? "number" : p.kind,
+    default: p.default ?? undefined,
+    step: p.step ?? (p.kind === "integer" ? 1 : undefined),
+    min: p.min, max: p.max,
+    unit: unit && unit !== p.name ? unit : undefined,
+    choices: p.choices, help: p.help,
+  };
+}
 
-/** The blocks `engine/blocks.py` builds, in the order the editor offers them,
- *  with the arguments each reads and the defaults it uses. Held to the engine's
- *  own lists by a test (`__fixtures__/blocks.json`). */
-export const BLOCK_ARGS: Record<string, ArgSpec[]> = {
-  orbit: [n("radius", 20, 1, "°"), n("bars", 8, 0.25), n("elongation", 1, 0.1),
-          n("spread", 1, 0.05, "", "phase offset across the heads, in cycles")],
-  pendulum: [n("width", 30, 1, "°"), n("bars", 4, 0.25),
-             { name: "vertical", kind: "bool", default: false }, n("spread", 0, 0.05)],
-  fan_sweep: [n("width", 40, 1, "°"), n("bars", 4, 0.25),
-              { name: "sweep", kind: "number", step: 1, unit: "°",
-                help: "how far the fan swings; half the width when left out" },
-              n("spread", 0, 0.05), n("rate", 1, 0.25)],
-  aim_points: [{ name: "points", kind: "points", default: [[0.5, 0.5, 0]],
-                 help: "room fractions, 0..1 on each axis, so it works in any room" },
-               n("bars", 8, 0.25), { name: "easing", kind: "easing", default: "ease_in_out" }],
-  solid: [{ name: "color", kind: "color", default: "@primary" }],
-  color_chase: [{ name: "colors", kind: "colors", default: ["@primary", "@secondary"] },
-                n("bars", 2, 0.25), n("spread", 0, 0.05),
-                n("fade", 0, 0.05, "", "how much of each step blends into the next")],
-  chase: [{ name: "order", kind: "order", default: "index" }, n("bars", 1, 0.25),
-          n("width", 0.5, 0.05)],
-  pulse: [n("depth", 1, 0.05), n("bars", 1, 0.25), n("spread", 0, 0.05)],
-  dim: [n("level", 1, 0.05)],
-  strobe: [n("level", 0.5, 0.05)],
-  look: [{ name: "look", kind: "look", help: "a look from THIS rig's library" }],
-  snapshot: [{ name: "preset", kind: "preset", help: "a preset from THIS event" }],
-};
+/** The blocks `engine/blocks.py` builds, with the arguments each reads and the
+ *  defaults it uses -- DERIVED from the engine's own declarations
+ *  (`blocks.PARAMS`, generated into `blocks.generated.json`).
+ *
+ *  This used to be a hand-typed table, held to the engine only on argument
+ *  NAMES; the defaults, steps and units were copies that could drift. Now there
+ *  is one declaration, and a block added to the engine appears here with its
+ *  controls and no editor change. */
+export const BLOCK_ARGS: Record<string, ArgSpec[]> = Object.fromEntries(
+  Object.entries(BLOCK_PARAMS).map(([block, params]) => [block, params.map(argSpec)]));
 
 /** The slot each block drives; null for the rig-bound adapters, which drive
  *  whichever slot their lane is. */
-export const BLOCK_SLOT: Record<string, Slot | null> = {
-  orbit: "movement", pendulum: "movement", fan_sweep: "movement", aim_points: "movement",
-  solid: "color", color_chase: "color",
-  chase: "level", pulse: "level", dim: "level", strobe: "level",
-  look: null, snapshot: null,
-};
+export const BLOCK_SLOT: Record<string, Slot | null> = BLOCK_SLOTS;
 
-export const CHASE_ORDERS = ["x", "-x", "y", "-y", "z", "-z", "index"];
-export const EASINGS = ["linear", "ease_in_out", "ease_out"];
+const choicesOf = (block: string, arg: string): string[] =>
+  BLOCK_PARAMS[block]?.find((p) => p.name === arg)?.choices ?? [];
+
+export const CHASE_ORDERS = choicesOf("chase", "order");
+export const EASINGS = choicesOf("aim_points", "easing");
 export const RIG_BOUND = ["look", "snapshot"];
 
 /** The blocks a lane of this slot can hold. */

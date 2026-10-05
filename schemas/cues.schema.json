@@ -53,6 +53,10 @@
             "type": "object",
             "description": "per-slot chase rates, e.g. {\"color\": 0.5, \"movement\": 2}"
           },
+          "params": {
+            "type": "object",
+            "description": "per-routine parameter values, by look name, e.g. {\"Ball Orbit\": {\"radius_deg\": 24}}"
+          },
           "notes": {
             "type": "string"
           }

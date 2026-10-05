@@ -103,10 +103,16 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
     target = row["target"]
     return SLOTS if target == "scene" else (target,)
 
-# Continuous values a timeline can automate, and their ranges. The macro
-# ranges are the ones `ShowController._cmd_macro` clamps to, and rate is
+# Continuous values a timeline can automate, and their ranges. Size and spread
+# are the ranges `ShowController._cmd_macro` clamps to, and rate is
 # SlotPhases' 0-8 -- a curve that asks for more would be clamped at run time,
 # so it is refused at authoring time instead.
+#
+# The CENTRE ranges are the portable fallback (`params.CENTER_*`), not the
+# run-time clamp. At run time the centre is bounded by the playing rig's reach
+# (`server.rig_reach`), which on a real rig is often wider on one side and
+# narrower on the other. A show folder does not know which rig will play it, so
+# it is authored against the range every rig can be expected to understand.
 AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
     "master": (0.0, 1.0),
     "size": (0.0, 3.0),
@@ -122,8 +128,9 @@ AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
 # implements exactly these; a test holds the two lists together. `look` and
 # `snapshot` are the rig-bound adapters -- a routine using either must name its
 # rig, which is what "this rig only" means.
-BLOCK_NAMES = ("fan_sweep", "orbit", "pendulum", "aim_points", "solid",
-               "color_chase", "chase", "pulse", "dim", "strobe",
+BLOCK_NAMES = ("offset", "fan_sweep", "orbit", "pendulum", "figure8", "spiral",
+               "scatter", "aim_points", "solid", "color_chase", "hue_cycle", "duo",
+               "chase", "pulse", "breathe", "dim", "strobe",
                "look", "snapshot")
 RIG_BOUND_BLOCKS = ("look", "snapshot")
 

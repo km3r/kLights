@@ -135,6 +135,17 @@ class EvalContext:
     # old library hand-encoded.
     move_spread: float = 0.0
 
+    # This frame's MODULATED routine parameters, by look name then parameter.
+    # Written once per frame by the modulator rack; read by the generator
+    # layers, which fall back to the values the routine was composed with.
+    #
+    # On the context for the same reason `move_size` is: the composed Show is
+    # rebuilt whenever a look changes, and a value that moves every frame must
+    # not require rebuilding the layer stack forty times a second to express.
+    # Empty by default, so a show with no modulators behaves identically and
+    # pays only a dict lookup for it.
+    live_params: dict[str, dict[str, float]] = field(default_factory=dict)
+
     # Last frame's safety multiplier per fixture, and when it was computed.
     # State the safety layer needs and nothing else may touch -- slew limiting
     # is inherently temporal, and the alternative (making clearance() stateful)
@@ -353,15 +364,21 @@ def raw_pose_layer(values: dict, intensity: float = 1.0,
 
 def color_layer(color: tuple[float, float, float],
                 tags: Optional[Sequence[str]] = None,
-                white: float = 0.0) -> Layer:
+                white: Optional[float] = None) -> Layer:
     """Set colour. Separate from the pose layer on purpose: colour and position
     were entangled in the old workspace because both lived in the same Scene,
     which is why changing one meant authoring a new scene for every value of the
-    other."""
+    other.
+
+    `white` is None by default rather than 0.0, and left untouched in that case
+    -- a caller that only knows RGB (the common case, since not every fixture
+    has a white channel) should not silently zero out a white an earlier layer
+    set, e.g. a look's own blended white on a pinspot."""
     def layer(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
         for f in _targets(ctx, tags):
             out[f.fid].color = color
-            out[f.fid].white = white
+            if white is not None:
+                out[f.fid].white = white
     return layer
 
 
