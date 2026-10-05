@@ -322,7 +322,7 @@ export interface TrackState {
   /** The deck's own beats disagree with the prepped grid. */
   grid_warning?: GridWarning | null;
   /** What the OTHER decks have loaded (milestone 2, beat-link-trigger only),
-   *  matched, with their shows built in advance. Absent before F21e. */
+   *  matched, with their shows built in advance. Absent before F22e. */
   decks?: DeckLoaded[];
 }
 
@@ -352,12 +352,12 @@ export interface VisualsState {
 export interface OutputsState {
   osc: { target: string; sent: number; errors: number; last_error: string | null;
          on: number } | null;
-  /** The MIDI sidecar: what is on is notes and CCs held. Absent before F22c. */
+  /** The MIDI sidecar: what is on is notes and CCs held. Absent before F23c. */
   midi?: { target: string; sent: number; errors: number; last_error: string | null;
            on: number } | null;
   /** Art-Net timecode: the matched track's position. `now` is the last time
    *  sent, null while silent (paused, disarmed, nothing matched). Absent
-   *  before F22b. */
+   *  before F23b. */
   timecode?: { target: string; fps: number; sent: number; errors: number;
                last_error: string | null; now: string | null } | null;
   /** Why an output is off: a bad address in show.json or klights.local.json. */
@@ -430,7 +430,7 @@ export interface ProgramState {
   /** Per source, how far ahead of its position the lights run. */
   latency_ms: Record<string, number>;
   /** The active template set, the one switching in on the next downbeat
-   *  ("off" for none), and every set in the folder. Absent before F21b. */
+   *  ("off" for none), and every set in the folder. Absent before F22b. */
   set?: string | null;
   pending?: string | null;
   sets?: { id: string; name: string }[];
@@ -507,13 +507,13 @@ export interface EngineState {
   program?: ProgramState | null;
   /** The designer driving the rig from its own transport (F19j), or null. */
   preview?: PreviewState | null;
-  /** A routine pad, waiting for its downbeat or playing. Absent before F21d. */
+  /** A routine pad, waiting for its downbeat or playing. Absent before F22d. */
   pad?: { name: string; routine: string; waiting: boolean } | null;
   /** The other outputs (milestone 3): where OSC goes and how it is doing.
-   *  Null when none is configured; absent before F22a. */
+   *  Null when none is configured; absent before F23a. */
   outputs?: OutputsState | null;
   /** What a #visuals page draws (milestone 3). Null without a show folder;
-   *  absent before F22d. */
+   *  absent before F23d. */
   visuals?: VisualsState | null;
   auto: AutoState;
   looks: LookInfo[];

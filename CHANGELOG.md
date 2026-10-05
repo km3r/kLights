@@ -11,12 +11,12 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
-F19's milestones 2 and 3 are **F21** (templates, pads, pre-matching) and
-**F22** (VJ outputs) below. Their commits were made as F20a-e and F21a-d,
-before F20 -- the standalone previz -- reached main; the commit messages keep
-those labels.
+F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
+**F23** (VJ outputs) below. Their commits were made as F20a-e and F21a-d,
+before F20 (the standalone previz) and F21 (parametric looks) reached main;
+the commit messages keep those labels.
 
-### Added — F22d: built-in visuals
+### Added — F23d: built-in visuals
 
 - **`#visuals`** (decided with the user: generative scenes and a video
   player): open it full screen on the projector laptop. Scenes are wash, bars,
@@ -39,7 +39,7 @@ those labels.
   regenerated.
 - The MIDI stage's commit message (labelled F21c) counted 164 UI tests; it was 163.
 
-### Added — F22c: MIDI, through a sidecar
+### Added — F23c: MIDI, through a sidecar
 
 - **MIDI lanes** (decided with the user: through an optional sidecar). A cue
   is a note held for its length, a CC value (and an optional value left at
@@ -55,7 +55,7 @@ those labels.
 - `outputs.midi {}` in show.json or `klights.local.json`; the Track card
   shows it.
 
-### Added — F22b: Art-Net timecode
+### Added — F23b: Art-Net timecode
 
 - **ArtTimeCode carries the matched track's position** (decided with the
   user), so a VJ app with its own timeline per track follows the DJ: it jumps
@@ -67,7 +67,7 @@ those labels.
   drop-frame too. The Track card shows the target and the time last sent.
 - `shared/tools/artnet_listener.py --timecode` prints what arrives.
 
-### Added — F22a: OSC out, for a VJ app
+### Added — F23a: OSC out, for a VJ app
 
 - **OSC lanes** (decided with the user: generic OSC, mapped by you). In the
   designer, `+ lane` → **OSC cues** adds a lane of cues; each cue sends an
@@ -90,7 +90,7 @@ those labels.
   external row's fields; show.json gains `outputs`.
 - New suite `test_outputs` (29 suites).
 
-### Added — F21e: per-deck pre-matching
+### Added — F22e: per-deck pre-matching
 
 - **A track's show is built before the DJ fades it in.** The beat-link-trigger
   expressions now say what every deck has loaded (`/klights/v1/deck`, the same
@@ -103,14 +103,14 @@ those labels.
 - These fields arrive as `loaded_*` and never move the transport, which follows
   the master alone; they are checked by the same rules as the master's.
 
-### Fixed — F21e
+### Fixed — F22e
 
 - The beat-link-trigger expressions could send a new master track's identity
   with the previous track's metadata, if the deck reported the new track before
   its metadata arrived -- and then never send it again. Identity is now sent
   only once the metadata's rekordbox id is the one the deck reports.
 
-### Added — F21d: routines on preset pads
+### Added — F22d: routines on preset pads
 
 - **A preset pad can play a routine** over its looks: choose one (and a
   variation) when saving the preset on the Show tab. Pressed, the pad waits for
@@ -121,7 +121,7 @@ those labels.
 - Needs a show folder (routines live there). presets.json gains `routine`
   (schema regenerated).
 
-### Added — F21c: live phrases from CDJs
+### Added — F22c: live phrases from CDJs
 
 - **Guest tracks on CDJs get phrase templates** (decided with the user): the
   beat-link-trigger expressions read the song structure from the rekordbox
@@ -134,7 +134,7 @@ those labels.
   (`clock.phrase_start`), where a label change alone is only a bar line -- for
   rkbx_link too, which announces where a phrase will end.
 
-### Added — F21b: templates on stage
+### Added — F22b: templates on stage
 
 - **The fallback chain is whole**: timeline, then template, then the operator's
   or auto mode's show, while a DJ track plays with Follow armed (decided with
@@ -150,7 +150,7 @@ those labels.
 - A folder edit of the active set waits for the next track, like any folder
   change; the pause policies (freeze, continue, idle) apply to templates too.
 
-### Added — F21a: the template runtime (milestone 2)
+### Added — F22a: the template runtime (milestone 2)
 
 - **`engine/templates.py`**: what the lights do on a track nobody drew a
   timeline for. A template set's phrase map picks a routine for each of
@@ -163,7 +163,7 @@ those labels.
   restart the movement); a new pick crossfades over the set's
   `transition.fade_beats`; a jump cuts. The runner is one stable Show, so a
   timeline can sit on top of it and show it through its fill gaps.
-- Nothing plays it yet: F21b puts it on stage.
+- Nothing plays it yet: F22b puts it on stage.
 
 ### Added — run a drift check, and move a fixture, from the console
 
