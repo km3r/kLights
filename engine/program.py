@@ -217,6 +217,12 @@ class RoutineSource:
         inst = self.inst
         local = clip.local
         sched = inst.sched(local)
+        # Where its own param and argument lanes are read, set where it is
+        # EVALUATED. Setting it only for the routines `_visible_routines`
+        # finds is not enough: that stops at the first full-weight clip, but a
+        # routine on a lower lane still plays for the fixtures the top one
+        # leaves alone, and read a stale beat there.
+        inst.now = sched
         entries = inst.timeline.entries(slot, sched)
         if not entries:
             return fallback()
@@ -301,7 +307,7 @@ class Program:
         self._master = self.timeline.automation("master", beat)
 
     def _param_automation(self, name: str) -> Any:
-        entry = self.timeline.curves.get(f"param.{name}")
+        entry = self.timeline.curves.get(showfiles.PARAM_PREFIX + name)
         return blocksmod.automation_value(entry[1], self._beat) if entry else None
 
     def _resolve_palette(self, entries, i: int, default: Palette) -> Palette:
@@ -348,10 +354,6 @@ class Program:
         for src, clip in self._visible_routines(beat):
             inst = src.inst
             sched = inst.sched(clip.local)
-            # Where its own param lanes are read this frame. Only a routine
-            # showing on some lane is ever evaluated, so one that is not can
-            # keep a stale position harmlessly.
-            inst.now = sched
             prev_sched = None
             again = jumped
             if prev is not None:
@@ -618,6 +620,15 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
                 sources[(row.id, item.id)] = LeafSource(built,
                                                         _warps(timeline, item, None))
             # palette clips are read straight off the palette lane
+    # A `hold` wave's integral is a running sum of its levels, memoised as it
+    # is first asked for (`waves.area`). A rate lane is integrated every
+    # frame, so take that first sum here, on the worker, out to the end of the
+    # last clip -- not on the output thread on the first frame after a seek.
+    end = max((i.at + i.len for row in timeline.clip_rows for i in row.items),
+              default=0.0)
+    for target, (_, curve) in timeline.curves.items():
+        if target.startswith("rate.") and curve.wave is not None and curve.numeric:
+            curve.integral(end)
     palettes: dict[str, Palette] = {}
     for name, pal in (timeline.meta.get("palettes") or {}).items():
         if isinstance(pal, Mapping):

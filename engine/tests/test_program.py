@@ -396,6 +396,24 @@ s = frame(build([clips("scene", "scene", [use("a", "ftint", 16, 64)])],
 check("a colour param's own lane blends between its points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 
+# A routine on a LOWER lane still plays for the fixtures the top one leaves
+# alone (per-fixture fall-through), so its own lanes must be read at its own
+# beat there too -- not only when it is the lane on top.
+pin_fade = routine("pinfade", [
+    clips("c", "color", [block("s", "solid", 0, 32, color="$c")]) | {"role": "pins"},
+    {"id": "pc", "type": "automation", "target": "param.c",
+     "points": [[0, "#ff0000"], [8, "#0000ff"]]}],
+    params={"c": {"type": "color", "default": "#ffffff"}})
+p = build([clips("top", "color", [use("t", SOLID("#00ff00")["id"], 0, 64)]),
+           clips("low", "color", [use("l", "pinfade", 0, 64)])],
+          [SOLID("#00ff00"), pin_fade])
+s = frame(p, 4)
+check("a routine under a full-weight lane reads its own lanes at its own beat "
+      "for the fixtures that fall through to it",
+      all(rgb_close(s[f.fid].color, (0.5, 0, 0.5)) for f in PINS)
+      and all(rgb_close(s[f.fid].color, (0, 1, 0)) for f in MOVERS),
+      f"{[s[f.fid].color for f in PINS]}")
+
 # An argument lane: one item's argument, moved without declaring a param.
 argo = routine("argo", [
     clips("m", "movement", [block("o", "orbit", 0, 8, radius=20, bars=1,

@@ -507,7 +507,8 @@ class Frame:
     """Everything a timeline says at one beat."""
     beat: float
     channels: Mapping[str, Channel]
-    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers
+    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers,
+                                     # with (toward, pull) after it when a wave swings it
     hits: tuple[Hit, ...]
 
 
@@ -639,12 +640,17 @@ class Timeline:
         return Channel(tuple(layers), rest=True)
 
     def automation(self, target: str, beat: float) -> Any:
-        """The value of an automated target, None if nothing automates it."""
+        """The value of an automated target, None if nothing automates it: a
+        number, or for a colour (from, to, t) -- and, when a wave swings it,
+        (toward, pull) after those, so an explanation shows the whole value."""
         entry = self.curves.get(target)
         if entry is None:
             return None
         curve = entry[1]
-        return curve.value(beat) if curve.numeric else curve.segment(beat)
+        if curve.numeric:
+            return curve.value(beat)
+        pull = curve.pull(beat)
+        return curve.segment(beat) + (pull if pull is not None else ())
 
     def hits(self, beat: float, prev: Optional[float] = None,
              jumped: bool = False) -> tuple[Hit, ...]:

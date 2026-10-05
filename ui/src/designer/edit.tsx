@@ -64,6 +64,11 @@ export interface LaneSpec {
 
 export type LaneSpecs = Record<string, LaneSpec>;
 
+/** The two target prefixes besides the macros, as `showfiles` spells them:
+ *  `param.<name>` and a routine's `arg.<item>.<argument>`. */
+export const PARAM_TARGET = "param.";
+export const ARG_TARGET = "arg.";
+
 const NEUTRAL_ONE = new Set(["master", "size", "rate.movement", "rate.color", "rate.level"]);
 
 function macroSpec(target: string): LaneSpec {
@@ -119,7 +124,7 @@ export function routineLaneSpecs(doc: { params?: Record<string, ParamLike>; rows
   const out: LaneSpecs = {};
   for (const [name, def] of Object.entries(doc.params ?? {})) {
     const spec = paramSpec(name, def, fed[name]);
-    if (spec) out[`param.${name}`] = spec;
+    if (spec) out[PARAM_TARGET + name] = spec;
   }
   Object.assign(out, argLaneSpecs(doc.rows));
   return out;
@@ -149,7 +154,7 @@ function argLaneSpecs(rows: Row[]): LaneSpecs {
         const label = `${it.id}.${spec.name}`;
         const unit = spec.unit?.trim() ?? "";
         if (spec.kind === "color") {
-          out[`arg.${label}`] = { label, unit, kind: "color", lo: 0, hi: 1,
+          out[ARG_TARGET + label] = { label, unit, kind: "color", lo: 0, hi: 1,
                                   start: (literal ?? spec.default ?? "@primary") as PointValue };
           continue;
         }
@@ -157,7 +162,7 @@ function argLaneSpecs(rows: Row[]): LaneSpecs {
         const hi = spec.max !== undefined && spec.max > lo ? spec.max : lo + 1;
         const value = typeof literal === "number" ? literal
           : typeof spec.default === "number" ? spec.default : lo;
-        out[`arg.${label}`] = {
+        out[ARG_TARGET + label] = {
           label, unit, kind: "number", lo, hi,
           min: spec.reach ? undefined : spec.min, max: spec.reach ? undefined : spec.max,
           start: value };
@@ -197,7 +202,7 @@ export function timelineLaneSpecs(doc: { rows: Row[] },
   const out: LaneSpecs = {};
   for (const [name, { def, from }] of Object.entries(byName)) {
     const spec = paramSpec(name, def, undefined, from);
-    if (spec) out[`param.${name}`] = spec;
+    if (spec) out[PARAM_TARGET + name] = spec;
   }
   return out;
 }
@@ -216,7 +221,7 @@ export function laneSpec(target: string, params: LaneSpecs, points: Point[] = []
   const colour = points.length > 0 && nums.length === 0;
   const lo = Math.min(0, ...nums);
   const hi = Math.max(lo + 1, ...nums);
-  return { label: target.startsWith("param.") ? target.slice(6) : target, unit: "",
+  return { label: target.startsWith(PARAM_TARGET) ? target.slice(PARAM_TARGET.length) : target, unit: "",
            kind: colour ? "color" : "number", lo, hi, start: colour ? "@primary" : lo };
 }
 
@@ -1191,8 +1196,8 @@ export function externalRow(d: RowsDoc, kind: string): Row | undefined {
  *  parameter as `$name` with its unit, the way a block argument refers to it. */
 export function laneTitle(target: string, spec: LaneSpec): string {
   const unit = spec.unit ? ` (${spec.unit})` : "";
-  if (target.startsWith("param.")) return `$${spec.label}${unit}`;
-  if (target.startsWith("arg.")) return `${spec.label}${unit}`;
+  if (target.startsWith(PARAM_TARGET)) return `$${spec.label}${unit}`;
+  if (target.startsWith(ARG_TARGET)) return `${spec.label}${unit}`;
   return spec.label;
 }
 
@@ -1218,9 +1223,9 @@ export function AutomationMenu({ history, params }: {
   const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
   const macros = Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t));
   const free = Object.entries(params).filter(([t]) => !automated.has(t));
-  const open = free.filter(([t]) => t.startsWith("param."))
+  const open = free.filter(([t]) => t.startsWith(PARAM_TARGET))
     .sort(([a], [b]) => a.localeCompare(b));
-  const args = free.filter(([t]) => t.startsWith("arg."));
+  const args = free.filter(([t]) => t.startsWith(ARG_TARGET));
   return (
     <select aria-label="add automation" value=""
             onChange={(e) => {

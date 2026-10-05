@@ -87,7 +87,8 @@ class Instance:
         """Its own `param.<name>` lane at `now`, or None if it has none. An
         argument lane's hidden parameter is named after its target, so it is
         looked up as itself."""
-        target = name if name.startswith(blocksmod.ARG_PREFIX) else f"param.{name}"
+        target = (name if name.startswith(blocksmod.ARG_PREFIX)
+                  else showfiles.PARAM_PREFIX + name)
         curve = self.curve(target)
         return blocksmod.automation_value(curve, self.now) if curve else None
 
