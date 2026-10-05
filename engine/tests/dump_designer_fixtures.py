@@ -82,7 +82,10 @@ def wave_vectors() -> dict:
     """The designer draws a lane's wave with its own copy of the shapes, and
     `hold` with its own copy of the hash -- these are what both must give."""
     positions = [-1.75, -0.5, 0.0, 0.1, 0.25, 0.49, 0.5, 0.75, 0.99, 1.0, 2.3, 17.6]
-    return {shape: [[p, seed, waves.unit(shape, p, seed)]
+    # Rounded: a sine's last bits come from the platform's libm, which differs
+    # between Windows and Linux, and test_api compares this file byte for byte
+    # on both. Ten places is still far finer than any shape could drift by.
+    return {shape: [[p, seed, round(waves.unit(shape, p, seed), 10)]
                     for p in positions for seed in (0, 7)]
             for shape in waves.SHAPES}
 

@@ -135,7 +135,8 @@ describe("designer model", () => {
     expect(WAVE_SHAPES).toEqual(Object.keys(waveVectors));
     for (const [shape, rows] of Object.entries(waveVectors)) {
       for (const [p, seed, want] of rows as [number, number, number][]) {
-        expect(waveUnit(shape, p, seed), `${shape} at ${p} seed ${seed}`).toBeCloseTo(want, 12);
+        // the fixture is rounded to 10 places, so it reads the same on every OS
+        expect(waveUnit(shape, p, seed), `${shape} at ${p} seed ${seed}`).toBeCloseTo(want, 9);
       }
     }
     // a lane's value is its points plus its wave
