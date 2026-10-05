@@ -141,6 +141,7 @@ TIER: dict[str, str] = {
     # the designer: writes the show folder, and can take the stage
     "timeline_draft": "configure", "timeline_save": "configure",
     "routine_draft": "configure", "routine_save": "configure",
+    "routine_rename": "configure", "routine_delete": "configure",
     "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
@@ -2244,6 +2245,55 @@ class ShowController:
 
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)
+
+    def _cmd_routine_rename(self, m: dict, now: float) -> object:
+        """Rename a routine and every reference to it (showfiles.rename_routine:
+        new file first, references next, old file last). Answered with the
+        files written; the folder reloads after."""
+        library = self._need_library()
+        # `routine`, not `id`: `id` is the request's own, for its reply.
+        old, new, base = m.get("routine"), m.get("to"), m.get("base_rev")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise ValueError("routine_rename needs routine and to")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"renamed routine {old!r} to {new!r}: {len(written)} file(s)")
+            self.reload_library()
+
+        return self._on_worker(f"renaming routine {old}",
+                               lambda: showfiles.rename_routine(root, folder, old, new, base),
+                               then)
+
+    def _cmd_routine_delete(self, m: dict, now: float) -> object:
+        """Delete a routine nothing uses. One that a timeline, a template set
+        or show.json still names is refused with where, so a delete can never
+        leave a show playing a routine that is gone."""
+        library = self._need_library()
+        rid, base = m.get("routine"), m.get("base_rev")
+        if not isinstance(rid, str):
+            raise ValueError("routine_delete needs routine")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def work():
+            uses = showfiles.routine_uses(folder, rid)
+            if uses:
+                raise ValueError(f"{rid!r} is still used by {'; '.join(uses)}: "
+                                 f"take it out of those first")
+            showfiles.delete_doc(showfiles.path_for(root, "routine", rid), base)
+            return f"{showfiles.SUBDIR['routine']}/{rid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting routine {rid}", work, then)
 
     def _cmd_preview_arm(self, m: dict, now: float) -> dict:
         """The designer takes the stage: its transport drives the rig through

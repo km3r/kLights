@@ -120,9 +120,17 @@ const TIMELINE_REV = "r:aaaaaaaaaaaa";
 const ROUTINE_REV = "r:bbbbbbbbbbbb";
 const ROUTINES = [
   { id: "fan-drop", name: "Fan sweep (drop)", bars: 8, loop: true, rig: null,
-    params: fanDrop.params, variations: ["tight", "wide"], roles: fanDrop.roles },
+    params: fanDrop.params, variations: ["tight", "wide"], roles: fanDrop.roles,
+    folder: "Drops", rev: ROUTINE_REV,
+    lanes: [{ type: "clips", target: "movement", role: "movers", blocks: ["fan_sweep"] },
+            { type: "clips", target: "level", role: "pins", blocks: ["chase", "chase"] }],
+    used_by: { timelines: [{ track: "synth-128", title: "synthetic 128", clips: 2,
+                             variations: ["wide"] }],
+               templates: [{ id: "club", name: "Club", where: ["Chorus"] }], show: [] } },
   { id: "idle-orbit", name: "Idle orbit", bars: 8, loop: true, rig: null,
-    params: idleOrbit.params, variations: [], roles: idleOrbit.roles },
+    params: idleOrbit.params, variations: [], roles: idleOrbit.roles, rev: "r:i",
+    lanes: [{ type: "clips", target: "movement", role: "movers", blocks: ["orbit"] }],
+    used_by: { timelines: [], templates: [], show: [] } },
 ];
 
 /** What `prep.py catalogue` says, cut down: a folder, a playlist in it with
@@ -818,15 +826,119 @@ describe("studio library", () => {
       .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
   });
 
-  it("lists routines and starts a new one from its own page", async () => {
+  it("lists routines, and goes back to the tracks", async () => {
     const user = userEvent.setup();
     await open("#studio/routines");
     const page = await screen.findByRole("region", { name: "routines" });
     expect(await within(page).findByRole("link", { name: /Fan sweep \(drop\)/ }))
       .toHaveAttribute("href", "#studio/routine/fan-drop");
-    expect(within(page).getByText("$color $width $rate")).toBeInTheDocument();
+    expect(within(page).getByText(/\$color \$width \$rate · tight, wide/)).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: /^Tracks/ }));
     expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+});
+
+describe("routine library", () => {
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/routines");
+    const page = await screen.findByRole("region", { name: "routines" });
+    await within(page).findByRole("article", { name: "Fan sweep (drop)" });
+    return { user, socket, page };
+  }
+  const details = () => screen.getByRole("complementary", { name: "details" });
+
+  it("files routines into folders, and says where each is used", async () => {
+    const { user, page } = await library();
+    const folders = within(page).getByRole("group", { name: "folders" });
+    await user.click(within(folders).getByRole("button", { name: /^Drops/ }));
+    expect(within(page).queryByRole("article", { name: "Idle orbit" })).toBeNull();
+    const fan = within(page).getByRole("article", { name: "Fan sweep (drop)" });
+    expect(fan).toHaveTextContent("in 1 timeline · Club");
+    await user.click(within(folders).getByRole("button", { name: /^Unused/ }));
+    expect(within(page).getByRole("article", { name: "Idle orbit" })).toHaveTextContent("Unused");
+
+    await user.click(within(folders).getByRole("button", { name: /^All/ }));
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    const used = within(details()).getByRole("region", { name: "where it is used" });
+    expect(within(used).getByRole("link", { name: /synthetic 128/ }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
+    expect(used).toHaveTextContent(/Club.*Chorus/);
+    // Nothing that is used can be deleted from here.
+    expect(within(details()).getByRole("button", { name: "Delete: used in 2 places" })).toBeDisabled();
+  });
+
+  it("renames a routine, and every file that uses it with it", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(page).getByRole("menuitem", { name: "Rename…" }));
+    const id = within(details()).getByLabelText("new id");
+    expect(id).toHaveFocus();
+    expect(details()).toHaveTextContent(/Also rewrites the 2 files that use it/);
+    await user.clear(id);
+    await user.type(id, "fan-sweep");
+    await user.click(within(details()).getByRole("button", { name: "Rename it" }));
+    const sent = reply(socket, "routine_rename", true, {
+      written: ["routines/fan-sweep.json", "timelines/synth-128.json", "templates/club.json"] });
+    expect(sent).toMatchObject({ routine: "fan-drop", to: "fan-sweep", base_rev: ROUTINE_REV });
+    expect(await screen.findByText("Renamed fan-drop to fan-sweep: 3 files written."))
+      .toBeInTheDocument();
+  });
+
+  it("says why when the engine will not rename", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("button", { name: "Rename" }));
+    await user.clear(within(details()).getByLabelText("new id"));
+    await user.type(within(details()).getByLabelText("new id"), "fan-sweep");
+    await user.click(within(details()).getByRole("button", { name: "Rename it" }));
+    reply(socket, "routine_rename", false, undefined,
+          "fan-drop.json changed since you opened it (another machine, MCP, or another tab saved it)");
+    expect(await within(details()).findByRole("alert")).toHaveTextContent("changed since");
+  });
+
+  it("duplicates a routine under a new id, leaving the original and its uses alone", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(page).getByRole("menuitem", { name: "Duplicate…" }));
+    expect(within(details()).getByLabelText("id of the copy")).toHaveValue("fan-drop-copy");
+    await user.click(within(details()).getByRole("button", { name: "Make the copy" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_save")).toBe(true));
+    const saved = reply(socket, "routine_save", true, { rev: "r:copy" }) as unknown as {
+      doc: RoutineDoc; base_rev: string };
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "fan-drop-copy", name: "Fan sweep (drop) (copy)",
+                                      bars: 8 });
+    expect(saved.doc.rows).toEqual(fanDrop.rows);
+  });
+
+  it("moves a routine to another folder with an ordinary save", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("button", { name: "Move to folder" }));
+    const folder = within(details()).getByLabelText("folder");
+    expect(folder).toHaveValue("Drops");
+    await user.clear(folder);
+    await user.type(folder, "Peaks");
+    await user.click(within(details()).getByRole("button", { name: "Move" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_save")).toBe(true));
+    const saved = reply(socket, "routine_save", true, { rev: "r:moved" }) as unknown as {
+      doc: RoutineDoc; base_rev: string };
+    expect(saved.base_rev).toBe(ROUTINE_REV);
+    expect(saved.doc).toMatchObject({ id: "fan-drop", folder: "Peaks" });
+    expect(await screen.findByText("Moved fan-drop to Peaks.")).toBeInTheDocument();
+  });
+
+  it("deletes a routine nothing uses, after asking", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Idle orbit" }));
+    await user.click(within(details()).getByRole("button", { name: "Delete…" }));
+    const confirm = within(details()).getByRole("group", { name: "confirm delete" });
+    expect(confirm).toHaveTextContent("Delete routines/idle-orbit.json?");
+    await user.click(within(confirm).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "routine_delete", true, { deleted: "routines/idle-orbit.json" });
+    expect(sent).toMatchObject({ routine: "idle-orbit", base_rev: "r:i" });
+    expect(await screen.findByText("Deleted routines/idle-orbit.json.")).toBeInTheDocument();
   });
 });
 

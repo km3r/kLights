@@ -8,6 +8,8 @@ import type { CatalogueTrack, RoutineSummary, ShowSummary, TrackLine } from "./m
 import { ALL, Coverage, RekordboxNav, RekordboxView, loadCatalogue } from "./Collection";
 import { TrackDetail, TracksView } from "./Library";
 import type { ActiveSet } from "./Library";
+import { RoutineDetail, RoutinesView } from "./Routines";
+import type { Action } from "./Routines";
 import { StartDialog } from "./Start";
 import type { PrepPick, StartTrack } from "./Start";
 import { PanelToggle, usePanels } from "./panels";
@@ -80,12 +82,29 @@ export default function Studio({ engine, route }: {
   const [tickedTracks, setTickedTracks] = useState<Set<string>>(new Set());
   const [tickedRb, setTickedRb] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [routineId, setRoutineId] = useState<string | null>(null);
+  // What a card's menu asked the details panel to open on; `n` makes the
+  // same ask twice count twice.
+  const [routineAsk, setRoutineAsk] = useState<{ action: Action | null; n: number }>(
+    { action: null, n: 0 });
+  // What the last routine change did. Kept here, not in the panel: a rename
+  // or a delete replaces the panel that did it.
+  const [routineSaid, setRoutineSaid] = useState<string | null>(null);
 
   // Something to look at in the details panel from the start.
   useEffect(() => {
     if (!lib.tracks?.length) return;
     if (!selected || !lib.tracks.some((t) => t.id === selected)) setSelected(lib.tracks[0]!.id);
   }, [lib.tracks, selected]);
+  // The first routine, once there are routines -- but never in place of one
+  // that is about to appear (a duplicate, a rename) or has just gone.
+  useEffect(() => {
+    if (routineId == null && lib.routines?.length) setRoutineId(lib.routines[0]!.id);
+  }, [lib.routines, routineId]);
+  const selectRoutine = (id: string) => {
+    if (id !== routineId) { setRoutineSaid(null); setRoutineAsk((a) => ({ action: null, n: a.n })); }
+    setRoutineId(id);
+  };
   // A link that asks for a track by name (the console's "Add it in Studio")
   // means to look in rekordbox: read it without waiting for a click.
   const find = route.view === "rekordbox" ? route.find : undefined;
@@ -112,7 +131,32 @@ export default function Studio({ engine, route }: {
     );
     side = <Coverage scope={route.find ? ALL : route.scope} tracks={tracks} />;
   } else if (route.view === "routines") {
-    main = <RoutinesView routines={lib.routines} />;
+    main = (
+      <RoutinesView routines={lib.routines} selected={routineId} onSelect={selectRoutine}
+                    onAction={(id, action) => {
+                      selectRoutine(id);
+                      setRoutineAsk((a) => ({ action, n: a.n + 1 }));
+                      if (!panels.side) toggle("side");
+                    }} />
+    );
+    const r = lib.routines?.find((x) => x.id === routineId) ?? null;
+    side = (
+      <>
+        {routineSaid && <p className="small s-ok" role="status">{routineSaid}</p>}
+        {r ? (
+          <RoutineDetail key={r.id} engine={engine} r={r} routines={lib.routines ?? []}
+                         action={routineAsk.action} actionKey={routineAsk.n}
+                         onSelect={setRoutineId}
+                         onDone={(said) => {
+                           setRoutineSaid(said);
+                           // Done is done: the next panel opens on nothing.
+                           setRoutineAsk((ask) => ({ action: null, n: ask.n }));
+                           lib.reload();
+                         }} />
+        ) : <p className="muted small">{lib.routines?.length ? "Select a routine to see where it is used."
+          : "No routines yet."}</p>}
+      </>
+    );
   } else {
     main = (
       <TracksView tracks={lib.tracks} error={lib.error} set={set} liveTrack={liveTrack}
@@ -211,59 +255,5 @@ export function LivePill({ engine }: { engine: Engine }) {
       {playing && <span className="muted"> · {playing}</span>}
       {s?.program && <span className="muted"> · Follow {s.program.armed ? "ARMED" : "SAFE"}</span>}
     </span>
-  );
-}
-
-// -- routines ------------------------------------------------------------------
-
-function RoutinesView({ routines }: { routines: RoutineSummary[] | null }) {
-  const [newId, setNewId] = useState("");
-  const list = routines ?? [];
-  const idOk = /^[a-z0-9][a-z0-9_-]{0,63}$/.test(newId) && !list.some((r) => r.id === newId);
-  return (
-    <section className="s-page" aria-label="routines">
-      <div className="s-page-head">
-        <div>
-          <h1>Routines</h1>
-          <span className="muted small">The reusable pieces a timeline's clips play: a few bars
-            written for roles, not fixtures, so they work on any rig.</span>
-        </div>
-        <span className="grow" />
-        <form className="d-form" onSubmit={(e) => {
-          e.preventDefault();
-          if (idOk) location.hash = `#studio/routine/${newId}`;
-        }}>
-          <input value={newId} onChange={(e) => setNewId(e.target.value.trim())}
-                 placeholder="new-routine-id" aria-label="new routine id" />
-          <button type="submit" className="d-primary" disabled={!idOk}>New routine</button>
-          {newId && !idOk && <span className="small d-error">
-            {list.some((r) => r.id === newId) ? "already there"
-              : "lower-case letters, digits, - and _ -- it is also the file name"}</span>}
-        </form>
-      </div>
-      {routines == null && <p className="muted">Loading the show folder…</p>}
-      {!!list.length && (
-        <div className="s-table-wrap">
-          <table className="s-table">
-            <thead>
-              <tr><th>Routine</th><th>Length</th><th>Roles</th><th>Parameters</th><th>Variations</th></tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.id}>
-                  <td className="s-track"><a className="s-link" href={`#studio/routine/${r.id}`}>
-                    <b>{r.name ?? r.id}</b><span className="muted mono">{r.id}</span></a>
-                    {r.rig && <span className="d-badge">this rig only</span>}</td>
-                  <td>{r.bars} bars{r.loop ? ", loops" : ", once"}</td>
-                  <td>{Object.keys(r.roles).join(", ")}</td>
-                  <td className="mono small">{Object.keys(r.params).map((p) => `$${p}`).join(" ")}</td>
-                  <td>{r.variations.join(", ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
   );
 }

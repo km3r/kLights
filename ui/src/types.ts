@@ -593,6 +593,11 @@ export type Command =
   | { type: "timeline_save"; doc: unknown; base_rev: string }
   | { type: "routine_draft"; doc: unknown }
   | { type: "routine_save"; doc: unknown; base_rev: string }
+  /** Rename a routine and every reference to it (timelines, template sets,
+   *  show.json). `routine`, not `id`: `id` is the request's own. */
+  | { type: "routine_rename"; routine: string; to: string; base_rev: string }
+  /** Delete a routine nothing uses; refused with where, if anything does. */
+  | { type: "routine_delete"; routine: string; base_rev: string }
   | { type: "track_link"; track_id: string }
   /** Prep tracks from the DJ's rekordbox collection into the show folder, by
    *  rekordbox id. Answered when the bridge has finished. */

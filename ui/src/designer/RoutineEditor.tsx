@@ -253,6 +253,15 @@ interface PanelProps { history: RHistory; doc: Doc; engine: Engine }
 function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: boolean }) {
   const loops = doc.loop !== false;
   const event = engine.state?.event;
+  // The folders the library already has, to file this one with the others.
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    apiFetch<{ routines: { folder?: string | null }[] }>("/api/routines")
+      .then((r) => setFolders([...new Set(r.routines.map((x) => x.folder)
+        .filter((f): f is string => !!f))].sort()))
+      .catch(() => setFolders([]));
+  }, []);
+  const folder = typeof doc.folder === "string" ? doc.folder : "";
   return (
     <section>
       <h3>Routine</h3>
@@ -272,6 +281,16 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
         <label className="small">
           <input type="checkbox" checked={loops} aria-label="loops"
                  onChange={() => history.apply((d) => { d.loop = !loops; })} /> loops
+        </label>
+        <label className="small" title="Where Studio's library files it. Nothing about how it plays">
+          Folder{" "}
+          <input value={folder} list="d-folders" aria-label="folder" placeholder="unfiled"
+                 style={{ width: 110 }}
+                 onChange={(e) => {
+                   const v = e.target.value;
+                   history.apply((d) => { if (v.trim()) d.folder = v; else delete d.folder; });
+                 }} />
+          <datalist id="d-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
         </label>
       </div>
       <p className="small muted">

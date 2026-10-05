@@ -94,6 +94,25 @@ export interface RoutineSummary {
                            max?: number; unit?: string }>;
   variations: string[];
   roles: Record<string, { default: string; optional?: boolean }>;
+  /** Where Studio files it. Nothing about how it plays. */
+  folder?: string | null;
+  /** Its rows in a line each: what each drives, with which blocks. */
+  lanes?: { type: string; target?: string | null; role?: string | null;
+            blocks: (string | null)[] }[];
+  /** Everything that names it (showfiles.routine_usage). */
+  used_by?: RoutineUsage;
+  rev?: string;
+}
+
+export interface RoutineUsage {
+  timelines: { track: string; title?: string | null; clips: number; variations: string[] }[];
+  templates: { id: string; name?: string | null; where: string[] }[];
+  show: string[];
+}
+
+/** How many places use a routine: each timeline, set and show setting once. */
+export function usageCount(u: RoutineUsage | undefined): number {
+  return u ? u.timelines.length + u.templates.length + u.show.length : 0;
 }
 
 export const PARAM_TYPES = ["color", "number", "rate", "look"] as const;

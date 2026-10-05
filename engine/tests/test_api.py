@@ -263,6 +263,75 @@ try:
     check("and an id that is not a file name is refused before anything runs",
           r["ok"] is False and "not a usable id" in r["error"], f"{r}")
 
+    # -- 3b. a routine's place in the folder: where used, rename, delete ------
+    print("\n3b. where a routine is used; renaming and deleting one")
+    status, body = jget("/api/routines")
+    idle_line = next(r for r in body["routines"] if r["id"] == "idle-orbit")
+    used = idle_line["used_by"]
+    check("the routine list says where each is used: timelines, sets, show.json",
+          [t["track"] for t in used["timelines"]] == ["synth-128"]
+          and used["timelines"][0]["clips"] >= 1
+          and [t["id"] for t in used["templates"]] == ["club"]
+          and "Intro" in used["templates"][0]["where"]
+          and used["show"] != [], f"{used}")
+    check("and what each of its rows drives, for a thumbnail",
+          any(lane["target"] == "movement" and lane["blocks"]
+              for lane in idle_line["lanes"]) and idle_line["rev"].startswith("r:"),
+          f"{idle_line['lanes']}")
+    rev = idle_line["rev"]
+    r = ask({"type": "routine_delete", "routine": "idle-orbit", "base_rev": rev, "id": 20})
+    check("a routine still in use is not deleted, and the refusal says where",
+          r["ok"] is False and "timelines/synth-128.json" in r["error"]
+          and "templates/club.json" in r["error"] and "show.json" in r["error"]
+          and (shows / "routines" / "idle-orbit.json").is_file(), f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "fan-drop",
+             "base_rev": rev, "id": 21})
+    check("a rename onto a routine that exists is refused",
+          r["ok"] is False and "already" in r["error"], f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": "r:000000000000", "id": 22})
+    check("a rename of a routine changed since it was read is refused, and "
+          "writes nothing", r["ok"] is False and "changed since" in r["error"]
+          and not (shows / "routines" / "orbit-idle.json").exists(), f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": rev, "id": 23}, client=viewer)
+    check("renames are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": rev, "id": 24})
+    tl_text = (shows / "timelines" / "synth-128.json").read_text()
+    show_doc = json.loads((shows / "show.json").read_text())
+    club = json.loads((shows / "templates" / "club.json").read_text())
+    check("a rename writes the routine under its new name and moves every "
+          "reference: the timeline, the set, show.json's idle routine",
+          r["ok"] and r["data"]["written"][0] == "routines/orbit-idle.json"
+          and {"timelines/synth-128.json", "templates/club.json", "show.json"}
+          <= set(r["data"]["written"])
+          and '"idle-orbit"' not in tl_text and '"orbit-idle"' in tl_text
+          and show_doc["pause"]["idle_routine"] == "orbit-idle"
+          and club["phrases"]["Intro"]["routine"] == "orbit-idle", f"{r}")
+    check("and the old file is gone last",
+          not (shows / "routines" / "idle-orbit.json").exists()
+          and (shows / "routines" / "orbit-idle.json").is_file())
+    check("the folder is still whole: nothing names a routine that is gone",
+          not any("not in routines/" in w for w in sc.show_library.folder.warnings),
+          f"{sc.show_library.folder.warnings}")
+    back = next(r for r in jget("/api/routines")[1]["routines"] if r["id"] == "orbit-idle")
+    r = ask({"type": "routine_rename", "routine": "orbit-idle", "to": "idle-orbit",
+             "base_rev": back["rev"], "id": 25})
+    check("and renamed back the same way", r["ok"]
+          and (shows / "routines" / "idle-orbit.json").is_file(), f"{r}")
+    spare = {**routine, "id": "spare", "name": "Spare"}
+    r = ask({"type": "routine_save", "doc": spare, "base_rev": "", "id": 26})
+    spare_rev = r["data"]["rev"] if r and r["ok"] else ""
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": "r:000000000000", "id": 27})
+    check("a delete of a routine changed since it was read is refused",
+          r["ok"] is False and "changed since" in r["error"]
+          and (shows / "routines" / "spare.json").is_file(), f"{r}")
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": spare_rev, "id": 28})
+    check("a routine nothing uses is deleted",
+          r["ok"] and r["data"]["deleted"] == "routines/spare.json"
+          and not (shows / "routines" / "spare.json").exists(), f"{r}")
+
     # -- 4. preview ----------------------------------------------------------
     print("\n4. the designer driving the rig")
     sc.apply({"type": "sync", "source": "blt", "deck": "1",

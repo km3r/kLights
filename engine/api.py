@@ -117,12 +117,21 @@ def handle(library, path: str, range_header: Optional[str] = None,
         return _json({"tracks": [_track_line(library, tid, doc)
                                  for tid, doc in sorted(folder.tracks.items())]})
     if what == "routines" and ident is None:
+        usage = showfiles.routine_usage(folder)
         return _json({"routines": [
             {"id": rid, "name": doc.get("name"), "bars": doc.get("bars"),
              "loop": doc.get("loop", True), "rig": doc.get("rig"),
              "params": doc.get("params") or {},
              "variations": sorted((doc.get("variations") or {}).keys()),
-             "roles": doc.get("roles") or {}}
+             "roles": doc.get("roles") or {},
+             "folder": doc.get("folder"),
+             # Its rows in a line each, for the library's thumbnail: what each
+             # drives and with which blocks.
+             "lanes": [_lane_line(r) for r in doc.get("rows") or () if isinstance(r, dict)],
+             # Everything that names it, so a rename or a delete can be judged
+             # before it is tried (showfiles.routine_usage).
+             "used_by": usage.get(rid, {"timelines": [], "templates": [], "show": []}),
+             "rev": folder.revs.get(f"routines/{rid}.json")}
             for rid, doc in sorted(folder.routines.items())]})
     if what == "templates" and ident is None:
         return _json({"templates": [{"id": tid, "name": doc.get("name")}
@@ -160,6 +169,12 @@ def handle(library, path: str, range_header: Optional[str] = None,
                            f"klights.local.json -- or open the file in the "
                            f"designer")
     return _file(found, range_header)
+
+
+def _lane_line(row: dict) -> dict:
+    items = row.get("items") or ()
+    return {"type": row.get("type"), "target": row.get("target"), "role": row.get("role"),
+            "blocks": [i.get("block") or i.get("hit") for i in items if isinstance(i, dict)]}
 
 
 _KIND = {"tracks": "track", "timelines": "timeline", "routines": "routine",

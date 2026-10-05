@@ -308,6 +308,8 @@ ROUTINE = {
     "params": S(dict),
     "variations": S(dict),
     "rows": S(list, required=True, each=_ROUTINE_ROW),
+    "folder": S(str, fix='where Studio files it, e.g. "Drops"; it changes '
+                         'nothing about how it plays'),
 }
 
 # One open parameter of a routine. `default` is checked against `type` in
@@ -1010,6 +1012,159 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
 
 
 # -- writing ------------------------------------------------------------------
+
+# -- where a routine is used, and renaming one everywhere ---------------------
+
+def routine_usage(folder: "Folder") -> dict[str, dict]:
+    """Every place each routine is used, by routine id: the timelines that
+    place it (with how many clips, and which variations), the template sets
+    that pick it (and for which phrases), and show.json's idle routine.
+    A routine with no entry is used nowhere."""
+    out: dict[str, dict] = {}
+
+    def entry(rid: str) -> dict:
+        return out.setdefault(rid, {"timelines": [], "templates": [], "show": []})
+
+    for track_id, tl in sorted(folder.timelines.items()):
+        found: dict[str, dict] = {}
+        for row in tl.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                rid = item.get("routine") if item.get("kind") == "routine" else None
+                if not isinstance(rid, str):
+                    continue
+                use = found.setdefault(rid, {"clips": 0, "variations": set()})
+                use["clips"] += 1
+                if isinstance(item.get("variation"), str):
+                    use["variations"].add(item["variation"])
+        title = ((folder.tracks.get(track_id) or {}).get("identity") or {}).get("title")
+        for rid, use in found.items():
+            entry(rid)["timelines"].append({"track": track_id, "title": title,
+                                            "clips": use["clips"],
+                                            "variations": sorted(use["variations"])})
+    for set_id, ts in sorted(folder.templates.items()):
+        where: dict[str, list[str]] = {}
+        for label, pick in (ts.get("phrases") or {}).items():
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(
+                    "anything else" if label == "*" else label)
+        for i, pick in enumerate((ts.get("bars") or {}).get("cycle") or ()):
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(f"bar cycle step {i + 1}")
+        for rid, labels in where.items():
+            entry(rid)["templates"].append({"id": set_id, "name": ts.get("name"),
+                                            "where": labels})
+    idle = ((folder.show or {}).get("pause") or {}).get("idle_routine")
+    if isinstance(idle, str) and idle:
+        entry(idle)["show"].append("the idle routine, when the decks pause")
+    return out
+
+
+def routine_uses(folder: "Folder", rid: str) -> list[str]:
+    """Where a routine is used, as the files that name it, in words."""
+    use = routine_usage(folder).get(rid)
+    if use is None:
+        return []
+    return ([f"timelines/{t['track']}.json ({t['clips']} clip{'s' if t['clips'] != 1 else ''})"
+             for t in use["timelines"]]
+            + [f"templates/{t['id']}.json ({', '.join(t['where'])})" for t in use["templates"]]
+            + (["show.json (idle routine)"] if use["show"] else []))
+
+
+def _renamed(doc: dict, kind: str, old: str, new: str) -> Optional[dict]:
+    """A copy of `doc` with routine `old` called `new` wherever it is named,
+    or None if it never names it."""
+    copy = json.loads(json.dumps(doc))
+    hits = 0
+    if kind == "timeline":
+        for row in copy.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                if item.get("kind") == "routine" and item.get("routine") == old:
+                    item["routine"] = new
+                    hits += 1
+    elif kind == "template_set":
+        picks = list((copy.get("phrases") or {}).values()) + list(
+            (copy.get("bars") or {}).get("cycle") or ())
+        for pick in picks:
+            if isinstance(pick, dict) and pick.get("routine") == old:
+                pick["routine"] = new
+                hits += 1
+    elif kind == "show":
+        pause = copy.get("pause") or {}
+        if pause.get("idle_routine") == old:
+            pause["idle_routine"] = new
+            hits += 1
+    return copy if hits else None
+
+
+def rename_routine(root: Path, folder: "Folder", old: str, new: str,
+                   base_rev: str) -> list[str]:
+    """Rename a routine, and every reference to it: the timelines that place
+    it, the template sets that pick it, show.json's idle routine. Returns the
+    files written, the new routine's first.
+
+    A folder of files has no transaction, so the order is what keeps it whole
+    at every step: the routine is written under its new name FIRST, then each
+    reference is moved over, and the old file goes LAST. Stopped anywhere --
+    a file someone else changed meanwhile, a disk error -- every reference
+    still names a routine that exists, and the error says what was done.
+    Each write quotes the rev the folder was read at, so nothing changed since
+    is overwritten."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.routines.get(old)
+    if doc is None:
+        raise ValueError(f"no routine {old!r}")
+    if new in folder.routines:
+        raise ValueError(f"there is already a routine {new!r}")
+    old_path = path_for(root, "routine", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    if renamed.get("name") in (None, "", old):
+        renamed["name"] = new
+    write_doc(path_for(root, "routine", new), renamed, "routine", "")
+    written = [f"{SUBDIR['routine']}/{new}.json"]
+    try:
+        for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
+            for ident, ref in sorted(docs.items()):
+                changed = _renamed(ref, kind, old, new)
+                if changed is None:
+                    continue
+                rel = f"{SUBDIR[kind]}/{ident}.json"
+                write_doc(path_for(root, kind, ident), changed, kind,
+                          folder.revs.get(rel, ""))
+                written.append(rel)
+        if folder.show is not None:
+            changed = _renamed(folder.show, "show", old, new)
+            if changed is not None:
+                write_doc(path_for(root, "show", ""), changed, "show",
+                          folder.revs.get("show.json", ""))
+                written.append("show.json")
+    except (ValueError, OSError, configmod.ConfigError) as exc:
+        raise ValueError(f"renamed as far as {', '.join(written)}, then stopped: {exc}. "
+                         f"{old!r} is still there, so nothing names a routine "
+                         f"that is gone; finish by hand or rename again") from exc
+    old_path.unlink()
+    return written
+
+
+def delete_doc(path: Path, base_rev: str) -> None:
+    """Remove one document, refused if it changed since `base_rev` -- the
+    same rule as a save, for the same reason."""
+    current = doc_rev(path)
+    if current is None:
+        raise ValueError(f"{path.name} is not there")
+    if current != base_rev:
+        raise StaleEdit(f"{path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload it, "
+                        f"and delete it then if you still mean to")
+    path.unlink()
+
 
 class StaleEdit(ValueError):
     """The file changed after the editor read it -- a sync from another machine,

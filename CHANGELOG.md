@@ -11,6 +11,28 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — Studio's routine library: folders, where used, rename, delete
+
+- **Routines are cards**, each with a strip per row showing what it drives
+  (movement, colour, level) and with which blocks, its roles, open parameters
+  and variations, and where it is used. Filter by folder, "this rig only" or
+  "unused", search by name, block, role or parameter, sort by name, use or
+  length.
+- **Where it's used**: the details panel lists every timeline that places the
+  routine (with clip counts and variations), every template set that picks it
+  (and for which phrases), and show.json's idle routine. `/api/routines` lines
+  now carry `used_by`, `lanes`, `folder` and `rev`.
+- **Duplicate, rename, move to a folder, download, delete**, from the card's
+  menu or the panel. **Rename** is a new engine command, `routine_rename`: it
+  writes the routine under its new id first, moves every reference (timelines,
+  template sets, show.json) next, and removes the old file last -- so stopped
+  anywhere, nothing names a routine that is gone. **Delete**
+  (`routine_delete`) refuses while anything still uses the routine, and says
+  where. Both quote the rev the routine was read at.
+- **Folders** are an optional `folder` on a routine: a name, set from the
+  library or the routine editor's settings. It changes nothing about how the
+  routine plays.
+
 ### Changed — the designer is now Studio, with a library to start from
 
 - **Studio** is the new name for the designer, because "design" was already the
