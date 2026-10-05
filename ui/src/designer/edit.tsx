@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { HelpHeading } from "../components";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
@@ -865,7 +866,14 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
   };
   return (
     <div className="d-templates">
-      <h3>Draft from template</h3>
+      <HelpHeading topic="Draft from template" help={<>
+        <p>Fills the scene lane with one routine per rekordbox phrase. It looks
+          for the exact label (Verse 2), then the family (Verse), then{" "}
+          <code>*</code>. If the set has palettes, it fills the palette lane
+          too.</p>
+        <p>It replaces what's there, but it's only a starting point. Undo puts the
+          lanes back.</p>
+      </>}>Draft from template</HelpHeading>
       {sets.map((s) => (
         <button key={s.id} onClick={() => void draft(s.id)}
                 title="Replace the scene lane with this template's routines, phrase by phrase">
@@ -901,11 +909,15 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
   });
   return (
     <div className="d-record">
-      <h3>
+      <HelpHeading topic="Record" help={<>
+        <p>Arm it and play the track. Each pad lands at the playhead:{" "}
+          <b>Flash</b>, <b>Strobe</b> and <b>Blackout</b> as hits, and{" "}
+          <b>Next scene</b> splits the scene clip there.</p>
+      </>}>
         <button className={history.recording ? "on" : ""}
                 onClick={() => history.setRecording(!history.recording)}>
           {history.recording ? "● Recording" : "Record"}</button>
-      </h3>
+      </HelpHeading>
       {history.recording && (
         <div className="d-pads">
           <button onClick={() => add("flash")}>Flash</button>
@@ -925,7 +937,13 @@ function Palettes({ history }: { history: History }) {
   const hex = (v: unknown) => (typeof v === "string" && v.startsWith("#") ? v : "#ffffff");
   return (
     <div className="d-palettes">
-      <h3>Palettes</h3>
+      <HelpHeading topic="Palettes" help={<>
+        <p>Each palette has three colours: primary, secondary and accent.
+          Routines use these roles instead of fixed colours, so they change with
+          the palette.</p>
+        <p>The selected palette plays wherever the palette lane is empty. A
+          palette clip switches it for its length.</p>
+      </>}>Palettes</HelpHeading>
       {Object.entries(palettes).map(([name, pal]) => (
         <div key={name} className="d-palette">
           <label className="small">

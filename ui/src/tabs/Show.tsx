@@ -97,7 +97,11 @@ function Now({ state, send }: { state: EngineState; send: (c: Command) => void }
   });
 
   return (
-    <Card title="On now" right={
+    <Card title="On now" help={<>
+      <p>What's loaded in each slot. Tap a row to go to its tab.</p>
+      <p>Picking a move by hand holds it, so auto mode won't change it.{" "}
+        <b>Release hold</b> lets auto take over again.</p>
+    </>} right={
       // Disabled rather than absent, like every other heading action: auto mode
       // takes and drops the hold on its own, so a conditional button here made
       // the card twitch taller and shorter with nobody touching anything.
@@ -224,7 +228,15 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
   };
 
   return (
-    <Card title={`Presets — ${state.presets.length}`} right={
+    <Card title={`Presets — ${state.presets.length}`} help={<>
+      <p>Tap a pad to recall it: the move, colour and level, plus the speed and
+        master it was saved with.</p>
+      <p>To save, tap an empty pad, type a name and tap <b>Save</b>. Skip the pad
+        and it goes in the first free one. Saving with an existing name updates
+        that preset in place.</p>
+      <p>In Design, tap <b>Edit</b>, then a pad, then where it should go. Filled
+        pads swap. Tags group presets across banks.</p>
+    </>} right={
       <DesignOnly>
         <button className={editing ? "small on" : "small"}
                 disabled={state.presets.length === 0}
@@ -475,7 +487,17 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
   const slots: Slot[] = ["movement", "color", "level"];
 
   return (
-    <Card title="Track" right={
+    <Card title="Track" help={<>
+      <p><b>Follow</b> lets the playing track's timeline drive the rig. It starts
+        SAFE whenever the engine starts, because anyone on the network can send
+        to the DJ feed. Tap to arm it.</p>
+      <p>Each lane shows who's in control: <b>timeline</b>, <b>operator</b>{" "}
+        (you), <b>idle</b> (paused) or <b>show</b>. Picking a look, preset or cue
+        takes that lane. <b>Grab</b> takes a lane without changing it, and{" "}
+        <b>Release</b> gives it back.</p>
+      <p><b>Latency</b> moves the lights earlier (+) or later (−) against the
+        track. It's saved to the show folder.</p>
+    </>} right={
       <button className={prog.armed ? "on" : ""}
               aria-pressed={prog.armed}
               onClick={() => send({ type: "follow", armed: !prog.armed })}>
@@ -760,7 +782,16 @@ function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void
   const [bpmDraft, setBpmDraft] = useState<string | null>(null);
 
   return (
-    <Card title="Tempo" right={<span className="small muted">{state.clock.source}</span>}>
+    <Card title="Tempo" help={<>
+      <p>Tap <b>TAP</b> on the beat. Two taps set the tempo, and every tap keeps
+        you in time. Or type the <b>BPM</b>.</p>
+      <p>Tap <b>Downbeat</b> on the one to line up the bar.</p>
+      <p><b>nudge →</b> moves the lights a quarter beat ahead and{" "}
+        <b>← nudge</b> pulls them back. Use them when the tempo's right but the
+        lights are slightly off.</p>
+      <p>The phrase is <b>measured</b> when a DJ source sends it, and{" "}
+        <b>counted</b> from your last Downbeat when not.</p>
+    </>} right={<span className="small muted">{state.clock.source}</span>}>
       <div className="row">
         <button style={{ flex: "1 1 8rem", minHeight: 64, fontSize: 18 }}
                 onClick={() => send({ type: "tap" })}>
@@ -820,7 +851,19 @@ function Tempo({ state, send }: { state: EngineState; send: (c: Command) => void
 function Auto({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const auto = state.auto;
   return (
-    <Card title="Auto">
+    <Card title="Auto" help={<>
+      <p>Each switch hands one job to the engine:</p>
+      <ul>
+        <li><b>Timing</b>: moves follow the clock. Off freezes them in
+          place.</li>
+        <li><b>Move changes</b>: the route changes every few phrases (set by{" "}
+          <b>Looks every</b>). A move you pick by hand stays until released.</li>
+        <li><b>Palette</b>: the colour steps through the palette (set by{" "}
+          <b>Colours every</b>). Colours you set by hand stay on top.</li>
+        <li><b>Energy</b>: level, rate and strobe follow an energy level, guessed
+          from the phrase or set with <b>Manual</b>.</li>
+      </ul>
+    </>}>
       <div className="grid two">
         <Toggle label="Timing" hint="movement follows the clock"
                 on={auto.axes.timing}
@@ -940,7 +983,13 @@ function Cues({ state, send }: { state: EngineState; send: (c: Command) => void 
   const started = cues.index >= 0;
 
   return (
-    <Card title={cues.name} right={
+    <Card title={cues.name} help={<>
+      <p><b>GO</b> takes the next cue and <b>Back</b> the previous one.{" "}
+        <b>Show all</b> lets you jump to any cue.</p>
+      <p>Fades and holds are in beats. <b>4 beat fade</b> crossfades over four
+        beats and <b>cut</b> switches instantly. <b>auto after 32</b> moves on by
+        itself after 32 beats. Cues without a hold wait for GO.</p>
+    </>} right={
       <span className="small muted mono">
         {started ? `${cues.index + 1}/${cues.count}` : `— /${cues.count}`}
       </span>

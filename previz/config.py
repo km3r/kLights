@@ -1,10 +1,10 @@
-"""Which event the previz is showing, and what the room's optics look like.
+"""Which event the editor previz is showing.
 
 Both used to be constants in the middle of scripts. `go.py` called
 `build_level.main()` with no argument, so the documented one-command path was
 hardwired to despacio even though the function it called had taken an event
-since the day it was written; and the optics were eight numbers eyeballed
-against one photo of one room, which is fine until there is a second room.
+since the day it was written. (The room's optics used to live here too; they
+are part of the venue file now, under `previz.optics`, read by engine.scene.)
 
     python previz/config.py                 # what is configured now
     KLIGHTS_EVENT=cosmos26 python previz/ue_remote.py .../go.py
@@ -34,7 +34,6 @@ from typing import Any, Optional
 
 REPO = Path(__file__).resolve().parent.parent
 PREVIZ_JSON = REPO / "previz" / "previz.json"
-OPTICS_JSON = REPO / "previz" / "optics.json"
 
 DEFAULT_EVENT = "despacio"
 
@@ -76,69 +75,6 @@ def event_dir(explicit: Optional[str] = None) -> Path:
     name = event(explicit)
     direct = Path(name)
     return direct if direct.exists() else REPO / "events" / name
-
-
-# ------------------------------------------------------------------ optics --
-
-# The despacio numbers, and the only reason they are the defaults is that they
-# are the only ones anybody has measured against a real room. Every one was
-# eyeballed against a single photograph, which is honest for one venue and
-# nothing at all for a second -- so they live here as a NAMED profile that a
-# venue can replace, rather than as constants a second room would have to be
-# talked out of.
-#
-# `RAY_GAIN`'s own comment has always asked for a re-sweep whenever the room
-# size or the beam angle changes. This is where that re-sweep gets recorded.
-DEFAULTS: dict[str, float] = {
-    # Fog extinction along a beam, per metre. Bigger = beams die sooner.
-    "beam_extinction_per_m": 0.09,
-    # Brightness of the beam shaft mesh.
-    "beam_gain": 1.4,
-    # Brightness of the bright dot where a beam lands.
-    "dot_gain": 2.3,
-    # Brightness of the light-shaft rays.
-    "ray_gain": 1.8,
-    # How hard relative brightness is compressed for the mesh emissive:
-    # `ratio ** contrast`, so 1.0 is literal and lower is flatter.
-    "mesh_contrast": 0.22,
-    # Diffuse reflectance of the room's surfaces.
-    "room_albedo": 0.16,
-    # Volumetric fog density.
-    "fog_density": 0.35,
-}
-
-
-def optics(venue: Optional[str] = None) -> dict[str, float]:
-    """Optics for a venue, falling back to the defaults key by key.
-
-    Per KEY rather than per profile, so a room that only needs different fog
-    says only that. A venue block that had to restate all seven numbers would
-    drift from the defaults the first time one of them was improved.
-    """
-    data = _load(OPTICS_JSON)
-    # `_`-prefixed keys are notes. Every config file in this repo carries them
-    # and they must never be mistaken for a setting -- least of all by the
-    # unknown-key check below, whose whole job is to catch typos.
-    def settings(block: Any) -> dict:
-        return {k: v for k, v in (block or {}).items() if not k.startswith("_")}
-
-    merged = dict(DEFAULTS)
-    merged.update({k: v for k, v in settings(data.get("default")).items()
-                   if k in DEFAULTS})
-    if venue:
-        room = settings((data.get("venues") or {}).get(venue))
-        merged.update({k: v for k, v in room.items() if k in DEFAULTS})
-    unknown = set(settings(data.get("default"))) - set(DEFAULTS)
-    for room in (data.get("venues") or {}).values():
-        unknown |= set(settings(room)) - set(DEFAULTS)
-    if unknown:
-        # Named rather than ignored: a typo in an optics key is otherwise a
-        # value that silently does nothing, and the symptom is "my change had
-        # no effect", which is the hardest kind of nothing to debug.
-        raise ValueError(f"{OPTICS_JSON.name}: unknown optics key(s) "
-                         f"{', '.join(sorted(unknown))}. "
-                         f"Known: {', '.join(sorted(DEFAULTS))}")
-    return merged
 
 
 # ------------------------------------------------------------ render cvars --
@@ -185,17 +121,6 @@ def render_cvars(path: Optional[Path] = None) -> list[tuple[str, str]]:
     return out
 
 
-def has_profile(venue: str) -> bool:
-    """Whether this venue has been swept, as opposed to inheriting.
-
-    Asked by NAME rather than by comparing the numbers to the defaults: a room
-    whose sweep honestly landed on the same values as despacio's has still been
-    swept, and telling its owner it is "using despacio's numbers" would send
-    them to redo work they had already done.
-    """
-    return venue in (_load(OPTICS_JSON).get("venues") or {})
-
-
 def describe(explicit: Optional[str] = None) -> dict[str, Any]:
     """What is configured, for `previz doctor` and for printing at startup.
 
@@ -213,7 +138,7 @@ def describe(explicit: Optional[str] = None) -> dict[str, Any]:
     where = event_dir(explicit)
     return {"event": event(explicit), "source": source,
             "event_dir": str(where), "exists": where.exists(),
-            "previz_json": str(PREVIZ_JSON), "optics_json": str(OPTICS_JSON)}
+            "previz_json": str(PREVIZ_JSON)}
 
 
 if __name__ == "__main__":
@@ -221,5 +146,11 @@ if __name__ == "__main__":
     print(f"event      {info['event']}  (from {info['source']})")
     print(f"directory  {info['event_dir']}"
           f"{'' if info['exists'] else '   -- DOES NOT EXIST'}")
-    for key, value in optics().items():
-        print(f"  optics   {key:24} {value}")
+    if info["exists"]:
+        # A room's optics are part of its venue file now (`previz.optics`), and
+        # engine.scene is what merges them over the defaults.
+        import sys
+        sys.path.insert(0, str(REPO))
+        from engine import scene
+        for key, value in sorted(scene.build_for(Path(info["event_dir"])).manifest["optics"].items()):
+            print(f"  optics   {key:28} {value}")

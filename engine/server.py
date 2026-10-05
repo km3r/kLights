@@ -60,6 +60,7 @@ from . import program as programmod
 from . import rig as rigmod
 from . import routines as routinesmod
 from . import safety as safetymod
+from . import scene as scenemod
 from . import showfiles
 from . import showlibrary
 from . import state as statemod
@@ -72,6 +73,7 @@ from . import transport as transportmod
 from . import venue as venuemod
 from . import worker as workermod
 from .output import ArtNetOutput, NullOutput
+from .output.artnet import parse_targets as parse_artnet_targets
 from .runner import Runner
 from .websocket import WebSocket, WebSocketClosed, WebSocketError
 
@@ -332,6 +334,7 @@ class ShowController:
         self.flashing: set[str] = set()
         self.jog: dict[str, tuple[int, int]] = {}
         self.captures: dict[str, list[calibmod.Capture]] = {}
+        self.last_drift: Optional[list[dict]] = None
 
         self.latest_states: dict[int, statemod.FixtureState] = {}
         self.notices: list[str] = []
@@ -460,10 +463,11 @@ class ShowController:
         a frame boundary like every other command -- a bridge sending on its own
         thread must not be able to move the tempo halfway through an evaluation.
         """
-        self.sync = syncmod.SyncListener(
+        listener = syncmod.SyncListener(
             on_sync=lambda fields: self.submit({"type": "sync", **fields}, None),
             port=port, bind=bind)
-        self.sync.start()
+        listener.start()            # raises on a taken port; then there is no sync
+        self.sync = listener
 
     def start(self) -> None:
         # A marker so the editing tools know not to rewrite this event's config
@@ -1400,15 +1404,43 @@ class ShowController:
         self.note(f"wrote {path.name}; restart the engine to load it")
 
     def _cmd_drift(self, m: dict, now: float) -> None:
-        """Compare fresh ball readings against the stored calibration."""
+        """Compare fresh ball readings against the stored calibration.
+
+        With no `readings`, the readings ARE the jog positions: the operator
+        jogs every head onto the ball from the Setup tab and presses Check, and
+        the jog dict is the only place those numbers exist. The console holds
+        one pan/tilt pair for whichever head is selected, not one per head, so
+        it cannot send them -- and a list it remembered would be wrong after a
+        second phone jogged, a reload, or Stop all.
+
+        Refuses, naming them, if any head is not jogging. Same guard as
+        capture, for the same reason: a head nobody aimed has no reading.
+        Checking it against (0, 0) reports it MOVED by tens of degrees, and
+        skipping it reports a go for a head nobody looked at. `readings` (one
+        [pan, tilt] per head in rig order, the CLI's shape) must have exactly
+        one per head for the second reason; it used to drop the extras' heads.
+        """
         if self.rig.geometry is None:
             raise ValueError("no geometry to check drift against")
-        readings = m["readings"]
         heads = self.rig.geometry.heads
+        if "readings" in m:
+            readings = [(int(r[0]), int(r[1])) for r in m["readings"]]
+            if len(readings) != len(heads):
+                raise ValueError(
+                    f"expected {len(heads)} readings, one per head in rig "
+                    f"order, got {len(readings)}")
+        else:
+            idle = [h.name for h in heads if h.name not in self.jog]
+            if idle:
+                raise ValueError(
+                    f"not jogging: {', '.join(idle)} -- jog every head onto the "
+                    f"ball, then check. The check compares where each head IS "
+                    f"against the calibration, and a head that has not been "
+                    f"aimed is not anywhere yet.")
+            readings = [self.jog[h.name] for h in heads]
         drifts = [calibmod.drift_for_head(h, self.rig.venue.ball,
-                                          self.rig.geometry.mount_mode,
-                                          tuple(readings[i]))
-                  for i, h in enumerate(heads) if i < len(readings)]
+                                          self.rig.geometry.mount_mode, r)
+                  for h, r in zip(heads, readings)]
         self.last_drift = [{"head": d.head_name,
                             "bearing": round(d.bearing_deg, 2),
                             "elevation": round(d.elevation_deg, 2),
@@ -2110,6 +2142,10 @@ class ShowController:
         # instantly. Starting at 0 makes the limiter fade it in.
         self.ctx._taper_prev = {f.fid: 0.0 for f in new_rig.fixtures}
         self._prune_targets()
+        # Measured against the rig that was just replaced. A moved head decodes
+        # the same DMX to different degrees, so the old rows would show "ok"
+        # for a head nobody has checked since.
+        self.last_drift = None
         self._recompose()
         self.pending_patch = False
         if self.player is not None:
@@ -2127,8 +2163,7 @@ class ShowController:
             self.note(f"rig reloaded, and the moving heads CHANGED "
                       f"({len(old_heads)} -> {len(new_heads)}). Every pose is an "
                       f"offset from a head's calibrated ball aim, so check the "
-                      f"calibration before trusting one: "
-                      f"python -m engine.calibrate drift")
+                      f"calibration before trusting one: Drift check, on Setup")
         else:
             self.note(f"rig reloaded live -- {len(new_rig.fixtures)} fixtures, "
                       f"no restart needed")
@@ -2412,7 +2447,7 @@ class ShowController:
             "notices": list(self.notices[-8:]),
             "warnings": self.rig.warnings(),
             "last_error": self.runner.last_error,
-            "drift": getattr(self, "last_drift", None),
+            "drift": self.last_drift,
         }
 
 
@@ -2731,6 +2766,34 @@ def default_palette() -> autom.Palette:
 
 # ------------------------------------------------------------------- server --
 
+class ExclusiveHTTPServer(ThreadingHTTPServer):
+    """A ThreadingHTTPServer that refuses a port something else is listening on.
+
+    http.server turns on SO_REUSEADDR. On POSIX that only lets a restart bind
+    past connections still in TIME_WAIT. On Windows it means something else
+    entirely: a second socket may bind a port another process is already
+    LISTENING on, the bind succeeds silently, and two engines answer one port
+    -- which one a phone reaches is luck. So on Windows the flag is off and
+    SO_EXCLUSIVEADDRUSE is on, which also stops anything that does set
+    SO_REUSEADDR from taking the port out from under a running show. Windows
+    rebinds a listener over TIME_WAIT without help, so a quick restart still
+    works: checked on Windows 11 with connections the server closed first,
+    which is what `stop` does to every phone.
+
+    SO_REUSEPORT is pinned off whatever the base class says: on Linux it is
+    the deliberate form of the same thing, two listeners on one port.
+    """
+
+    # Only Windows has the option, so its presence is the platform test.
+    allow_reuse_address = not hasattr(socket, "SO_EXCLUSIVEADDRUSE")
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class ShowServer:
     """HTTP for the UI bundle, WebSocket for everything live."""
 
@@ -2769,6 +2832,20 @@ class ShowServer:
         with self._id_lock:
             self._next_id += 1
             return f"c{self._next_id}"
+
+    def previz_scene(self) -> scenemod.Scene:
+        """The previz app's scene, for the rig this engine is driving NOW.
+
+        Rebuilt on every request rather than cached. It costs about 0.3 ms, the
+        app polls once a second, and a cache would need invalidating from every
+        path that can change what is drawn -- a patch reload, a live venue edit,
+        a model re-exported on disk -- each one a way for the previz to show a
+        room that no longer exists. One read of `self.controller.rig`: a reload
+        swaps the reference rather than mutating the old rig, so the build sees
+        one rig, never half of two.
+        """
+        controller = self.controller
+        return scenemod.build(controller.rig, controller.event_dir)
 
     # -- broadcasting ------------------------------------------------------
 
@@ -2967,10 +3044,78 @@ class ShowServer:
                     self.close_connection = True
                     server.serve_websocket(self.connection, key, tier=tier)
                     return
+                # The previz app's two reads first: /api/previz/ is under /api/
+                # but is not engine/api.py's -- see serve_previz.
+                if urlparse(self.path).path.startswith("/api/previz/"):
+                    self.serve_previz(urlparse(self.path).path)
+                    return
                 if urlparse(self.path).path.startswith("/api/"):
                     self.serve_api()
                     return
                 self.serve_static()
+
+            def serve_previz(self, path):
+                """The standalone previz app's two reads: its scene, and the
+                model files that scene names.
+
+                View tier, read-only, no token: the same rig the console
+                already shows every phone. Models are served by CONTENT HASH
+                and only when the current scene names that hash, so this
+                cannot be used to fetch an arbitrary file, and a model that has
+                not changed is never downloaded twice.
+                """
+                # Refused cross-origin like the rest of /api/. The app sends no
+                # Origin, so this only ever stops a browser page elsewhere.
+                if self.cross_origin():
+                    self.send_error(403, "cross-origin request refused")
+                    return
+                try:
+                    scene = server.previz_scene()
+                except Exception as exc:                # noqa: BLE001
+                    # A previz must never be able to take the console down.
+                    body = json.dumps({"error": f"no previz scene: {exc}"}).encode("utf-8")
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path == "/api/previz/scene":
+                    etag = f'"{scene.rev}"'
+                    if self.headers.get("If-None-Match") == etag:
+                        self.send_response(304)
+                        self.send_header("ETag", etag)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    body = scene.to_json()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                prefix, suffix = "/api/previz/model/", ".glb"
+                sha = path[len(prefix):-len(suffix)] if (
+                    path.startswith(prefix) and path.endswith(suffix)) else ""
+                if sha in scene.files:
+                    body = scene.read_model(sha)
+                    if body is None:
+                        # Changed on disk since it was hashed. The next scene
+                        # names its new hash; the app fetches that instead.
+                        self.send_error(503, "model changed on disk; poll the scene again")
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", "model/gltf-binary")
+                    # Named by its own hash, so it can never change: cache hard.
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_error(404, "not part of the current previz scene")
 
             def serve_api(self):
                 """GET /api/* -- see engine/api.py."""
@@ -3074,7 +3219,8 @@ class ShowServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-        self.httpd = ThreadingHTTPServer((self.bind, self.port), Handler)
+        # Binds here, so a taken port raises before any thread starts.
+        self.httpd = ExclusiveHTTPServer((self.bind, self.port), Handler)
         self.httpd.daemon_threads = True
         threading.Thread(target=self.httpd.serve_forever, name="http",
                          daemon=True).start()
@@ -3129,12 +3275,15 @@ def local_addresses(port: int) -> list[str]:
 
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
+    import errno
 
     parser = argparse.ArgumentParser(description="Run the show engine and its UI")
     parser.add_argument("--event", type=Path, default=REPO / "events" / "despacio")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--artnet", metavar="IP",
-                        help="send Art-Net here (e.g. 127.0.0.1 or a broadcast address)")
+                        help="send Art-Net here (e.g. 127.0.0.1 or a broadcast "
+                             "address). Several: comma separated, each host or "
+                             "host:port, e.g. 10.0.0.50,127.0.0.1")
     parser.add_argument("--fps", type=float, default=40.0)
     parser.add_argument("--bpm", type=float, default=124.0)
     parser.add_argument("--ui", type=Path, default=UI_DIST)
@@ -3153,11 +3302,24 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="interface for --sync-port. Loopback by default, "
                              "because the bridge normally runs on this machine "
                              "and the port has no authentication")
+    parser.add_argument("--stop-file", type=Path, metavar="PATH",
+                        help="stop cleanly when this file appears. For a "
+                             "launcher, which cannot send Ctrl-C to a process "
+                             "with no console -- see launcher/")
     parser.add_argument("--show-dir", metavar="DIR",
                         help="the show folder: prepped tracks and their "
                              "timelines (F19). Default: $KLIGHTS_SHOW_DIR, then "
                              "show_dir in klights.local.json, else none")
     args = parser.parse_args(argv)
+    if args.artnet:
+        try:
+            parse_artnet_targets(args.artnet)
+        except ValueError as exc:
+            parser.error(str(exc))
+    # A stop request older than this engine is not addressed to it: it is what
+    # an engine that died before it could tidy up left behind.
+    if args.stop_file is not None:
+        args.stop_file.unlink(missing_ok=True)
 
     # A token by default, because the alternative default is that anyone who can
     # reach the port can re-address the rig. Regenerated every run: there is
@@ -3182,11 +3344,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
+    # The port before anything touches the rig. controller.start() writes the
+    # event's lock and starts sending Art-Net, so a second engine that got that
+    # far before finding its port taken would flash the rig, and on its way out
+    # delete the lock that belongs to the engine already running.
+    try:
+        server.start()
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            raise SystemExit(f"port {args.port} is already in use -- "
+                             f"is another engine running?")
+        raise SystemExit(f"cannot listen on {args.bind}:{args.port}: "
+                         f"{exc.strerror or exc}")
+
     if args.sync_port:
-        controller.enable_sync(args.sync_port, args.sync_bind)
+        # The tempo port too, for the same reason: an engine sharing it with
+        # another hears none of the DJ, and nothing on screen says so.
+        try:
+            controller.enable_sync(args.sync_port, args.sync_bind)
+        except OSError as exc:
+            server.stop()
+            if exc.errno == errno.EADDRINUSE:
+                raise SystemExit(f"sync port {args.sync_port} is already in use -- "
+                                 f"is another engine, or an OSC app, listening there?")
+            raise SystemExit(f"cannot listen for sync on {args.sync_bind}:"
+                             f"{args.sync_port}: {exc.strerror or exc}")
 
     controller.start()
-    server.start()
 
     print(f"event   {controller.rig.name}  "
           f"({len(controller.rig.fixtures)} fixtures, universes {controller.rig.universes})")
@@ -3245,16 +3429,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     suffix = "" if token is None else f"?token={token}"
     for url in local_addresses(args.port):
         print(f"open    {url}{suffix}")
-    print("\nCtrl-C to stop.")
+    print("\nCtrl-C to stop." if args.stop_file is None
+          else f"\nCtrl-C, or create {args.stop_file}, to stop.", flush=True)
 
     try:
         while True:
             time.sleep(0.5)
+            if args.stop_file is not None and args.stop_file.exists():
+                print("\nstop requested...", flush=True)
+                break
     except KeyboardInterrupt:
         print("\nstopping...")
     finally:
         server.stop()
         controller.stop()
+        if args.stop_file is not None:
+            args.stop_file.unlink(missing_ok=True)
     return 0
 
 

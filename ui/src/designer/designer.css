@@ -148,3 +148,30 @@
 .designer .d-osc-address { width: 11rem; min-width: 0; }
 .designer .d-external .d-clip rect:first-child { fill: rgba(140, 110, 255, 0.35); }
 .designer .d-num { width: 4.2rem; }
+
+/* The guide: a third column, so nothing it tells you to press is under it. */
+.d-body.d-with-guide { grid-template-columns: minmax(0, 1fr) 320px min(400px, 34vw); }
+.d-guide {
+  overflow: auto; min-height: 0;
+  padding: 0 10px 8px; background: var(--bg);
+  border-left: 1px solid var(--line);
+}
+.d-picker-body { display: flex; flex: 1; min-height: 0; }
+.d-picker-body .d-picker { flex: 1; }
+.d-picker-body .d-guide { flex: none; width: min(420px, 40vw); }
+.d-guide-head {
+  display: flex; align-items: center; gap: 8px;
+  position: sticky; top: 0; z-index: 1;
+  padding: 8px 0; margin-bottom: 4px; background: var(--bg);
+}
+.d-guide .card { margin-bottom: 8px; }
+.d-guide .guide .lead { font-size: 13px; }
+.designer .d-banner.d-info {
+  background: rgba(90, 169, 255, 0.1); border-bottom-color: var(--accent);
+}
+.designer button.help-btn {
+  min-height: 0; width: 16px; height: 16px; padding: 0; font-size: 10px;
+  margin: -3px 0 -3px 6px;
+}
+/* A heading's help takes its own line inside the wrapping chip rows. */
+.designer .help { flex-basis: 100%; font-size: 12px; margin: 0 0 6px; }

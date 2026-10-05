@@ -343,7 +343,8 @@ def remove_fixture(cfg: dict, name: str,
             warnings.append(
                 f"{name} was a moving head, so the head order has changed. "
                 f"Re-check calibration.json and any look whose 'fixtures' list "
-                f"names it -- `python -m engine.calibrate drift` is the check")
+                f"names it -- Drift check on Setup (or `python -m engine.calibrate "
+                f"drift`) is the check")
     return _validated(cfg, lib, warnings)
 
 
@@ -398,7 +399,8 @@ def set_position(cfg: dict, name: str, x: float, y: float, z: float,
     entry["position"] = {"x": float(x), "y": float(y), "z": float(z)}
     return _validated(cfg, lib, [
         f"{name} moved. Its calibration was measured where it used to be, so "
-        f"re-run `python -m engine.calibrate drift` before trusting a pose"])
+        f"run Drift check on Setup (or `python -m engine.calibrate drift`) "
+        f"before trusting a pose"])
 
 
 def first_free(cfg: dict, channels: int, universe: int = 0,

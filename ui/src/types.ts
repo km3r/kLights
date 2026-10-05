@@ -495,7 +495,8 @@ export type Command =
   | { type: "capture"; fixture: string; target: number[]; label: string }
   | { type: "capture_clear"; fixture?: string }
   | { type: "solve"; write?: boolean }
-  | { type: "drift"; readings: number[][] }
+  /** With no readings, the engine checks each head's current jog position. */
+  | { type: "drift"; readings?: number[][] }
   | { type: "venue"; crowd?: Partial<{
         min_x: number; max_x: number; min_z: number; max_z: number;
         head_band_min: number; head_band_max: number;

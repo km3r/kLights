@@ -160,6 +160,146 @@ the only record of them until a roadmap doc lands.
   timeline can sit on top of it and show it through its fill gaps.
 - Nothing plays it yet: F20b puts it on stage.
 
+### Added — run a drift check, and move a fixture, from the console
+
+- **Drift check has a button.** Jog every head onto the mirror ball and press
+  **Check all heads**. The engine compares each head's live jog position with
+  its stored calibration. The card always showed results, but nothing in the
+  console could start a check: the only way was the CLI, and its answer never
+  reached the console. The button stays off, and names the heads still to aim,
+  until every head is jogging. The engine refuses the same way, as capture does:
+  a head nobody aimed has no reading.
+- **`drift` with no `readings`** uses the jog positions. With `readings`, it now
+  refuses a list that is not one per head, instead of quietly checking only the
+  heads the list reached.
+- **A drift result is dropped when a patch is applied**, since it was measured
+  against the rig that was replaced.
+- **Fixture positions are editable on the Patch card** (X, height, Z in mm).
+  The card already said so, and the engine had `patch_position`, but there was
+  no field. Sent once, when focus leaves all three.
+- Notices that told operators to run `python -m engine.calibrate drift` now
+  point at the Drift check.
+
+### Fixed — banners with a bold name in them
+
+- The Capture card's "Jog **head** onto the target first" warning laid out as
+  three columns on a phone. Banners are flex rows, so text either side of the
+  bold name became separate items. Result chips no longer wrap mid-word.
+
+### Added — guides and help in the app
+
+- **A guide to every tab**, behind a **?** in the console's header: a short
+  walkthrough of what the tab is for, then the things worth knowing. Start,
+  Show, Color, Move, Bright, Setup, and a pointer to the designer. A guide
+  opens in place of the tab, under the same header, so Master and Blackout stay
+  one tap away while someone reads; it is in the main bundle, so it works while
+  the engine is down. `#guide/<tab>` links straight to one.
+- **A first-run tour**, offered once per device by a card at the top of the
+  console. Never a dialog: the device it most often appears on is a phone
+  handed to someone mid-set.
+- **Tap-to-open help on the cards whose labels do not explain them**: the cue
+  list, On now (Release hold), Presets, Track (Follow, Grab, Latency), Tempo
+  (Downbeat, nudge), Auto, the quick palette's long-press, the safety taper's
+  soft edge and smoothing, the crowd zone's axes, Capture, and Drift check.
+  A tap rather than a tooltip, because a phone has no hover.
+- **The designer has a Guide** (or press **?**): building a track's show and
+  building a routine, in a column beside the lanes so nothing it tells you to
+  press is covered. A first visit offers it once. At the playhead, Draft from
+  template, Record and Palettes have their own **?**.
+
+### Fixed — links between console tabs
+
+- **The On now rows did nothing when tapped.** They are links to the tab that
+  owns each slot, and the console only read the address when it loaded, so
+  following one changed the address and nothing else. It now follows the
+  address as it changes.
+
+### Fixed — preflight on a machine without QLC+
+
+- **`scripts/preflight.py` said NOT READY on every machine without QLC+**: any
+  container, CI runner or fresh laptop. despacio's venue checks hard-failed
+  when the fixture def was not installed in QLC+'s user dir, and nothing at the
+  venue loads that copy since the show moved to the engine. That check is gone.
+- **The rig step now loads the rig the way a fresh clone will**, resolving
+  profiles from `shared/fixtures/` only. The engine also searches
+  `~/QLC+/Fixtures` and the gitignored `qlcplus/` tree, so a `.qxf` that lived
+  only there passed preflight on the machine that had it and failed on every
+  other one. That is how the pinspot went missing until 2026-08-06. The failure
+  names the file it was really loading from and the
+  `python -m engine.patch import` command that fixes it.
+
+### Added — the launcher
+
+- **`kLights.pyw`, one window for show setup** (`python -m launcher`). Pick the
+  event, start and stop the engine, open the console or straight to its Setup
+  tab, copy the phone link, launch, close or build the previz, and read the
+  engine's output. Stdlib Tk, like everything else. The engine runs as its own
+  process, so closing the launcher never stops a show, and reopening it finds
+  the engine again. It refuses to start an engine on a port that is already
+  answering, says when an event is locked by another engine, and warns when the
+  engine's Art-Net would not reach the previz on this machine.
+- **`--artnet` takes a list**: `--artnet 10.0.0.50,127.0.0.1` sends every frame
+  to the rig's node and to a previz on the same laptop, and `host:port` gives a
+  second local listener its own port (`127.0.0.1,127.0.0.1:6455`). Broadcast
+  was the only way to reach two listeners before, and it reaches everything else
+  on the network too.
+- **`engine.server --stop-file PATH`** stops the engine cleanly when the file
+  appears: how the launcher stops it, since a program with no console cannot be
+  sent Ctrl-C.
+
+### Fixed — Art-Net universes 16 and up
+
+- **Art-Net universes 16 and up went out as the wrong universe.** The packet's
+  SubUni byte dropped the SubNet, so universe 16 was sent as universe 0. Every
+  receiver here already decoded it correctly; only the engine's sender and
+  `shared/tools/artnet_sender.py` were wrong. Universes 0-15, which is every
+  rig so far, are byte for byte unchanged.
+
+### Added — F20, the standalone previz
+
+- **`KLightsPreviz.exe`, a packaged previz that needs no editor and no
+  Python.** It asks the running engine for the room and the rig, listens for
+  Art-Net like the rig does, and draws the show: beams, the mirror ball's spray,
+  haze, and a body for every fixture. Build it with `python previz/build.py`;
+  run it beside `python -m engine.server`. See [`previz/README.md`](previz/README.md).
+- **The engine serves the previz scene**: `GET /api/previz/scene` (with ETag,
+  so the app's once-a-second poll is a 304 until something changes) and
+  `GET /api/previz/model/<sha256>.glb`, which serves only files the current
+  scene names. `python -m engine.scene <event>` prints the same thing.
+- **Models.** Venue walls, set pieces, a mirror-ball model and fixture bodies
+  are `.glb` files named in config: the venue's new `previz` block,
+  `shared/fixtures/bodies.json`, and a fixture's `body` in `rig.json`. Moving
+  heads are articulated so the head always points along the beam the show
+  decodes. Conventions and budgets in [`docs/models.md`](docs/models.md).
+- **The engine inspects every model** while it builds the scene: externally
+  referenced files, unsupported extensions, triangle and texture budgets,
+  centimetre exports, and a body the app could not articulate. Each problem is a
+  warning on the app's overlay and in `previz doctor`, never an error that stops
+  the show.
+- **A fixed fixture can be aimed somewhere other than the mirror ball**:
+  `aim: {x, y, z}` on its `rig.json` entry. The default is still the ball.
+- **Hardware ray-traced Lumen.** A model loaded at runtime has no distance
+  field and no Lumen cards, so under software Lumen it is invisible to global
+  illumination. The project now targets SM6 with ray tracing and hit lighting.
+  A GPU without ray tracing falls back to software by itself.
+- **Golden parity vectors**, `engine/tests/data/previz_parity.json`, hold the
+  app's C++ decode, servo and colour to the Python. They are checked by
+  `python previz/build.py test`, and their staleness is checked in CI.
+
+### Changed — F20
+
+- **Previz optics moved into the venue file** (`previz.optics`), and
+  `previz/optics.json` is gone. Despacio's numbers moved with them, unchanged.
+- **The Unreal project is `KLightsPreviz.uproject`** (was `CosmosPrevis`), and
+  has its first C++ module.
+- **`previz.scene.camera_views` and the editor builder confused width and
+  depth** for a room that is not square. The new scene gives the room as
+  `size = [X, Y, Z]` in Unreal's own axes, and its views are tested in non-square
+  rooms both ways round. (The editor path, left as it was, still has it.)
+- The editor-Python previz (`go.py`, `klights_live.py`) is **unchanged and still
+  works**. It now deletes only its own materials on a rebuild, so it can no
+  longer take the app's away.
+
 ### Fixed — F19 review, before merging
 
 A review of the whole F19 branch before it merged. Each fix has a test.

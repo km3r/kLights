@@ -682,3 +682,53 @@ describe("routine editor", () => {
       .toHaveTextContent(/no fixtures on this rig/);
   });
 });
+
+describe("designer guide", () => {
+  it("offers its guide once, and opens it beside the lanes rather than over them", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await user.click(screen.getByRole("button", { name: "Open the guide" }));
+    const guide = screen.getByRole("complementary", { name: "guide" });
+    expect(within(guide).getByText("Design a track's show")).toBeInTheDocument();
+    // Learned by doing: the timeline is still there to do it on.
+    expect(lanes).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open the guide" })).toBeNull();
+    expect(localStorage.getItem("klights.guide.designer")).toBe("1");
+
+    await user.click(within(guide).getByRole("button", { name: "Routine" }));
+    expect(within(guide).getByText("Build a routine")).toBeInTheDocument();
+    await user.click(within(guide).getByRole("button", { name: "close the guide" }));
+    expect(screen.queryByRole("complementary", { name: "guide" })).toBeNull();
+  });
+
+  it("opens to the routine guide from the routine editor", async () => {
+    const user = userEvent.setup();
+    await open("#designer/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    await user.click(screen.getByRole("button", { name: "Guide" }));
+    expect(within(screen.getByRole("complementary", { name: "guide" }))
+      .getByText("Build a routine")).toBeInTheDocument();
+  });
+
+  it("answers ? from the keyboard, but not while something is being typed", async () => {
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    fireEvent.keyDown(document.body, { key: "?" });
+    expect(screen.getByRole("complementary", { name: "guide" })).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "guide" })).toBeNull();
+
+    const zoom = screen.getByRole("combobox", { name: "zoom" });
+    fireEvent.keyDown(zoom, { key: "?" });
+    expect(screen.queryByRole("complementary", { name: "guide" })).toBeNull();
+  });
+
+  it("explains who drives each lane, where the answer is not obvious", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    await user.click(screen.getByRole("button", { name: "Help: At the playhead" }));
+    expect(screen.getByText(/Higher lanes win/)).toBeInTheDocument();
+  });
+});

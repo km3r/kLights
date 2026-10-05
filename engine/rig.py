@@ -228,6 +228,10 @@ class FixtureProfile:
     beam_deg: float
     lumens: float                           # 0 when the .qxf does not declare it
     path: Path
+    # Width, height, depth of the housing in mm, from <Physical><Dimensions>.
+    # Previz only: it sizes the stand-in body drawn for a fixture with no model.
+    # None when the profile leaves them at 0, which many in the wild do.
+    dimensions: Optional[tuple[float, float, float]] = None
 
     @property
     def key(self) -> tuple[str, str]:
@@ -334,6 +338,7 @@ def parse_qxf(path: Path) -> FixtureProfile:
     pan_max = tilt_max = 0.0
     beam = 0.0
     lumens = 0.0
+    dimensions = None
     if physical is not None:
         focus = physical.find(QXF_NS + "Focus")
         if focus is not None:
@@ -360,6 +365,13 @@ def parse_qxf(path: Path) -> FixtureProfile:
             # narrow one really is. `rig.json` can override it per fixture,
             # which is where a measured number belongs.
             lumens = float(bulb.get("Lumens") or 0)
+        size = physical.find(QXF_NS + "Dimensions")
+        if size is not None:
+            try:
+                dims = tuple(float(size.get(k) or 0) for k in ("Width", "Height", "Depth"))
+            except ValueError:
+                dims = (0.0, 0.0, 0.0)
+            dimensions = dims if all(d > 0 for d in dims) else None
 
     return FixtureProfile(
         manufacturer=_text(root, "Manufacturer") or "?",
@@ -367,7 +379,7 @@ def parse_qxf(path: Path) -> FixtureProfile:
         type=_text(root, "Type") or "?",
         channels=channels, modes=modes,
         pan_max_deg=pan_max, tilt_max_deg=tilt_max, beam_deg=beam,
-        lumens=lumens, path=path)
+        lumens=lumens, path=path, dimensions=dimensions)
 
 
 class ProfileLibrary:
@@ -465,6 +477,12 @@ class PatchedFixture:
     tilt_speed_deg_s: Optional[float] = None
     hold: dict[str, int] = field(default_factory=dict)   # role -> value, every frame
     notes: str = ""
+    # What only the previz reads, kept RAW: `aim` (where a fixture that cannot
+    # move points, {x,y,z} mm; the mirror ball if absent) and `body` (the model
+    # drawn for it). Raw because engine.scene interprets them and turns a bad one
+    # into a warning -- a typo in what the previz DRAWS must never stop a show
+    # from loading, which validating them here would do.
+    previz: dict = field(default_factory=dict)
 
     @property
     def output_beam_deg(self) -> float:
@@ -896,7 +914,8 @@ def load_rig(event_dir: Path, library: Optional[ProfileLibrary] = None) -> Rig:
                              else float(entry["pan_speed_deg_s"])),
             tilt_speed_deg_s=(None if entry.get("tilt_speed_deg_s") is None
                               else float(entry["tilt_speed_deg_s"])),
-            hold=dict(entry.get("hold", {})), notes=entry.get("notes", "")))
+            hold=dict(entry.get("hold", {})), notes=entry.get("notes", ""),
+            previz={k: entry[k] for k in ("aim", "body") if k in entry}))
 
     geometry = geo.RigGeometry(
         heads=tuple(heads), ball=venue.ball, mount_mode=mount_mode,

@@ -6,8 +6,9 @@ out of [`previz/README.md`](../../previz/README.md) so that stays a guide
 to *running* it.
 
 These are working notes, kept verbatim. Where a number here disagrees
-with [`previz/optics.json`](../../previz/optics.json), the file wins --
-it is what the code reads.
+with a venue's `previz.optics` block (or the defaults in
+[`engine/scene.py`](../../engine/scene.py)), the config wins -- it is what
+the code reads.
 
 ---
 

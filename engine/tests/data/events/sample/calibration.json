@@ -1,0 +1,10 @@
+{
+  "_comment": "Test data: invented readings in hung mode, one inverted tilt.",
+  "measured": "2026-10-01",
+  "mount_mode": "hung",
+  "source": "engine/tests -- not a measurement",
+  "heads": [
+    {"fixture": "Hung Mover L", "ball_dmx": [140, 120], "pan_invert": false, "tilt_invert": false},
+    {"fixture": "Hung Mover R", "ball_dmx": [110, 125], "pan_invert": false, "tilt_invert": true}
+  ]
+}

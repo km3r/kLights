@@ -43,6 +43,7 @@ SELF_TESTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("engine/servo.py", ()),
     ("previz/mirrorball.py", ()),
     ("previz/scene.py", ("--self-test",)),
+    ("engine/scene.py", ("--self-test",)),
 )
 
 

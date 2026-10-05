@@ -454,9 +454,21 @@ class SyncListener:
         self.last_reject: Optional[str] = None
 
     def start(self) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((self.bind, self.port))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # No SO_REUSEADDR. UDP has no TIME_WAIT for it to help with, and what
+        # it does do is let a second engine bind this port beside the first:
+        # both binds succeed, the bridge's datagrams go to only one of them (on
+        # Windows, the first), and the other is deaf to the DJ with nothing on
+        # screen to say why. On Windows SO_EXCLUSIVEADDRUSE also keeps anything
+        # that does set SO_REUSEADDR off the port.
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        try:
+            sock.bind((self.bind, self.port))
+        except OSError:
+            sock.close()
+            raise
+        self.sock = sock
         # So `stop` can interrupt the read rather than waiting for a datagram
         # that may never come. Closing a socket blocked in recvfrom is not
         # reliably an error on Windows.

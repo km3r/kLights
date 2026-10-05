@@ -11,16 +11,100 @@ here sits between the engine and the rig, so previz cannot break a show, and
 F10 was always safe to build alongside everything else.
 
 ```
-  engine.runner ──Art-Net UDP 6454──┬──▶ the rig
-                                    └──▶ Unreal (klights_live.py)
+  engine.server ──HTTP /api/previz/scene, models──────▶ KLightsPreviz.exe
+  engine.runner ──Art-Net UDP 6454──┬──▶ the rig          (the standalone app)
+                                    ├──▶ KLightsPreviz.exe
+                                    └──▶ the editor (klights_live.py)
 ```
 
-## Running it
+There are **two ways to run it**, and both work. The standalone app is the new
+one; the editor path is the original, kept until the two have been compared
+side by side.
+
+## The standalone app
+
+A packaged program, `KLightsPreviz.exe`, that needs **no editor and no Python**
+to run. It asks the running engine for the room and the rig (`GET
+/api/previz/scene` — so it shows whatever event the engine is driving, and
+follows a patch edit within a second), fetches any models the scene names, and
+draws the show from the same Art-Net the rig hears. Venue models, set pieces,
+a mirror-ball model and fixture bodies are all `.glb` files named in config —
+see [`docs/models.md`](../docs/models.md).
+
+**Build it** (needs Unreal 5.8 and Visual Studio Build Tools 2022, once):
+
+```bash
+python previz/build.py
+```
+
+That compiles the C++, builds the app's three materials, runs the KLights
+automation tests (the C++ decode held to the Python one), and packages
+`previz/dist/Windows/KLightsPreviz.exe`. `python previz/build.py test` runs the
+tests alone.
+
+**Run it** from the launcher (`kLights.pyw`, or `python -m launcher`): Start
+engine, then Launch previz. It points the app at the engine, warns when the
+engine's Art-Net would not reach this machine, and builds the app when it is
+missing or older than its source. Or by hand:
+
+```bash
+python -m engine.server --event events/despacio --artnet 127.0.0.1
+previz/dist/Windows/KLightsPreviz.exe
+```
+
+WASD / Q E and the mouse fly the camera; **1–4** jump to the room's views
+(overview, corner, audience, ball); **H** hides the status overlay, which says
+where the scene came from, whether Art-Net is arriving, the frame rate, and any
+warning about the scene or its models.
+
+| Argument | |
+|---|---|
+| `-Engine=http://host:8765` | where the engine is (default this machine, 8765) |
+| `-ArtNetBind=0.0.0.0 -ArtNetPort=6454` | where to listen for DMX |
+| `-Scene=scene.json -ModelCache=dir` | render a saved scene, no engine (see `docs/models.md`, "Offline") |
+| `-Snapshot=out.png -View=overview` | settle every head, photograph a view, quit |
+| `-At=X,Y,Z -LookAt=X,Y,Z` | with `-Snapshot`, stand somewhere else (Unreal cm) |
+| `-SnapshotHud` | keep the overlay in the still |
+
+**One listener per port.** The app and the editor driver both listen on 6454,
+and when the engine sends to one address (`--artnet 127.0.0.1`) Windows hands
+each packet to only ONE of them — the other goes quietly dark while reporting
+itself healthy. To run both at once, give the app its own port and send the
+engine's frames to both:
+
+```bash
+python -m engine.server --artnet 127.0.0.1,127.0.0.1:6455
+previz/dist/Windows/KLightsPreviz.exe -ArtNetPort=6455
+```
+
+(In the launcher: Art-Net to `127.0.0.1,127.0.0.1:6455`, previz Art-Net port
+6455.) Broadcasting (`--artnet 255.255.255.255`) also reaches every listener,
+but it reaches everything else on the venue network too. `--artnet` takes any
+list of `host` or `host:port`, so the same trick feeds the rig's node and a
+previz on the show laptop: `--artnet 10.0.0.50,127.0.0.1`.
+
+**Comparing the two.** Run the engine sending to both ports as above, then
+both: the editor path below with its usual viewport, and the app with the same
+view —
+
+```bash
+previz/dist/Windows/KLightsPreviz.exe -ArtNetPort=6455 -Snapshot=renders/app_overview.png -View=overview
+```
+
+— against `renders/previz_overview.png` from `snapshot.py`. Known, deliberate
+differences: the app draws a split-wheel beam's shaft along the true aim (the
+editor's sat a quarter-cone low), lights runtime models with hardware ray
+tracing, and its haze resolves beams without the editor's beading.
+
+## The editor path
 
 Needs Unreal Engine **5.8** (5.8.1 is what this was built against).
 
-**1.** Open `previz/unreal/CosmosPrevis.uproject` in the editor and leave it
-sitting on the Previz level. **Do not press Play.**
+**1.** Open `previz/unreal/KLightsPreviz.uproject` in the editor. **Do not press
+Play.** It opens on the app's empty `KLights` map; `go.py` loads the Previz
+level itself. The first open after ray tracing was switched on compiles shaders
+for a while. If the editor says the module needs building, run
+`python previz/build.py editor` first.
 
 **2.** Build the level and start the driver — one command, safe to re-run any
 time:
@@ -115,8 +199,8 @@ outside a cut-away wall. Run against despacio it reproduces the hand-measured
 originals to within a centimetre, and the self-test builds a 6 m room and a
 4 × 0.9 m corridor to check they stay inside a room that is not this one.
 
-Optics — fog, beam gains, albedo — live in `previz/optics.json` per venue, with
-the re-sweep procedure written in the file. A room with no profile inherits
+Optics — fog, beam gains, albedo — live in each venue file under
+`previz.optics`, merged over the defaults in `engine/scene.py`. A room with no profile inherits
 despacio's numbers and the doctor says so, because inherited optics render
 perfectly happily and render like somewhere else.
 
@@ -225,3 +309,12 @@ instances from the material already on the mesh (`_shared_material`).
   picks the same mirrors every frame; they enter and leave the beam as the ball
   turns, the way real ones do.
 
+- **The app's mirror-ball dots land on the venue's declared box**, not on model
+  walls: that analytic slab test is what makes hundreds of dots a frame
+  affordable. A model room should be roughly the size its venue file says.
+- **Model rooms need a ray-tracing GPU to be lit.** On one without, Lumen falls
+  back to software and a model wall bounces nothing — see `docs/models.md`.
+- **The app's `-Snapshot` is one frame**, not `snapshot.py`'s 24 accumulated
+  passes, so a still can show the haze's sampling noise that the editor's did
+  not.
+- **Strobe, gobo and wheel spin are not drawn** by either path.

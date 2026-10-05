@@ -323,6 +323,12 @@ VENUE = {
         "slew_per_second": Spec(Number, min=0),
         "enabled": Spec(bool),
     }),
+    # Declared but deliberately NOT constrained: the previz block (optics,
+    # models, the ball's look) is checked by engine.scene, which turns a bad
+    # entry into a previz warning. Validating it here would let a typo in what
+    # the previz DRAWS stop the show from loading.
+    "previz": Spec(fix="how the room is drawn: optics, models and the mirror "
+                       "ball's look. Checked by engine.scene, never by the show"),
 }
 
 RIG = {
@@ -354,6 +360,12 @@ RIG = {
         "position": Spec(dict, of=_POINT),
         "hold": Spec(dict),
         "notes": Spec(str),
+        # Previz-only, and unconstrained here for the same reason as the
+        # venue's `previz` block: engine.scene checks them and warns.
+        "aim": Spec(fix="where a fixture that cannot move points, {x, y, z} "
+                        "in millimetres. The mirror ball if left out"),
+        "body": Spec(fix="the model the previz draws for this unit: "
+                         "{model: file.glb, nodes: {...}, rotation: {...}}"),
     })),
 }
 

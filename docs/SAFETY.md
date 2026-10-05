@@ -158,7 +158,7 @@ prints the live value at startup.
 - **Aim the pinspots above head height by hand.** Nothing checks them.
 - **Re-calibrate after any re-hang.** Every look's position is an offset from a
   head's calibrated ball aim, so a moved head with a stale calibration points
-  somewhere nobody authored. `python -m engine.calibrate drift` checks.
+  somewhere nobody authored. The Drift check on Setup checks.
 - **Keep the crowd box honest.** If the crowd spreads past the footprint, the
   taper stops covering the people who moved.
 - **Run `python scripts/preflight.py` before you leave**, and

@@ -43,6 +43,11 @@ SHAPES = {
 }
 BEAM_MATERIAL = "M_PrevizBeam"
 DOT_MATERIAL = "M_PrevizDot"
+# Everything this script creates in MATERIAL_DIR. The beam and dot materials are
+# shared with the standalone app (built there by build_assets.py from the same
+# recipe), which is why they also carry the instanced-mesh usage flag below.
+OWN_MATERIALS = ("M_PrevizRoom", "M_PrevizBallCore", "M_PrevizBallTile", "M_PrevizTruss",
+                 "M_PrevizCanopy", "M_PrevizFixture", BEAM_MATERIAL, DOT_MATERIAL)
 
 # The shoulder on a reflection dot's radial falloff, as the exponent in
 # `(1 - r) ** DOT_SHOULDER` across its own quad. Below 1 the dot is nearly all
@@ -315,6 +320,9 @@ def make_emissive_material(name, round_off, taper=False, soft_edge=0.0,
     material.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
     material.set_editor_property("shading_model",
                                  unreal.MaterialShadingModel.MSM_UNLIT)
+    # Drawn on instanced meshes (the ball's spray), here and in the packaged app,
+    # which cannot set a missing usage flag for itself.
+    material.set_editor_property("used_with_instanced_static_meshes", True)
     # Two-sided so the beam still draws when the camera is inside it -- which is
     # most of the time in a room where four heads aim at the middle.
     material.set_editor_property("two_sided", True)
@@ -635,8 +643,14 @@ def clear_previous():
         if wanted & {str(t) for t in actor.tags}:
             actors.destroy_actor(actor)
             removed += 1
-    if unreal.EditorAssetLibrary.does_directory_exist(MATERIAL_DIR):
-        unreal.EditorAssetLibrary.delete_directory(MATERIAL_DIR)
+    # Only this script's own materials, by name -- not the folder. The
+    # standalone app keeps M_PrevizModel here too (build_assets.py), and taking
+    # the whole folder would leave the app unable to start until its assets
+    # were rebuilt.
+    for name in OWN_MATERIALS:
+        path = f"{MATERIAL_DIR}/{name}"
+        if unreal.EditorAssetLibrary.does_asset_exist(path):
+            unreal.EditorAssetLibrary.delete_asset(path)
     return removed
 
 

@@ -23,6 +23,9 @@ function corners(head: FixtureState | undefined, state: EngineState) {
   ];
 }
 
+/** A head's name as the Jog card's buttons show it. */
+const short = (name: string) => name.replace("Moving Head ", "MH ");
+
 /**
  * Everything about the room and the rig, in one place.
  *
@@ -52,6 +55,12 @@ export function SetupTab({ state, send, name, setName }: {
 
   const ball = state.venue.ball ?? [0, 0, 0];
   const head = state.fixtures.find((f) => f.name === selected);
+  // What the drift check reads, in the engine's order. `head` is the index into
+  // the rig's geometry, which is narrower than is_mover: a mover with no
+  // position is not in it, and the engine does not ask for its reading.
+  const heads = state.fixtures.filter((f) => f.head != null)
+    .sort((a, b) => a.head! - b.head!);
+  const unaimed = heads.filter((f) => !f.jogging);
 
   const jog = (p: number, t: number) => {
     const np = Math.max(0, Math.min(255, p));
@@ -96,7 +105,7 @@ export function SetupTab({ state, send, name, setName }: {
           {movers.map((f) => (
             <button key={f.id} className={selected === f.name ? "on" : ""}
                     onClick={() => setSelected(f.name)}>
-              {f.name.replace("Moving Head ", "MH ")}
+              {short(f.name)}
               {f.captures ? <div className="small muted">{f.captures} cap</div> : null}
             </button>
           ))}
@@ -129,7 +138,16 @@ export function SetupTab({ state, send, name, setName }: {
                onChange={(e) => jog(pan, Number(e.target.value))} />
       </Card>
 
-      <Card title="Capture" right={
+      <Card title="Capture" help={<>
+        <p>A capture records where a head is pointing and which point in the room
+          it's aimed at. Two or more, from different angles, let the solver work
+          out the head's calibration.</p>
+        <p><b>Solve (preview)</b> shows the result in <b>Notices</b>. The residual
+          is how much the captures disagree, in degrees.</p>
+        <p><b>Solve &amp; write</b> saves it and snapshots the old calibration. It
+          won't save a head with a residual over 5°, which usually means a capture
+          was taken before the head was jogged. Restart the engine to load it.</p>
+      </>} right={
         <button className="small" onClick={() => send({ type: "capture_clear" })}>
           Clear all
         </button>
@@ -146,9 +164,13 @@ export function SetupTab({ state, send, name, setName }: {
             rejected on arrival, so the reason is visible before the press. */}
         {!head?.jogging && (
           <Banner kind="warn">
-            Jog <b>{selected}</b> onto the target first — a capture records
-            where the head is pointing, and until you move it there is nothing
-            to record.
+            {/* One span: a banner is a flex row, and bare text either side of
+                the <b> would lay out as three columns. */}
+            <span>
+              Jog <b>{selected}</b> onto the target first — a capture records
+              where the head is pointing, and until you move it there is
+              nothing to record.
+            </span>
           </Banner>
         )}
         <div className="grid two">
@@ -181,11 +203,43 @@ export function SetupTab({ state, send, name, setName }: {
         </p>
       </Card>
 
-      <Card title="Drift check">
+      {/* The readings are the jog positions, and the engine reads them itself:
+          this tab holds one pan/tilt pair for whichever head is selected, not
+          one per head, so it has nothing to send -- and a list it remembered
+          would be wrong after a second phone jogged, a reload, or Stop all.
+          Disabled until every head is jogging for the same reason capture is:
+          a head nobody aimed has no reading. The engine refuses it too. */}
+      <Card title="Drift check" help={<>
+        <p>Checks whether any head has been knocked since it was calibrated. In{" "}
+          <b>Jog</b>, aim each head at the mirror ball in turn, then tap{" "}
+          <b>Check all heads</b>. It compares where each head is pointing with
+          where the calibration says the ball is.</p>
+        <p>Every head has to be jogging, because a head that hasn't been aimed
+          has nothing to compare. Until then the button stays off and names the
+          heads still to aim.</p>
+        <p>A head that's moved 3° or more shows <b>MOVED</b> and needs re-aiming
+          with <b>Capture</b>. Tap <b>Stop all</b> in Jog when you're done, to
+          turn the safety taper back on.</p>
+      </>}>
         <p className="small muted" style={{ marginTop: 0 }}>
           Park every head on the ball and compare against the stored
           calibration. A ten-second go/no-go instead of finding out mid-set.
         </p>
+        {heads.length > 0 && unaimed.length > 0 && (
+          <Banner kind="warn">
+            <span>
+              Jog <b>{unaimed.map((f) => short(f.name)).join(", ")}</b> onto the
+              ball first — the check compares where each head is pointing, and{" "}
+              {unaimed.length === 1 ? "that one hasn't" : "those haven't"} been
+              aimed yet.
+            </span>
+          </Banner>
+        )}
+        <button style={{ width: "100%", marginBottom: "0.6rem" }}
+                disabled={heads.length === 0 || unaimed.length > 0}
+                onClick={() => send({ type: "drift" })}>
+          Check all heads
+        </button>
         {state.drift && (
           <div className="grid two">
             {state.drift.map((d) => (

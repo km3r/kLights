@@ -49,6 +49,14 @@ Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
 `--no-token`, `--sync-port` (tempo from a DJ), `--show-dir` (prepped tracks
 and their timelines -- see [Timecoded shows](#timecoded-shows)). `--help`
 lists them all.
+`--artnet` takes a list, so one engine can feed the rig's node and a previz on
+the same laptop: `--artnet 10.0.0.50,127.0.0.1`.
+
+Or double-click **`kLights.pyw`** (`python -m launcher` from a terminal): one
+window to pick the event, start and stop the engine, open the console or its
+Setup tab, copy the phone link, and launch or build the 3D previz. The engine
+runs as its own process, so closing the launcher does not stop a show, and
+reopening it finds the engine again.
 
 Before a show, run everything that must be green:
 
@@ -109,6 +117,14 @@ Three ideas make the rest make sense:
 - **The cue list is the night**, and GO walks it. A guest who knows nothing
   about the rig can run the whole show off one button.
 
+**The console explains itself.** The **?** in the header opens a guide to the
+tab you are on: a short walkthrough and the things worth knowing. A first visit
+on each device offers a two-minute tour. Cards whose controls do not say what
+they do (Tempo, Auto, Track, the quick palette's long-press, the safety taper,
+calibration) have a **?** by their title that opens an explanation in place. A
+tap, not a tooltip, because a phone has no hover. The designer has its own
+**Guide**.
+
 ## Running a show
 
 Full procedure for the day, including what to do when something breaks:
@@ -116,15 +132,18 @@ Full procedure for the day, including what to do when something breaks:
 
 ## Previz
 
+The previz is a **listener**: it watches the same Art-Net the rig does, so it
+can never break a show. The standalone app needs no editor and no Python to
+run, and draws whatever event the running engine is driving:
+
 ```bash
-python previz/doctor.py     # checks everything before you wonder why
-python previz/ue_remote.py previz/unreal/Content/Python/go.py
+python previz/build.py                    # once; needs Unreal 5.8 to BUILD
+previz/dist/Windows/KLightsPreviz.exe     # beside python -m engine.server
 ```
 
-Needs Unreal Engine 5.8. The previz is a **listener** — it watches the same
-Art-Net the rig does, so it can never break a show. It builds whatever event
-`previz/previz.json` names, and its cameras and optics are derived from the room
-rather than measured in one. See [`previz/README.md`](previz/README.md).
+The launcher does both from buttons. The original editor-driven path still works
+beside it (`python previz/doctor.py` checks either). See
+[`previz/README.md`](previz/README.md).
 
 The console's own plan view needs none of that and runs anywhere.
 
@@ -253,7 +272,7 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 151 tests: the console against a fixture captured from a
+npm test         # 170 tests: the console against a fixture captured from a
                  # real engine, the designer against the example show folder
 npm run build    # writes ui/dist/
 ```
@@ -265,7 +284,7 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # 29 suites, no test framework
+python -m engine.tests    # every suite, no test framework
 cd ui && npm test         # the console and the designer
 ```
 
@@ -283,6 +302,7 @@ library, and requires every differing channel to fall into a category that was
 
 ```
 engine/        the show engine — stdlib only, no dependencies
+launcher/      the desktop window that starts the engine and the previz (Tk)
 ui/            React console and designer; ui/dist is committed so a venue needs no Node
 previz/        Unreal previz — an Art-Net listener, never in the show's path
 bridges/       sidecars: DJ tempo and position, and the rekordbox prep tool
