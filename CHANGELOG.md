@@ -11,6 +11,43 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — tracks straight from rekordbox
+
+- **The designer browses the DJ's rekordbox collection.** The track list has a
+  **From rekordbox** panel: the playlist tree, a playlist's or folder's tracks,
+  a search over the whole collection. Tick tracks and **Add to the show** preps
+  them into the show folder; a track already there says so and opens, and one
+  rekordbox never analysed cannot be ticked. **Reload** reads rekordbox again.
+- **`prep.py db`** reads rekordbox 6/7's own database, `master.db`, so there is
+  no File → Export Collection step: `--playlist` (by path or name), `--search`,
+  `--id`, `--all`, `--list` to see the choice first. `prep.py catalogue` is the
+  collection as JSON. The database is SQLCipher-encrypted, so this route needs
+  `pip install sqlcipher3` and the key in `$RB_CIPHER_KEY` or `rekordbox_key`
+  in `klights.local.json`. Neither ever reaches the engine, which runs the
+  bridge as a child process (`engine/collection.py`).
+- **Every prepped track carries beat-link-trigger's signature**, computed from
+  the analysis at prep, on the XML route too. CDJs playing a USB stick send the
+  stick's own track ids, which mean nothing here; the signature survives an
+  export, so a track now matches exactly on its first play from any stick
+  exported from this collection, not only after being linked at a gig. With
+  this database's id (CDJs loading from rekordbox over the network) and the
+  title, artist and album (rkbx_link), one prepped track is the same song to
+  every deck. A track with no artist carries two signatures, since beat-link
+  hashes it as `[no artist]` from a stick's database but a player's metadata
+  server may send an empty name.
+- **`bridges/rekordbox/blt_check/check.py`** checks all of this with beat-link
+  8's own code (a dev tool; Java 11+): `usb E:/` says which prepped track every
+  track on a stick will match and, where only the name matches, which input
+  differs; `collection` compares prep with beat-link on every analysed track
+  (6,331 of 6,331 identical on a rekordbox 7.2.14 collection); `golden` records
+  beat-link's output as the test suite's fixture.
+- **Cues on the db route come from the database**, because a collection's
+  analysis files carry none. The same file imported into rekordbox twice is
+  one track with both ids and both rows' cues.
+- **`GET /api/rekordbox`** (token) and **`rekordbox_prep {ids}`** (configure);
+  `/api/tracks` lines now say which rekordbox rows each track is and how many
+  CDJ signatures it has.
+
 ### Added — run a drift check, and move a fixture, from the console
 
 - **Drift check has a button.** Jog every head onto the mirror ball and press

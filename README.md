@@ -177,13 +177,17 @@ drives each lane" at the playhead on the right.*
 
 ```bash
 python -m engine.showfiles init shows/              # a show folder (or use shared/show-example)
-python bridges/rekordbox/prep.py --show-dir shows/ xml rekordbox.xml --anlz-root E:/PIONEER/USBANLZ
+python bridges/rekordbox/prep.py --show-dir shows/ db --playlist Friday
 python -m engine.server --show-dir shows/ --sync-port 9000
 ```
 
 1. **Prep** reads what rekordbox already knows -- identity, beat grid, phrases,
-   cues, waveform -- from an XML export and its analysis files, into the show
-   folder ([`bridges/rekordbox/`](bridges/rekordbox/README.md)). No audio
+   cues, waveform -- from rekordbox's own database (or an XML export) and its
+   analysis files, into the show folder. Easier still: the designer's **From
+   rekordbox** panel browses the playlists and preps what you tick
+   ([`bridges/rekordbox/`](bridges/rekordbox/README.md); the database route
+   needs `pip install sqlcipher3` and the key). Each track is then the same song
+   to rekordbox and to CDJs playing any stick exported from it. No audio
    analysis of our own.
 2. **Design** at the engine's URL with `#designer` on the end, on a computer (a
    phone never downloads it). Each track is a set of lanes against its waveform

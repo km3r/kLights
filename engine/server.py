@@ -49,6 +49,7 @@ from . import __version__
 from . import api as apimod
 from . import auto as autom
 from . import calibrate as calibmod
+from . import collection as collectionmod
 from . import config as configmod
 from . import cues as cuesmod
 from . import clock as clockmod
@@ -136,7 +137,7 @@ TIER: dict[str, str] = {
     "patch_apply": "configure",
     # the show folder: what is written there outlives the night
     "track_link": "configure", "show_reload": "configure",
-    "show_latency": "configure",
+    "show_latency": "configure", "rekordbox_prep": "configure",
     # the designer: writes the show folder, and can take the stage
     "timeline_draft": "configure", "timeline_save": "configure",
     "routine_draft": "configure", "routine_save": "configure",
@@ -408,6 +409,9 @@ class ShowController:
         self.grid_check: Optional[tracksmod.GridCheck] = None
         self._check_jump: Optional[int] = None
         self.watcher: Optional[showlibrary.Watcher] = None
+        # The DJ's rekordbox collection, read by the prep bridge in a child
+        # process -- never in this one (engine/collection.py).
+        self.collection = collectionmod.Collection()
         # Whether the timeline drives the rig this frame (F19i). Only with a
         # show folder; without one the runner never asks.
         self.player: Optional[playbackmod.TrackPlayer] = None
@@ -2365,6 +2369,48 @@ class ShowController:
             done=done, label=f"linking {title!r} to {track_id}")
         return {"queued": True, "track_id": track_id, "applies": "next_play"}
 
+    def _cmd_rekordbox_prep(self, m: dict, now: float) -> object:
+        """Prep tracks from the DJ's rekordbox collection into the show folder:
+        what the designer's collection browser picked, by rekordbox id.
+
+        The bridge does it, in a child process, on a thread of its own rather
+        than the worker: it is a wait on another process, not CPU here, and a
+        playlist's worth of tracks would otherwise hold up every compile the
+        designer asks for behind it. Answered when it finishes, with the
+        bridge's summary per track; the folder reloads after, and a track that
+        is playing keeps the load it was matched against."""
+        if self.show_dir is None:
+            raise ValueError("no show folder -- start the engine with --show-dir "
+                             "to prep tracks into one")
+        ids = collectionmod.check_ids(m.get("ids"))
+        root = self.show_dir
+        collection = self.collection
+        respond = self._deferred()
+
+        def run() -> None:
+            try:
+                outcome = (True, collection.prep(ids, root))
+            except Exception as exc:                        # noqa: BLE001
+                outcome = (False, str(exc))
+
+            def done() -> None:
+                ok, value = outcome
+                if not ok:
+                    respond(False, error=value)
+                    return
+                results = value.get("results") or []
+                fresh = sum(r.get("status") == "created" for r in results)
+                self.note(f"prepped {len(results)} track(s) from rekordbox, "
+                          f"{fresh} new" + (f"; {len(value.get('skipped') or [])} "
+                                            f"skipped" if value.get("skipped") else ""))
+                respond(True, value)
+                self.reload_library()
+            self.submit_call(done)
+
+        threading.Thread(target=run, name="klights-rekordbox-prep",
+                         daemon=True).start()
+        return DEFERRED
+
     def _cmd_show_reload(self, m: dict, now: float) -> None:
         """Read the show folder again now, rather than at the next poll."""
         if self.show_dir is None:
@@ -3514,7 +3560,8 @@ class ShowServer:
                 try:
                     resp = apimod.handle(server.controller.show_library, url.path,
                                          self.headers.get("Range"), token_ok,
-                                         server.audio_roots)
+                                         server.audio_roots,
+                                         server.controller.collection, url.query)
                 except OSError as exc:
                     resp = apimod.Response(500, json.dumps(
                         {"error": str(exc)}).encode("utf-8"))

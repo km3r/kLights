@@ -249,7 +249,7 @@ run and embedded in the printed URL.
 |---|---|
 | **view** | watch only; every command is refused with a reason |
 | **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload` |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep` |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
@@ -367,7 +367,15 @@ are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
 streams the track's file with Range (206), needs the token, and only ever serves
 a file the track names (or the same name under this machine's `audio_roots` in
-`klights.local.json`) with an audio extension. Writes are configure-tier
+`klights.local.json`) with an audio extension. `GET /api/rekordbox` is the DJ's
+rekordbox collection -- playlists and tracks to prep from -- also behind the
+token, since it is someone's whole music library. The engine never opens
+rekordbox's database: [`collection.py`](../engine/collection.py) runs the prep
+bridge as a child process and serves its JSON unparsed, so neither `sqlcipher3`
+nor a megabyte of parsing touches the process holding the DMX clock.
+`rekordbox_prep {ids}` (configure) preps those rekordbox ids into the show
+folder, on a thread of its own, and answers with the bridge's per-track
+summary; the folder reloads after. Writes are configure-tier
 commands answered from the worker: `timeline_draft {doc}` (the format's rules,
 then a compile against this rig), `timeline_save` and `routine_save {doc,
 base_rev}` (refused if the file changed since), and `routine_draft {doc}` (the

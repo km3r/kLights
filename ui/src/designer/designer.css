@@ -165,3 +165,33 @@
 }
 /* A heading's help takes its own line inside the wrapping chip rows. */
 .designer .help { flex-basis: 100%; font-size: 12px; margin: 0 0 6px; }
+
+/* The rekordbox collection: playlists on the left, tracks on the right, each
+   scrolling on its own so a long tree never pushes the list off screen. */
+.d-rb-body {
+  display: grid; grid-template-columns: 240px 1fr; gap: 10px;
+  height: 60vh; min-height: 320px;
+}
+.d-rb-tree, .d-rb-list { overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.d-picker .d-rb-tree ul { margin: 0; }
+.d-picker .d-rb-tree li { padding: 0; border-bottom: none; }
+.designer .d-rb-node {
+  display: block; width: 100%; text-align: left; border: none; border-radius: 0;
+  background: none; color: var(--text); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.designer .d-rb-node.on { background: var(--panel-2); color: var(--accent); }
+.designer .d-rb-node:disabled { color: var(--dim); }
+.d-rb-list > .d-form { position: sticky; top: 0; z-index: 1; background: var(--bg);
+  padding: 4px 6px; margin: 0; }
+.d-rb-list input[type="search"] { flex: 1; min-width: 160px; }
+.d-rb-table { width: 100%; border-collapse: collapse; }
+.d-rb-table th { text-align: left; color: var(--dim); font-weight: 600; font-size: 11px; }
+.d-rb-table th, .d-rb-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
+.d-rb-table td:nth-child(2), .d-rb-table td:nth-child(3) {
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.d-rb-table input[type="checkbox"] { width: auto; margin: 0; }
+.d-rb-summary { margin: 6px; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); }
+.d-picker .d-rb-summary li { padding: 2px 0; border-bottom: none; }
