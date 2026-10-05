@@ -52,7 +52,7 @@ _other["identity"] = {**_other["identity"], "title": "no timeline tune"}
 _other.pop("ids", None)
 _other.pop("aliases", None)
 (shows / "tracks" / "no-timeline.json").write_text(json.dumps(_other, indent=2))
-# A routine that drives only the movers' movement, for a preset pad (F20d).
+# A routine that drives only the movers' movement, for a preset pad (F21d).
 (shows / "routines" / "move-only.json").write_text(json.dumps({
     "kind": "klights.routine", "version": 1, "id": "move-only",
     "name": "Move only", "bars": 2, "loop": True,
@@ -253,7 +253,7 @@ try:
           and st["template"]["start"] == sc.clock.phrase_start, f"{st}")
 
     # A guest on a CDJ: beat-link-trigger sends the USB's phrase and how far
-    # into it the deck is (F20c), so the routine starts where the phrase did.
+    # into it the deck is (F21c), so the routine starts where the phrase did.
     t += 2.5
     blt(t, "CDJ Guest", "Guest DJ", "", 210.0, rid=5)
     t += 0.01
@@ -300,7 +300,7 @@ try:
     settle()
     play(168.2, 0.2)
 
-    # -- 2c. routines on preset pads (F20d) -------------------------------------
+    # -- 2c. routines on preset pads (F21d) -------------------------------------
     print("\n2c. routines on pads")
     sc.apply({"type": "follow", "armed": False}, None, t)
     sc.apply({"type": "select_look", "name": "MH Red"}, None, t)
@@ -364,7 +364,7 @@ try:
     sc.apply({"type": "program_release"}, None, t)
     play(189, 0.2)
 
-    # -- 2d. pre-matching (F20e) -------------------------------------------------
+    # -- 2d. pre-matching (F21e) -------------------------------------------------
     print("\n2d. pre-matching")
 
     def loaded(at, deck, title, artist="", album="", duration=0.0, rid=1):

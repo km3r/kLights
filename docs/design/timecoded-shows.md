@@ -164,14 +164,26 @@ bridge and no hardware:
 **Milestone 2:** template runtime and live phrase mode for unmatched tracks, the
 bar-count fallback, the template-set switcher, routines on preset pads.
 
+| stage | what |
+|---|---|
+| F21a | The template runtime: phrase label → routine pick, the bar-count cycle, crossfades between picks |
+| F21b | Templates on stage (timeline > template > fallback) and the phone's set switcher |
+| F21c | Live phrases from CDJs: the BLT expressions read the guest's USB analysis |
+| F21d | Routines on preset pads, from the next downbeat |
+| F21e | Per-deck pre-matching: a track's show built before it is the master |
+
+Milestones 2 and 3 were committed as F20a-e and F21a-d; F20 was already the
+standalone previz on main, so they are F21 and F22 everywhere but their commit
+messages.
+
 **Milestone 3:** VJ outputs.
 
 | stage | what |
 |---|---|
-| F21a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
-| F21b | Art-Net ArtTimeCode from the matched track's position |
-| F21c | MIDI through the sidecar (`bridges/midi/`): note, CC and program cues, CC curves |
-| F21d | Built-in visuals: the `#visuals` page, its scenes and video from `media/`, template picks' scenes |
+| F22a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
+| F22b | Art-Net ArtTimeCode from the matched track's position |
+| F22c | MIDI through the sidecar (`bridges/midi/`): note, CC and program cues, CC curves |
+| F22d | Built-in visuals: the `#visuals` page, its scenes and video from `media/`, template picks' scenes |
 
 ## Things to verify on hardware
 
