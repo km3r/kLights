@@ -119,6 +119,12 @@ export { uniqueId };
 
 const BACK_KEY = "klights.designer.back";
 
+/** Where this browser keeps the working copy of an unsaved document. Studio's
+ *  library reads it too, to flag a track with unsaved work. */
+export function draftKey(kind: "timeline" | "routine", ident: string): string {
+  return kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.routine.${ident}`;
+}
+
 /** Remember this page, so the routine editor's back link returns to it. */
 export function rememberBack(): void {
   try { sessionStorage.setItem(BACK_KEY, location.hash); } catch { /* fine */ }
@@ -217,7 +223,7 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showProblems, setShowProblems] = useState(false);
-  const key = kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.routine.${ident}`;
+  const key = draftKey(kind, ident);
   // `request` is stable; `engine` is a new object on every snapshot, and a
   // debounce keyed on it would be reset ten times a second and never fire.
   const { request } = engine;

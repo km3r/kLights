@@ -68,7 +68,7 @@ function useLibrary(engine: Engine): Library {
   return { tracks, error, routines, show, sets, reload };
 }
 
-interface Dialog { title: string; prep?: PrepPick[]; tracks?: StartTrack[] }
+interface Dialog { title: string; prep?: PrepPick[]; tracks?: StartTrack[]; ran?: boolean }
 
 export default function Studio({ engine, route }: {
   engine: Engine; route: Exclude<StudioRoute, { view: "track" } | { view: "routine" }>;
@@ -171,10 +171,17 @@ export default function Studio({ engine, route }: {
         <StartDialog engine={engine} title={dialog.title} prep={dialog.prep} tracks={dialog.tracks}
                      sets={lib.sets} activeSet={setId}
                      onClose={() => {
+                       // The ticks go only once they have been acted on: a
+                       // Cancel keeps them, to adjust and try again.
+                       if (dialog.ran) {
+                         if (dialog.prep) setTickedRb(new Set()); else setTickedTracks(new Set());
+                       }
                        setDialog(null);
-                       if (dialog.prep) setTickedRb(new Set()); else setTickedTracks(new Set());
                      }}
-                     onDone={lib.reload} />
+                     onDone={() => {
+                       setDialog((d) => (d ? { ...d, ran: true } : d));
+                       lib.reload();
+                     }} />
       )}
     </div>
   );

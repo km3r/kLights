@@ -2278,7 +2278,7 @@ class ShowController:
                 lambda: programmod.compile(timeline, routines, rigging,
                                            f"timelines/{track_id}.json"),
                 done, label=f"compiling {track_id} for the designer")
-        self.note(f"DESIGNER ({name}) is driving the rig on {track_id}")
+        self.note(f"STUDIO ({name}) is driving the rig on {track_id}")
         return {"track_id": track_id}
 
     def _owned_preview(self):

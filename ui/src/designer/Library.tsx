@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch, apiUrl } from "../useEngine";
 import { PHRASE_HUE, decodeWave, mmss, normalizeName, phraseFamily } from "./model";
 import type { TrackLine } from "./model";
+import { draftKey } from "./edit";
 
 /**
  * Studio's track library: every track in the show folder, what will light it
@@ -17,6 +18,28 @@ import type { TrackLine } from "./model";
 /** Pending "draft this track from a set" for the timeline page to pick up:
  *  the draft is made there, as an undoable edit, and saved only on Save. */
 export const DRAFT_ON_OPEN = "klights.studio.draft";
+/** How long a pending draft waits for its timeline to open. Longer, and it is
+ *  a click from another visit that never got there -- applying it then would
+ *  be a surprise. */
+export const DRAFT_ON_OPEN_MS = 60_000;
+
+export interface PendingDraft { track: string; set: string; at: number }
+
+/** The pending draft for a track, taken (it is read once), if it is fresh. */
+export function takePendingDraft(track: string): PendingDraft | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_ON_OPEN);
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as Partial<PendingDraft>;
+    if (pending.track !== track) return null;
+    sessionStorage.removeItem(DRAFT_ON_OPEN);
+    if (!pending.set || typeof pending.at !== "number"
+        || Date.now() - pending.at > DRAFT_ON_OPEN_MS) return null;
+    return pending as PendingDraft;
+  } catch {
+    return null;
+  }
+}
 
 export interface ActiveSet { id: string | null; name: string | null }
 
@@ -24,7 +47,7 @@ type Filter = "all" | "timeline" | "template" | "attention";
 type Sort = "edited" | "title" | "artist" | "bpm";
 
 export function hasDraft(id: string): boolean {
-  try { return localStorage.getItem(`klights.draft.${id}`) != null; } catch { return false; }
+  try { return localStorage.getItem(draftKey("timeline", id)) != null; } catch { return false; }
 }
 
 export function gridMoved(t: TrackLine): boolean {
@@ -45,11 +68,12 @@ export function attention(t: TrackLine): string[] {
   return out;
 }
 
-/** What lights the track on the night, in a few words. */
-export function nightOf(t: TrackLine, set: ActiveSet): string {
-  if (t.has_timeline) return "Timeline";
-  if (!set.id) return "No template set";
-  return t.phrases ? `Template: ${set.name ?? set.id}` : `Bar cycle: ${set.name ?? set.id}`;
+/** What lights the track on the night, in a few words. A template set does
+ *  not play live yet (that is F19 milestone 2): until then, a track with no
+ *  timeline gets whatever the operator is running, auto mode included. The
+ *  show's set is what new timelines are drafted from. */
+export function nightOf(t: TrackLine): string {
+  return t.has_timeline ? "Timeline" : "Operator's show";
 }
 
 export function PhraseStrip({ items, tall }: { items?: [number, number, string][]; tall?: boolean }) {
@@ -103,7 +127,7 @@ export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, 
   const startable = all.filter((t) => ticked.has(t.id) && !t.has_timeline);
   const allTicked = shown.length > 0 && shown.every((t) => ticked.has(t.id));
   const FILTERS: [Filter, string][] = [
-    ["all", "All"], ["timeline", "Has a timeline"], ["template", "Template only"],
+    ["all", "All"], ["timeline", "Has a timeline"], ["template", "No timeline"],
     ["attention", "Needs attention"]];
 
   return (
@@ -114,8 +138,10 @@ export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, 
           <span className="muted small">
             {tracks == null ? "Loading the show folder…"
               : `${counts.all} in the show folder. ${counts.timeline} ha${counts.timeline === 1 ? "s" : "ve"} `
-                + `a timeline; ${set.id ? `the rest play from the active template set, ${set.name ?? set.id}.`
-                  : "no template set is active, so the rest have nothing to follow."}`}
+                + "a timeline" + (counts.template
+                  ? `; the operator's show runs for the other ${counts.template} until they have one.`
+                  : ".")
+                + (set.id ? ` New timelines draft from ${set.name ?? set.id}.` : "")}
           </span>
         </div>
         <span className="grow" />
@@ -190,7 +216,7 @@ export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, 
                         <b>{t.title}</b><span className="muted">{t.artist}</span></button>
                     </td>
                     <td><span className="s-pill"><i className={t.has_timeline ? "good" : ""} />
-                      {nightOf(t, set)}</span></td>
+                      {nightOf(t)}</span></td>
                     <td className="s-phrase-cell"><PhraseStrip items={t.phrase_items} /></td>
                     <td className="mono">{t.bpm ? t.bpm.toFixed(t.bpm % 1 ? 2 : 0) : ""}</td>
                     <td className="mono">{mmss(t.duration_s)}</td>
@@ -293,9 +319,9 @@ export function TrackDetail({ t, set, sets, live }: {
   const night = t.has_timeline
     ? `Its own timeline plays: ${t.timeline?.rows ?? 0} lane${t.timeline?.rows === 1 ? "" : "s"}, `
       + `${t.timeline?.items ?? 0} clips and points.`
-    : !set.id ? "No timeline, and no template set is active: the operator's show runs."
-      : t.phrases ? `No timeline yet. The ${set.name ?? set.id} set plays it live, one routine per phrase.`
-        : `No phrases, so the ${set.name ?? set.id} set plays its bar cycle.`;
+    : "No timeline yet, so when it plays the operator's show runs, as for any unknown "
+      + "track. Draft one from a template set to give it its own."
+      + (t.phrases ? "" : " With no phrases, a draft follows the set's bar cycle.");
   const checks: [boolean, string][] = [
     [!!t.grid_rev, t.grid_rev ? "Beat grid from rekordbox" : "No beat grid"],
     [t.phrases > 0, t.phrases ? `${t.phrases} phrases from rekordbox` : "No phrase analysis"],
@@ -315,7 +341,10 @@ export function TrackDetail({ t, set, sets, live }: {
   }).join("") ?? "";
   const draft = hasDraft(t.id);
   const openDraft = () => {
-    try { sessionStorage.setItem(DRAFT_ON_OPEN, JSON.stringify({ track: t.id, set: draftSet })); }
+    try {
+      const pending: PendingDraft = { track: t.id, set: draftSet, at: Date.now() };
+      sessionStorage.setItem(DRAFT_ON_OPEN, JSON.stringify(pending));
+    }
     catch { /* the timeline opens without it */ }
     location.hash = `#studio/track/${t.id}`;
   };
@@ -323,7 +352,7 @@ export function TrackDetail({ t, set, sets, live }: {
   return (
     <div className="s-detail" aria-label="selected track">
       <div>
-        <span className="s-kicker">{nightOf(t, set)}{live ? " · playing now" : ""}</span>
+        <span className="s-kicker">{nightOf(t)}{live ? " · playing now" : ""}</span>
         <h2>{t.title}</h2>
         <span className="muted">{[t.artist, t.album].filter(Boolean).join(" · ")}</span>
       </div>

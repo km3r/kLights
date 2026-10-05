@@ -21,7 +21,8 @@ the only record of them until a roadmap doc lands.
   one, or find it in rekordbox and add it), and **Open Studio** in the
   launcher. Every link opens Studio in a tab of its own, carrying the token.
 - **A library, not a list.** Studio opens on every track in the show: what lights
-  it on the night (its timeline, or the active template set), rekordbox's
+  it on the night (its own timeline, or the operator's show -- template sets do
+  not play live until F19 milestone 2, and the library says so), rekordbox's
   phrases drawn in its row, BPM and length, and what needs attention -- a grid
   that changed since the timeline was drawn, no CDJ signature, unsaved work in
   this browser, the track playing now. Filter, search and sort; the selected
@@ -32,7 +33,8 @@ the only record of them until a roadmap doc lands.
   playlist opens in the main column with which tracks are in the show already,
   and a panel saying how much of it the show covers. **Add to the show** preps
   the ticked tracks and starts each one in the same step: a timeline drafted
-  from a template set, an empty timeline, or template only. The draft is the
+  from a template set, an empty timeline, or just the track. Only tracks the
+  prep created are started; one ticked again is only re-prepped. The draft is the
   editor's own and is saved like any other timeline, so the engine checks it.
 - **Make timelines for ticked** does the same for tracks already in the show.
 - **Side panels fold away**: the library's sidebar and details, and the timeline

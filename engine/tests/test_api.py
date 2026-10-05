@@ -281,7 +281,7 @@ try:
     check("forced, the designer takes the stage",
           r["ok"] and sc.player.preview is not None
           and sc.snapshot()["preview"]["name"] == "designer", f"{r}")
-    check("and every console is told", any("DESIGNER (designer) is driving"
+    check("and every console is told", any("STUDIO (designer) is driving"
                                             in n for n in sc.notices))
     r = ask({"type": "preview_transport", "time_s": 75.0, "playing": False,
              "id": 13}, client=other)

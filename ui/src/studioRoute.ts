@@ -17,6 +17,9 @@ import { apiUrl } from "./useEngine";
  * name. Old #designer links still work: they are rewritten to these.
  */
 
+/** The rekordbox "playlist" that is the whole collection. */
+export const ALL_TRACKS = "all";
+
 export type StudioRoute =
   | { view: "tracks" }
   | { view: "routines" }
@@ -31,7 +34,7 @@ export function studioRoute(hash: string): StudioRoute | null {
   if (what === "routines") return { view: "routines" };
   if (what === "rekordbox") {
     const find = new URLSearchParams(query).get("find") ?? undefined;
-    return { view: "rekordbox", scope: ident || "all", ...(find ? { find } : {}) };
+    return { view: "rekordbox", scope: ident || ALL_TRACKS, ...(find ? { find } : {}) };
   }
   if (what === "track" && ident) return { view: "track", id: ident };
   if (what === "routine" && ident) return { view: "routine", id: ident };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { draftFromTemplate, newTimeline } from "./model";
@@ -13,7 +13,15 @@ import type { PrepSummary, TemplateSetDoc, TrackDoc } from "./model";
  *   draft     a timeline drafted from a template set -- the same draft the
  *             timeline editor makes, saved as the track's timeline
  *   empty     a timeline with one empty scene lane
- *   template  nothing: whichever set is active on the night plays it
+ *   template  nothing yet: the track is in the show, and the operator's show
+ *             runs when it plays. (Template sets playing live is F19
+ *             milestone 2; until then a set is what timelines are drafted
+ *             from, and saying otherwise here would promise light that the
+ *             engine will not make.)
+ *
+ * From rekordbox, only the tracks the prep CREATED are started. A track that
+ * was already in the show and is ticked again is being re-prepped -- fresh
+ * analysis -- and was left without a timeline on purpose, or has one.
  *
  * All of it is client-side: the draft is the editor's own function, and each
  * timeline is written with `timeline_save` and base_rev "" -- a new file,
@@ -43,12 +51,12 @@ const OPTIONS: { id: StartAs; title: string; text: string }[] = [
   { id: "draft", title: "A timeline drafted from a template set",
     text: "One routine per rekordbox phrase on a scene lane, and the set's palettes on a "
       + "palette lane. A starting point to edit; saved as each track's timeline." },
-  { id: "template", title: "Template only, no timeline",
-    text: "Nothing is written but the track. Whichever set is active on the night plays it "
-      + "phrase by phrase, so it follows a set switched live." },
+  { id: "template", title: "Just add it, no timeline yet",
+    text: "Only the track is written. When it plays, the operator's show runs, as for any "
+      + "track without a timeline; draft it one later from the library." },
   { id: "empty", title: "An empty timeline",
     text: "One scene lane with nothing on it, for a track to build by hand. Until it has "
-      + "clips, the active set fills its gaps." },
+      + "clips, the operator's show runs under it." },
 ];
 
 /** Wait for a track the engine is still loading: prep answers before the
@@ -84,7 +92,8 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
   sets: { id: string; name?: string }[];
   activeSet: string | null;
   onClose: () => void;
-  /** The folder changed: re-read what the page lists. */
+  /** The run wrote to the folder (or tried to): re-read what the page lists,
+   *  and the ticks it acted on can go. */
   onDone: () => void;
 }) {
   const [start, setStart] = useState<StartAs>(sets.length ? "draft" : "empty");
@@ -98,6 +107,9 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
   const setName = sets.find((s) => s.id === setId)?.name ?? setId;
   const options = OPTIONS.filter((o) => (prep ? true : o.id !== "template"))
     .filter((o) => o.id !== "draft" || sets.length > 0);
+  const dialog = useRef<HTMLElement | null>(null);
+  useEffect(() => { dialog.current?.focus(); }, []);
+  const close = () => { if (phase !== "running") onClose(); };
 
   const patch = (key: string, change: Partial<ProgressRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...change } : r)));
@@ -120,13 +132,22 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
         return;
       }
       const summary = reply.data as PrepSummary;
-      targets = summary.results.map((r) => ({
-        key: r.track_id, trackId: r.track_id, title: r.title, artist: r.artist,
-        state: "queued",
-        text: [r.status === "created" ? "Prepped" : `Prepped (${r.status})`,
-               r.signature ? "CDJ signature" : "no CDJ signature", ...r.notes].join(" · "),
-      }));
-      setRows([...targets, ...summary.skipped.map((s): ProgressRow => ({
+      const seen = new Set<string>();
+      const prepped: ProgressRow[] = [];
+      for (const r of summary.results) {
+        if (seen.has(r.track_id)) continue;     // one start per track, however many rows it was
+        seen.add(r.track_id);
+        const fresh = r.status === "created";
+        prepped.push({
+          key: r.track_id, trackId: r.track_id, title: r.title, artist: r.artist,
+          state: fresh ? "queued" : "done",
+          text: [fresh ? "Prepped" : `Prepped again (${r.status})`,
+                 r.signature ? "CDJ signature" : "no CDJ signature", ...r.notes,
+                 ...(fresh ? [] : ["already in the show, so left as it was"])].join(" · "),
+        });
+      }
+      targets = prepped.filter((r) => r.state === "queued");
+      setRows([...prepped, ...summary.skipped.map((s): ProgressRow => ({
         key: `skip:${s.rekordbox_id}`, title: s.title, artist: s.artist, state: "failed",
         text: s.reason }))]);
       onDone();
@@ -136,7 +157,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
 
     if (start === "template") {
       for (const t of targets) {
-        patch(t.key, { state: "done", text: `${t.text} · the active template set plays it` });
+        patch(t.key, { state: "done", text: `${t.text} · in the show, no timeline yet` });
       }
       setPhase("done");
       return;
@@ -148,6 +169,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
         ts = (await apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${setId}`)).doc;
       } catch (e) {
         setError(`could not read the template set ${setId}: ${(e as Error).message}`);
+        for (const t of targets) patch(t.key, { state: "failed", text: `${t.text} · not drafted` });
         setPhase("done");
         return;
       }
@@ -186,8 +208,10 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
 
   const finished = rows.filter((r) => r.state !== "queued" && r.state !== "working").length;
   return (
-    <div className="s-modal" role="presentation">
-      <section className="s-dialog" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="s-modal" role="presentation"
+         onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } }}>
+      <section className="s-dialog" role="dialog" aria-modal="true" aria-label={title}
+               tabIndex={-1} ref={dialog}>
         <header className="s-dialog-head">
           <div>
             <h2>{title}</h2>
@@ -196,7 +220,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
           </div>
           <span className="grow" />
           <button className="s-icon" aria-label="close" disabled={phase === "running"}
-                  onClick={onClose}>×</button>
+                  onClick={close}>×</button>
         </header>
 
         {phase === "choose" ? (
@@ -257,14 +281,14 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
           </span>
           {phase === "choose" ? (
             <>
-              <button onClick={onClose}>Cancel</button>
+              <button onClick={close}>Cancel</button>
               <button className="d-primary" disabled={!canWrite || !count
                         || (start === "draft" && !setId)}
                       onClick={() => void run()}>
                 {prep ? `Add ${count} to the show` : `Start ${count}`}</button>
             </>
           ) : (
-            <button className="d-primary" disabled={phase === "running"} onClick={onClose}>
+            <button className="d-primary" disabled={phase === "running"} onClick={close}>
               {phase === "running" ? "Working…" : "Close"}</button>
           )}
         </footer>

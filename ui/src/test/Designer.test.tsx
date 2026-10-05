@@ -711,8 +711,9 @@ describe("studio library", () => {
     const row = (await within(tracks).findByText("synthetic 128")).closest("tr")!;
     expect(within(row).getByText("Timeline")).toBeInTheDocument();
     const second = within(tracks).getByText("Night Drive").closest("tr")!;
-    // No timeline: the active set (show.json's template_set) plays it.
-    expect(within(second).getByText("Template: Club")).toBeInTheDocument();
+    // No timeline: the operator's show runs. Template sets do not play live
+    // yet (F19 milestone 2), so the library must not say they do.
+    expect(within(second).getByText("Operator's show")).toBeInTheDocument();
     // No CDJ signature is something to fix before the night.
     expect(within(second).getByRole("img", { name: /No CDJ signature/ })).toBeInTheDocument();
     expect(within(tracks).getByText(/2 in the show folder\. 1 has a timeline/)).toBeInTheDocument();
@@ -723,7 +724,7 @@ describe("studio library", () => {
     await open("#studio");
     const tracks = await screen.findByRole("region", { name: "tracks" });
     await within(tracks).findByText("synthetic 128");
-    await user.click(within(tracks).getByRole("button", { name: /Template only/ }));
+    await user.click(within(tracks).getByRole("button", { name: /No timeline/ }));
     expect(within(tracks).queryByText("synthetic 128")).toBeNull();
     expect(within(tracks).getByText("Night Drive")).toBeInTheDocument();
     await user.click(within(tracks).getByRole("button", { name: /^All/ }));
@@ -739,7 +740,7 @@ describe("studio library", () => {
     await user.click(await within(tracks).findByRole("button", { name: /Night Drive/ }));
     const details = screen.getByRole("complementary", { name: "details" });
     expect(within(details).getByRole("heading", { name: "Night Drive" })).toBeInTheDocument();
-    expect(within(details).getByText(/The Club set plays it live/)).toBeInTheDocument();
+    expect(within(details).getByText(/when it plays the operator's show runs/)).toBeInTheDocument();
     expect(within(details).getByRole("link", { name: "Make a timeline" }))
       .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
     // The engine is asked whether it can find the audio; the mock has none.
@@ -914,19 +915,52 @@ describe("rekordbox collection", () => {
     expect(within(region).getByRole("button", { name: "Add to the show" })).toBeDisabled();
   });
 
-  it("can add tracks with no timeline, for the active set to play", async () => {
+  it("can just add tracks, with no timeline yet", async () => {
     const { user, socket, region } = await browse();
     await user.click(within(region).getByLabelText("tick Night Drive"));
     await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
     const dialog = screen.getByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /Template only/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Just add it/ }));
     await user.click(within(dialog).getByRole("button", { name: "Add 1 to the show" }));
     reply(socket, "rekordbox_prep", true, {
       results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
                   title: "Night Drive", artist: "Kölsch", signature: true, notes: [] }],
       skipped: [] });
-    expect(await within(dialog).findByText(/the active template set plays it/)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/in the show, no timeline yet/)).toBeInTheDocument();
     expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(false);
+  });
+
+  it("keeps the ticks when the dialog is cancelled", async () => {
+    const { user, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(region).getByLabelText("tick Night Drive")).toBeChecked();
+    // Escape closes it too, and keeps them as well.
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(region).getByLabelText("tick Night Drive")).toBeChecked();
+  });
+
+  it("starts only the tracks the prep created: one ticked again is only re-prepped", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByLabelText("tick Streamed Tune"));
+    await user.click(within(region).getByRole("button", { name: "Add 2 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Add 2 to the show" }));
+    reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "updated", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] },
+                { status: "created", track_id: "streamer-streamed-tune", rekordbox_ids: [104],
+                  title: "Streamed Tune", artist: "Streamer", signature: false, notes: [] }],
+      skipped: [] });
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(1));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:1" }) as unknown as TSaved;
+    expect(saved.doc.track).toBe("streamer-streamed-tune");
+    expect(await within(dialog).findByText(/already in the show, so left as it was/)).toBeInTheDocument();
   });
 
   it("shows what the engine said when it cannot prep", async () => {

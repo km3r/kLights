@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { apiFetch } from "../useEngine";
+import { ALL_TRACKS } from "../studioRoute";
 import { mmss, normalizeName } from "./model";
 import type { Catalogue, CataloguePlaylist, CatalogueTrack, TrackLine } from "./model";
 
@@ -21,7 +22,7 @@ import type { Catalogue, CataloguePlaylist, CatalogueTrack, TrackLine } from "./
  */
 
 const SHOWN = 300;          // rows drawn at once; a search narrows the rest
-export const ALL = "all";
+export const ALL = ALL_TRACKS;
 
 // -- the catalogue, shared by the sidebar and the page ---------------------------
 
@@ -47,9 +48,13 @@ export function resetCatalogue(): void {
   store = { cat: null, loading: false, error: null };
 }
 
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
 export function useCatalogue(): CatalogueState {
-  return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l); },
-                              () => store);
+  return useSyncExternalStore(subscribe, () => store);
 }
 
 /** Which prepped track each rekordbox row already is, in this database. */
@@ -285,7 +290,7 @@ export function RekordboxView({ scope, find, tracks, ticked, setTicked, onAdd, c
                     {prepped ? (
                       <>
                         <span className="s-pill"><i className={prepped.has_timeline ? "good" : ""} />
-                          {prepped.has_timeline ? "Timeline" : "Template"}</span>
+                          {prepped.has_timeline ? "Timeline" : "No timeline"}</span>
                         <a className="d-link small" href={`#studio/track/${prepped.id}`}
                            aria-label={`open ${t.title}`}>Open</a>
                       </>
@@ -340,7 +345,7 @@ export function Coverage({ scope, tracks }: { scope: string; tracks: TrackLine[]
   const cant = scoped.filter((t) => !t.analysed && !inShow.has(t.id));
   const not = scoped.length - own - tpl - cant.length;
   const parts: [string, number, string][] = [
-    ["Own timeline", own, "good"], ["In the show, template only", tpl, "tpl"],
+    ["Own timeline", own, "good"], ["In the show, no timeline", tpl, "tpl"],
     ["Not in the show", not, "none"], ["Can't be added yet", cant.length, "warn"]];
   return (
     <section className="s-coverage" aria-label="coverage">
@@ -353,9 +358,9 @@ export function Coverage({ scope, tracks }: { scope: string; tracks: TrackLine[]
           <div key={label}><dt><i className={k} />{label}</dt><dd className="mono">{n}</dd></div>
         ))}
       </dl>
-      <p className="muted small">A track not in the show still gets light: the engine calls it
-        unmatched and the operator's show runs. Added, it follows the active template set's
-        phrases even with no timeline.</p>
+      <p className="muted small">A track without a timeline, in the show or not, gets the
+        operator's show when it plays. Adding it lets Studio draft it a timeline, and lets
+        the engine recognise it from rekordbox and from CDJs.</p>
       {cant.length > 0 && (
         <div>
           <b className="small">Can't be added yet</b>

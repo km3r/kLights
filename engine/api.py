@@ -221,6 +221,11 @@ def _edited(root: Path, tid: str) -> Optional[float]:
 def _audio_here(doc: dict) -> bool:
     for entry in doc.get("audio") or ():
         raw = entry.get("path") if isinstance(entry, dict) else None
+        # Not a share: on Windows a stat of an unreachable \\NAS\... path
+        # blocks for seconds, and this runs for every track in the list. Such a
+        # track says "not here" and the details panel asks /api/audio, once.
+        if isinstance(raw, str) and raw.startswith(("\\\\", "//")):
+            continue
         if isinstance(raw, str) and raw and Path(raw).suffix.lower() in AUDIO_TYPES:
             try:
                 if Path(raw).expanduser().is_file():

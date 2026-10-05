@@ -15,7 +15,7 @@ import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
 import Studio from "./Studio";
-import { DRAFT_ON_OPEN } from "./Library";
+import { takePendingDraft } from "./Library";
 import { PanelToggle, usePanels } from "./panels";
 import type { StudioRoute } from "../studioRoute";
 import "./designer.css";
@@ -162,10 +162,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   useEffect(() => {
     if (drafted.current || !track || !doc) return;
     drafted.current = true;
-    let pending: { track?: string; set?: string } | null = null;
-    try { pending = JSON.parse(sessionStorage.getItem(DRAFT_ON_OPEN) ?? "null"); } catch { /* none */ }
-    if (!pending || pending.track !== trackId || !pending.set) return;
-    try { sessionStorage.removeItem(DRAFT_ON_OPEN); } catch { /* fine */ }
+    const pending = takePendingDraft(trackId);
+    if (!pending) return;
     const base = doc;
     const setId = pending.set;
     apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${setId}`)
