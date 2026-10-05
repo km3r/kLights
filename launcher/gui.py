@@ -193,18 +193,22 @@ class Launcher:
         # Console
         co = ttk.LabelFrame(outer, text="Console", padding=8)
         co.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        co.columnconfigure(3, weight=1)
+        co.columnconfigure(4, weight=1)
         self.console_btn = ttk.Button(co, text="Open console", command=lambda: self._open_console(None))
         self.console_btn.grid(row=0, column=0)
         self.setup_btn = ttk.Button(co, text="Open Setup", command=lambda: self._open_console("setup"))
         self.setup_btn.grid(row=0, column=1, padx=(6, 0))
+        # Studio, where shows are made: on this computer, with the token, so
+        # adding tracks and saving work without hunting for the printed link.
+        self.studio_btn = ttk.Button(co, text="Open Studio", command=lambda: self._open_console("studio"))
+        self.studio_btn.grid(row=0, column=2, padx=(6, 0))
         self.copy_btn = ttk.Button(co, text="Copy phone link", command=self._copy_link)
-        self.copy_btn.grid(row=0, column=2, padx=(6, 0))
+        self.copy_btn.grid(row=0, column=3, padx=(6, 0))
         self.link_var = tk.StringVar()
         self.link_entry = ttk.Entry(co, textvariable=self.link_var, state="readonly")
-        self.link_entry.grid(row=0, column=3, sticky="ew", padx=(12, 0))
+        self.link_entry.grid(row=0, column=4, sticky="ew", padx=(12, 0))
         self.console_note = ttk.Label(co, text="", foreground=GREY)
-        self.console_note.grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        self.console_note.grid(row=1, column=0, columnspan=5, sticky="w", pady=(4, 0))
 
         # Previz
         pv = ttk.LabelFrame(outer, text="Previz", padding=8)
@@ -469,7 +473,7 @@ class Launcher:
 
         # Console
         token = self.engine.record.token if ours else None
-        for btn in (self.console_btn, self.setup_btn):
+        for btn in (self.console_btn, self.setup_btn, self.studio_btn):
             btn.state(["!disabled"] if serving else ["disabled"])
         lan = self.lan
         local_only = (self.engine.record.bind if ours else self.settings.bind) == "127.0.0.1"

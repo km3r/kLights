@@ -4,9 +4,11 @@ import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub,
+  BEATS_PER_BAR, barBeat, curveValue, draftFromTemplate, itemName, itemSub, uniqueId,
 } from "./model";
-import type { Item, Point, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
+import type {
+  Item, Point, RoutineSummary, Row, TemplateSetDoc, TimelineDoc, TrackDoc,
+} from "./model";
 
 /**
  * Editing a timeline: an undo/redo history over the whole document, and the
@@ -111,18 +113,7 @@ export interface Edits {
   snapBeat(beat: number): number;
 }
 
-export function uniqueId(doc: RowsDoc, stem: string): string {
-  const taken = new Set<string>();
-  for (const r of doc.rows) {
-    taken.add(r.id);
-    for (const i of r.items ?? []) taken.add(i.id);
-  }
-  const base = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
-  let id = base;
-  let n = 2;
-  while (taken.has(id)) id = `${base}-${n++}`;
-  return id;
-}
+export { uniqueId };
 
 // -- going between pages ----------------------------------------------------------
 
@@ -134,13 +125,13 @@ export function rememberBack(): void {
 }
 
 /** Where the routine editor's back link goes: the track it was opened from,
- *  else the list of everything. */
+ *  else Studio's routines. */
 export function backHash(): string {
   try {
     const h = sessionStorage.getItem(BACK_KEY);
-    if (h && /^#designer\/(?!routine\/)[a-z0-9][a-z0-9_-]*$/.test(h)) return h;
+    if (h && /^#studio\/track\/[a-z0-9][a-z0-9_-]*$/.test(h)) return h;
   } catch { /* fine */ }
-  return "#designer";
+  return "#studio/routines";
 }
 
 // -- keys ----------------------------------------------------------------------
@@ -790,49 +781,17 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
     apiFetch<{ templates: { id: string; name?: string }[] }>("/api/templates")
       .then((r) => setSets(r.templates)).catch(() => setSets([]));
   }, []);
-  const phrases = track?.phrases?.items ?? [];
   if (!sets.length) return null;
   const draft = async (id: string) => {
     setError(null);
     try {
-      const { doc: ts } = await apiFetch<{ doc: {
-        phrases: Record<string, { routine: string; variation?: string;
-                                  params?: Record<string, unknown>; palette?: string }>;
-        palettes?: Record<string, Record<string, unknown>>; palette?: string } }>(
-        `/api/templates/${id}`);
-      if (!phrases.length) { setError("this track has no phrases to draft from"); return; }
-      history.apply((d) => {
-        let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
-        if (!lane) {
-          lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill",
-                   items: [] };
-          d.rows.unshift(lane);
-        }
-        lane.items = [];
-        const palLane = ts.palettes ? (d.rows.find((x) => x.target === "palette")
-          ?? (() => { const r: Row = { id: uniqueId(d, "palette"), type: "clips",
-                                       target: "palette", gap: "exclusive", items: [] };
-                      d.rows.push(r); return r; })()) : null;
-        if (ts.palettes) {
-          d.palettes = { ...(d.palettes ?? {}), ...(ts.palettes as TimelineDoc["palettes"]) };
-          if (ts.palette && !d.palette) d.palette = ts.palette;
-          if (palLane) palLane.items = [];
-        }
-        for (const [start, end, label] of phrases) {
-          const family = label.replace(/\s*\d+$/, "");
-          const pick = ts.phrases[label] ?? ts.phrases[family] ?? ts.phrases["*"];
-          if (!pick) continue;
-          const item: Item = { id: uniqueId(d, `${family}-${start}`), kind: "routine",
-                               routine: pick.routine, at: start, len: end - start };
-          if (pick.variation) item.variation = pick.variation;
-          if (pick.params) item.params = { ...pick.params };
-          lane.items.push(item);
-          if (pick.palette && palLane) {
-            (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
-                                          palette: pick.palette, at: start, len: end - start });
-          }
-        }
-      });
+      const { doc: ts } = await apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${id}`);
+      if (!track) return;
+      // Checked on a copy first: an edit that only says "no phrases" would
+      // still be a step on the undo stack.
+      const problem = draftFromTemplate(structuredClone(history.doc!), track, ts);
+      if (problem) { setError(problem); return; }
+      history.apply((d) => { draftFromTemplate(d, track, ts); });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -1026,7 +985,7 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
                      }} />
             ))}
             {routine && (
-              <a className="small d-link" href={`#designer/routine/${routine.id}`}
+              <a className="small d-link" href={`#studio/routine/${routine.id}`}
                  onClick={() => rememberBack()}>
                 Open routine · {routine.bars} bars{routine.loop ? ", loops" : ""}</a>)}
           </>

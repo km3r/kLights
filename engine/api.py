@@ -169,20 +169,65 @@ _KIND = {"tracks": "track", "timelines": "timeline", "routines": "routine",
 def _track_line(library, tid: str, doc: dict) -> dict:
     ident = doc.get("identity") or {}
     folder = library.folder
+    phrases = (doc.get("phrases") or {}).get("items") or ()
+    timeline = folder.timelines.get(tid)
     return {"id": tid, "title": ident.get("title"), "artist": ident.get("artist"),
             "album": ident.get("album"), "duration_s": ident.get("duration_s"),
             "bpm": ident.get("bpm"),
             "grid_rev": library.grids[tid].rev if tid in library.grids else None,
-            "has_timeline": tid in folder.timelines,
+            "has_timeline": timeline is not None,
             "has_waveform": tid in folder.waveforms,
             "has_audio": bool(doc.get("audio")),
-            "phrases": len((doc.get("phrases") or {}).get("items") or ()),
+            "phrases": len(phrases),
+            # The phrases themselves, [start beat, end beat, label]: Studio's
+            # library draws each track's structure in its row, and a list of a
+            # few dozen tracks is a few kilobytes of them.
+            "phrase_items": [list(p[:3]) for p in phrases
+                             if isinstance(p, (list, tuple)) and len(p) >= 3],
+            # What its timeline is, in a line: how big, and which grid it was
+            # drawn on -- a re-gridded track is one whose clips may now sit off
+            # the beat (showfiles warns the same).
+            "timeline": None if timeline is None else {
+                "rows": len(timeline.get("rows") or ()),
+                "items": sum(len(r.get("items") or ()) + len(r.get("points") or ())
+                             for r in timeline.get("rows") or ()
+                             if isinstance(r, dict)),
+                "grid_rev": timeline.get("grid_rev")},
+            "edited": _edited(library.root, tid),
+            # Whether a file the track names is on THIS machine. Only the
+            # named paths are looked at: an `audio_roots` search walks a music
+            # library, which a list of every track must not do. /api/audio
+            # still searches when the track is opened.
+            "audio_here": _audio_here(doc),
             # Which rekordbox rows this is, so the collection browser can say
             # "in the show" -- and how many CDJ signatures it answers to.
             "rekordbox": [{"db": r.get("db"), "id": r.get("id")}
                           for r in (doc.get("ids") or {}).get("rekordbox") or ()],
             "signatures": len((doc.get("ids") or {}).get("blt_signatures") or ()),
             "rev": folder.revs.get(f"tracks/{tid}.json")}
+
+
+def _edited(root: Path, tid: str) -> Optional[float]:
+    """When the track's show last changed on disk: its timeline's file, else
+    the track's own. Seconds since the epoch, for sorting by recent work."""
+    for kind in ("timeline", "track"):
+        try:
+            return showfiles.path_for(root, kind, tid).stat().st_mtime
+        except OSError:
+            continue
+    return None
+
+
+def _audio_here(doc: dict) -> bool:
+    for entry in doc.get("audio") or ():
+        raw = entry.get("path") if isinstance(entry, dict) else None
+        if isinstance(raw, str) and raw and Path(raw).suffix.lower() in AUDIO_TYPES:
+            try:
+                if Path(raw).expanduser().is_file():
+                    return True
+            except OSError:
+                continue
+    return False
 
 
 # Where each track's audio turned out to be. A browser playing a file asks for

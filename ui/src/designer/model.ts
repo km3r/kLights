@@ -127,6 +127,7 @@ export interface TrackLine {
   id: string;
   title: string;
   artist?: string;
+  album?: string;
   duration_s?: number;
   bpm?: number;
   grid_rev?: string;
@@ -138,7 +139,145 @@ export interface TrackLine {
   rekordbox?: { db: string; id: number }[];
   /** How many beat-link signatures it answers to: CDJs playing a USB stick. */
   signatures?: number;
+  /** rekordbox's phrases: [start beat, end beat, label]. */
+  phrase_items?: [number, number, string][];
+  /** Its timeline in a line: how big, and the grid it was drawn on. */
+  timeline?: { rows: number; items: number; grid_rev?: string | null } | null;
+  /** When its show last changed on disk, seconds since the epoch. */
+  edited?: number | null;
+  /** A file the track names is on this machine (the named paths only). */
+  audio_here?: boolean;
   rev?: string;
+}
+
+/** `GET /api/show`: show.json and the folder's counts. */
+export interface ShowSummary {
+  dir: string;
+  rev: string;
+  show: { template_set?: string; fallback?: string;
+          pause?: { idle_routine?: string }; [key: string]: unknown } | null;
+  errors: string[];
+  warnings: string[];
+}
+
+/** One phrase family's pick in a template set. */
+export interface TemplatePick {
+  routine: string;
+  variation?: string;
+  params?: Record<string, unknown>;
+  palette?: string;
+}
+
+/** A template set: rekordbox phrase -> routine, for tracks with no timeline. */
+export interface TemplateSetDoc {
+  kind?: "klights.template_set";
+  id: string;
+  name?: string;
+  phrases: Record<string, TemplatePick>;
+  palettes?: Record<string, Record<string, unknown>>;
+  palette?: string;
+  bars?: { every: number; cycle: TemplatePick[] };
+  [key: string]: unknown;
+}
+
+/** rekordbox's phrase colours, by family. */
+export const PHRASE_HUE: Record<string, string> = {
+  Intro: "#3b82f6", Verse: "#14b8a6", Up: "#f59e0b", Chorus: "#ef4444",
+  Down: "#8b5cf6", Bridge: "#ec4899", Outro: "#64748b",
+};
+
+/** "Verse 2" is a Verse: the label without its number. */
+export function phraseFamily(label: string): string {
+  return label.replace(/\s*\d+$/, "");
+}
+
+/** An id not yet used by any row or item of a document, from a stem. */
+export function uniqueId(doc: { rows: Row[] }, stem: string): string {
+  const taken = new Set<string>();
+  for (const r of doc.rows) {
+    taken.add(r.id);
+    for (const i of r.items ?? []) taken.add(i.id);
+  }
+  const base = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+  let id = base;
+  let n = 2;
+  while (taken.has(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+/** A new timeline for a track: one scene lane, empty, on the track's grid. */
+export function newTimeline(track: Pick<TrackDoc, "id" | "grid">): TimelineDoc {
+  const doc: TimelineDoc = { kind: "klights.timeline", version: 1, track: track.id, rows: [] };
+  if (track.grid?.rev) doc.grid_rev = track.grid.rev;
+  doc.rows.push({ id: "scene", type: "clips", target: "scene", gap: "fill", items: [] });
+  return doc;
+}
+
+function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: number,
+                 len: number): Item {
+  const item: Item = { id: uniqueId(d, stem), kind: "routine", routine: pick.routine, at, len };
+  if (pick.variation) item.variation = pick.variation;
+  if (pick.params) item.params = { ...pick.params };
+  return item;
+}
+
+/**
+ * Draft from template: a template set laid onto a timeline's scene lane, one
+ * routine per rekordbox phrase -- the exact label (Verse 2), then the family
+ * (Verse), then `*` -- and its palettes onto the palette lane. A track with a
+ * grid but no phrases gets the set's bar cycle instead, the way the engine
+ * plays it live. Changes `d` in place (inside an undoable edit, or on a new
+ * document); returns why it could not, or null.
+ */
+export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
+                                  ts: TemplateSetDoc): string | null {
+  const phrases = track.phrases?.items ?? [];
+  let spans: [number, number, TemplatePick | undefined, string][] = [];
+  if (phrases.length) {
+    spans = phrases.map(([start, end, label]) => {
+      const family = phraseFamily(label);
+      return [start, end, ts.phrases[label] ?? ts.phrases[family] ?? ts.phrases["*"], family];
+    });
+  } else if (ts.bars?.cycle.length && track.grid?.segments?.length) {
+    const grid = new Grid(track.grid.segments);
+    const end = track.identity.duration_s ? grid.beatAt(track.identity.duration_s) : 0;
+    const step = ts.bars.every * BEATS_PER_BAR;
+    for (let at = 0, i = 0; at < end; at += step, i++) {
+      spans.push([at, Math.min(end, at + step), ts.bars.cycle[i % ts.bars.cycle.length],
+                  `bar-${at / BEATS_PER_BAR + 1}`]);
+    }
+  }
+  if (!spans.length) {
+    return phrases.length || !ts.bars ? "this track has no phrases to draft from"
+      : "this track has no phrases, and no grid long enough for the bar cycle";
+  }
+  let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
+  if (!lane) {
+    lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill", items: [] };
+    d.rows.unshift(lane);
+  }
+  lane.items = [];
+  let palLane: Row | null = null;
+  if (ts.palettes) {
+    palLane = d.rows.find((x) => x.target === "palette") ?? null;
+    if (!palLane) {
+      palLane = { id: uniqueId(d, "palette"), type: "clips", target: "palette",
+                  gap: "exclusive", items: [] };
+      d.rows.push(palLane);
+    }
+    d.palettes = { ...(d.palettes ?? {}), ...(ts.palettes as TimelineDoc["palettes"]) };
+    if (ts.palette && !d.palette) d.palette = ts.palette;
+    palLane.items = [];
+  }
+  for (const [start, end, pick, stem] of spans) {
+    if (!pick) continue;
+    lane.items.push(itemFor(d, pick, `${stem}-${start}`, start, end - start));
+    if (pick.palette && palLane) {
+      (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
+                                    palette: pick.palette, at: start, len: end - start });
+    }
+  }
+  return null;
 }
 
 /** `GET /api/rekordbox`: the DJ's collection, as the prep bridge read it. */
@@ -359,6 +498,13 @@ export function barBeat(beat: number): string {
   const bar = Math.floor(beat / BEATS_PER_BAR) + 1;
   const inBar = Math.floor(((beat % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR) + 1;
   return `${bar}.${inBar}`;
+}
+
+/** A track's length as a DJ reads it: 6:48. */
+export function mmss(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "";
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 export function clock(seconds: number): string {

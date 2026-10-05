@@ -81,6 +81,18 @@ try:
           and line.get("id") == "synth-128" and line.get("has_timeline") is True
           and line.get("phrases") == 8 and line.get("rev", "").startswith("r:")
           and line.get("grid_rev") == "g:834af7", f"{status} {line}")
+    check("each line carries what Studio's library shows: the phrases, the "
+          "timeline in a line, when it was edited",
+          line.get("phrase_items", [None])[0] == [0, 64, "Intro"]
+          and len(line.get("phrase_items", [])) == 8
+          and line.get("timeline", {}).get("rows", 0) > 0
+          and line.get("timeline", {}).get("items", 0) > 0
+          and isinstance(line.get("edited"), float),
+          f"{line.get('phrase_items')} {line.get('timeline')} {line.get('edited')}")
+    check("audio_here only looks at the paths the track names: this one names "
+          "a path that is not on this machine, and the list does not search "
+          "audio_roots for it", line.get("audio_here") is False,
+          f"{line.get('audio_here')}")
     status, body = jget("/api/tracks/synth-128")
     check("one track, with the rev a save must quote",
           status == 200 and body["doc"]["id"] == "synth-128"
@@ -346,7 +358,7 @@ marker = b"klights-designer"
 check("the console page loads exactly one entry script", len(entries) == 1, f"{entries}")
 check("and a phone never downloads the designer: its marker is not in the entry",
       entries and marker not in (dist / entries[0]).read_bytes(), f"{entries}")
-check("it is in a chunk of its own, loaded only from #designer",
+check("it is in a chunk of its own, loaded only from #studio",
       any(marker in js.read_bytes() for js in (dist / "assets").glob("*.js")
           if js.name != Path(entries[0]).name) if entries else False)
 

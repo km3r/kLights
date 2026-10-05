@@ -28,10 +28,12 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "A first pass",
         steps: [
-          <>Pick a track. Tracks are added with{" "}
-            <code>bridges/rekordbox/prep.py</code>.</>,
-          <>Under <b>Draft from template</b>, pick a set. It fills the scene
-            lane with one routine per phrase.</>,
+          <>Pick a track in the library, or add one: <b>Browse rekordbox</b> in
+            the sidebar, open a playlist, tick tracks and <b>Add to the
+            show</b>. Adding can draft each one a timeline from a template set
+            in the same step.</>,
+          <>Open its timeline. Under <b>Draft from template</b>, pick a set. It
+            fills the scene lane with one routine per phrase.</>,
           <>Press <b>Play</b> or Space. If there's no audio, open the file from
             this computer. It isn't uploaded.</>,
           <>Drag a clip to move it, or drag its right edge to resize it. Clips
@@ -84,6 +86,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             refused rather than overwriting theirs.</>,
           <><b>this rig only</b> marks anything that uses this event's own
             looks or presets.</>,
+          <>The buttons at the edges of the top bar fold the side panels away,
+            to give the lanes or the library the whole width. Studio
+            remembers them on this computer.</>,
           <>Press <b>?</b> to open or close this guide.</>,
         ],
       },
@@ -100,7 +105,7 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "A first routine",
         steps: [
-          <>On the designer's front page, type an id and press{" "}
+          <>On Studio's <b>Routines</b> page, type an id and press{" "}
             <b>New routine</b>. Or click <b>Open routine</b> on a clip.</>,
           <>Set the number of <b>Bars</b>, and whether it <b>loops</b>.</>,
           <>Click a block under <b>Blocks</b> to add it at the playhead. Its
@@ -168,14 +173,14 @@ export function useDesignerGuide(page: DesignerGuideId) {
     open: guide != null,
     button: (
       <button className={open ? "on" : ""} aria-pressed={open != null}
-              title="How the designer works (?)"
+              title="How Studio works (?)"
               onClick={() => (open ? setOpen(null) : show(page))}>
         Guide
       </button>
     ),
     banner: !seen && !open ? (
       <div className="d-banner d-info" role="note">
-        New to the designer? The guide walks you through building a show and a
+        New to Studio? The guide walks you through building a show and a
         routine.
         <button className="d-primary" onClick={() => show(page)}>Open the guide</button>
         <button onClick={dismiss}>Not now</button>

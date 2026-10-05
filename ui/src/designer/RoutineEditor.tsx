@@ -13,6 +13,7 @@ import {
 import type { History } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
+import { PanelToggle, usePanels } from "./panels";
 import "./designer.css";
 
 /**
@@ -86,6 +87,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [selected, setSelected] = useState<string | null>(null);
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
+  const [panels, togglePanel] = usePanels();
 
   useEffect(() => {
     setSnap("beat");
@@ -112,7 +114,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   if (loadError) {
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
-        <header className="d-top"><a className="d-link" href="#designer">All tracks</a></header>
+        <header className="d-top"><a className="d-link" href="#studio/routines">Studio</a></header>
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -133,8 +135,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href={back}
-           title={back === "#designer" ? "All tracks and routines"
-             : `Back to ${back.slice("#designer/".length)}`}>◂</a>
+           title={back === "#studio/routines" ? "Back to Studio's routines"
+             : `Back to ${back.slice("#studio/track/".length)}`}>◂</a>
         <button className={loop.playing ? "on" : ""} onClick={() => loop.setPlaying(!loop.playing)}>
           {loop.playing ? "Stop" : "Play"}</button>
         <span className="mono" aria-label="position">bar {barBeat(loop.beat)} of {doc.bars}</span>
@@ -158,10 +160,12 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="routine" ident={routineId} />
         {guide.button}
+        <PanelToggle open={panels.edit} side="right" label="side panel"
+                     onToggle={() => togglePanel("edit")} />
       </header>
       {guide.banner}
 
-      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
+      <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
         <div className="d-lanes" role="region" aria-label="lanes">
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={loop.seek} />
@@ -180,14 +184,14 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
           </div>
         </div>
 
-        <aside className="d-side">
+        {panels.edit && <aside className="d-side" aria-label="side panel">
           <Settings history={history} doc={doc} engine={engine} rigBound={rigBound} />
           <Roles history={history} doc={doc} engine={engine} />
           <Params history={history} doc={doc} engine={engine} />
           <Variations history={history} doc={doc} engine={engine} />
           <Blocks history={history} doc={doc} engine={engine} beat={loop.beat}
                   selected={selected} onAdded={setSelected} />
-        </aside>
+        </aside>}
         {guide.drawer}
       </div>
 

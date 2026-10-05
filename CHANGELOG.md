@@ -11,6 +11,39 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Changed — the designer is now Studio, with a library to start from
+
+- **Studio** is the new name for the designer, because "design" was already the
+  console's own Design mode. It opens at `#studio`; old `#designer` links still
+  work and are rewritten. The ways in are new: a **Studio** button in the
+  console's header (Design mode only, so a phone never sees it), a Track-card
+  link that says what it will do for the playing track (open its timeline, make
+  one, or find it in rekordbox and add it), and **Open Studio** in the
+  launcher. Every link opens Studio in a tab of its own, carrying the token.
+- **A library, not a list.** Studio opens on every track in the show: what lights
+  it on the night (its timeline, or the active template set), rekordbox's
+  phrases drawn in its row, BPM and length, and what needs attention -- a grid
+  that changed since the timeline was drawn, no CDJ signature, unsaved work in
+  this browser, the track playing now. Filter, search and sort; the selected
+  track's details (waveform, checks, whether the engine can find its audio)
+  sit beside it, with **Open timeline** / **Make a timeline** and **Draft
+  from** a set.
+- **rekordbox in the sidebar.** The playlist tree is the sidebar's second half; a
+  playlist opens in the main column with which tracks are in the show already,
+  and a panel saying how much of it the show covers. **Add to the show** preps
+  the ticked tracks and starts each one in the same step: a timeline drafted
+  from a template set, an empty timeline, or template only. The draft is the
+  editor's own and is saved like any other timeline, so the engine checks it.
+- **Make timelines for ticked** does the same for tracks already in the show.
+- **Side panels fold away**: the library's sidebar and details, and the timeline
+  and routine editors' right-hand panel, each with a button at the edge of the
+  top bar. Remembered per browser.
+- **Drafting knows the bar cycle**: a track with a grid but no phrases is
+  drafted from the set's bar cycle, the way the engine plays it live, instead
+  of refusing.
+- `/api/tracks` lines carry `phrase_items`, a `timeline` summary (rows, items,
+  the grid rev it was drawn on), `edited` and `audio_here`.
+
 ### Added — tracks straight from rekordbox
 
 - **The designer browses the DJ's rekordbox collection.** The track list has a

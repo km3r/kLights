@@ -1090,11 +1090,25 @@ describe("follow dj (track card)", () => {
     expect(socket.last()).toEqual({ type: "follow", armed: true });
   });
 
-  it("links the matched track to the designer", () => {
+  it("links the playing track into Studio: its timeline, a timeline to make, or rekordbox", () => {
     const socket = mount();
     act(() => socket.push(program()));
-    expect(screen.getByRole("link", { name: "Open this track in the designer" }))
-      .toHaveAttribute("href", "#designer/synth-128");
+    const open = screen.getByRole("link", { name: "Open it in Studio" });
+    expect(open).toHaveAttribute("href", "/#studio/track/synth-128");
+    // Studio's own tab, reused by every link into it.
+    expect(open).toHaveAttribute("target", "klights-studio");
+    act(() => socket.push(stateWith((s) => {
+      Object.assign(s, program());
+      s.track!.match!.has_timeline = false;
+    })));
+    expect(screen.getByRole("link", { name: "Make a timeline for it in Studio" }))
+      .toHaveAttribute("href", "/#studio/track/synth-128");
+    act(() => socket.push(stateWith((s) => {
+      Object.assign(s, program());
+      s.track!.match = { track_id: null, via: "none", candidates: [], stale: false };
+    })));
+    expect(screen.getByRole("link", { name: "Add it to the show in Studio" }))
+      .toHaveAttribute("href", "/#studio/rekordbox?find=synthetic%20128");
   });
 
   it("shows who has each lane, and grabs and releases them", async () => {
@@ -1145,10 +1159,10 @@ describe("designer preview banner", () => {
       s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
                     draft: true, playing: true, ready: true };
     })));
-    expect(screen.getByText(/DESIGNER \(laptop\) is driving the rig/))
+    expect(screen.getByText(/STUDIO \(laptop\) is driving the rig/))
       .toBeInTheDocument();
     expect(screen.getByText(/unsaved draft/)).toBeInTheDocument();
-    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    const banner = screen.getByText(/STUDIO \(laptop\)/).closest(".banner")!;
     await user.click(within(banner as HTMLElement).getByRole("button",
                                                            { name: "Release" }));
     expect(socket.last()).toEqual({ type: "preview_release" });
@@ -1162,8 +1176,21 @@ describe("designer preview banner", () => {
       s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
                     draft: false, playing: true, ready: true };
     })));
-    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    const banner = screen.getByText(/STUDIO \(laptop\)/).closest(".banner")!;
     expect(within(banner as HTMLElement).queryByRole("button", { name: "Release" })).toBeNull();
+  });
+});
+
+describe("the way into Studio", () => {
+  it("is a button in the header on a desk, and gone in Perform", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("klights.mode", "design");
+    mount();
+    const studio = screen.getByRole("link", { name: "Studio ↗" });
+    expect(studio).toHaveAttribute("href", "/#studio");
+    expect(studio).toHaveAttribute("target", "klights-studio");
+    await user.click(screen.getByRole("button", { name: "Design" }));
+    expect(screen.queryByRole("link", { name: "Studio ↗" })).toBeNull();
   });
 });
 

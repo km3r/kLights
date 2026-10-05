@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, curveValue } from "./model";
+import { BEATS_PER_BAR, PHRASE_HUE, curveValue, phraseFamily } from "./model";
 import type { Grid, Row, TrackDoc, Wave } from "./model";
 import { Editor } from "./edit";
 import type { Edits } from "./edit";
@@ -38,10 +38,6 @@ export function Ruler({ totalBeats, x, width, onSeek }: {
   );
 }
 
-const PHRASE_HUE: Record<string, string> = {
-  Intro: "#3b82f6", Verse: "#14b8a6", Up: "#f59e0b", Chorus: "#ef4444",
-  Down: "#8b5cf6", Bridge: "#ec4899", Outro: "#64748b",
-};
 
 export function Phrases({ track, x, width }: { track: TrackDoc; x: (b: number) => number; width: number }) {
   const items = track.phrases?.items ?? [];
@@ -50,7 +46,7 @@ export function Phrases({ track, x, width }: { track: TrackDoc; x: (b: number) =
       <div className="d-head">Phrases <span className="muted small">rekordbox</span></div>
       <svg width={width} height={22} aria-label="phrases">
         {items.map(([start, end, label]) => {
-          const family = label.replace(/\s*\d+$/, "");
+          const family = phraseFamily(label);
           return (
             <g key={`${start}-${label}`}>
               <rect x={x(start)} y={2} width={Math.max(1, x(end) - x(start) - 1)} height={18}

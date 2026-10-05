@@ -391,13 +391,21 @@ learns from the snapshot within a tenth of a second and stops sending. Clip
 positions and lengths are capped at `showfiles.MAX_BEATS` (65536), so no
 document can ask the compiler for unbounded work.
 
-**The designer** itself is `ui/src/designer/`, a chunk of its own loaded only
-from `#designer` (`test_api` checks the console's entry script never contains
-it). `#designer` lists the tracks and routines; `#designer/<track>` is layout B
+**Studio** (once "the designer") is `ui/src/designer/`, a chunk of its own
+loaded only from `#studio` (`test_api` checks the console's entry script never
+contains it); old `#designer` addresses are rewritten to Studio's. `#studio` is
+the library -- every track with what lights it on the night and what needs
+attention, from one `/api/tracks` read whose lines carry the phrases, a line on
+the timeline and when it was edited -- with the rekordbox collection in its
+sidebar (`#studio/rekordbox[/<playlist>]`) and the routines at
+`#studio/routines`. Adding tracks preps them (`rekordbox_prep`) and can start
+each one in the same step: a timeline drafted from a template set, an empty
+one, or none; the drafting is the timeline editor's own function, written with
+`timeline_save` and base_rev "". `#studio/track/<id>` is layout B
 -- bar ruler, rekordbox's phrases, the waveform, then the timeline's rows (the
 higher lane wins), hits, automation and the VJ lane, with the rig's plan and
 "who drives each lane" at the playhead on the right and the selected clip
-below; `#designer/routine/<id>` edits a routine with the same lanes in loop
+below; `#studio/routine/<id>` edits a routine with the same lanes in loop
 mode, plus its roles, open parameters, variations and blocks. Its beat grid,
 block list and automation targets are copies of the engine's, held to them by
 fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale

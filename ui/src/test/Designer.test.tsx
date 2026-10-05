@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -9,6 +9,7 @@ import {
   whoDrives,
 } from "../designer/model";
 import { AUTOMATION_RANGES } from "../designer/edit";
+import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import type { RoutineDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
@@ -147,13 +148,38 @@ const CATALOGUE = {
 };
 let rekordbox: [number, unknown] = [200, CATALOGUE];
 
+const PHRASE_ITEMS = trackDoc.phrases.items as [number, number, string][];
+
+/** A prepped track read back: the example track under another name. */
+function trackAs(id: string, title: string, artist: string) {
+  return { ...structuredClone(trackDoc), id, identity: { ...trackDoc.identity, title, artist } };
+}
+
 function serve(path: string): [number, unknown] {
   if (path === "/api/tracks") {
-    return [200, { tracks: [{ id: "synth-128", title: "synthetic 128", artist: "kLights",
-                              bpm: 128, phrases: 8, has_timeline: true,
-                              has_waveform: false, has_audio: false,
-                              rekordbox: [{ db: "collection:TEST", id: 101 }],
-                              signatures: 1 }] }];
+    return [200, { tracks: [
+      { id: "synth-128", title: "synthetic 128", artist: "kLights",
+        bpm: 128, phrases: 8, has_timeline: true, grid_rev: "g:834af7",
+        has_waveform: false, has_audio: false, phrase_items: PHRASE_ITEMS,
+        timeline: { rows: 7, items: 13, grid_rev: "g:834af7" }, edited: 2,
+        rekordbox: [{ db: "collection:TEST", id: 101 }], signatures: 1 },
+      // From another collection: not this rekordbox's row 102, so the browser
+      // still offers it.
+      { id: "kolsch-night-drive", title: "Night Drive", artist: "Kölsch", bpm: 124,
+        phrases: 8, has_timeline: false, grid_rev: "g:834af7", has_waveform: false,
+        has_audio: true, audio_here: false, phrase_items: PHRASE_ITEMS, timeline: null,
+        edited: 1, rekordbox: [{ db: "xml:OTHER", id: 7 }], signatures: 0 },
+    ] }];
+  }
+  if (path === "/api/show") {
+    return [200, { dir: "/shows", rev: "r:s", show: { kind: "klights.show", template_set: "club" },
+                   errors: [], warnings: [] }];
+  }
+  if (path === "/api/tracks/kolsch-night-drive") {
+    return [200, { doc: trackAs("kolsch-night-drive", "Night Drive", "Kölsch"), rev: "r:k" }];
+  }
+  if (path === "/api/tracks/streamer-streamed-tune") {
+    return [200, { doc: trackAs("streamer-streamed-tune", "Streamed Tune", "Streamer"), rev: "r:st" }];
   }
   if (path === "/api/rekordbox") return rekordbox;
   if (path === "/api/tracks/synth-128") return [200, { doc: trackDoc, rev: "r:t" }];
@@ -167,6 +193,8 @@ function serve(path: string): [number, unknown] {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
+  resetCatalogue();
   rekordbox = [200, CATALOGUE];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
@@ -178,7 +206,7 @@ afterEach(() => {
   location.hash = "";
 });
 
-async function open(hash = "#designer/synth-128") {
+async function open(hash = "#studio/track/synth-128") {
   location.hash = hash;
   installMockSocket();
   render(<App />);
@@ -198,12 +226,6 @@ function reply(socket: MockSocket, type: string, ok: boolean, data?: unknown, er
 }
 
 describe("designer", () => {
-  it("lists the show folder's tracks", async () => {
-    await open("#designer");
-    expect(await screen.findByText("synthetic 128")).toBeInTheDocument();
-    expect(screen.getByText(/8 phrases · timeline · CDJ signature/)).toBeInTheDocument();
-  });
-
   it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
     await open();
     expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
@@ -502,13 +524,13 @@ describe("routine editor", () => {
     fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
     await user.click(screen.getByRole("link", { name: /Open routine/ }));
     await screen.findByLabelText("fan_sweep at bar 1.1");
-    expect(screen.getByTitle("Back to synth-128")).toHaveAttribute("href", "#designer/synth-128");
+    expect(screen.getByTitle("Back to synth-128")).toHaveAttribute("href", "#studio/track/synth-128");
   });
 
-  it("is reached from the picker, and lays a routine out as lanes on roles", async () => {
+  it("is reached from Studio's routines, and lays a routine out as lanes on roles", async () => {
     const user = userEvent.setup();
-    await open("#designer");
-    await user.click(await screen.findByRole("link", { name: "Fan sweep (drop)" }));
+    await open("#studio/routines");
+    await user.click(await screen.findByRole("link", { name: /Fan sweep \(drop\)/ }));
     const lanes = await screen.findByRole("region", { name: "lanes" });
     expect(within(lanes).getByLabelText("fan_sweep at bar 1.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("chase at bar 1.1")).toBeInTheDocument();
@@ -522,7 +544,7 @@ describe("routine editor", () => {
 
   it("edits a block's arguments -- a value or a parameter -- and saves with the rev", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     const fan = within(lanes).getByLabelText("fan_sweep at bar 1.1").querySelector("rect")!;
     fireEvent.pointerDown(fan, { clientX: 10, pointerId: 1 });
@@ -546,7 +568,7 @@ describe("routine editor", () => {
 
   it("adds blocks, roles, parameters and variations", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     await user.click(screen.getByRole("button", { name: "pulse" }));
     // on the routine's level lane, at the playhead, to the routine's end
@@ -580,7 +602,7 @@ describe("routine editor", () => {
 
   it("starts a new routine and saves it as a new file", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer");
+    const socket = await open("#studio/routines");
     await user.type(await screen.findByLabelText("new routine id"), "Bad Name");
     expect(screen.getByRole("button", { name: "New routine" })).toBeDisabled();
     await user.clear(screen.getByLabelText("new routine id"));
@@ -600,7 +622,7 @@ describe("routine editor", () => {
 
   it("shows what the engine says will not work on this rig", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     await screen.findByRole("region", { name: "lanes" });
     await user.clear(screen.getByLabelText("routine name"));
     await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_draft")).toBe(true),
@@ -634,7 +656,7 @@ describe("designer guide", () => {
 
   it("opens to the routine guide from the routine editor", async () => {
     const user = userEvent.setup();
-    await open("#designer/routine/fan-drop");
+    await open("#studio/routine/fan-drop");
     await screen.findByRole("region", { name: "lanes" });
     await user.click(screen.getByRole("button", { name: "Guide" }));
     expect(within(screen.getByRole("complementary", { name: "guide" }))
@@ -663,17 +685,163 @@ describe("designer guide", () => {
   });
 });
 
-describe("rekordbox collection", () => {
-  async function browse() {
+type TSaved = { doc: TimelineDoc; base_rev: string };
+
+describe("studio routes", () => {
+  it("rewrites the old designer's addresses to Studio's", async () => {
+    await open("#designer");
+    expect(location.hash).toBe("#studio");
+    expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+
+  it("takes an old link to a track or a routine to the same place", async () => {
+    await open("#designer/synth-128");
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
+    cleanup();
+    await open("#designer/routine/fan-drop");
+    expect(location.hash).toBe("#studio/routine/fan-drop");
+  });
+});
+
+describe("studio library", () => {
+  it("lists the show folder's tracks with what lights each on the night", async () => {
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    const row = (await within(tracks).findByText("synthetic 128")).closest("tr")!;
+    expect(within(row).getByText("Timeline")).toBeInTheDocument();
+    const second = within(tracks).getByText("Night Drive").closest("tr")!;
+    // No timeline: the active set (show.json's template_set) plays it.
+    expect(within(second).getByText("Template: Club")).toBeInTheDocument();
+    // No CDJ signature is something to fix before the night.
+    expect(within(second).getByRole("img", { name: /No CDJ signature/ })).toBeInTheDocument();
+    expect(within(tracks).getByText(/2 in the show folder\. 1 has a timeline/)).toBeInTheDocument();
+  });
+
+  it("filters by what a track needs, and by name", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer");
-    await user.click(await screen.findByRole("button", { name: "Browse rekordbox" }));
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await within(tracks).findByText("synthetic 128");
+    await user.click(within(tracks).getByRole("button", { name: /Template only/ }));
+    expect(within(tracks).queryByText("synthetic 128")).toBeNull();
+    expect(within(tracks).getByText("Night Drive")).toBeInTheDocument();
+    await user.click(within(tracks).getByRole("button", { name: /^All/ }));
+    await user.type(within(tracks).getByLabelText("filter tracks"), "kolsch");
+    expect(within(tracks).queryByText("synthetic 128")).toBeNull();
+    expect(within(tracks).getByText("Night Drive")).toBeInTheDocument();
+  });
+
+  it("shows the selected track's details, and opens its timeline", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByRole("button", { name: /Night Drive/ }));
+    const details = screen.getByRole("complementary", { name: "details" });
+    expect(within(details).getByRole("heading", { name: "Night Drive" })).toBeInTheDocument();
+    expect(within(details).getByText(/The Club set plays it live/)).toBeInTheDocument();
+    expect(within(details).getByRole("link", { name: "Make a timeline" }))
+      .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
+    // The engine is asked whether it can find the audio; the mock has none.
+    expect(await within(details).findByText(/No audio file on this machine/)).toBeInTheDocument();
+  });
+
+  it("folds its side panels away, and remembers that", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    expect(screen.getByRole("navigation", { name: "Studio" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide the sidebar" }));
+    expect(screen.queryByRole("navigation", { name: "Studio" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Hide the details" }));
+    expect(screen.queryByRole("complementary", { name: "details" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("klights.studio.panels")!))
+      .toMatchObject({ nav: false, side: false });
+    cleanup();
+    await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    expect(screen.queryByRole("navigation", { name: "Studio" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show the sidebar" }));
+    expect(screen.getByRole("navigation", { name: "Studio" })).toBeInTheDocument();
+  });
+
+  it("folds the timeline's side panel away, so the lanes take the width", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    expect(screen.getByRole("complementary", { name: "side panel" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide the side panel" }));
+    expect(screen.queryByRole("complementary", { name: "side panel" })).toBeNull();
+    expect(document.querySelector(".d-body")).toHaveClass("d-no-side");
+  });
+
+  it("drafts a track from a set when its timeline opens, as an undoable unsaved edit", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByRole("button", { name: /synthetic 128/ }));
+    const details = screen.getByRole("complementary", { name: "details" });
+    await user.click(within(details).getByRole("button", { name: "Redraft from" }));
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    // Club plays Idle orbit on the Intro, where the saved timeline has a
+    // snapshot: one routine per phrase, from the track's own phrases.
+    expect(within(lanes).getByLabelText("idle-orbit at bar 1.1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(lanes).queryByLabelText("idle-orbit at bar 1.1")).toBeNull();
+  });
+
+  it("makes timelines for ticked tracks that have none, drafted from a set", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByLabelText("tick Night Drive"));
+    await user.click(within(tracks).getByLabelText("tick synthetic 128"));
+    // synthetic 128 has a timeline already: only one is offered.
+    await user.click(within(tracks).getByRole("button", { name: "Make timelines for 1…" }));
+    const dialog = screen.getByRole("dialog", { name: "Make timelines for 1 track" });
+    await user.click(within(dialog).getByRole("button", { name: "Start 1" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(true));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:n" }) as unknown as TSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ kind: "klights.timeline", track: "kolsch-night-drive",
+                                      grid_rev: "g:834af7" });
+    const scene = saved.doc.rows.find((r) => r.target === "scene")!;
+    expect(scene.items!.map((i) => i.routine)).toEqual([
+      "idle-orbit", "verse-sweep", "build-rise", "fan-drop", "idle-orbit", "build-rise",
+      "fan-drop", "idle-orbit"]);
+    expect(await within(dialog).findByText(/drafted 8 clips from Club/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Open" }))
+      .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
+  });
+
+  it("lists routines and starts a new one from its own page", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routines");
+    const page = await screen.findByRole("region", { name: "routines" });
+    expect(await within(page).findByRole("link", { name: /Fan sweep \(drop\)/ }))
+      .toHaveAttribute("href", "#studio/routine/fan-drop");
+    expect(within(page).getByText("$color $width $rate")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: /^Tracks/ }));
+    expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+});
+
+describe("rekordbox collection", () => {
+  async function browse(hash = "#studio/rekordbox") {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    const sidebar = screen.getByRole("navigation", { name: "Studio" });
+    await user.click(within(sidebar).getByRole("button", { name: "Browse rekordbox" }));
     const region = await screen.findByRole("region", { name: "rekordbox collection" });
-    return { user, socket, region };
+    await within(region).findByRole("table");
+    return { user, socket, region, sidebar };
   }
 
   it("is read only when asked: a big collection is a megabyte", async () => {
-    await open("#designer");
+    await open("#studio");
     await screen.findByText("synthetic 128");
     const asked = (vi.mocked(fetch).mock.calls as unknown as [string][])
       .map(([url]) => new URL(url, "http://engine").pathname);
@@ -681,23 +849,28 @@ describe("rekordbox collection", () => {
   });
 
   it("lists every track, and says which are in the show, unanalysed or streamed", async () => {
-    const { region } = await browse();
+    const { region, sidebar } = await browse();
     const table = within(region).getByRole("table");
     expect(within(table).getAllByRole("row")).toHaveLength(5);   // header + 4
-    expect(within(table).getByRole("link", { name: "in the show" }))
-      .toHaveAttribute("href", "#designer/synth-128");
+    expect(within(table).getByRole("link", { name: "open synthetic 128" }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
     expect(within(table).getByLabelText("tick Raw Demo")).toBeDisabled();
     expect(within(table).getByText("not analysed")).toBeInTheDocument();
     expect(within(table).getByText("streaming")).toBeInTheDocument();
-    expect(within(region).getByLabelText("smart Smart")).toBeDisabled();
+    expect(within(sidebar).getByLabelText("smart Smart")).toHaveAttribute("aria-disabled", "true");
+    const coverage = screen.getByRole("region", { name: "coverage" });
+    expect(within(coverage).getByText("Own timeline").closest("div")).toHaveTextContent("1");
   });
 
   it("browses folder, then playlist, then its tracks; and searches the way the matcher compares", async () => {
-    const { user, region } = await browse();
-    const tree = within(region).getByRole("navigation", { name: "playlists" });
+    const { user, sidebar } = await browse();
+    const tree = within(sidebar).getByRole("navigation", { name: "playlists" });
     expect(within(tree).queryByLabelText("playlist Friday")).toBeNull();
     await user.click(within(tree).getByLabelText("folder Gigs"));
     await user.click(within(tree).getByLabelText("playlist Friday"));
+    expect(location.hash).toBe("#studio/rekordbox/11");
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    expect(within(region).getByRole("heading", { name: "Friday" })).toBeInTheDocument();
     const table = within(region).getByRole("table");
     expect(within(table).getAllByRole("row")).toHaveLength(3);
     expect(within(table).getByText("Night Drive")).toBeInTheDocument();
@@ -707,13 +880,17 @@ describe("rekordbox collection", () => {
     expect(within(table).getByText("Night Drive")).toBeInTheDocument();
   });
 
-  it("preps the ticked tracks and says what happened to each", async () => {
+  it("adds the ticked tracks to the show and drafts each a timeline in one go", async () => {
     const { user, socket, region } = await browse();
     const add = within(region).getByRole("button", { name: /to the show/ });
     expect(add).toBeDisabled();
     await user.click(within(region).getByLabelText("tick Night Drive"));
     await user.click(within(region).getByLabelText("tick Streamed Tune"));
     await user.click(within(region).getByRole("button", { name: "Add 2 to the show" }));
+    const dialog = screen.getByRole("dialog", { name: "Add 2 tracks to the show" });
+    expect(within(dialog).getByRole("button", { name: /drafted from a template set/ }))
+      .toHaveAttribute("aria-pressed", "true");
+    await user.click(within(dialog).getByRole("button", { name: "Add 2 to the show" }));
     const sent = reply(socket, "rekordbox_prep", true, {
       results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
                   title: "Night Drive", artist: "Kölsch", signature: true, notes: [] },
@@ -722,30 +899,61 @@ describe("rekordbox collection", () => {
                   notes: ["a streaming track: there is no file for the designer to play"] }],
       skipped: [] }) as Command & { ids: number[] };
     expect(sent.ids).toEqual([102, 104]);
-    const summary = await within(region).findByRole("status");
-    expect(summary).toHaveTextContent("Prepped 2:");
-    expect(summary).toHaveTextContent("2 new, 0 updated, 0 unchanged");
-    expect(within(summary).getByRole("link", { name: "Kölsch – Night Drive" }))
-      .toHaveAttribute("href", "#designer/kolsch-night-drive");
-    expect(summary).toHaveTextContent(/no CDJ signature/);
-    expect(summary).toHaveTextContent(/no file for the designer to play/);
+    // Each new track is drafted and saved as a new file, one after the other.
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(1));
+    reply(socket, "timeline_save", true, { rev: "r:1" });
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(2));
+    const second = reply(socket, "timeline_save", true, { rev: "r:2" }) as unknown as TSaved;
+    expect(second.doc.track).toBe("streamer-streamed-tune");
+    const progress = within(dialog).getByRole("list", { name: "progress" });
+    await waitFor(() => expect(within(progress).getAllByText(/drafted 8 clips from Club/)).toHaveLength(2));
+    expect(progress).toHaveTextContent(/no CDJ signature/);
+    expect(progress).toHaveTextContent(/no file for the designer to play/);
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(within(region).getByRole("button", { name: "Add to the show" })).toBeDisabled();
+  });
+
+  it("can add tracks with no timeline, for the active set to play", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Template only/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add 1 to the show" }));
+    reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] }],
+      skipped: [] });
+    expect(await within(dialog).findByText(/the active template set plays it/)).toBeInTheDocument();
+    expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(false);
   });
 
   it("shows what the engine said when it cannot prep", async () => {
     const { user, socket, region } = await browse();
     await user.click(within(region).getByLabelText("tick Night Drive"));
     await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Add 1 to the show" }));
     reply(socket, "rekordbox_prep", false, undefined,
           "a prep from rekordbox is already running; wait for it");
-    expect(await within(region).findByRole("alert")).toHaveTextContent("already running");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("already running");
   });
 
   it("says why when rekordbox cannot be read, in the bridge's words", async () => {
     rekordbox = [503, { error: "master.db is encrypted and no key was given: set RB_CIPHER_KEY" }];
     const user = userEvent.setup();
-    await open("#designer");
-    await user.click(await screen.findByRole("button", { name: "Browse rekordbox" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("set RB_CIPHER_KEY");
+    await open("#studio/rekordbox");
+    const page = await screen.findByRole("region", { name: "rekordbox collection" });
+    await user.click(within(page).getByRole("button", { name: "Browse rekordbox" }));
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("set RB_CIPHER_KEY");
+  });
+
+  it("finds a track by name when the console sends someone to add it", async () => {
+    await open("#studio/rekordbox?find=Night%20Drive");
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    const table = await within(region).findByRole("table");
+    expect(within(region).getByLabelText("search rekordbox")).toHaveValue("Night Drive");
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
   });
 });

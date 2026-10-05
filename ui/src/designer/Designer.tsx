@@ -4,17 +4,20 @@ import { apiFetch, apiUrl } from "../useEngine";
 import { HelpHeading } from "../components";
 import { PlanSvg } from "../Plan";
 import {
-  BEATS_PER_BAR, DESIGNER_CHUNK, Grid, barBeat, clock, decodeWave, findItem, itemName,
-  whoDrives,
+  BEATS_PER_BAR, DESIGNER_CHUNK, Grid, barBeat, clock, decodeWave, draftFromTemplate, findItem,
+  itemName, whoDrives,
 } from "./model";
 import type {
-  RoutineSummary, TimelineDoc, TrackDoc, TrackLine, Wave,
+  RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
 } from "./model";
 import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
-import { CollectionBrowser } from "./Collection";
+import Studio from "./Studio";
+import { DRAFT_ON_OPEN } from "./Library";
+import { PanelToggle, usePanels } from "./panels";
+import type { StudioRoute } from "../studioRoute";
 import "./designer.css";
 
 /**
@@ -34,7 +37,7 @@ import "./designer.css";
  * engine is the only thing that evaluates a beam, so "Drive the rig" puts THIS
  * page's transport on the real rig (`preview_arm`) rather than simulating it.
  *
- * Loaded lazily from `#designer`: a phone never downloads it.
+ * Loaded lazily from `#studio`: a phone never downloads it.
  */
 
 
@@ -51,100 +54,12 @@ export interface Engine {
 const HEADER_W = 170;
 const ZOOMS = [2, 3, 4, 6, 8, 12, 16, 24];
 
-export default function Designer({ engine, track, routine }: {
-  engine: Engine; track: string | null; routine?: string | null;
-}) {
-  if (routine) return <RoutineEditor key={routine} engine={engine} routineId={routine} />;
-  if (!track) return <TrackPicker engine={engine} />;
-  return <TrackDesigner key={track} engine={engine} trackId={track} />;
-}
-
-function TrackPicker({ engine }: { engine: Engine }) {
-  const [tracks, setTracks] = useState<TrackLine[] | null>(null);
-  const [routines, setRoutines] = useState<RoutineSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [newId, setNewId] = useState("");
-  const guide = useDesignerGuide("designer");
-  const loadTracks = useCallback(() => {
-    apiFetch<{ tracks: TrackLine[] }>("/api/tracks")
-      .then((r) => setTracks(r.tracks)).catch((e: Error) => setError(e.message));
-  }, []);
-  useEffect(() => {
-    apiFetch<{ routines: RoutineSummary[] }>("/api/routines")
-      .then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
-  }, []);
-  // The folder's rev rides in every snapshot, so the list follows the folder:
-  // tracks prepped from rekordbox below, or by anything else, appear when the
-  // engine has reloaded them -- not when a reply guesses it has.
-  const folderRev = engine.state?.show?.rev;
-  useEffect(() => { loadTracks(); }, [loadTracks, folderRev]);
-  const idOk = /^[a-z0-9][a-z0-9_-]{0,63}$/.test(newId)
-    && !routines.some((r) => r.id === newId);
-  return (
-    <div className="designer picker" data-chunk={DESIGNER_CHUNK}>
-      <header className="d-top">
-        <b>kLights designer</b>
-        <a className="d-link" href="#show">Back to the console</a>
-        <span className="grow" />
-        {guide.button}
-      </header>
-      {guide.banner}
-      <div className="d-picker-body">
-      <main className="d-picker">
-        <h2>Tracks</h2>
-        {error && <p className="d-error">{error}</p>}
-        {!tracks && !error && <p className="muted">Loading the show folder…</p>}
-        {tracks?.length === 0 && (
-          <p className="muted">No prepped tracks in the show folder yet -- add some
-            from rekordbox below.</p>)}
-        <ul>
-          {tracks?.map((t) => (
-            <li key={t.id}>
-              <a href={`#designer/${t.id}`}>
-                <b>{t.title}</b>{t.artist && <span className="muted"> — {t.artist}</span>}
-              </a>
-              <span className="muted small">
-                {" "}{t.bpm ? `${t.bpm} bpm · ` : ""}{t.phrases} phrases ·{" "}
-                {t.has_timeline ? "timeline" : "no timeline yet"}
-                {t.signatures ? " · CDJ signature" : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <h2>From rekordbox</h2>
-        <CollectionBrowser engine={engine} tracks={tracks ?? []} onPrepped={loadTracks} />
-        <h2>Routines</h2>
-        <p className="muted small">The reusable pieces a timeline's clips play: rows on roles,
-          in their own bars.</p>
-        <ul>
-          {routines.map((r) => (
-            <li key={r.id}>
-              <a href={`#designer/routine/${r.id}`}><b>{r.name ?? r.id}</b></a>
-              <span className="muted small">
-                {" "}{r.bars} bars{r.loop ? ", loops" : ""} · {Object.keys(r.roles).join(", ")}
-                {r.variations.length ? ` · ${r.variations.length} variation(s)` : ""}
-              </span>
-              {r.rig && <span className="d-badge">this rig only</span>}
-            </li>
-          ))}
-        </ul>
-        <form className="d-form" onSubmit={(e) => {
-          e.preventDefault();
-          if (idOk) location.hash = `#designer/routine/${newId}`;
-        }}>
-          <input value={newId} onChange={(e) => setNewId(e.target.value.trim())}
-                 placeholder="new-routine-id" aria-label="new routine id" />
-          <button type="submit" disabled={!idOk}>New routine</button>
-          {newId && !idOk && <span className="small d-error">
-            {routines.some((r) => r.id === newId) ? "already there"
-              : "lower-case letters, digits, - and _ -- it is also the file name"}</span>}
-        </form>
-        {engine.status !== "open" && <p className="d-error">Not connected to the engine.</p>}
-      </main>
-      {guide.drawer}
-      </div>
-    </div>
-  );
+export default function Designer({ engine, route }: { engine: Engine; route: StudioRoute }) {
+  if (route.view === "routine") {
+    return <RoutineEditor key={route.id} engine={engine} routineId={route.id} />;
+  }
+  if (route.view === "track") return <TrackDesigner key={route.id} engine={engine} trackId={route.id} />;
+  return <Studio engine={engine} route={route} />;
 }
 
 // -- the transport ------------------------------------------------------------
@@ -220,6 +135,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [audioSrc, setAudioSrc] = useState<string | null>(apiUrl(`/api/audio/${trackId}`));
   const [audioState, setAudioState] = useState<"loading" | "ok" | "none">("loading");
   const guide = useDesignerGuide("designer");
+  const [panels, togglePanel] = usePanels();
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<{ doc: TrackDoc }>(`/api/tracks/${trackId}`)
@@ -237,6 +154,30 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       `/api/waveforms/${trackId}`)
       .then((r) => setWave(decodeWave(r.doc))).catch(() => setWave(null));
   }, [trackId, setBase]);
+
+  // "Draft from" in the library: the draft is made here, once the timeline has
+  // loaded, as one undoable edit -- nothing is written until Save.
+  const { apply } = history;
+  const drafted = useRef(false);
+  useEffect(() => {
+    if (drafted.current || !track || !doc) return;
+    drafted.current = true;
+    let pending: { track?: string; set?: string } | null = null;
+    try { pending = JSON.parse(sessionStorage.getItem(DRAFT_ON_OPEN) ?? "null"); } catch { /* none */ }
+    if (!pending || pending.track !== trackId || !pending.set) return;
+    try { sessionStorage.removeItem(DRAFT_ON_OPEN); } catch { /* fine */ }
+    const base = doc;
+    const setId = pending.set;
+    apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${setId}`)
+      .then(({ doc: ts }) => {
+        const problem = draftFromTemplate(structuredClone(base), track, ts);
+        if (problem) { setNotice(`Could not draft from ${ts.name ?? setId}: ${problem}.`); return; }
+        apply((d) => { draftFromTemplate(d, track, ts); });
+        setNotice(`Drafted from ${ts.name ?? setId}. Nothing is saved until you press Save, `
+          + "and Undo takes the draft back.");
+      })
+      .catch((e: Error) => setNotice(`Could not read the template set ${setId}: ${e.message}`));
+  }, [track, doc, trackId, apply]);
 
   const grid = useMemo(() => (track ? new Grid(track.grid.segments) : null), [track]);
   const { setPhrases } = history;
@@ -339,7 +280,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   if (loadError) {
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
-        <header className="d-top"><a className="d-link" href="#designer">All tracks</a></header>
+        <header className="d-top"><a className="d-link" href="#studio">Studio</a></header>
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -361,7 +302,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   return (
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
-        <a className="d-link" href="#designer" title="All tracks">◂</a>
+        <a className="d-link" href="#studio" title="Back to Studio's library">◂</a>
         <button className={transport.playing ? "on" : ""}
                 onClick={() => transport.play(!transport.playing)}>
           {transport.playing ? "Pause" : "Play"}
@@ -397,7 +338,14 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             : <button onClick={() => void arm(false)}
                       title="Put this page's transport on the real rig">Drive the rig</button>}
         {guide.button}
+        <PanelToggle open={panels.edit} side="right" label="side panel"
+                     onToggle={() => togglePanel("edit")} />
       </header>
+      {notice && (
+        <div className="d-banner d-info" role="status">
+          {notice}<button onClick={() => setNotice(null)}>OK</button>
+        </div>
+      )}
       {driveError && (
         <div className="d-banner">
           {driveError}
@@ -432,7 +380,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                onError={() => setAudioState("none")} />
       )}
 
-      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
+      <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
         <div className="d-lanes" role="region" aria-label="lanes" ref={lanesRef}>
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={seekBeat} />
@@ -449,7 +397,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
           </div>
         </div>
 
-        <aside className="d-side">
+        {panels.edit && <aside className="d-side" aria-label="side panel">
           <section>
             <h3>Preview · from the engine</h3>
             {engine.state ? <PlanSvg state={engine.state} />
@@ -487,7 +435,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             </table>
           </section>
           <Editor.Shelf history={history} routines={routines} beat={beat} track={track} />
-        </aside>
+        </aside>}
         {guide.drawer}
       </div>
 

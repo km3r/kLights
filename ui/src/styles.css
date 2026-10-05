@@ -65,6 +65,15 @@ button {
   transition: background 0.12s, border-color 0.12s;
 }
 button:active { background: var(--tap); }
+/* A link that is drawn as a button: it goes somewhere (Studio, in a tab of its
+   own) rather than doing something here. */
+a.button {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 0.7rem 0.9rem; min-height: 44px;
+  color: var(--text); text-decoration: none; white-space: nowrap;
+}
+a.button:active { background: var(--tap); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button.on { border-color: var(--accent); background: rgba(90, 169, 255, 0.16); }
 button.danger { border-color: var(--bad); color: #ffd9d6; }

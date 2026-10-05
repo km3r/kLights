@@ -322,17 +322,20 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
   },
   {
     id: "designer",
-    label: "Designer",
-    title: "The designer",
-    lead: <>Timecoded shows are drawn bar by bar against a track, then follow
-      the DJ live. You build them in the designer, on a computer, and the engine
-      needs a show folder.</>,
+    label: "Studio",
+    title: "Studio",
+    lead: <>Studio is where shows are made, on a computer: tracks added from
+      rekordbox, timelines drawn bar by bar against them, and the routines they
+      play. On the night they follow the DJ live. The engine needs a show
+      folder.</>,
     sections: [
       {
         title: "Where it is",
         notes: [
-          <>Open it from the <b>Track</b> card on Show, or add{" "}
-            <code>#designer</code> to the console's address.</>,
+          <>Press <b>Studio</b> in the header (in Design mode), or the link on
+            the <b>Track</b> card on Show. It opens in a tab of its own.</>,
+          <>Studio is a place, not a mode: <b>Perform</b> and <b>Design</b>{" "}
+            only change how much of this console is on screen.</>,
           <>Its <b>Guide</b> button walks you through it.</>,
           <>On the night, arm <b>Follow</b> on the Track card and the playing
             track's timeline drives the rig.</>,
