@@ -78,12 +78,10 @@ whichever tab is up, and works even while the engine is not answering.
 
 The heads get nudged. Overnight, in transit, by someone leaning on the truss.
 
-```bash
-python -m engine.calibrate drift
-```
-
-This tells you whether anything has moved since the stored calibration. If it
-has, re-aim on the **Setup** tab: jog a head onto the mirror ball, capture, then
+On the **Setup** tab, jog every head onto the mirror ball, then press **Check
+all heads** in **Drift check**. It tells you whether anything has moved since
+the stored calibration, in degrees, and refuses until every head has been aimed.
+If a head shows **MOVED**, re-aim it: jog it onto the mirror ball, capture, then
 capture two more targets, then solve.
 
 > **Jog bypasses the safety taper**, necessarily — the taper works from the aim,

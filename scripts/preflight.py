@@ -11,8 +11,8 @@ engine is: it runs identically on the Windows machine this is developed on and
 on whatever laptop ends up at the desk, and it needs nothing installed.
 
 What it does NOT check is the rig itself -- that it is plugged in, addressed,
-and pointing where the calibration says. `python -m engine.calibrate drift`
-does that, and it has to happen at the venue with the lamps on.
+and pointing where the calibration says. The Drift check on the console's
+Setup tab does that, and it has to happen at the venue with the lamps on.
 """
 
 from __future__ import annotations
@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"ready to load in ({elapsed:.1f}s)")
     print("At the venue, still to do: power up, then "
-          "`python -m engine.calibrate drift` before doors.")
+          "the Drift check on Setup before doors.")
     return 0
 
 

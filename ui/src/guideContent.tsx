@@ -260,6 +260,17 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
       rig working.</>,
     sections: [
       {
+        title: "Check for drift",
+        steps: [
+          <>Clear the room. In <b>Jog</b>, aim every head at the mirror ball,
+            one at a time.</>,
+          <>In <b>Drift check</b>, tap <b>Check all heads</b>. It stays off
+            until every head is jogging.</>,
+          <>A head marked <b>MOVED</b> is off by 3° or more: re-aim it, below.
+            Then tap <b>Stop all</b>.</>,
+        ],
+      },
+      {
         title: "Re-aim a head",
         steps: [
           <>Clear the room first. Jogging a head turns off its safety
@@ -292,6 +303,9 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
             don't take effect until you tap <b>Apply now</b>.</>,
           <>Removing a moving head shifts the heads after it, which breaks
             their calibration.</>,
+          <>Positions are in millimetres from the room's corner, the same axes
+            as the crowd zone. A moved head was calibrated somewhere else, so
+            run a drift check once it's applied.</>,
           <><b>Autopatch</b> readdresses every fixture, so you'll have to
             re-dial every unit.</>,
         ],

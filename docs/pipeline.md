@@ -321,7 +321,7 @@ caller to, and `engine.server` prints which ones took effect at startup.
 | Engine runs but emits nothing | Was `--artnet` passed? Without it the engine runs against a null output on purpose. |
 | Source emits but listener shows nothing | Firewall blocking UDP 6454? Try: Windows Defender → Allow app → python.exe |
 | Beams stutter or jump | Two senders on 6454. A stray `artnet_listener.py` or a second engine counts. |
-| Heads aim wrong after a nudge | Recalibrate: `python -m engine.calibrate drift …`, then `solve --write`. |
+| Heads aim wrong after a nudge | Drift check on Setup, then re-aim with Capture and **Solve & write**. CLI: `python -m engine.calibrate drift …`, then `solve --write`. |
 | Levels lower than authored | The safety taper is doing its job. Confirm with `engine.demo --no-taper`, and check `venue.json`'s crowd zone. |
 | Engine won't load an event | A `.qxf` in `shared/fixtures/` is missing, or `rig.json`'s `mount_mode` disagrees with `calibration.json`'s — the loader names which. |
 | UI loads but shows nothing | `ui/dist/` missing from the checkout. Rebuild with `cd ui && npm run build`. |
