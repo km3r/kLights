@@ -227,6 +227,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -238,6 +242,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -249,6 +257,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -260,6 +272,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -271,6 +287,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -282,6 +302,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 0.0,
+        "elevation": 0.0
+      },
       "step_of": null
     },
     {
@@ -293,6 +320,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 0.0,
+        "elevation": -25.3125
+      },
       "step_of": null
     },
     {
@@ -304,6 +338,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 180.352,
+        "elevation": 2.109
+      },
       "step_of": null
     },
     {
@@ -315,17 +356,25 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
       "name": "Lazy Circle",
-      "manual_only": false,
+      "manual_only": true,
       "kind": "path",
       "slot": "movement",
       "cued": false,
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": true,
+      "replaced_by": "Lazy Orbit",
+      "args": {},
       "step_of": null
     },
     {
@@ -337,6 +386,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -348,6 +401,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -359,6 +416,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -370,6 +431,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -381,6 +446,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -392,6 +461,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -403,6 +476,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -414,6 +491,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -425,6 +506,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -436,6 +521,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -447,6 +536,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -458,6 +551,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -469,6 +566,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -480,6 +581,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -491,6 +596,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -502,6 +611,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -513,6 +626,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -524,6 +641,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 0.0,
+        "elevation": -88.594
+      },
       "step_of": null
     },
     {
@@ -535,6 +659,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Spiral"
     },
     {
@@ -546,6 +674,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Spiral"
     },
     {
@@ -557,6 +689,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Spiral"
     },
     {
@@ -568,6 +704,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Spiral"
     },
     {
@@ -579,6 +719,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -590,6 +734,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -601,6 +749,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -612,6 +764,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -623,6 +779,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -634,6 +794,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -645,6 +809,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Wave"
     },
     {
@@ -656,6 +824,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Wave"
     },
     {
@@ -667,6 +839,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Wave"
     },
     {
@@ -678,6 +854,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ball Wave"
     },
     {
@@ -689,6 +869,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -700,6 +884,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Dim Chase"
     },
     {
@@ -711,6 +899,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Dim Chase"
     },
     {
@@ -722,6 +914,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Dim Chase"
     },
     {
@@ -733,6 +929,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Dim Chase"
     },
     {
@@ -744,6 +944,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -755,6 +959,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Spotlight"
     },
     {
@@ -766,6 +974,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Spotlight"
     },
     {
@@ -777,6 +989,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Spotlight"
     },
     {
@@ -788,6 +1004,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Spotlight"
     },
     {
@@ -799,6 +1019,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -810,6 +1034,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "MH Breathe"
     },
     {
@@ -821,6 +1049,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -832,6 +1064,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": -45.352,
+        "elevation": 2.109
+      },
       "step_of": null
     },
     {
@@ -843,6 +1082,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Neighbor Scan"
     },
     {
@@ -854,6 +1097,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Neighbor Scan"
     },
     {
@@ -865,6 +1112,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -876,6 +1127,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Prowl"
     },
     {
@@ -887,6 +1142,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Prowl"
     },
     {
@@ -898,6 +1157,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Prowl"
     },
     {
@@ -909,6 +1172,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Prowl"
     },
     {
@@ -920,6 +1187,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -931,6 +1202,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Crowd Cascade"
     },
     {
@@ -942,6 +1217,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Crowd Cascade"
     },
     {
@@ -953,6 +1232,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Crowd Cascade"
     },
     {
@@ -964,6 +1247,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Crowd Cascade"
     },
     {
@@ -975,6 +1262,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -986,6 +1277,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 0.0,
+        "elevation": 18.984
+      },
       "step_of": null
     },
     {
@@ -997,6 +1295,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 180.352,
+        "elevation": 46.406
+      },
       "step_of": null
     },
     {
@@ -1008,6 +1313,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": 0.0,
+        "elevation": 92.812
+      },
       "step_of": null
     },
     {
@@ -1019,6 +1331,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1030,6 +1346,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Iris"
     },
     {
@@ -1041,6 +1361,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Iris"
     },
     {
@@ -1052,6 +1376,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1063,6 +1391,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1074,6 +1406,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1085,6 +1421,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1096,6 +1436,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1107,6 +1451,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1118,6 +1466,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1129,6 +1481,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1140,6 +1496,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1151,6 +1511,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1162,6 +1526,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1173,6 +1541,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1184,6 +1556,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1195,6 +1571,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1206,6 +1586,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1217,6 +1601,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1228,6 +1616,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1239,6 +1631,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1250,6 +1646,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1261,6 +1661,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1272,6 +1676,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1283,6 +1691,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1294,6 +1706,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Wheel Walk"
     },
     {
@@ -1305,6 +1721,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1316,6 +1736,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1327,6 +1751,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1338,6 +1766,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1349,6 +1781,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1360,6 +1796,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1371,6 +1811,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1382,6 +1826,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1393,6 +1841,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1404,6 +1856,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1415,6 +1871,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1426,6 +1886,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1437,6 +1901,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1448,6 +1916,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1459,6 +1931,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1470,6 +1946,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1481,6 +1961,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1492,6 +1976,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1503,6 +1991,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1514,6 +2006,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1525,6 +2021,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Pin Rainbow"
     },
     {
@@ -1536,6 +2036,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1547,6 +2051,10 @@
       "groups": [
         "pinspots"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1558,6 +2066,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Ring"
     },
     {
@@ -1569,6 +2081,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Ring"
     },
     {
@@ -1580,6 +2096,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Ring"
     },
     {
@@ -1591,6 +2111,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Ring"
     },
     {
@@ -1602,6 +2126,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1613,6 +2141,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Wipe"
     },
     {
@@ -1624,6 +2156,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Wipe"
     },
     {
@@ -1635,6 +2171,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Wipe"
     },
     {
@@ -1646,6 +2186,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Wipe"
     },
     {
@@ -1657,6 +2201,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1668,6 +2216,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Cross"
     },
     {
@@ -1679,6 +2231,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Cross"
     },
     {
@@ -1690,6 +2246,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1701,6 +2261,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1712,6 +2276,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1723,6 +2291,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1734,6 +2306,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1745,6 +2321,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1756,6 +2336,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1767,6 +2351,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1778,6 +2366,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Lazy Circle"
     },
     {
@@ -1789,6 +2381,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1800,6 +2396,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1811,6 +2411,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1822,6 +2426,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1833,6 +2441,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1844,6 +2456,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1855,6 +2471,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1866,6 +2486,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Grand Sweep"
     },
     {
@@ -1877,6 +2501,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Slow Sweep"
     },
     {
@@ -1888,6 +2516,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Slow Sweep"
     },
     {
@@ -1899,6 +2531,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Slow Sweep"
     },
     {
@@ -1910,6 +2546,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Slow Sweep"
     },
     {
@@ -1921,6 +2561,13 @@
       "groups": [
         "corner movers"
       ],
+      "block": "offset",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "bearing": -45.352,
+        "elevation": 0.0
+      },
       "step_of": null
     },
     {
@@ -1932,6 +2579,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Canopy Ring"
     },
     {
@@ -1943,6 +2594,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Canopy Ring"
     },
     {
@@ -1954,6 +2609,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Canopy Ring"
     },
     {
@@ -1965,6 +2624,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Canopy Ring"
     },
     {
@@ -1976,6 +2639,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -1987,6 +2654,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Bounce"
     },
     {
@@ -1998,6 +2669,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Bounce"
     },
     {
@@ -2009,6 +2684,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2020,6 +2699,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Breathe"
     },
     {
@@ -2031,6 +2714,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Floor Breathe"
     },
     {
@@ -2042,6 +2729,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2053,6 +2744,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2064,6 +2759,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2075,6 +2774,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2086,6 +2789,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2097,6 +2804,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2108,6 +2819,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2119,6 +2834,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2130,6 +2849,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2141,6 +2864,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Teleport"
     },
     {
@@ -2152,6 +2879,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2163,6 +2894,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2174,6 +2909,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Freeze Frame"
     },
     {
@@ -2185,6 +2924,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Freeze Frame"
     },
     {
@@ -2196,6 +2939,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Freeze Frame"
     },
     {
@@ -2207,6 +2954,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Freeze Frame"
     },
     {
@@ -2218,6 +2969,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2229,6 +2984,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Stutter"
     },
     {
@@ -2240,6 +2999,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Stutter"
     },
     {
@@ -2251,6 +3014,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Stutter"
     },
     {
@@ -2262,6 +3029,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Stutter"
     },
     {
@@ -2273,6 +3044,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2284,6 +3059,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2295,6 +3074,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2306,6 +3089,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2317,6 +3104,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2328,6 +3119,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2339,6 +3134,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2350,6 +3149,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2361,6 +3164,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2372,6 +3179,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Ascension"
     },
     {
@@ -2383,6 +3194,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": null
     },
     {
@@ -2394,6 +3209,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2405,6 +3224,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2416,6 +3239,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2427,6 +3254,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2438,6 +3269,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2449,6 +3284,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2460,6 +3299,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2471,6 +3314,10 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
       "step_of": "Blink"
     },
     {
@@ -2482,9 +3329,450 @@
       "groups": [
         "corner movers"
       ],
+      "block": null,
+      "retired": false,
+      "replaced_by": null,
+      "args": {},
+      "step_of": null
+    },
+    {
+      "name": "Ball Orbit",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "orbit",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 10.0,
+        "elongation": 1.0,
+        "bars": 8.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Lazy Orbit",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "orbit",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 18.75,
+        "elongation": 0.925,
+        "bars": 16.0,
+        "spread": 1.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Wide Sweep",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "orbit",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 22.0,
+        "elongation": 3.0,
+        "bars": 16.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Slow Pendulum",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "pendulum",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "width": 25.0,
+        "vertical": false,
+        "bars": 8.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Nod",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "pendulum",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "width": 12.0,
+        "vertical": true,
+        "bars": 4.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Figure Eight",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "figure8",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "width": 28.0,
+        "height": 10.0,
+        "bars": 8.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Wind Out",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "spiral",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 24.0,
+        "turns": 2.0,
+        "elongation": 1.5,
+        "direction": "out",
+        "bars": 16.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Converge",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "spiral",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 24.0,
+        "turns": 2.0,
+        "elongation": 1.5,
+        "direction": "in",
+        "bars": 16.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Drift",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "scatter",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 20.0,
+        "stations": 4,
+        "seed": 1,
+        "easing": "ease_in_out",
+        "bars": 8.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Restless",
+      "manual_only": false,
+      "kind": "path",
+      "slot": "movement",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "scatter",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "radius": 35.0,
+        "stations": 12,
+        "seed": 7,
+        "easing": "linear",
+        "bars": 4.0,
+        "spread": 0.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Slow Breathe",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "breathe",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "depth": 0.35,
+        "spread": 0.0,
+        "bars": 8.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Rolling Breathe",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "breathe",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "depth": 0.6,
+        "spread": 1.0,
+        "bars": 8.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Heartbeat",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "pulse",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "depth": 0.8,
+        "bars": 1.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Runner",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "chase",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "width": 0.3,
+        "bars": 1.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Pin Runner",
+      "manual_only": true,
+      "kind": "level_path",
+      "slot": "level",
+      "cued": false,
+      "groups": [
+        "pinspots"
+      ],
+      "block": "chase",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "width": 0.5,
+        "bars": 2.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Colour Drift",
+      "manual_only": false,
+      "kind": "color_path",
+      "slot": "color",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "hue_cycle",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "hue": 0.55,
+        "span": 0.25,
+        "saturation": 0.85,
+        "brightness": 1.0,
+        "spread": 0.0,
+        "bars": 32.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Rainbow Roll",
+      "manual_only": false,
+      "kind": "color_path",
+      "slot": "color",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "hue_cycle",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "hue": 0.0,
+        "span": 1.0,
+        "saturation": 1.0,
+        "brightness": 1.0,
+        "spread": 1.0,
+        "bars": 16.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Pin Drift Slow",
+      "manual_only": false,
+      "kind": "color_path",
+      "slot": "color",
+      "cued": false,
+      "groups": [
+        "pinspots"
+      ],
+      "block": "hue_cycle",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "hue": 0.08,
+        "span": 0.12,
+        "saturation": 0.55,
+        "brightness": 1.0,
+        "spread": 0.5,
+        "bars": 48.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Duo Pink/Cyan",
+      "manual_only": false,
+      "kind": "color_path",
+      "slot": "color",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "duo",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "color_a": [
+          1.0,
+          0.2,
+          0.5
+        ],
+        "color_b": [
+          0.2,
+          0.8,
+          1.0
+        ],
+        "blend": 0.0,
+        "bars": 8.0
+      },
+      "step_of": null
+    },
+    {
+      "name": "Duo Swap",
+      "manual_only": false,
+      "kind": "color_path",
+      "slot": "color",
+      "cued": false,
+      "groups": [
+        "corner movers"
+      ],
+      "block": "duo",
+      "retired": false,
+      "replaced_by": null,
+      "args": {
+        "color_a": [
+          1.0,
+          0.35,
+          0.0
+        ],
+        "color_b": [
+          0.0,
+          0.4,
+          1.0
+        ],
+        "blend": 1.0,
+        "bars": 16.0
+      },
       "step_of": null
     }
   ],
+  "look_params": {},
+  "modulators": [],
+  "reach": {
+    "bearing": [
+      -77.0,
+      199.0
+    ],
+    "elevation": [
+      -275.0,
+      452.0
+    ]
+  },
+  "movement_extra": [],
+  "movement_stack_max": 3,
+  "vary_seed": 0,
   "selection": {
     "movement": {
       "corner movers": "Lazy Circle"
@@ -2613,6 +3901,7 @@
       0.1
     ]
   },
+  "white_overrides": {},
   "level_overrides": {},
   "fixtures": [
     {
@@ -2626,6 +3915,7 @@
       "universe": 0,
       "address": 1,
       "is_mover": true,
+      "has_white": false,
       "position": [
         13216.0,
         2971.0,
@@ -2667,6 +3957,7 @@
       "universe": 0,
       "address": 12,
       "is_mover": true,
+      "has_white": false,
       "position": [
         13216.0,
         2971.0,
@@ -2708,6 +3999,7 @@
       "universe": 0,
       "address": 23,
       "is_mover": true,
+      "has_white": false,
       "position": [
         5072.0,
         2971.0,
@@ -2749,6 +4041,7 @@
       "universe": 0,
       "address": 34,
       "is_mover": true,
+      "has_white": false,
       "position": [
         5072.0,
         2971.0,
@@ -2789,6 +4082,7 @@
       "universe": 0,
       "address": 45,
       "is_mover": false,
+      "has_white": true,
       "position": [
         9144.0,
         2971.0,
@@ -2813,6 +4107,7 @@
       "universe": 0,
       "address": 51,
       "is_mover": false,
+      "has_white": true,
       "position": [
         9144.0,
         2971.0,

@@ -1,0 +1,17 @@
+/**
+ * What a fixture group is called on screen.
+ *
+ * "corner movers" is what the rig file calls them; "Movers" is what a person
+ * calls them at 2am. Falls through to the raw tag for anything unrecognised, so
+ * a new rig's groups still appear rather than vanishing.
+ *
+ * One module because this map was copy-pasted verbatim into LookPicker, Show
+ * and Bright. Three copies of a display name is three places for a rig's groups
+ * to be labelled differently on three tabs of the same console.
+ */
+const GROUP_LABELS: Record<string, string> = {
+  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
+  pars: "Pars", bars: "Bars",
+};
+
+export const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;

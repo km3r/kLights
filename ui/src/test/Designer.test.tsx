@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
-  BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, curveValue, decodeWave,
+  BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
+  decodeWave,
   whoDrives,
 } from "../designer/model";
 import { AUTOMATION_RANGES } from "../designer/edit";
@@ -68,6 +69,38 @@ describe("designer model", () => {
     expect(EASINGS).toEqual(blockLists.easings);
     expect(AUTOMATION_RANGES).toEqual(blockLists.automation);
     expect([...PARAM_TYPES]).toEqual(blockLists.param_types);
+  });
+
+  it("takes every block's defaults, steps and ranges from the engine", () => {
+    // These used to be typed here by hand and held to the engine only on
+    // argument NAMES, so a default could drift without any test noticing.
+    // Now they are derived from blocks.PARAMS; this pins a few by value so a
+    // broken derivation, not just a missing name, fails here.
+    const arg = (block: string, name: string) =>
+      BLOCK_ARGS[block]!.find((a) => a.name === name)!;
+    expect(arg("orbit", "radius")).toMatchObject(
+      { kind: "number", default: 20, min: 0, max: 90, step: 1, unit: "°" });
+    expect(arg("pendulum", "width").default).toBe(30);
+    expect(arg("chase", "order")).toMatchObject(
+      { kind: "choice", default: "index", choices: CHASE_ORDERS });
+    // No fixed default: half the width unless given. Undefined, so the field
+    // says "auto" instead of a number that is wrong once the width changes.
+    expect(arg("fan_sweep", "sweep").default).toBeUndefined();
+    // An integer is a number to a field, stepping by whole numbers.
+    expect(arg("scatter", "stations")).toMatchObject({ kind: "number", step: 1 });
+    // A unit that only repeats the name is dropped rather than shown twice.
+    expect(arg("orbit", "bars").unit).toBeUndefined();
+  });
+
+  it("offers the blocks the console's parametric looks are built from", () => {
+    // One building-block system: a routine and a console look use the same
+    // parts, so a block added for one is available to the other.
+    expect(blocksFor("movement")).toEqual(
+      expect.arrayContaining(["figure8", "spiral", "scatter"]));
+    expect(blocksFor("color")).toEqual(expect.arrayContaining(["hue_cycle", "duo"]));
+    expect(blocksFor("level")).toEqual(expect.arrayContaining(["breathe"]));
+    expect(BLOCK_ARGS.spiral!.find((a) => a.name === "direction"))
+      .toMatchObject({ kind: "choice", choices: ["out", "in"] });
   });
 
   it("decodes rekordbox's colour waveform", () => {

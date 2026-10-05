@@ -4,6 +4,7 @@ import { DesignOnly, useDesign } from "../mode";
 import type {
   Command, EngineState, LaneSource, Preset, Slot, TrackMatch,
 } from "../types";
+import { groupLabel } from "../groups";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -63,11 +64,6 @@ function Panic({ state, send }: { state: EngineState; send: (c: Command) => void
   );
 }
 
-const GROUP_LABELS: Record<string, string> = {
-  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
-  pars: "Pars", bars: "Bars",
-};
-const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
 
 /**
  * What is currently loaded, and where to go to change it.

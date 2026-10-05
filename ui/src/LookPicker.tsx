@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card } from "./components";
 import type { Command, EngineState, LookInfo, Slot } from "./types";
+import { groupLabel } from "./groups";
 
 /**
  * The library, filtered to one slot.
@@ -21,16 +22,14 @@ import type { Command, EngineState, LookInfo, Slot } from "./types";
  *   * **A chase's own steps are filed under the chase.** "Spotlight Step 1..4"
  *     are meaningless alone and were four entries wide in a list of twenty.
  *   * **A filter box**, because past about thirty items typing beats scanning.
+ *   * **Retired entries are hidden.** A ported look that a parametric routine
+ *     now covers drops out of the list but stays in the library — `looks.json`
+ *     is a generated artifact whose round-trip proof needs every entry present,
+ *     and going back to the original should be one toggle away. Same mechanism
+ *     as the chase steps, and for the same reason: shortening the list is the
+ *     entire problem, and deleting things is not how you do it safely.
  */
 
-/** "corner movers" is what the rig file calls them; "Movers" is what a person
- *  calls them at 2am. Falls through to the raw tag for anything unrecognised,
- *  so a new rig's groups still appear rather than vanishing. */
-const GROUP_LABELS: Record<string, string> = {
-  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
-  pars: "Pars", bars: "Bars",
-};
-const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
 
 const KIND_LABELS: Record<string, string> = {
   pose: "Positions", path: "Moves", mixed: "Position + colour",
@@ -56,6 +55,7 @@ export function LookPicker({ state, send, slot, title, empty }: {
   const [filter, setFilter] = useState("");
   const [openKind, setOpenKind] = useState<string | null>(null);
   const [showSteps, setShowSteps] = useState(false);
+  const [showRetired, setShowRetired] = useState(false);
   const [group, setGroup] = useState<string | null>(null);
 
   const loaded = state.selection[slot] ?? {};
@@ -69,8 +69,14 @@ export function LookPicker({ state, send, slot, title, empty }: {
   const needle = filter.trim().toLowerCase();
   const inGroup = active ? mine.filter((l) => l.groups.includes(active)) : mine;
   const steps = inGroup.filter((l) => l.step_of);
+  const retired = inGroup.filter((l) => l.retired);
+  // A hidden entry that is CURRENTLY LOADED still shows, whether it is a chase
+  // step or a retired look. Hiding what is on stage would leave the picker
+  // claiming nothing is selected while the rig plainly disagrees.
+  const isLoaded = (l: LookInfo) => Object.values(loaded).includes(l.name);
   const matching = inGroup.filter((l) =>
-    (showSteps || !l.step_of || Object.values(loaded).includes(l.name))
+    (showSteps || !l.step_of || isLoaded(l))
+    && (showRetired || !l.retired || isLoaded(l))
     && l.name.toLowerCase().includes(needle));
 
   // By KIND, within the chosen fixture type. Named `byKind` rather than
@@ -154,8 +160,18 @@ export function LookPicker({ state, send, slot, title, empty }: {
                         className={Object.values(loaded).includes(l.name) ? "on" : ""}
                         onClick={() => send({ type: "select_look", name: l.name })}>
                   {l.name}
+                  {/* A routine, not a stored table — it has knobs, and the
+                      Tweak card below will show them once it is loaded. Worth
+                      saying on the tile, because "which of these can I actually
+                      change" is otherwise invisible until you pick one. */}
+                  {l.block && <span className="chip tunable">tune</span>}
                   {l.step_of && <div className="small muted">of {l.step_of}</div>}
                   {l.cued && <div className="small muted">travels dark</div>}
+                  {l.retired && (
+                    <div className="small muted">
+                      retired{l.replaced_by ? ` — use ${l.replaced_by}` : ""}
+                    </div>
+                  )}
                   {/* Which lights this touches, when the list is not already
                       filtered to one type. */}
                   {!active && l.groups.length > 0 && !l.step_of && (
@@ -178,6 +194,16 @@ export function LookPicker({ state, send, slot, title, empty }: {
         <button className="small" style={{ width: "100%" }}
                 onClick={() => setShowSteps(!showSteps)}>
           {showSteps ? "Hide" : "Show"} {steps.length} individual chase step(s)
+        </button>
+      )}
+
+      {/* Retired looks are still in the library and still work. This is the
+          way back to one, and it says how many are hidden so the list never
+          quietly shrinks without explanation. */}
+      {retired.length > 0 && (
+        <button className="small" style={{ width: "100%", marginTop: "0.3rem" }}
+                onClick={() => setShowRetired(!showRetired)}>
+          {showRetired ? "Hide" : "Show"} {retired.length} retired
         </button>
       )}
     </Card>

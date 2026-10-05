@@ -281,6 +281,118 @@ check("and a centre offset genuinely re-aims the rig",
                                      landings(1.0, (0.0, -60.0)))) > 50,
       f"{landings(1.0, (0.0, -60.0))[:2]}")
 
+
+print("\n8b. neither can a parametric routine, tuned or modulated")
+# The same claim as section 8, extended to everything the parametric layer
+# added. It is the guard that makes all of it safe to expose: if a routine's
+# own parameters, or a modulator swinging them every frame, could reach past
+# `apply_safety`, then every knob added would be a new way around the taper.
+import engine.blocks as blocksmod                                    # noqa: E402
+import engine.modulate as modmod                                     # noqa: E402
+import engine.params as parammod                                     # noqa: E402
+
+parametric, _retired = libmod.load_parametric(
+    REPO / "events" / "despacio" / "parametric_looks.json")
+movers = [r for r in parametric if r.is_movement]
+# Every movement BLOCK as well as every authored look, so a shape nobody has
+# written a look for yet is still proven not to escape the taper -- a show
+# folder's routine can use any block, not only the ones despacio happens to.
+covered = {r.block for r in movers}
+for name in blocksmod.OFFSETS:
+    if name not in covered:
+        movers.append(libmod.LibraryEntry(
+            name=f"(every {name})", kind="path", tags=(), block=name, args={},
+            groups=("corner movers",)))
+check("there are movement looks to sweep", len(movers) >= 4, f"{len(movers)}")
+check("and between them they cover every movement block",
+      {r.block for r in movers} >= set(blocksmod.OFFSETS),
+      f"missing {set(blocksmod.OFFSETS) - {r.block for r in movers}}")
+
+worst_routine = 0.0
+untapered = 0
+tapered = 0
+for routine in movers:
+    # Every numeric argument at BOTH extremes of its declared range, which is
+    # the widest a modulator or a slider can ever drive it.
+    sweeps: list[dict] = [{}]
+    for param in blocksmod.PARAMS[routine.block]:
+        if param.kind in ("number", "integer") and param.min is not None:
+            sweeps.append({param.name: param.min})
+            sweeps.append({param.name: param.max})
+    for values in sweeps:
+        for size, centre in ((1.0, (0.0, 0.0)), (3.0, (0.0, -60.0)),
+                             (2.0, (90.0, -40.0))):
+            ctx = statemod.EvalContext(rig=rig_all, venue=rig_all.venue,
+                                       taper=safety.TaperConfig())
+            ctx.move_size, ctx.move_center = size, centre
+            # Modulation reaches the layers through `live_params`, so driving it
+            # here is exactly what a running modulator does.
+            ctx.live_params = {routine.name: dict(values)}
+            show = libmod.compose(routine)
+            for step in range(9):
+                ctx.set_phase(step / 8.0 * 16.0)
+                ctx.time = step * 0.025
+                states = statemod.evaluate(ctx, show)
+                for f in rig_all.fixtures:
+                    st = states[f.fid]
+                    if st.safety is None or f.head is None:
+                        continue
+                    worst_routine = max(worst_routine,
+                                        st.intensity - st.safety.taper - 1e-9)
+                    if st.safety.taper < 1.0:
+                        tapered += 1
+                    else:
+                        untapered += 1
+
+check("every look at every argument extreme still goes through the taper",
+      worst_routine <= 0.0,
+      f"worst intensity over its own taper: {worst_routine:.6f}")
+# A guard that never fires is not a guard. These sweeps aim beams down and
+# across the room, so the taper must actually be dimming some of them.
+check("and the sweep really does put beams where the taper acts",
+      tapered > 0, f"{tapered} tapered of {tapered + untapered} samples")
+
+print("\n8c. a modulator cannot drive a parameter out of its declared range")
+# The bound is the target's own `Param`, so a modulator can only sweep where a
+# finger could have dragged. Without this it would be a way to reach a value the
+# UI cannot express and the engine never clamps.
+radius = blocksmod.param("orbit", "radius")
+mod = modmod.build({"low": -500, "high": 9999, "shape": "sine", "bars": 4},
+                   radius)
+check("bounds are clamped to the target's declared range",
+      mod.low == radius.min and mod.high == radius.max,
+      f"{mod.low}..{mod.high} vs {radius.min}..{radius.max}")
+values = [mod.value(bar / 8.0) for bar in range(65)]
+check("and every value it produces sits inside that range",
+      all(radius.min <= v <= radius.max for v in values),
+      f"{min(values):.2f}..{max(values):.2f}")
+
+# A macro modulator is bounded the same way, by the same declarations the
+# `_cmd_macro` clamp uses.
+size_mod = modmod.build({"low": -9, "high": 9, "shape": "triangle", "bars": 2},
+                        parammod.SIZE)
+check("a macro modulator is bounded by the macro's own range",
+      (size_mod.low, size_mod.high) == (parammod.SIZE.min, parammod.SIZE.max),
+      f"{size_mod.low}..{size_mod.high}")
+
+for bad, why in ((({"shape": "wobble"}), "an unknown shape"),
+                 (({"shape": "sine", "bars": 0}), "a zero-length cycle")):
+    try:
+        modmod.build(bad, radius)
+        check(f"{why} is refused", False, "accepted")
+    except modmod.ModulatorError:
+        check(f"{why} is refused", True)
+
+# Only numbers can be modulated: there is no halfway between two choices, and
+# silently rounding one would pick a shape nobody asked for.
+try:
+    modmod.build({"shape": "sine"},
+                 parammod.Param("axis", "Axis", "horizontal", kind="choice",
+                                choices=("horizontal", "vertical")))
+    check("modulating a choice is refused", False, "accepted")
+except modmod.ModulatorError as exc:
+    check("modulating a choice is refused", "only numbers" in str(exc))
+
 # -- the strobe policy --------------------------------------------------------
 #
 # Strobe is the one genuine medical risk on this rig -- photosensitive epilepsy
