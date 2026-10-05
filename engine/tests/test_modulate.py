@@ -172,6 +172,41 @@ rack.clear()
 check("clear empties the rack", len(rack) == 0)
 check("and an empty rack resolves to nothing", rack.resolve(1.0) == ({}, {}))
 
+# The server's snapshot thread walks `by_key` while commands land on the frame
+# thread, so every change rebinds it: a reader holding the old dict sees the
+# state before, never one changing size under it.
+held = rack.by_key
+rack.add(modmod.build({"shape": "sine", "bars": 4}, radius))
+check("add rebinds rather than edits", rack.by_key is not held and not held)
+held = rack.by_key
+rack.remove(None, "radius")
+check("so does remove", rack.by_key is not held and len(held) == 1)
+rack.add(modmod.build({"shape": "sine", "bars": 4}, radius))
+held = rack.by_key
+rack.clear()
+check("and so does clear", rack.by_key is not held and len(held) == 1)
+
+print("\nnon-finite numbers are refused")
+# `json.loads` accepts NaN and Infinity. A NaN phase made every value NaN, and a
+# macro left at NaN made every later frame raise on its way to DMX -- surviving
+# `modulate_clear`, since a cleared macro keeps its last value on purpose.
+for key in ("bars", "low", "high", "phase", "seed"):
+    for bad in (float("nan"), float("inf")):
+        try:
+            modmod.build({"shape": "sine", key: bad}, radius)
+            check(f"{key}={bad} is refused", False, "accepted")
+        except ModulatorError as exc:
+            check(f"{key}={bad} is refused", "finite" in str(exc), str(exc))
+for key, bad in (("bars", "fast"), ("low", True), ("phase", [0.5])):
+    try:
+        modmod.build({"shape": "sine", key: bad}, radius)
+        check(f"{key}={bad!r} is refused", False, "accepted")
+    except ModulatorError as exc:
+        check(f"{key}={bad!r} is refused as not a number", "number" in str(exc),
+              str(exc))
+check("a numeric string still builds, as it did before",
+      modmod.build({"shape": "sine", "bars": "4"}, radius).bars == 4.0)
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

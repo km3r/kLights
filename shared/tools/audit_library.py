@@ -182,14 +182,14 @@ def fit_path(entry: libmod.LibraryEntry, heads: int, coarse: int = 12
         #   searching it fits NOISE. Left in, the first version reported "Corner
         #   Chase is scatter(seed=5833)" at 122 degrees of error, having found
         #   the least-bad of ten thousand random patterns.
-        #   `bars` is fixed to the ported cycle, above.
+        #   A musical argument (`bars`) is fixed to the ported cycle, above.
         #   `spread` is searched on its own short list, below: it is the
         #   argument that turns a four-head ring into one orbit, and it matters
         #   too much to leave to a coarse grid.
         #   An argument with no fixed default (fan_sweep's `sweep`, half the
         #   width unless given) is searched like any other.
         tunable = [q for q in declared
-                   if q.name not in ("bars", "seed", "spread")
+                   if not q.musical and q.name not in ("seed", "spread")
                    and q.kind in ("number", "integer")]
         options = [q for q in declared if q.kind in ("choice", "bool")]
         has_spread = blocksmod.param(name, "spread") is not None

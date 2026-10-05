@@ -140,6 +140,36 @@ check("their defaults are the identity",
       resolve(MACROS) == {"size": 1.0, "spread": 0.0, "bearing": 0.0,
                           "elev": 0.0})
 
+print("\n9. a number that is not a number is refused, never clamped")
+# `json.loads` accepts NaN and Infinity, and `max`/`min` pass NaN straight
+# through -- so a clamp alone let NaN reach a frame, which then raised on its way
+# to a DMX integer, every frame, until someone found the reset.
+for bad in (float("nan"), float("inf"), float("-inf")):
+    for label, call in (
+        ("coerce", lambda: parammod.SIZE.coerce(bad)),
+        ("clamp against a rig's reach",
+         lambda: parammod.clamp(parammod.CENTER_BEARING, bad,
+                                {"bearing": (-77.0, 198.0)})),
+        ("resolve", lambda: resolve(MACROS, {"spread": bad})),
+    ):
+        try:
+            call()
+            check(f"{label} refuses {bad}", False, "accepted")
+        except ParamError as exc:
+            check(f"{label} refuses {bad}", "finite" in str(exc), str(exc))
+
+print("\n10. a musical argument is marked on its declaration")
+from engine import blocks as blocksmod                          # noqa: E402
+cycles = [p for params in blocksmod.PARAMS.values() for p in params
+          if p.name == "bars"]
+check("every block's cycle length is musical, so vary leaves it alone",
+      cycles and all(p.musical for p in cycles), f"{len(cycles)} cycles")
+check("and nothing else is -- a shape number marked musical is never varied",
+      not any(p.musical for params in blocksmod.PARAMS.values()
+              for p in params if p.name != "bars"))
+check("musical is engine-side only, not published to the console",
+      "musical" not in cycles[0].public())
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

@@ -150,13 +150,29 @@ def build(spec: dict, target: parammod.Param,
 
     floor, ceiling = parammod.bounds(target, reach)
 
-    def bound(value: Optional[float], fallback: float) -> float:
-        number = fallback if value is None else float(value)
+    def number(key: str, fallback: float) -> float:
+        # Finite, or refused. `json.loads` accepts NaN and Infinity, a NaN
+        # phase makes every value NaN, and a macro left at NaN made every later
+        # frame raise on its way to DMX -- surviving `modulate_clear`, since a
+        # cleared macro keeps its last value on purpose.
+        value = spec.get(key)
+        if value is None:
+            return fallback
+        try:
+            out = float(value)
+        except (TypeError, ValueError):
+            raise ModulatorError(f"{key} must be a number, got {value!r}") from None
+        if isinstance(value, bool) or not math.isfinite(out):
+            raise ModulatorError(f"{key} must be a finite number, got {value!r}")
+        return out
+
+    def bound(key: str, fallback: float) -> float:
+        value = number(key, fallback)
         if floor is not None:
-            number = max(floor, number)
+            value = max(floor, value)
         if ceiling is not None:
-            number = min(ceiling, number)
-        return number
+            value = min(ceiling, value)
+        return value
 
     lo = floor if floor is not None else 0.0
     hi = ceiling if ceiling is not None else 1.0
@@ -164,11 +180,11 @@ def build(spec: dict, target: parammod.Param,
         param=target.name,
         look=spec.get("look"),
         shape=str(spec.get("shape", "sine")),
-        bars=float(spec.get("bars", 16.0)),
-        low=bound(spec.get("low"), lo),
-        high=bound(spec.get("high"), hi),
-        phase=float(spec.get("phase", 0.0)),
-        seed=int(spec.get("seed", 0)))
+        bars=number("bars", 16.0),
+        low=bound("low", lo),
+        high=bound("high", hi),
+        phase=number("phase", 0.0),
+        seed=int(number("seed", 0)))
 
 
 class Rack:
@@ -182,14 +198,22 @@ class Rack:
     def __init__(self) -> None:
         self.by_key: dict[tuple[str, str], Modulator] = {}
 
+    # Every change REBINDS `by_key` rather than editing it: the server's 10 Hz
+    # snapshot thread walks it (`status`) while commands land on the frame
+    # thread, and a dict changing size mid-iteration fails that snapshot.
+
     def add(self, mod: Modulator) -> None:
-        self.by_key[mod.key] = mod
+        self.by_key = {**self.by_key, mod.key: mod}
 
     def remove(self, look: Optional[str], param: str) -> bool:
-        return self.by_key.pop((look or "", param), None) is not None
+        key = (look or "", param)
+        if key not in self.by_key:
+            return False
+        self.by_key = {k: v for k, v in self.by_key.items() if k != key}
+        return True
 
     def clear(self) -> None:
-        self.by_key.clear()
+        self.by_key = {}
 
     def __len__(self) -> int:
         return len(self.by_key)

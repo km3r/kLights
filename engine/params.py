@@ -39,6 +39,7 @@ would give one class two jobs with different failure behaviour.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Sequence
 
@@ -71,7 +72,8 @@ class ParamError(ValueError):
     """A parameter value that cannot be used.
 
     Raised only for things clamping cannot fix -- an unknown key, a choice that
-    is not among the choices. An out-of-range number is NOT an error: a fader
+    is not among the choices, a number that is not finite. An out-of-range
+    number is NOT an error: a fader
     pushed past its end is an operator asking for the end, and refusing the
     whole command because one number was 1.02 would drop the other three
     parameters in the same message.
@@ -109,6 +111,12 @@ class Param:
     # a size, not a place, and a head that runs out of travel on one is caught
     # per head at the rail instead.
     reach: Optional[str] = None
+    # A MUSICAL decision rather than a shape -- how the routine sits against
+    # the track, like a cycle length in bars. `vary` leaves these alone: rolling
+    # a new one turns a 16-bar swell into a 3.75-bar one that fits nothing. A
+    # flag on the declaration rather than a list of names somewhere else, so a
+    # new block's musical argument cannot be forgotten by a caller.
+    musical: bool = False
 
     def __post_init__(self) -> None:
         # Checked at construction because every Param is a module-level
@@ -187,6 +195,13 @@ class Param:
                 f"{self.name!r} must be a number, got {value!r} "
                 f"({type(value).__name__})")
         number = float(value)
+        # Refused, not clamped: `json.loads` accepts the literals NaN and
+        # Infinity, and `max`/`min` pass NaN straight through. One NaN on a
+        # macro made every later frame raise on its way to a DMX integer, and
+        # there is no "nearest legal value" to a number that is not one.
+        if not math.isfinite(number):
+            raise ParamError(
+                f"{self.name!r} must be a finite number, got {value!r}")
         if lo is not None:
             number = max(lo, number)
         if hi is not None:

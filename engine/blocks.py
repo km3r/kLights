@@ -99,7 +99,7 @@ _EASINGS = ("linear", "ease_in_out", "ease_out")
 
 def _bars(default: float) -> Param:
     return Param("bars", "Cycle", default, min=0.25, max=64.0, step=0.25,
-                 unit=" bars",
+                 unit=" bars", musical=True,
                  help="How long one time round takes, in bars. Musical, so it "
                       "is right at any tempo.")
 

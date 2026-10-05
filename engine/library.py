@@ -525,6 +525,40 @@ def resolve_args(entry: LibraryEntry) -> dict:
     return out
 
 
+def _block_inputs(entry: LibraryEntry, roles: Optional[dict] = None):
+    """The (args, Env) a parametric look is built from.
+
+    One function for `block_layer` and `arg_problems`, so the check made when a
+    value arrives is the same check `blocks.make` would make on the first frame
+    -- a check that differed would pass a value the build then refuses.
+    """
+    blocksmod = _blocks()
+    values = resolve_args(entry)
+    numeric = {p.name for p in blocksmod.PARAMS.get(entry.block or "", ())
+               if p.kind in ("number", "integer")}
+    args = {k: (f"${k}" if k in numeric else v) for k, v in values.items()
+            if v is not None or k in numeric}
+    env = blocksmod.Env(params={k: v for k, v in values.items() if k in numeric})
+    if roles:
+        env.palette.update(roles)
+    return args, env
+
+
+def arg_problems(entry: LibraryEntry, rig) -> list[str]:
+    """Why this look would build EMPTY on `rig`, or nothing if it would build.
+
+    `blocks.make` answers a bad argument with an empty block -- right for a
+    routine file, whose problems are reported when it loads, and silent for a
+    value arriving from the console, a preset or a cue: a duo whose colour was
+    "nonsense" built nothing, and the movers sat in the palette's white with no
+    word said. Callers on those paths ask here first.
+    """
+    blocksmod = _blocks()
+    args, env = _block_inputs(entry)
+    return blocksmod._check_args(entry.block or "", args, env,
+                                 blocksmod.Rigging(rig=rig, entries={}))
+
+
 def block_layer(entry: LibraryEntry, slot: str,
                 roles: Optional[dict] = None):
     """One parametric look as a single layer, bound to whatever rig is running.
@@ -543,14 +577,7 @@ def block_layer(entry: LibraryEntry, slot: str,
     number would be read once and baked in.
     """
     blocksmod = _blocks()
-    values = resolve_args(entry)
-    numeric = {p.name for p in blocksmod.PARAMS.get(entry.block or "", ())
-               if p.kind in ("number", "integer")}
-    args = {k: (f"${k}" if k in numeric else v) for k, v in values.items()
-            if v is not None or k in numeric}
-    env = blocksmod.Env(params={k: v for k, v in values.items() if k in numeric})
-    if roles:
-        env.palette.update(roles)
+    args, env = _block_inputs(entry, roles)
     name = entry.name
     cache: dict[tuple[str, ...], object] = {}
 

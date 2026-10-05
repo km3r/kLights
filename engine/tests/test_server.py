@@ -13,6 +13,7 @@ import atexit
 import base64
 import errno
 import json
+import math
 import os
 import shutil
 import socket
@@ -646,7 +647,36 @@ try:
     controller._drain()
     check("holding at the end: no cue after the last one to advance to",
           controller.cues.index == 2)
+
+    # A hold running out is nobody's decision, so it must not take lanes from
+    # a running timeline. Through `take_cue` it grabbed all three, and a grab
+    # lasts until the operator releases it -- Follow DJ armed, a timeline
+    # driving, and an expiring hold would have taken the whole stage with no
+    # one touching anything. A stand-in timeline, engaged, records any grab.
+    class EngagedTimeline:
+        engaged, preview = True, None
+
+        def __init__(self):
+            self.grabbed = set()
+
+        def grab(self, slots):
+            self.grabbed |= set(slots)
+
+    timeline = controller.player = EngagedTimeline()
+    controller.cues.reset()
+    controller.ctx.beat = 0.0
+    controller.cues.go(controller.ctx.beat)              # onto "one"
+    controller.cues.go(controller.ctx.beat)              # onto "two", 4-beat hold
+    controller.ctx.beat = 5.0
+    controller._drain()
+    check("an expiring hold advances without grabbing from the timeline",
+          controller.cues.index == 2 and not timeline.grabbed,
+          f"index={controller.cues.index} grabbed={sorted(timeline.grabbed)}")
+    controller.apply({"type": "cue_back"}, None)
+    check("while an operator's own GO still grabs every lane",
+          timeline.grabbed == set(statemod.SLOTS), sorted(timeline.grabbed))
 finally:
+    controller.player = None
     controller.cues, controller.ctx.beat = real_cues, real_beat
 
 
@@ -1351,6 +1381,29 @@ for label, message, expect_in in (
                          "values": {"x": 1}}, "no look named"),
     ("no values and no reset", {"type": "look_params", "name": "Ball Orbit"},
      "needs values"),
+    # `json.loads` accepts the literals NaN and Infinity, and min/max pass NaN
+    # straight through a clamp. A NaN reaching a frame raised on its way to a
+    # DMX integer, every frame after, until someone found the reset.
+    ("NaN off the wire", json.loads('{"type": "look_params", "name": '
+                                    '"Ball Orbit", "values": {"radius": NaN}}'),
+     "finite"),
+    ("Infinity off the wire", json.loads(
+        '{"type": "look_params", "name": "Ball Orbit", '
+        '"values": {"radius": Infinity}}'), "finite"),
+    ("a NaN macro", json.loads('{"type": "macro", "size": NaN}'), "finite"),
+    ("a NaN modulator phase", json.loads(
+        '{"type": "modulate", "param": "size", "shape": "sine", "bars": 4, '
+        '"phase": NaN}'), "finite"),
+    ("an infinite modulator cycle", json.loads(
+        '{"type": "modulate", "param": "size", "bars": Infinity}'), "finite"),
+    ("a NaN vary amount", json.loads(
+        '{"type": "vary", "name": "Ball Orbit", "amount": NaN}'), "finite"),
+    # `Param` passes a colour string through -- whether it means anything is a
+    # question for the rig -- and `blocks.make` answers a bad one with an empty
+    # block. Accepted, it turned the duo plain palette white with no word said.
+    ("a colour this rig cannot resolve",
+     {"type": "look_params", "name": "Duo Pink/Cyan",
+      "values": {"color_a": "nonsense"}}, "not a palette role"),
 ):
     try:
         controller.apply(message, None)
@@ -1366,6 +1419,45 @@ check("an out-of-range value is clamped rather than refusing the message",
       controller.look_params["Ball Orbit"] == {"radius": 90.0,
                                                "elongation": 2.0},
       f"{controller.look_params['Ball Orbit']}")
+controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
+                 None)
+check("nothing refused above was stored, and every macro is still a number",
+      "Duo Pink/Cyan" not in controller.look_params
+      and "Ball Orbit" not in controller.look_params
+      and not controller.modulators
+      and all(math.isfinite(v) for v in (controller.ctx.move_size,
+                                         controller.ctx.move_spread,
+                                         *controller.ctx.move_center)),
+      f"{controller.look_params} size={controller.ctx.move_size}")
+
+# A preset or a cue is file-sourced, so a colour it carries that this rig cannot
+# resolve is DROPPED on its own -- the good tuning beside it still lands, and
+# the console is told which key went.
+# (The newest notice, not a slice from a length taken before: the list is capped
+# at twenty, so once it is full its length never moves.)
+controller.apply_look_params(
+    {"Duo Pink/Cyan": {"color_a": "nonsense", "bars": 8}},
+    ["Duo Pink/Cyan"], "preset 'probe'")
+check("a preset's unusable colour is dropped and its good tuning kept",
+      controller.look_params.get("Duo Pink/Cyan") == {"bars": 8.0}
+      and "Duo Pink/Cyan.color_a" in controller.notices[-1],
+      f"{controller.look_params.get('Duo Pink/Cyan')} "
+      f"{controller.notices[-1:]}")
+controller.apply({"type": "look_params", "name": "Duo Pink/Cyan",
+                  "reset": True}, None)
+
+# Every change to the tuning REBINDS the dict, as every collection the 10 Hz
+# snapshot thread walks must (see "the snapshot must never see a container
+# mid-edit", above).
+held_tuning, held_rack = controller.look_params, controller.modulators.by_key
+controller.apply({"type": "look_params", "name": "Ball Orbit",
+                  "values": {"radius": 20}}, None)
+controller.apply({"type": "modulate", "param": "size", "bars": 4}, None)
+check("tuning and the modulator rack are rebound, not edited in place",
+      controller.look_params is not held_tuning and not held_tuning
+      and controller.modulators.by_key is not held_rack and not held_rack)
+controller.apply({"type": "modulate_clear", "all": True}, None)
+controller.apply({"type": "macro", "reset": True}, None)
 controller.apply({"type": "look_params", "name": "Ball Orbit", "reset": True},
                  None)
 
@@ -1491,6 +1583,20 @@ for label, message, expect in (
     except (ValueError, KeyError) as exc:
         check(f"{label} is refused", expect in str(exc), str(exc)[:60])
 
+# The guard above only runs when a look is ADDED. The base can change after --
+# by hand, by a cue, by auto mode -- and a look that was both stacked and the
+# base ran twice at double excursion, which is exactly what the guard is for.
+controller.apply({"type": "movement_add", "name": "Nod"}, None)
+controller.apply({"type": "select_look", "name": "Nod"}, None)
+check("a stacked look later made the base runs once, not twice",
+      len(controller.director.rebuild().movement) == 1,
+      f"{len(controller.director.rebuild().movement)} movement layers")
+controller.apply({"type": "select_look", "name": "Ball Orbit"}, None)
+check("and comes back as a stacked layer when the base moves on",
+      len(controller.director.rebuild().movement) == 2
+      and track(controller) == stacked)
+controller.apply({"type": "movement_remove", "all": True}, None)
+
 for name in ("Nod", "Drift", "Restless"):
     controller.apply({"type": "movement_add", "name": name}, None)
 try:
@@ -1527,6 +1633,19 @@ check("varying twice from one seed lands in the same place, not further out",
 check("the cycle length is never varied -- it is a musical decision",
       "bars" not in controller.look_params["Ball Orbit"],
       f"{sorted(controller.look_params['Ball Orbit'])}")
+
+# Merged over the operator's other settings, not instead of them: Vary rolls
+# shape numbers only, so a cycle length or a direction set by hand has nothing
+# to do with it. It used to replace the whole override and both were lost.
+controller.apply({"type": "look_params", "name": "Wind Out",
+                  "values": {"direction": "in", "bars": 32}}, None)
+controller.apply({"type": "vary", "name": "Wind Out", "seed": 3}, None)
+wind = controller.look_params["Wind Out"]
+check("vary keeps what it does not vary",
+      wind.get("direction") == "in" and wind.get("bars") == 32.0
+      and len(wind) > 2, f"{wind}")
+controller.apply({"type": "look_params", "name": "Wind Out", "reset": True},
+                 None)
 
 orbit_params = blocksmod.PARAMS["orbit"]
 for amount in (0.1, 0.5, 1.0):

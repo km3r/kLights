@@ -745,7 +745,13 @@ class ShowController:
             return
         cue = self.cues.go(self.ctx.beat)
         if cue is not None:
-            self.take_cue(cue)
+            # Without grabbing. Taking a cue by hand is an operator overriding
+            # the timeline, and main's rule is that the grab sticks until they
+            # release it. A hold running out is nobody's decision: grabbing on
+            # it would take all three lanes from a running timeline, and keep
+            # them, with no one having touched anything. The slots still
+            # change underneath, so the cue is there in any lane already held.
+            self.take_cue(cue, grab=False)
 
     def _attach_overrides(self, show: statemod.Show) -> None:
         show.master = 0.0 if self.blackout else self.master
@@ -780,14 +786,18 @@ class ShowController:
             return
         macros, looks = self.modulators.resolve(self.ctx.bar, self.ctx.energy)
         self.ctx.live_params = looks
-        if "size" in macros:
-            self.ctx.move_size = macros["size"]
-        if "spread" in macros:
-            self.ctx.move_spread = macros["spread"]
-        if "bearing" in macros or "elev" in macros:
+        # Named from the declarations, so a renamed macro cannot leave a
+        # modulator that resolves and lands nowhere.
+        size, spread = parammod.SIZE.name, parammod.SPREAD.name
+        bearing_key, elev_key = parammod.CENTER_BEARING.name, parammod.CENTER_ELEV.name
+        if size in macros:
+            self.ctx.move_size = macros[size]
+        if spread in macros:
+            self.ctx.move_spread = macros[spread]
+        if bearing_key in macros or elev_key in macros:
             bearing, elev = self.ctx.move_center
-            self.ctx.move_center = (macros.get("bearing", bearing),
-                                    macros.get("elev", elev))
+            self.ctx.move_center = (macros.get(bearing_key, bearing),
+                                    macros.get(elev_key, elev))
 
     def _publish(self, states: dict[int, statemod.FixtureState]) -> None:
         # One reference assignment. Atomic under the GIL, so the broadcast
@@ -876,6 +886,17 @@ class ShowController:
             return base
         return replace(base, args={**base.args, **overrides})
 
+    def _set_look_params(self, name: str, values: Optional[dict]) -> None:
+        """Replace one look's tuning; None or {} puts it back to authored.
+
+        REBINDS the dict rather than editing it, the convention every
+        collection the 10 Hz snapshot walks follows (`self.flashing` says why):
+        that thread iterates `look_params` while a command lands on this one,
+        and a dict changing size under it is a "snapshot failed" on every phone.
+        """
+        rest = {k: v for k, v in self.look_params.items() if k != name}
+        self.look_params = {**rest, name: dict(values)} if values else rest
+
     def _recompose(self, fade_beats: Optional[float] = None) -> None:
         """Rebuild the Show from the three slots.
 
@@ -896,8 +917,16 @@ class ShowController:
                 # Resolved here rather than held as entries, so a stacked look
                 # picks up its own tuning and modulation exactly as the base
                 # route does -- `entry()` is the one place that applies it.
+                #
+                # The base route is left out of the stack. `movement_add`
+                # refuses to stack the current base, but the base can change
+                # AFTER -- picked by hand, by a cue, by auto mode -- and a look
+                # that is both would run twice at double excursion. Filtered
+                # here, where every route to a new base passes, rather than
+                # unstacked: when the base moves on, the stacked look returns.
                 movement_extra=[e for e in
-                                (self.entry(n) for n in self.movement_extra)
+                                (self.entry(n) for n in self.movement_extra
+                                 if look is None or n != look.name)
                                 if e is not None and e.is_movement],
                 palette_roles=self.palette_roles(color))
         self.director.compose = compose
@@ -996,7 +1025,7 @@ class ShowController:
                 f"parametric_looks.json and are the ones built from a block")
 
         if m.get("reset"):
-            self.look_params.pop(name, None)
+            self._set_look_params(name, None)
             self._recompose()
             self.note(f"{name!r} back to its authored values")
             return
@@ -1013,7 +1042,16 @@ class ShowController:
         current = dict(self.look_params.get(name, {}))
         for key in values:
             current[key] = resolved[key]
-        self.look_params[name] = current
+        # A colour or a list is passed through by `Param` -- whether "@accent"
+        # or "#ff0080" means anything is a question for the rig -- so ask the
+        # check the block itself would make, before storing rather than after.
+        # Refused whole, unlike a clamped number: there is no nearest colour to
+        # "nonsense", and storing it builds an empty block that lights nothing.
+        problems = libmod.arg_problems(
+            replace(base, args={**base.args, **current}), self.rig)
+        if problems:
+            raise ValueError(f"{name!r}: {'; '.join(problems)}")
+        self._set_look_params(name, current)
         self._recompose()
 
     def looks_named(self, block: dict) -> list[str]:
@@ -1081,17 +1119,24 @@ class ShowController:
                     dropped.append(f"{name}.{key}")
                     continue
                 try:
-                    kept[key] = parammod.clamp(param, value, self.reach)
+                    value = parammod.clamp(param, value, self.reach)
                 except parammod.ParamError:
                     dropped.append(f"{name}.{key}")
-            if kept:
-                self.look_params[name] = kept
-            else:
-                self.look_params.pop(name, None)
+                    continue
+                # One key at a time against the authored look, so a colour this
+                # rig cannot resolve is dropped on its own and the rest of the
+                # tuning still lands -- see `_cmd_look_params` for why it is
+                # checked at all.
+                if libmod.arg_problems(
+                        replace(entry, args={**entry.args, key: value}), self.rig):
+                    dropped.append(f"{name}.{key}")
+                    continue
+                kept[key] = value
+            self._set_look_params(name, kept)
         if dropped:
             self.note(f"{where}: dropped {', '.join(dropped[:4])}"
                       f"{' and more' if len(dropped) > 4 else ''} -- "
-                      f"no such parameter now")
+                      f"not a parameter, or not a value this rig can use")
 
     def target_param(self, look: Optional[str], param: str) -> parammod.Param:
         """The `Param` a modulator is aimed at, whichever kind of target it is.
@@ -1200,7 +1245,8 @@ class ShowController:
             raise ValueError(
                 f"{self.MAX_STACK} stacked routines is the limit -- past that "
                 f"nobody can tell which one is doing what")
-        self.movement_extra.append(name)
+        # Rebound, never appended to -- the snapshot thread lists it.
+        self.movement_extra = [*self.movement_extra, name]
         self._recompose()
 
     def _cmd_movement_remove(self, m: dict, now: float) -> None:
@@ -1228,10 +1274,14 @@ class ShowController:
         `random.Random` keeps that: the seed is published, so a variation worth
         keeping can be written down and reproduced exactly.
 
-        `bars` is deliberately left alone. The cycle length is a MUSICAL
-        decision -- it is how the routine sits against the track -- while
-        everything else is shape. Rolling a new cycle length is how you turn a
-        16-bar swell into a 3.75-bar one that fits nothing.
+        A `musical` parameter (the cycle length, `bars`) is deliberately left
+        alone -- it is how the routine sits against the track, while everything
+        else is shape. Rolling a new cycle length is how you turn a 16-bar
+        swell into a 3.75-bar one that fits nothing.
+
+        MERGED over the operator's other settings, not instead of them. Vary
+        only rolls shape numbers, so a direction or a cycle length dialled in by
+        hand has nothing to do with it and must survive the press.
         """
         name = m["name"]
         entry = self.by_name.get(name)
@@ -1240,7 +1290,10 @@ class ShowController:
         if not entry.is_parametric:
             raise ValueError(
                 f"{name!r} is a ported look -- it has no parameters to vary")
-        amount = max(0.0, min(1.0, float(m.get("amount", 0.3))))
+        amount = float(m.get("amount", 0.3))
+        if not math.isfinite(amount):
+            raise ValueError(f"vary amount must be a finite number, got {amount}")
+        amount = max(0.0, min(1.0, amount))
         if m.get("seed") is not None:
             seed = int(m["seed"])
         else:
@@ -1257,7 +1310,7 @@ class ShowController:
         base = libmod.resolve_args(entry)
         varied: dict = {}
         for param in blocksmod.PARAMS.get(entry.block or "", ()):
-            if param.name == "bars" or param.kind not in ("number", "integer"):
+            if param.musical or param.kind not in ("number", "integer"):
                 continue
             # An argument with no fixed default (a fan's sweep is half its
             # width unless given) has nothing to perturb FROM.
@@ -1270,7 +1323,11 @@ class ShowController:
                 self.reach)
         if not varied:
             raise ValueError(f"{name!r} has nothing that can be varied")
-        self.look_params[name] = varied
+        # Rebound, never mutated: the 10 Hz snapshot walks this dict from
+        # another thread (see `_set_look_params`).
+        kept = {k: v for k, v in self.look_params.get(name, {}).items()
+                if k not in varied}
+        self._set_look_params(name, {**kept, **varied})
         self._recompose()
         self.note(f"varied {name!r} at {amount:.2f} from seed {seed}")
 
@@ -1805,7 +1862,7 @@ class ShowController:
 
     # -- the cue list ------------------------------------------------------
 
-    def take_cue(self, cue: "cuesmod.Cue") -> None:
+    def take_cue(self, cue: "cuesmod.Cue", *, grab: bool = True) -> None:
         """Put a cue on stage, crossfading over its own fade time.
 
         Fills the same three slots a preset does, because a cue IS a preset
@@ -1817,6 +1874,9 @@ class ShowController:
         notice rather than aborting the cue. A cue list outlives any one port of
         the library, and taking four of five slots is a recoverable night;
         refusing the cue is not.
+
+        `grab` False changes the slots without taking lanes from a running
+        timeline -- for a cue nobody chose this instant (`_advance_due_cue`).
         """
         for slot in ("color", "level"):
             wanted = getattr(cue, slot)
@@ -1850,7 +1910,8 @@ class ShowController:
                               "level": cue.level}),
             f"cue {cue.name!r}")
 
-        self._grab(statemod.SLOTS)
+        if grab:
+            self._grab(statemod.SLOTS)
         self._recompose(fade_beats=cue.fade)
         self.note(f"cue {self.cues.index + 1}/{len(self.cues.cues)}: "
                   f"{cue.name}" + (f" (fade {cue.fade:g} beats)"
