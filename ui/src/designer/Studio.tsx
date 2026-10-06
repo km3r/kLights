@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } from "./model";
 import { PaletteDetail, PalettesView } from "./Palettes";
+import { NewDialog, NewMenu } from "./New";
+import type { NewKind } from "./New";
 import { TemplateAside, TemplatesView } from "./Templates";
 import { ShowSettingsView } from "./ShowSettings";
 import type { ReactNode } from "react";
@@ -110,6 +112,9 @@ export default function Studio({ engine, route }: {
     setTpl({ doc, dirty, rev }), []);
   // What the last template-set or show.json change did (as above).
   const [setSaid, setSetSaid] = useState<string | null>(null);
+  // + New's dialog, open for one kind of thing.
+  const [making, setMaking] = useState<NewKind | null>(null);
+  const openNew = useCallback((kind: NewKind) => setMaking(kind), []);
   const tplId = route.view === "templates" ? (route.id ?? lib.sets[0]?.id ?? null) : null;
   // The palette on screen. Undefined: none chosen yet, so the first; null:
   // none, on purpose (the one shown was just deleted).
@@ -159,7 +164,7 @@ export default function Studio({ engine, route }: {
   } else if (route.view === "templates") {
     main = <TemplatesView engine={engine} sets={lib.routines == null ? null : lib.sets}
                           routines={lib.routines ?? []} library={lib.palettes ?? []}
-                          current={tplId} onDoc={onTemplateDoc} />;
+                          current={tplId} onDoc={onTemplateDoc} onNew={() => openNew("template")} />;
     side = (
       <>
         {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
@@ -174,6 +179,7 @@ export default function Studio({ engine, route }: {
   } else if (route.view === "palettes") {
     main = (
       <PalettesView engine={engine} palettes={lib.palettes} found={lib.found}
+                    onNew={() => openNew("palette")}
                     selected={shownPalette} onSelect={(id) => { setSetSaid(null); setPaletteId(id); }}
                     onDone={(said) => { setSetSaid(said); lib.reload(); }} />
     );
@@ -201,6 +207,7 @@ export default function Studio({ engine, route }: {
   } else if (route.view === "routines") {
     main = (
       <RoutinesView routines={lib.routines} selected={routineId} onSelect={selectRoutine}
+                    onNew={() => openNew("routine")}
                     onAction={(id, action) => {
                       selectRoutine(id);
                       setRoutineAsk((a) => ({ action, n: a.n + 1 }));
@@ -252,6 +259,7 @@ export default function Studio({ engine, route }: {
         </a>
         {engine.state?.event && <span className="s-event">{engine.state.event}</span>}
         <span className="grow" />
+        <NewMenu onPick={openNew} />
         <LivePill engine={engine} />
         <a className="s-button" href="#show" title="Back to the console, in this tab">Console</a>
         {guide.button}
@@ -289,6 +297,12 @@ export default function Studio({ engine, route }: {
         {panels.side && side != null && <aside className="s-side" aria-label="details">{side}</aside>}
         {guide.drawer}
       </div>
+      {making && (
+        <NewDialog engine={engine} kind={making} tracks={tracks} routines={lib.routines ?? []}
+                   sets={lib.sets} showSet={setId} palettes={lib.palettes ?? []} found={lib.found}
+                   onClose={() => setMaking(null)}
+                   onPalette={(id, said) => { setPaletteId(id); setSetSaid(said); lib.reload(); }} />
+      )}
       {dialog && (
         <StartDialog engine={engine} title={dialog.title} prep={dialog.prep} tracks={dialog.tracks}
                      sets={lib.sets} activeSet={setId}

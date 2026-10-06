@@ -11,6 +11,34 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — Studio's + New: one way in to making anything
+
+- **+ New** sits in Studio's top bar on every page. It makes a timeline for a
+  track, a routine, a template set or a palette, each with the starts that
+  make sense for it. The keys T, R, S and P pick one while the menu is open,
+  and **Tracks from rekordbox** is there too.
+  - **A timeline** for a track that has none: a draft from a template set (the
+    show's, to begin with), a copy of another track's timeline, or empty. A
+    copy says how far the two tracks' phrases agree, since that is how far its
+    clips are on the right phrases.
+  - **A routine**: blank (bars, loops, folder), a copy of another, or **a look
+    from the console**, which puts the look on its own lane as a routine. That
+    routine is bound to this rig, because the look is.
+  - **A template set**: blank, a copy of another, or **from a track's
+    timeline**. That takes, for each phrase family, what its scene lane plays
+    most (routine, variation and parameters together), plus the palette clip
+    over it, the timeline's palettes and its most-used fade.
+  - **A palette**: three colours, a copy of a library palette, or one that
+    lives in a file, which brings its name with it.
+- A timeline, routine or set **opens in its editor unsaved**, with its start
+  applied. Nothing is written until Save, and a timeline's start can be undone.
+  A palette has no editor page, so it goes into the library at once.
+- The Routines, Template sets and Palettes pages' own New buttons open the same
+  dialog. The inline id boxes are gone: a name is typed and the id (also the
+  file name) follows it unless it is edited.
+- A file that has never been saved now says **Save**, not "Saved", even before
+  it is changed, so a copy or a draft can be saved as it stands.
+
 ### Added — the timeline editor: a browser, sections, and clip actions
 
 - **A browser on the left of a track's timeline**, folding away like the other

@@ -114,8 +114,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "A first routine",
         steps: [
-          <>On Studio's <b>Routines</b> page, type an id and press{" "}
-            <b>New routine</b>. Or click <b>Open routine</b> on a clip.</>,
+          <>Press <b>+ New</b> at the top of Studio, then <b>A routine</b> (or R).
+            Start it blank, as a copy of another, or from a look on the console.
+            Or click <b>Open routine</b> on a clip.</>,
           <>Set the number of <b>Bars</b>, and whether it <b>loops</b>.</>,
           <>Click a block under <b>Blocks</b> to add it at the playhead. Its
             settings appear below.</>,

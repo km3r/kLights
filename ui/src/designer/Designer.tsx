@@ -10,7 +10,7 @@ import {
 import type {
   Item, PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
 } from "./model";
-import { PHRASE_HUE, phraseFamily } from "./model";
+import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
   Editor, clipOps, copyRange, cutRange, parsePointId, rememberBack, setClipBoard, uniqueId,
   useClipBoard, useEditorKeys, useHistory,
@@ -21,7 +21,7 @@ import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
 import Studio from "./Studio";
-import { takePendingDraft } from "./Library";
+import { clearPending, peekPending } from "./pending";
 import { PanelToggle, usePanels } from "./panels";
 import type { StudioRoute } from "../studioRoute";
 import "./designer.css";
@@ -66,6 +66,27 @@ export default function Designer({ engine, route }: { engine: Engine; route: Stu
   }
   if (route.view === "track") return <TrackDesigner key={route.id} engine={engine} trackId={route.id} />;
   return <Studio engine={engine} route={route} />;
+}
+
+/** What a copied timeline's start needs saying: how far the two tracks'
+ *  phrases agree, since that is how far the copied clips are on the right
+ *  phrases. */
+function copyNote(from: TrackDoc, to: TrackDoc): string {
+  const name = from.identity.title;
+  const a = from.phrases?.items ?? [];
+  const b = to.phrases?.items ?? [];
+  const same = phraseMatch(a, b);
+  const tail = " Nothing is saved until you press Save.";
+  if (a.length && same === a.length && same === b.length) {
+    return `Copied ${name}'s timeline. Its phrases are this track's, phrase for phrase.${tail}`;
+  }
+  if (same > 0) {
+    const bar = Math.floor(a[same - 1]![1] / BEATS_PER_BAR);
+    return `Copied ${name}'s timeline. The phrases agree up to bar ${bar}: check the clips after `
+      + `that.${tail}`;
+  }
+  return `Copied ${name}'s timeline. The phrases differ, so the clips sit on the same bars, `
+    + `not the same phrases: check them.${tail}`;
 }
 
 // -- the transport ------------------------------------------------------------
@@ -177,9 +198,32 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   useEffect(() => {
     if (drafted.current || !track || !doc) return;
     drafted.current = true;
-    const pending = takePendingDraft(trackId);
+    const pending = peekPending("timeline", trackId);
     if (!pending) return;
+    clearPending("timeline", trackId);
     const base = doc;
+    if (pending.copy) {
+      // Another track's timeline as this one's start: its lanes, on this
+      // track's grid. Bars are bars, so a clip lands on the same bar -- which
+      // is the same phrase only as far as the two tracks' phrases agree.
+      const from = pending.copy;
+      Promise.all([apiFetch<{ doc: TimelineDoc }>(`/api/timelines/${from}`),
+                   apiFetch<{ doc: TrackDoc }>(`/api/tracks/${from}`)])
+        .then(([{ doc: other }, { doc: otherTrack }]) => {
+          apply((d) => {
+            const tl = d as unknown as TimelineDoc;
+            tl.rows = structuredClone(other.rows);
+            if (other.palettes) tl.palettes = structuredClone(other.palettes);
+            else delete tl.palettes;
+            if (other.palette) tl.palette = other.palette; else delete tl.palette;
+            if (track.grid.rev) tl.grid_rev = track.grid.rev;
+          });
+          setNotice(copyNote(otherTrack, track));
+        })
+        .catch((e: Error) => setNotice(`Could not copy the timeline of ${from}: ${e.message}`));
+      return;
+    }
+    if (!pending.set) return;
     const setId = pending.set;
     apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${setId}`)
       .then(({ doc: ts }) => {

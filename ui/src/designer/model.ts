@@ -287,6 +287,73 @@ export function uniqueId(doc: { rows: Row[] }, stem: string): string {
   return id;
 }
 
+/** How many phrases, from the start, two tracks share: the same family over
+ *  the same beats. A timeline copied from one to the other is right that far. */
+export function phraseMatch(a: [number, number, string][], b: [number, number, string][]): number {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n]![0] === b[n]![0] && a[n]![1] === b[n]![1]
+         && phraseFamily(a[n]![2]) === phraseFamily(b[n]![2])) n++;
+  return n;
+}
+
+/**
+ * A template set from a track's timeline: for each phrase family, what its
+ * scene lane plays most over that family's phrases (routine, variation and
+ * parameters together), and the palette clip most over them; for anything
+ * else, what it plays most overall. The timeline's palettes come with it, and
+ * the fade its routine clips most often use becomes the set's fade. Null if
+ * the scene lane plays no routine on any phrase.
+ */
+export function templateFromTimeline(id: string, name: string, track: TrackDoc,
+                                     tl: TimelineDoc): TemplateSetDoc | null {
+  const phrases = track.phrases?.items ?? [];
+  const scene = tl.rows.find((r) => r.type === "clips" && r.target === "scene");
+  const palLane = tl.rows.find((r) => r.type === "clips" && r.target === "palette");
+  const most = (items: Item[] | undefined, s: number, e: number, ok: (i: Item) => boolean) => {
+    let best: Item | null = null;
+    let cover = 0;
+    for (const it of items ?? []) {
+      if (!ok(it)) continue;
+      const c = Math.min(e, it.at + it.len) - Math.max(s, it.at);
+      if (c > cover) { best = it; cover = c; }
+    }
+    return { best, cover };
+  };
+  const tally = new Map<string, Map<string, number>>();
+  const add = (fam: string, key: string, beats: number) => {
+    const m = tally.get(fam) ?? new Map<string, number>();
+    m.set(key, (m.get(key) ?? 0) + beats);
+    tally.set(fam, m);
+  };
+  for (const [s, e, label] of phrases) {
+    const { best, cover } = most(scene?.items, s, e, (i) => i.kind === "routine" && !!i.routine);
+    if (!best) continue;
+    const pal = most(palLane?.items, s, e, (i) => i.kind === "palette" && !!i.palette).best?.palette;
+    const pick: TemplatePick = { routine: best.routine! };
+    if (best.variation) pick.variation = best.variation;
+    if (best.params && Object.keys(best.params).length) pick.params = { ...best.params };
+    if (pal && tl.palettes?.[pal]) pick.palette = pal;
+    const key = JSON.stringify(pick);
+    add(phraseFamily(label), key, cover);
+    add("*", key, cover);
+  }
+  if (!tally.size) return null;
+  const top = (m: Map<string, number>) => [...m].sort((x, y) => y[1] - x[1])[0]![0];
+  const picks: Record<string, TemplatePick> = {};
+  for (const [fam, m] of tally) picks[fam] = JSON.parse(top(m)) as TemplatePick;
+  const doc: TemplateSetDoc = { kind: "klights.template_set", version: 1, id, name, phrases: picks };
+  if (tl.palettes && Object.keys(tl.palettes).length) {
+    doc.palettes = structuredClone(tl.palettes) as TemplateSetDoc["palettes"];
+    if (tl.palette && tl.palettes[tl.palette]) doc.palette = tl.palette;
+  }
+  const fades = new Map<number, number>();
+  for (const it of scene?.items ?? []) {
+    if (it.kind === "routine" && (it.fade ?? 0) > 0) fades.set(it.fade!, (fades.get(it.fade!) ?? 0) + 1);
+  }
+  if (fades.size) doc.transition = { fade_beats: [...fades].sort((x, y) => y[1] - x[1])[0]![0] };
+  return doc;
+}
+
 /** An id not taken by any of `ids`, from a stem: "fan-drop-copy", then
  *  "fan-drop-copy-2"... */
 export function freeId(ids: Iterable<string>, stem: string): string {

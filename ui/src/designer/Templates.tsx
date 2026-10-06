@@ -9,8 +9,7 @@ import type {
   PaletteSummary, RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary,
   TrackLine,
 } from "./model";
-import { DRAFT_ON_OPEN } from "./Library";
-import type { PendingDraft } from "./Library";
+import { clearPending, peekPending, putPending } from "./pending";
 import { download } from "./Routines";
 
 /**
@@ -41,8 +40,10 @@ function setName(s: { id: string; name?: string | null }): string { return s.nam
 
 // -- the page -----------------------------------------------------------------------
 
-export function TemplatesView({ engine, sets, routines, library, current, onDoc }: {
+export function TemplatesView({ engine, sets, routines, library, current, onDoc, onNew }: {
   engine: Engine; sets: TemplateSummary[] | null; routines: RoutineSummary[];
+  /** Open + New's dialog, for a set. */
+  onNew: () => void;
   /** The show's palette library, to copy a palette in from. */
   library: PaletteSummary[];
   /** The set on screen: the route's, else the first. */
@@ -50,9 +51,7 @@ export function TemplatesView({ engine, sets, routines, library, current, onDoc 
   /** The working copy, for the panel beside: try it, make it the show's. */
   onDoc: (doc: TemplateSetDoc | null, dirty: boolean, rev: string) => void;
 }) {
-  const [newId, setNewId] = useState("");
   const list = sets ?? [];
-  const idOk = ID_RE.test(newId) && !list.some((s) => s.id === newId);
   return (
     <section className="s-page" aria-label="template sets">
       <div className="s-page-head">
@@ -63,17 +62,7 @@ export function TemplatesView({ engine, sets, routines, library, current, onDoc 
             (that is F19 milestone 2).</span>
         </div>
         <span className="grow" />
-        <form className="d-form" onSubmit={(e) => {
-          e.preventDefault();
-          if (idOk) location.hash = `#studio/templates/${newId}`;
-        }}>
-          <input value={newId} onChange={(e) => setNewId(e.target.value.trim())}
-                 placeholder="new-set-id" aria-label="new set id" />
-          <button type="submit" className="d-primary" disabled={!idOk}>New set</button>
-          {newId && !idOk && <span className="small d-error">
-            {list.some((s) => s.id === newId) ? "already there"
-              : "lower-case letters, digits, - and _ -- it is also the file name"}</span>}
-        </form>
+        <button onClick={onNew}>New set…</button>
       </div>
       {sets == null && <p className="muted">Loading the show folder…</p>}
       {list.length > 0 && (
@@ -90,7 +79,7 @@ export function TemplatesView({ engine, sets, routines, library, current, onDoc 
         </nav>
       )}
       {sets != null && !list.length && !current && (
-        <p className="muted">No template sets yet. Name one above to start it.</p>)}
+        <p className="muted">No template sets yet. Make one with New set.</p>)}
       {current && (
         <TemplateEditor key={current} engine={engine} id={current} routines={routines}
                         library={library} onDoc={onDoc} />
@@ -112,6 +101,8 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
   const [open, setOpen] = useState<string | null>(null);     // a pick whose params show
   const [exact, setExact] = useState("");
   const [palName, setPalName] = useState("");
+  // A start handed over by New: a copy, or a set made from a timeline.
+  const [pending] = useState(() => peekPending("template", id));
 
   useEffect(() => {
     apiFetch<{ doc: TemplateSetDoc; rev: string }>(`/api/templates/${id}`)
@@ -119,8 +110,9 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
       .catch((e: Error) => {
         // Not in the folder: start it, saved with base_rev "" -- a new file.
         if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(newTemplateSet(id, routines));
+        setBase(pending?.doc ?? newTemplateSet(id, routines));
         setRev("");
+        clearPending("template", id);
       });
     // Only the id decides what loads; the routines are only a first pick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -475,10 +467,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   });
   const draftTrack = () => {
     if (!track) return;
-    try {
-      const pending: PendingDraft = { track: track.id, set: id, at: Date.now() };
-      sessionStorage.setItem(DRAFT_ON_OPEN, JSON.stringify(pending));
-    } catch { /* the timeline opens without it */ }
+    putPending({ kind: "timeline", id: track.id, set: id });
     location.hash = `#studio/track/${track.id}`;
   };
   const dupOk = ID_RE.test(dupId) && !sets.some((s) => s.id === dupId);

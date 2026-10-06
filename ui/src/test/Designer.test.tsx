@@ -7,7 +7,7 @@ import App from "../App";
 import type { Command } from "../types";
 import {
   BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave, draftFromTemplate, newTimeline,
+  decodeWave, draftFromTemplate, newTimeline, phraseMatch, templateFromTimeline,
   whoDrives,
 } from "../designer/model";
 import {
@@ -131,6 +131,36 @@ describe("designer model", () => {
     const noCycle = { ...structuredClone(clubDoc), bars: undefined } as never;
     expect(draftFromTemplate(newTimeline(track), track, noCycle))
       .toBe("this track has no phrases to draft from");
+  });
+
+  it("makes a set from a timeline: what each phrase family's scene lane plays most", () => {
+    const set = templateFromTimeline("mine", "Mine", trackDoc as never, timelineDoc as never)!;
+    // The Intro is a snapshot, not a routine, so it says nothing. The two
+    // Choruses tie (wide and tight, 16 bars each): the first one wins.
+    expect(set.phrases).toEqual({
+      Verse: { routine: "verse-sweep", params: { color: "@secondary" } },
+      Up: { routine: "build-rise" },
+      Chorus: { routine: "fan-drop", variation: "wide", params: { color: "@primary" },
+                palette: "Hot" },
+      Down: { routine: "idle-orbit", params: { color: "@secondary" } },
+      Outro: { routine: "idle-orbit" },
+      "*": { routine: "verse-sweep", params: { color: "@secondary" } },
+    });
+    expect(Object.keys(set.palettes ?? {})).toEqual(["Cool", "Hot"]);
+    expect(set.palette).toBe("Cool");
+    expect(set.transition).toEqual({ fade_beats: 2 });      // two 2s, two 8s, one 4: the first
+    const bare = { ...structuredClone(timelineDoc), rows: [] };
+    expect(templateFromTimeline("x", "X", trackDoc as never, bare as never)).toBeNull();
+  });
+
+  it("says how far two tracks' phrases agree", () => {
+    const a = PHRASE_ITEMS;
+    expect(phraseMatch(a, a)).toBe(8);
+    // "Verse 2" for "Verse 1" is the same family; a moved Up is where they part
+    const b = a.map(([s, e, l], i) => (i === 1 ? [s, e, "Verse 2"] : i === 2 ? [s + 4, e, l] : [s, e, l])) as
+      [number, number, string][];
+    expect(phraseMatch(a, b)).toBe(2);
+    expect(phraseMatch(a, [])).toBe(0);
   });
 
   it("cuts a stretch out of a lane: inside goes, an edge is trimmed, across both is split", () => {
@@ -715,11 +745,24 @@ describe("routine editor", () => {
   it("starts a new routine and saves it as a new file", async () => {
     const user = userEvent.setup();
     const socket = await open("#studio/routines");
-    await user.type(await screen.findByLabelText("new routine id"), "Bad Name");
-    expect(screen.getByRole("button", { name: "New routine" })).toBeDisabled();
-    await user.clear(screen.getByLabelText("new routine id"));
-    await user.type(screen.getByLabelText("new routine id"), "my-sweep");
-    await user.click(screen.getByRole("button", { name: "New routine" }));
+    await user.click(await screen.findByRole("button", { name: "New routine…" }));
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    const name = within(dialog).getByLabelText("name");
+    const id = within(dialog).getByLabelText("id");
+    await user.clear(name);
+    await user.type(name, "My Sweep");
+    expect(id).toHaveValue("my-sweep");                 // from the name, until it is typed
+    await user.clear(id);
+    await user.type(id, "fan-drop");
+    expect(within(dialog).getByText("already there")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
+    await user.clear(id);
+    await user.type(id, "Bad Name");
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
+    await user.clear(id);
+    await user.type(id, "my-sweep");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/routine/my-sweep");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     expect(screen.getByText("new")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "solid" }));
@@ -727,7 +770,8 @@ describe("routine editor", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     const saved = reply(socket, "routine_save", true, { rev: "r:e" }) as unknown as Saved;
     expect(saved.base_rev).toBe("");
-    expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", bars: 4 });
+    expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", name: "My Sweep",
+                                      bars: 4 });
     expect(saved.doc.rows[0]).toMatchObject({ type: "clips", target: "color", role: "movers" });
     expect(saved.doc.rows[0]!.items![0]!.args).toEqual({ color: "@primary" });
   });
@@ -1243,8 +1287,12 @@ describe("template sets", () => {
     const user = userEvent.setup();
     const socket = await open("#studio/templates");
     const page = await screen.findByRole("region", { name: "template sets" });
-    await user.type(await within(page).findByLabelText("new set id"), "late-night");
-    await user.click(within(page).getByRole("button", { name: "New set" }));
+    await user.click(await within(page).findByRole("button", { name: "New set…" }));
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    expect(within(dialog).getByRole("radio", { name: /Blank/ })).toHaveAttribute("aria-checked", "true");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Late Night");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
     expect(location.hash).toBe("#studio/templates/late-night");
     expect(await within(page).findByLabelText("Anything else routine")).toHaveValue("fan-drop");
     await user.type(within(page).getByLabelText("set name"), "!");
@@ -1252,6 +1300,7 @@ describe("template sets", () => {
     const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SetSaved;
     expect(saved.base_rev).toBe("");
     expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
+                                      name: "Late Night!",
                                       phrases: { "*": { routine: "fan-drop" } } });
   });
 });
@@ -1317,10 +1366,44 @@ describe("palette library", () => {
     const added = reply(socket, "palette_save", true, { rev: "r:c" }) as unknown as PalSaved;
     expect(added.base_rev).toBe("");
     expect(added.doc).toMatchObject({ id: "cool", name: "Cool", primary: "#3b82f6" });
-    await user.type(within(page).getByLabelText("new palette name"), "Neon Night");
-    await user.click(within(page).getByRole("button", { name: "New palette" }));
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    const dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.type(within(dialog).getByLabelText("name"), "Hot");
+    expect(within(dialog).getByText("the library has a palette of that name")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Make it" })).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Neon Night");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
     const made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
-    expect(made.doc).toMatchObject({ id: "neon-night", name: "Neon Night" });
+    expect(made.base_rev).toBe("");
+    expect(made.doc).toMatchObject({ id: "neon-night", name: "Neon Night", primary: "#ffffff" });
+    expect(await screen.findByText("Made Neon Night.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("makes a palette from + New as a copy, or from a file's palette", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    let dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a library palette/ }));
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "ice");
+    await user.type(within(dialog).getByLabelText("name"), "Ice 2");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    let made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.doc).toMatchObject({ id: "ice-2", name: "Ice 2", primary: "#bae6fd",
+                                     secondary: "#ffffff", accent: "#38bdf8" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.click(within(dialog).getByRole("radio", { name: /A palette that lives in a file/ }));
+    // It comes with its name, unless one was typed -- and is ready to make.
+    expect(within(dialog).getByLabelText("from the file palette")).toHaveValue("Cool");
+    expect(within(dialog).getByLabelText("name")).toHaveValue("Cool");
+    expect(within(dialog).getByRole("button", { name: "Make it" })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.doc).toMatchObject({ id: "cool", name: "Cool", primary: "#3b82f6" });
   });
 
   it("deletes a library palette, leaving its copies in their files", async () => {
@@ -1357,6 +1440,173 @@ describe("palette library", () => {
     await user.selectOptions(pick, "ice");
     expect(screen.getByLabelText("Ice primary")).toHaveValue("#bae6fd");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+});
+
+describe("+ New", () => {
+  type TSaved = { doc: TimelineDoc; base_rev: string };
+  type RSaved = { doc: RoutineDoc; base_rev: string };
+  type SSaved = { doc: TemplateSetDoc; base_rev: string };
+  async function menu(hash = "#studio", item?: RegExp) {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    await user.click(await screen.findByRole("button", { name: "+ New" }));
+    if (item) await user.click(within(screen.getByRole("menu", { name: "New" })).getByRole("menuitem", { name: item }));
+    return { user, socket };
+  }
+
+  it("is on every Studio page, and opens its dialog by click or by key", async () => {
+    const { user } = await menu();
+    const items = within(screen.getByRole("menu", { name: "New" })).getAllByRole("menuitem");
+    expect(items.map((i) => i.querySelector("b")?.textContent)).toEqual([
+      "A timeline for a track", "A routine", "A template set", "A palette", "Tracks from rekordbox"]);
+    expect(items[4]).toHaveAttribute("href", "#studio/rekordbox");
+    await user.keyboard("r");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "New routine" })).toBeInTheDocument();
+    expect(screen.getByLabelText("name")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Escape closes the menu too, and nothing is opened
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // and it is there on another page
+    location.hash = "#studio/palettes";
+    await screen.findByRole("region", { name: "palettes" });
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.keyboard("p");
+    expect(screen.getByRole("dialog", { name: "New palette" })).toBeInTheDocument();
+  });
+
+  it("starts a track's timeline as a draft from the show's set, unsaved", async () => {
+    const { user, socket } = await menu("#studio", /A timeline for a track/);
+    const dialog = screen.getByRole("dialog", { name: "New timeline" });
+    // Only the tracks with no timeline are offered.
+    expect(within(within(dialog).getByLabelText("track")).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["Night Drive · Kölsch"]);
+    expect(within(dialog).getByRole("radio", { name: /A draft from a template set/ }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByLabelText("template set")).toHaveValue("club");   // the show's
+    await user.click(within(dialog).getByRole("button", { name: "Open the timeline" }));
+    expect(location.hash).toBe("#studio/track/kolsch-night-drive");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("idle-orbit at bar 1.1")).toBeInTheDocument();
+    expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:n" }) as unknown as TSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc.track).toBe("kolsch-night-drive");
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+
+  it("starts a track's timeline as a copy of another's, and says how far their phrases agree", async () => {
+    const { user } = await menu("#studio", /A timeline for a track/);
+    const dialog = screen.getByRole("dialog", { name: "New timeline" });
+    await user.click(within(dialog).getByRole("radio", { name: /Another track's timeline/ }));
+    expect(within(dialog).getByLabelText("copy from")).toHaveValue("synth-128");
+    expect(dialog).toHaveTextContent("Their phrases are the same, phrase for phrase.");
+    await user.click(within(dialog).getByRole("button", { name: "Open the timeline" }));
+    expect(await screen.findByText(/Copied synthetic 128's timeline\. Its phrases are this track's/))
+      .toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
+  });
+
+  it("forgets a start whose page never opened", async () => {
+    // A start left over from a click a minute ago must not land on a later visit.
+    sessionStorage.setItem("klights.studio.pending", JSON.stringify(
+      { kind: "timeline", id: "synth-128", copy: "kolsch-night-drive", at: Date.now() - 120_000 }));
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(screen.queryByText(/Copied/)).toBeNull();
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+
+  it("starts a routine as a copy of another, leaving the original alone", async () => {
+    const { user, socket } = await menu("#studio/routines", /A routine/);
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a routine/ }));
+    expect(within(dialog).getByLabelText("copy of")).toHaveValue("fan-drop");
+    expect(within(dialog).queryByLabelText("bars")).toBeNull();    // a copy keeps its own
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Fan sweep (late)");
+    await user.type(within(dialog).getByLabelText("folder"), "Late");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/routine/fan-sweep-late");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan_sweep at bar 1.1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "routine_save", true, { rev: "r:n" }) as unknown as RSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "fan-sweep-late", name: "Fan sweep (late)", folder: "Late",
+                                      bars: fanDrop.bars });
+    expect(saved.doc.rows).toEqual(fanDrop.rows);
+  });
+
+  it("starts a routine from a look on the console, bound to this rig", async () => {
+    const { user, socket } = await menu("#studio/routines", /A routine/);
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    await user.click(within(dialog).getByRole("radio", { name: /A look from the console/ }));
+    // A couple of hundred looks, listed by the slot they play on
+    const groups = within(dialog).getByLabelText("look").querySelectorAll("optgroup");
+    expect([...groups].map((g) => g.label)).toEqual(expect.arrayContaining(["color", "movement", "level"]));
+    await user.selectOptions(within(dialog).getByLabelText("look"), "MH Red");
+    fireEvent.change(within(dialog).getByLabelText("bars"), { target: { value: "2" } });
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Red");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("look at bar 1.1")).toBeInTheDocument();
+    // A new file is saveable as it stands: the look is the routine.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "routine_save", true, { rev: "r:n" }) as unknown as RSaved;
+    expect(saved.doc).toMatchObject({ id: "red", bars: 2, rig: "despacio",
+                                      roles: { "corner movers": { default: "corner movers" } } });
+    expect(saved.doc.rows).toEqual([{ id: "look", type: "clips", target: "color", role: "corner movers",
+      items: [{ id: "look", at: 0, len: 8, block: "look", args: { look: "MH Red" } }] }]);
+  });
+
+  it("starts a template set from a track's timeline", async () => {
+    const { user, socket } = await menu("#studio/templates", /A template set/);
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /A track's timeline/ }));
+    expect(within(dialog).getByLabelText("from the timeline of")).toHaveValue("synth-128");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Synthetic");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/templates/synthetic");
+    const page = screen.getByRole("region", { name: "template sets" });
+    expect(await within(page).findByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
+    expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");
+    expect(within(page).getByLabelText("Up routine")).toHaveValue("build-rise");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "synthetic", name: "Synthetic",
+                                      transition: { fade_beats: 2 } });
+    expect(Object.keys(saved.doc.palettes ?? {})).toEqual(["Cool", "Hot"]);
+  });
+
+  it("starts a template set as a copy of another", async () => {
+    const { user, socket } = await menu("#studio/templates", /A template set/);
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a set/ }));
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "warmup");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Warmup 2");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    const page = screen.getByRole("region", { name: "template sets" });
+    expect(await within(page).findByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SSaved;
+    expect(saved.doc).toMatchObject({ id: "warmup-2", name: "Warmup 2" });
+    expect(saved.doc.phrases).toEqual(clubDoc.phrases);
   });
 });
 

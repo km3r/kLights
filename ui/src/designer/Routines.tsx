@@ -31,8 +31,10 @@ export function freeId(routines: RoutineSummary[], stem: string): string {
   return freeIdAmong(routines.map((r) => r.id), stem);
 }
 
-export function RoutinesView({ routines, selected, onSelect, onAction }: {
+export function RoutinesView({ routines, selected, onSelect, onAction, onNew }: {
   routines: RoutineSummary[] | null;
+  /** Open + New's dialog, for a routine. */
+  onNew: () => void;
   selected: string | null; onSelect: (id: string) => void;
   /** Asked from a card's menu: the details panel does it. */
   onAction: (id: string, action: Action) => void;
@@ -40,7 +42,6 @@ export function RoutinesView({ routines, selected, onSelect, onAction }: {
   const [view, setView] = useState<View>({ kind: "all" });
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("name");
-  const [newId, setNewId] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const list = routines ?? [];
   const folders = useMemo(() => [...new Set(list.map((r) => r.folder ?? UNFILED))]
@@ -62,7 +63,6 @@ export function RoutinesView({ routines, selected, onSelect, onAction }: {
       || nameOf(a).localeCompare(nameOf(b))
       : sort === "length" ? a.bars - b.bars || nameOf(a).localeCompare(nameOf(b))
       : nameOf(a).localeCompare(nameOf(b)));
-  const idOk = ID_RE.test(newId) && !list.some((r) => r.id === newId);
   const is = (v: View) => JSON.stringify(v) === JSON.stringify(view);
   const chip = (v: View, label: string, n: number) => (
     <button key={label} className={`s-chip${is(v) ? " on" : ""}`} aria-pressed={is(v)}
@@ -91,17 +91,7 @@ export function RoutinesView({ routines, selected, onSelect, onAction }: {
             roles rather than fixtures, so they play on any rig.</span>
         </div>
         <span className="grow" />
-        <form className="d-form" onSubmit={(e) => {
-          e.preventDefault();
-          if (idOk) location.hash = `#studio/routine/${newId}`;
-        }}>
-          <input value={newId} onChange={(e) => setNewId(e.target.value.trim())}
-                 placeholder="new-routine-id" aria-label="new routine id" />
-          <button type="submit" className="d-primary" disabled={!idOk}>New routine</button>
-          {newId && !idOk && <span className="small d-error">
-            {list.some((r) => r.id === newId) ? "already there"
-              : "lower-case letters, digits, - and _ -- it is also the file name"}</span>}
-        </form>
+        <button onClick={onNew}>New routine…</button>
       </div>
 
       <div className="s-toolbar">

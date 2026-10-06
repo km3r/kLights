@@ -40,17 +40,17 @@ function Swatches({ c, size = "s" }: { c: Partial<Colours>; size?: "s" | "l" }) 
   );
 }
 
-export function PalettesView({ engine, palettes, found, selected, onSelect, onDone }: {
+export function PalettesView({ engine, palettes, found, selected, onSelect, onDone, onNew }: {
   engine: Engine; palettes: PaletteSummary[] | null; found: FoundPalette[];
+  /** Open + New's dialog, for a palette. */
+  onNew: () => void;
   selected: string | null; onSelect: (id: string) => void;
   onDone: (said: string) => void;
 }) {
-  const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const list = palettes ?? [];
   const ids = list.map((p) => p.id);
   const canWrite = engine.tier === "configure";
-  const nameTaken = (name: string) => list.some((p) => p.name === name);
 
   const create = async (name: string, colours: Colours, said: string) => {
     setError(null);
@@ -72,25 +72,13 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
             keep their own copies by name; change one here and Studio offers to update them.</span>
         </div>
         <span className="grow" />
-        <form className="d-form" onSubmit={(e) => {
-          e.preventDefault();
-          const name = newName.trim();
-          if (!name || nameTaken(name)) return;
-          void create(name, { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" },
-                      `Made ${name}.`).then(() => setNewName(""));
-        }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)}
-                 placeholder="palette name" aria-label="new palette name" />
-          <button type="submit" className="d-primary"
-                  disabled={!newName.trim() || nameTaken(newName.trim()) || !canWrite}>New palette</button>
-          {newName.trim() && nameTaken(newName.trim()) && <span className="small d-error">already there</span>}
-        </form>
+        <button onClick={onNew}>New palette…</button>
       </div>
       {error && <p className="d-error" role="alert">{error}</p>}
       {palettes == null && <p className="muted">Loading the show folder…</p>}
       {palettes != null && !list.length && (
-        <p className="muted">No palettes in the library yet. Make one above, or add one that
-          already lives in a timeline or set, below.</p>)}
+        <p className="muted">No palettes in the library yet. Make one with New palette, or add
+          one that already lives in a timeline or set, below.</p>)}
 
       <div className="s-palette-cards">
         {list.map((p) => {

@@ -586,3 +586,26 @@ a.s-use:hover b { color: var(--accent); }
 .d-origin.lib { border-color: #2c5a41; color: var(--good); }
 .d-origin.differs { border-color: var(--warn); color: var(--warn); }
 .designer .d-origin button { min-height: 18px; padding: 0 6px; font-size: 10px; }
+
+/* + New: a menu under the top bar's button, and a dialog of starts, each one's
+   own picker shown under it once chosen. */
+.s-new { position: relative; display: inline-flex; }
+.s-new-menu {
+  position: absolute; z-index: 25; top: 34px; right: 0; width: 300px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel-2); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.s-new-menu > i { display: block; height: 1px; margin: 4px 2px; background: var(--line); }
+.s-new-menu > a, .designer .s-new-menu > button {
+  display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 4px 10px; border: 0;
+  border-radius: 9px; background: transparent; color: var(--text); text-align: left; text-decoration: none;
+}
+.s-new-menu > a:hover, .designer .s-new-menu > button:hover,
+.designer .s-new-menu > button:focus { background: var(--line); outline: none; }
+.s-new-menu > * > span:first-child { display: flex; flex-direction: column; flex: 1; font-size: 13px; }
+.s-new-menu .k { color: var(--dim); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+.s-options { display: flex; flex-direction: column; gap: 6px; }
+.s-opt-wrap { display: flex; flex-direction: column; gap: 6px; }
+.s-opt-more { display: flex; flex-direction: column; gap: 4px; padding-left: 30px; }
+.s-opt-more select { align-self: flex-start; max-width: 100%; }
+.s-name-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; }

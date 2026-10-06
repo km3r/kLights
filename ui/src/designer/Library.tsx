@@ -3,6 +3,7 @@ import { apiFetch, apiUrl } from "../useEngine";
 import { PHRASE_HUE, decodeWave, mmss, normalizeName, phraseFamily } from "./model";
 import type { TrackLine } from "./model";
 import { draftKey } from "./edit";
+import { putPending } from "./pending";
 
 /**
  * Studio's track library: every track in the show folder, what will light it
@@ -14,32 +15,6 @@ import { draftKey } from "./edit";
  * the selected track's waveform and asks the engine whether it can find its
  * audio, one track at a time.
  */
-
-/** Pending "draft this track from a set" for the timeline page to pick up:
- *  the draft is made there, as an undoable edit, and saved only on Save. */
-export const DRAFT_ON_OPEN = "klights.studio.draft";
-/** How long a pending draft waits for its timeline to open. Longer, and it is
- *  a click from another visit that never got there -- applying it then would
- *  be a surprise. */
-export const DRAFT_ON_OPEN_MS = 60_000;
-
-export interface PendingDraft { track: string; set: string; at: number }
-
-/** The pending draft for a track, taken (it is read once), if it is fresh. */
-export function takePendingDraft(track: string): PendingDraft | null {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_ON_OPEN);
-    if (!raw) return null;
-    const pending = JSON.parse(raw) as Partial<PendingDraft>;
-    if (pending.track !== track) return null;
-    sessionStorage.removeItem(DRAFT_ON_OPEN);
-    if (!pending.set || typeof pending.at !== "number"
-        || Date.now() - pending.at > DRAFT_ON_OPEN_MS) return null;
-    return pending as PendingDraft;
-  } catch {
-    return null;
-  }
-}
 
 export interface ActiveSet { id: string | null; name: string | null }
 
@@ -341,11 +316,7 @@ export function TrackDetail({ t, set, sets, live }: {
   }).join("") ?? "";
   const draft = hasDraft(t.id);
   const openDraft = () => {
-    try {
-      const pending: PendingDraft = { track: t.id, set: draftSet, at: Date.now() };
-      sessionStorage.setItem(DRAFT_ON_OPEN, JSON.stringify(pending));
-    }
-    catch { /* the timeline opens without it */ }
+    putPending({ kind: "timeline", id: t.id, set: draftSet });
     location.hash = `#studio/track/${t.id}`;
   };
 

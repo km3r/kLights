@@ -14,6 +14,7 @@ import type { History } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
+import { clearPending, peekPending } from "./pending";
 import "./designer.css";
 
 /**
@@ -88,6 +89,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
   const [panels, togglePanel] = usePanels();
+  // A start handed over by New: a copy, a look wrapped, a blank with settings.
+  const [pending] = useState(() => peekPending("routine", routineId));
 
   useEffect(() => {
     setSnap("beat");
@@ -97,8 +100,9 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         // Not in the folder: start it. Saved with base_rev "" -- a new file,
         // refused if one appeared meanwhile (or is there but unreadable).
         if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(newRoutine(routineId));
+        setBase(pending?.doc ?? newRoutine(routineId));
         setRev("");
+        clearPending("routine", routineId);
       });
   }, [routineId, setBase, setSnap]);
 

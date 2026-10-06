@@ -485,12 +485,15 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
   // is the field's own; Save is the page's wherever the cursor is, and the
   // browser's "save this page" never is.
   const errorCount = check?.errors.length ?? 0;
+  // A file not written yet is unsaved as it stands: a start from New -- a
+  // copy, a look, a draft -- is worth saving before anything is changed.
+  const unsaved = !!doc && (history.dirty || rev === "");
   useKeys((e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "s") {
       e.preventDefault();
-      if (history.dirty && !saving && errorCount === 0) void save();
+      if (unsaved && !saving && errorCount === 0) void save();
       return;
     }
     if (typing(e)) return;
@@ -554,9 +557,9 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
         {!check ? "checking…" : errors ? `${errors} error(s)`
           : problems ? `${problems} note(s)` : "valid"}
       </button>
-      <button onClick={() => void save()} disabled={!history.dirty || saving || errors > 0}
-              className={history.dirty ? "d-primary" : ""}>
-        {saving ? "Saving…" : history.dirty ? "Save" : "Saved"}
+      <button onClick={() => void save()} disabled={!unsaved || saving || errors > 0}
+              className={unsaved ? "d-primary" : ""}>
+        {saving ? "Saving…" : unsaved ? "Save" : "Saved"}
       </button>
       {saveError && <span className="d-error small" role="alert">{saveError}</span>}
       {kept && (
