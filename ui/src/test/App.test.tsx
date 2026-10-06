@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { BLOCK_PARAMS } from "../blocks";
 import type { EngineState } from "../types";
@@ -239,6 +239,83 @@ describe("presets", () => {
     await user.type(screen.getByLabelText("preset name"), "drop");
     await user.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+  });
+
+  it("saves a pad with a routine, and shows it waiting for the downbeat, then playing", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      // A show folder is what makes routines available.
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      await user.selectOptions(pick, "fan-drop");
+      await user.selectOptions(screen.getByLabelText("pad routine variation"), "wide");
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop",
+                                      routine: { id: "fan-drop", variation: "wide" } });
+      const withPad = (waiting: boolean) => stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+        s.pad = { name: "drop", routine: "fan-drop", waiting };
+      });
+      act(() => socket.push(withPad(true)));
+      const tile = screen.getAllByRole("button", { name: /^drop/ })[0]!;
+      expect(tile).toHaveTextContent("↻ fan-drop · next downbeat");
+      expect(tile).toHaveClass("pending");
+      act(() => socket.push(withPad(false)));
+      expect(screen.getAllByRole("button", { name: /^drop/ })[0]!)
+        .toHaveTextContent("↻ fan-drop · playing");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("re-recording a routine pad keeps its routine unless 'none' is chosen", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      // Its name shows the routine its pad has: what a save keeps.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      expect(pick).toHaveValue("fan-drop");
+      expect(screen.getByLabelText("pad routine variation")).toHaveValue("wide");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+      // Choosing "none" says so, rather than saying nothing.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.selectOptions(pick, "");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop", routine: null });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("will not save an unnamed preset", () => {
@@ -1088,6 +1165,105 @@ describe("follow dj (track card)", () => {
     expect(screen.getByText(/drives nothing until you arm it/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Follow SAFE" }));
     expect(socket.last()).toEqual({ type: "follow", armed: true });
+  });
+
+  it("says what the template plays, and switches set on the next downbeat", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, {
+        armed: true, engaged: true, mode: "template", reason: null, beat: 162, bar: 41,
+        lanes: { movement: "template", color: "template", level: "template" },
+        set: "club", pending: null,
+        sets: [{ id: "club", name: "Club" }, { id: "chill", name: "Chill" }],
+        template: { set: "club", label: "Chorus", routine: "fan-drop", start: 160,
+                    fading: false },
+      });
+    })));
+    expect(screen.getByText(/Template driving/)).toBeInTheDocument();
+    expect(screen.getByLabelText("template now")).toHaveTextContent("Chorus → fan-drop");
+    expect(screen.getAllByText("template").length).toBe(3);
+    const sets = screen.getByRole("group", { name: "template set" });
+    expect(within(sets).getByRole("button", { name: "Club" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await user.click(within(sets).getByRole("button", { name: "Chill" }));
+    expect(socket.last()).toEqual({ type: "template_set", id: "chill" });
+    act(() => socket.push(program((p) => {
+      Object.assign(p, { armed: true, engaged: true, mode: "template", set: "club",
+                         pending: "off", sets: [{ id: "club", name: "Club" }] });
+    })));
+    expect(within(screen.getByRole("group", { name: "template set" }))
+      .getByRole("button", { name: /Off · next downbeat/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Off/ }));
+    expect(socket.last()).toEqual({ type: "template_set", id: null });
+  });
+
+  it("lists what the other decks have loaded, and whether their shows are built", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.track = { state: "playing", title: "Guest Tune", artist: null, album: null,
+                  duration: 200, source: "blt", deck: "1", time: 10, rate: 1, age: 0.02,
+                  track_seq: 2, jump_seq: 0, on_air: true, match: null, grid_warning: null,
+                  decks: [
+                    { deck: "2", title: "synthetic 128", track_id: "synth-128",
+                      has_timeline: true, ready: true },
+                    { deck: "3", title: "Night Drive", track_id: "night-drive",
+                      has_timeline: true, ready: false },
+                    { deck: "4", title: "Someone Else's", track_id: null,
+                      has_timeline: false, ready: false },
+                  ] };
+    })));
+    const decks = screen.getByLabelText("other decks");
+    expect(decks).toHaveTextContent("Deck 2: synthetic 128 · synth-128, show ready");
+    expect(decks).toHaveTextContent("Deck 3: Night Drive · night-drive, building its show");
+    expect(decks).toHaveTextContent("Deck 4: Someone Else's · not in the show folder");
+  });
+
+  it("says where the VJ app's cues go, and when they are failing", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: { target: "192.168.1.20:7000", sent: 120, errors: 3,
+                           last_error: "network is unreachable", on: 2 },
+                    timecode: { target: "255.255.255.255:6454", fps: 30, sent: 900,
+                                errors: 0, last_error: null, now: "00:01:15:21" },
+                    midi: { target: "127.0.0.1:9123", sent: 40, errors: 0,
+                            last_error: null, on: 1 },
+                    problems: [] };
+    })));
+    const line = screen.getByLabelText("outputs");
+    expect(line).toHaveTextContent("Timecode → 255.255.255.255:6454 · 00:01:15:21 (30 fps)");
+    expect(line).toHaveTextContent("MIDI → sidecar 127.0.0.1:9123 · 1 on");
+    expect(line).toHaveTextContent("OSC → 192.168.1.20:7000 · 2 on");
+    expect(line).toHaveTextContent("3 failed (network is unreachable)");
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: false, engaged: false, mode: "fallback", reason: "disarmed", beat: null,
+        bar: null, lanes: {}, grabbed: [], policy: "idle", problems: 0,
+        first_problem: null, latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: null,
+                    timecode: { target: "255.255.255.255:6454", fps: 25, sent: 900,
+                                errors: 0, last_error: null, now: null },
+                    problems: ["outputs.osc: 'vj.local' is not an IPv4 address; OSC is off"] };
+    })));
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("OSC is off");
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("· silent (25 fps)");
+  });
+
+  it("says nothing about other decks when none have anything loaded", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    expect(screen.queryByLabelText("other decks")).toBeNull();
   });
 
   it("links the matched track to the designer", () => {

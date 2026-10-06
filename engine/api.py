@@ -19,12 +19,17 @@ the show.
     /api/templates[/<id>]     template sets
     /api/waveforms/<id>       a track's waveform, read from disk on request
     /api/audio/<id>           the track's audio file, with Range (206)
+    /api/media                the videos in the folder's media/, one line each
+    /api/media/<file>         one of them, with Range (206), for #visuals
 
 JSON reads need nothing more than watching the show does. **Audio needs the
 token**: it reads a file off this machine's disk and streams megabytes, so it is
 for the operator's own designer, not for anyone who opened the view URL. It is
 only ever a file the track document (or an `audio_roots` search) names, with an
-audio extension -- never a path a request supplies.
+audio extension -- never a path a request supplies. **Media needs it too**
+(milestone 3): a video in the show folder's own `media/`, named plainly -- no
+folders, no `..` -- with a video extension, and never anywhere a link could
+lead outside that folder.
 
 Runs on the HTTP server's threads. Reads the library by one reference load,
 and the library is immutable, so nothing here can disturb the output thread.
@@ -46,10 +51,14 @@ AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff",
                ".aiff": "audio/aiff", ".flac": "audio/flac", ".m4a": "audio/mp4",
                ".mp4": "audio/mp4", ".ogg": "audio/ogg", ".aac": "audio/aac"}
 
+VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+               ".mov": "video/quicktime"}
+
 _ID = r"[a-z0-9][a-z0-9_-]{0,63}"
 _ROUTE = re.compile(rf"^/api/(show|tracks|timelines|routines|templates|waveforms"
                     rf"|audio)(?:/({_ID}))?/?$")
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+_MEDIA = re.compile(r"^/api/media(?:/([^/]*))?/?$")
 
 
 @dataclass
@@ -77,6 +86,9 @@ def handle(library, path: str, range_header: Optional[str] = None,
            audio_roots: Sequence[str] = ()) -> Response:
     """Answer one GET. `library` is the controller's current
     `showlibrary.Library`, or None without a show folder."""
+    media = _MEDIA.match(path)
+    if media is not None:
+        return _media(library, media.group(1), range_header, token_ok)
     match = _ROUTE.match(path)
     if match is None:
         return _error(404, f"no such endpoint {path!r}; see engine/api.py")
@@ -219,9 +231,49 @@ def _search_audio(doc: dict, audio_roots: Sequence[str]) -> Optional[Path]:
     return None
 
 
-def _file(path: Path, range_header: Optional[str]) -> Response:
+def _media(library, name: Optional[str], range_header: Optional[str],
+           token_ok: bool) -> Response:
+    """The show folder's videos, for the #visuals page (milestone 3)."""
+    if library is None:
+        return _error(503, "no show folder -- start the engine with --show-dir")
+    root = (Path(library.root) / showfiles.MEDIA_DIR).resolve()
+    if not name:
+        files = []
+        if root.is_dir():
+            files = [{"file": f.name, "size": f.stat().st_size}
+                     for f in sorted(root.iterdir())
+                     if f.suffix.lower() in VIDEO_TYPES
+                     and showfiles.MEDIA_NAME_RE.match(f.name) and _inside(f, root)]
+        return _json({"media": files})
+    if not token_ok:
+        return _error(401, "media needs the engine's token: open #visuals from "
+                           "the URL the engine printed")
+    if not showfiles.MEDIA_NAME_RE.match(name):
+        return _error(404, f"{name!r} is not a media file name: letters, digits, "
+                           f". _ -, no folders")
+    if Path(name).suffix.lower() not in VIDEO_TYPES:
+        return _error(415, f"only video is served from media/ ("
+                           + ", ".join(VIDEO_TYPES) + ")")
+    target = root / name
+    if not _inside(target, root):
+        return _error(404, f"no media/{name} in the show folder")
+    return _file(target.resolve(), range_header, VIDEO_TYPES[target.suffix.lower()])
+
+
+def _inside(path: Path, root: Path) -> bool:
+    """A file that really is in `root` -- a link may not lead out of it."""
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(root)
+    except (ValueError, OSError):
+        return False
+    return resolved.is_file()
+
+
+def _file(path: Path, range_header: Optional[str],
+          ctype: Optional[str] = None) -> Response:
     size = path.stat().st_size
-    ctype = AUDIO_TYPES.get(path.suffix.lower(), "application/octet-stream")
+    ctype = ctype or AUDIO_TYPES.get(path.suffix.lower(), "application/octet-stream")
     headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
     if range_header:
         m = _RANGE.match(range_header.strip())

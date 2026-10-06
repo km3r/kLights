@@ -186,8 +186,14 @@ class Phrase:
     def family(self) -> str:
         """The label without its number: "Verse 2" -> "Verse", "Up 1" -> "Up".
         Templates look up the exact label first and this second."""
-        head, _, tail = self.label.rpartition(" ")
-        return head if head and tail.isdigit() else self.label
+        return family(self.label)
+
+
+def family(label: str) -> str:
+    """A phrase label without its number: "Verse 2" -> "Verse". A label with no
+    number is its own family."""
+    head, _, tail = label.rpartition(" ")
+    return head if head and tail.isdigit() else label
 
 
 @dataclass(frozen=True)

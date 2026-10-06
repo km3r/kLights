@@ -11,6 +11,7 @@ Run: python engine/tests/test_server.py
 
 import atexit
 import base64
+import copy
 import errno
 import json
 import math
@@ -592,10 +593,17 @@ time.sleep(0.2)
 
 
 def head_level_at(bar: float) -> float:
-    controller.ctx.set_phase(bar)
+    # On a private copy of the context: the engine's own frame thread is
+    # running, and sets the shared context's phase every frame -- landing
+    # between set_phase() and evaluate(), it put every sample on the live bar
+    # (seen on Windows/3.10 as "trimmed [0.1]"). The safety taper's memory is
+    # copied too, as evaluate() writes it.
+    ctx = copy.copy(controller.ctx)
+    ctx._taper_prev = dict(controller.ctx._taper_prev)
+    ctx.set_phase(bar)
     show = controller.director._show
     controller._attach_overrides(show)
-    states = statemod.evaluate(controller.ctx, show)
+    states = statemod.evaluate(ctx, show)
     fid = next(f.fid for f in controller.rig.fixtures if f.name == HEAD)
     return states[fid].intensity
 
@@ -616,7 +624,17 @@ client.send({"type": "level", "target": "pinspots", "clear": True})
 after = client.wait_for(lambda s: not s["level_overrides"])
 check("clearing a trim hands the fixture back to the pattern",
       not after["level_overrides"], f"{after['level_overrides']}")
-client.send({"type": "clear_slot", "slot": "level"})
+# Waited for: section 2c below swaps in a stand-in timeline, and this
+# operator choice landing after that grabbed its level lane -- one run in a
+# dozen under load failed "an expiring hold advances without grabbing".
+client.send({"type": "clear_slot", "slot": "level", "id": "level-cleared"})
+_deadline = time.time() + 6.0
+while True:
+    _msg = client.recv()
+    if _msg.get("type") == "reply" and _msg.get("id") == "level-cleared":
+        break
+    if time.time() > _deadline:
+        raise AssertionError("clear_slot was never applied")
 
 # A cue with a hold is supposed to advance on its own -- that is the entire
 # meaning of "hold", and the Show tab tells the operator "auto after N" on the

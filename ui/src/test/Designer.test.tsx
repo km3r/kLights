@@ -136,6 +136,7 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/routines/fan-drop") return [200, { doc: fanDrop, rev: ROUTINE_REV }];
   if (path === "/api/templates") return [200, { templates: [{ id: "club", name: "Club" }] }];
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
+  if (path === "/api/media") return [200, { media: [{ file: "loop-1.mp4", size: 5120 }] }];
   return [404, { error: `no ${path}` }];
 }
 
@@ -177,7 +178,7 @@ describe("designer", () => {
     expect(screen.getByText(/8 phrases · timeline/)).toBeInTheDocument();
   });
 
-  it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
+  it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
     await open();
     expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
     const lanes = screen.getByRole("region", { name: "lanes" });
@@ -188,7 +189,10 @@ describe("designer", () => {
     expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("flash at bar 41.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("automation master")).toBeInTheDocument();
-    expect(within(lanes).getByText(/Output: vj/)).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("clips/3/connect at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("automation vj-opacity")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("vj-opacity address"))
+      .toHaveValue("/composition/layers/1/video/opacity");
     // Lane order is the file's: the movement lane sits above the scene lane.
     const order = screen.getAllByLabelText(/^lane /).map((el) => el.getAttribute("aria-label"));
     expect(order.slice(0, 2)).toEqual(["lane move", "lane scene"]);
@@ -296,6 +300,118 @@ describe("designer", () => {
     const scene = save.doc.rows.find((r) => r.id === "scene")!;
     expect(scene.items!.find((i) => i.id === "chorus1")!.variation).toBe("tight");
     expect(await screen.findByRole("button", { name: "Saved" })).toBeDisabled();
+  });
+
+  it("cues a VJ app over OSC: a lane, a cue, its messages, saved", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // The example's drop cue: on when it starts, a clear when it ends.
+    fireEvent.pointerDown(within(lanes).getByLabelText("clips/3/connect at bar 41.1")
+      .querySelector("rect")!);
+    let inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/3/connect");
+    expect(within(inspector).getByLabelText("off address"))
+      .toHaveValue("/composition/layers/1/clear");
+    expect(within(inspector).queryByText("Fade in")).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const address = within(inspector).getByLabelText("on address");
+    await user.clear(address);
+    await user.type(address, "/layer/2/go");
+    const args = within(inspector).getByLabelText("on args");
+    await user.clear(args);
+    await user.type(args, "1, $bar, club");
+    await user.tab();
+    await user.click(within(inspector).getByRole("button", { name: "+ off message" }));
+    const off = within(inspector).getByLabelText("off address");
+    await user.clear(off);
+    await user.type(off, "/layer/2/clear");
+    expect(within(lanes).getByLabelText(/layer\/2\/go at bar 1.1/)).toBeInTheDocument();
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:cccccccccccc" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "osc")!;
+    expect(row).toMatchObject({ type: "external", output: "osc" });
+    expect(row.items![0]).toMatchObject({
+      at: 0, len: 16, on: { address: "/layer/2/go", args: [1, "$bar", "club"] },
+      off: { address: "/layer/2/clear", args: [] },
+    });
+  });
+
+  it("plays MIDI through the sidecar: a note cue made a CC, and a CC curve", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi");
+    await user.click(await screen.findByRole("button", { name: "add a cue to midi" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(lanes).getByLabelText("note 60 at bar 1.1")).toBeInTheDocument();
+    await user.click(within(within(inspector).getByRole("group", { name: "midi kind" }))
+      .getByRole("button", { name: "CC" }));
+    const cc = within(inspector).getByLabelText("midi cc");
+    await user.clear(cc);
+    await user.type(cc, "7");
+    const then = within(inspector).getByLabelText("midi off_value");
+    await user.type(then, "0");
+    const channel = within(inspector).getByLabelText("midi channel");
+    await user.clear(channel);
+    await user.type(channel, "3");
+    expect(within(lanes).getByLabelText("cc 7 at bar 1.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi-curve");
+    expect(await screen.findByLabelText("midi-curve cc")).toHaveValue(1);
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:dddddddddddd" }) as
+      Command & { doc: TimelineDoc };
+    const sent = JSON.parse(JSON.stringify(save.doc)) as TimelineDoc;
+    const item = sent.rows.find((r) => r.id === "midi")!.items![0]!;
+    expect(item).toMatchObject({ cc: 7, value: 127, off_value: 0, channel: 3 });
+    expect(item.note).toBeUndefined();
+    expect(sent.rows.find((r) => r.id === "midi-curve")).toMatchObject({
+      type: "external", output: "midi", channel: 1, cc: 1, points: [[0, 0]] });
+  });
+
+  it("puts a scene on the projector: a visuals lane, a tunnel, a video from media/", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("tunnel at bar 41.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "visuals");
+    await user.click(await screen.findByRole("button", { name: "add a cue to visuals" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const scenes = within(inspector).getByRole("group", { name: "visuals scene" });
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+    await user.selectOptions(within(inspector).getByLabelText("visuals color"), "@accent");
+    expect(within(lanes).getByLabelText("tunnel at bar 1.1")).toBeInTheDocument();
+    await user.click(within(scenes).getByRole("button", { name: "video" }));
+    const file = await within(inspector).findByLabelText("visuals file");
+    await waitFor(() => expect(within(file).getByRole("option", { name: "loop-1.mp4" }))
+      .toBeInTheDocument());
+    await user.selectOptions(file, "loop-1.mp4");
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "visuals")!;
+    expect(row).toMatchObject({ type: "external", output: "visuals" });
+    expect(row.items![0]).toMatchObject({ scene: "tunnel", params: { color: "@primary", speed: 3 } });
   });
 
   it("refuses to save while the engine says the draft is invalid", async () => {
@@ -569,6 +685,20 @@ describe("routine editor", () => {
     expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", bars: 4 });
     expect(saved.doc.rows[0]).toMatchObject({ type: "clips", target: "color", role: "movers" });
     expect(saved.doc.rows[0]!.items![0]!.args).toEqual({ color: "@primary" });
+  });
+
+  it("gives a routine an OSC lane, so wherever it plays it can cue a VJ app", async () => {
+    const user = userEvent.setup();
+    await open("#designer/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/osc cue on osc/)).toBeInTheDocument();
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/1/connect");
+    await user.click(within(inspector).getByRole("button", { name: "+ while message" }));
+    expect(within(inspector).getByLabelText("while address")).toHaveValue("/");
   });
 
   it("shows what the engine says will not work on this rig", async () => {

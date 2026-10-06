@@ -139,6 +139,16 @@
 .d-arg { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .d-picker h2 { margin-top: 20px; }
 
+/* OSC cues and curves (milestone 3) */
+.designer .d-osc { display: grid; grid-template-columns: 1fr auto; gap: 4px 6px; min-width: 260px; }
+.designer .d-osc > span { grid-column: 1 / -1; }
+.designer .d-osc input { min-width: 0; }
+.designer .d-osc input[aria-label$="args"] { grid-column: 1; }
+.designer .d-osc button { grid-column: 2; grid-row: 2; }
+.designer .d-osc-address { width: 11rem; min-width: 0; }
+.designer .d-external .d-clip rect:first-child { fill: rgba(140, 110, 255, 0.35); }
+.designer .d-num { width: 4.2rem; }
+
 /* The guide: a third column, so nothing it tells you to press is under it. */
 .d-body.d-with-guide { grid-template-columns: minmax(0, 1fr) 320px min(400px, 34vw); }
 .d-guide {

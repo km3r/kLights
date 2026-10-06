@@ -315,7 +315,175 @@
               },
               "output": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "description": "osc, midi or visuals"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": -64,
+                      "maximum": 65536,
+                      "description": "beats from the track's first downbeat, not seconds"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "on": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "off": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "while": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "channel": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 16,
+                      "description": "a MIDI channel, 1-16"
+                    },
+                    "note": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a note number, 0-127 (60 is middle C)"
+                    },
+                    "velocity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 127,
+                      "description": "1-127; default 100"
+                    },
+                    "cc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a controller number, 0-127"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the start, 0-127; default 127"
+                    },
+                    "off_value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the end, if any"
+                    },
+                    "pc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a program number, 0-127"
+                    },
+                    "scene": {
+                      "type": "string",
+                      "enum": [
+                        "wash",
+                        "bars",
+                        "tunnel",
+                        "particles",
+                        "strobe",
+                        "video"
+                      ]
+                    },
+                    "params": {
+                      "type": "object",
+                      "description": "the scene's parameters, e.g. {\"color\": \"@primary\"}"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "len"
+                  ]
+                }
+              },
+              "points": {
+                "type": "array",
+                "description": "[[beat, value], [beat, value, \"ease\"], ...] -- sent as $value (OSC) or as a CC, 0-1 scaled to 0-127 (MIDI)"
+              },
+              "address": {
+                "type": "string",
+                "description": "OSC: where a curve's value is sent"
+              },
+              "args": {
+                "type": "array",
+                "description": "OSC: what a curve sends; default [\"$value\"]"
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "a MIDI channel, 1-16"
+              },
+              "cc": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127,
+                "description": "MIDI: the controller a curve drives"
               }
             },
             "required": [

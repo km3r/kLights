@@ -4,9 +4,12 @@ import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub,
+  BEATS_PER_BAR, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue, itemName, itemSub,
+  oscArgsText, parseOscArgs,
 } from "./model";
-import type { Item, Point, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
+import type {
+  Item, OscMessage, Point, RoutineSummary, Row, TimelineDoc, TrackDoc, VisualRule,
+} from "./model";
 
 /**
  * Editing a timeline: an undo/redo history over the whole document, and the
@@ -106,6 +109,8 @@ export type History<D extends RowsDoc = TimelineDoc> = ReturnType<typeof useHist
 
 /** What the lanes need of a history -- the same for a timeline and a routine. */
 export interface Edits {
+  /** The document as it is now -- to name a new item before adding it. */
+  readonly doc: RowsDoc | null;
   apply(change: (draft: RowsDoc) => void): void;
   snap: Snap;
   snapBeat(beat: number): number;
@@ -549,7 +554,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 
   return (
     <svg width={width} height={LANE_H} className="d-lane d-auto-svg"
-         aria-label={`automation ${row.target}`}
+         aria-label={`automation ${row.target ?? row.id}`}
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target !== e.currentTarget) return;
@@ -695,8 +700,28 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 
 const NEW_LANES: [string, string][] = [
   ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
-  ["palette", "Palette"], ["hits", "Hits"],
+  ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
+  ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"], ["visuals", "Visuals"],
 ];
+
+/** A new lane for another output (milestone 3), or undefined for a lights lane. */
+export function externalRow(d: RowsDoc, kind: string): Row | undefined {
+  if (kind === "osc") return { id: uniqueId(d, "osc"), type: "external", output: "osc", items: [] };
+  if (kind === "osc-curve") {
+    return { id: uniqueId(d, "osc-curve"), type: "external", output: "osc",
+             address: "/composition/layers/1/video/opacity", args: ["$value"],
+             points: [[0, 1]] };
+  }
+  if (kind === "midi") return { id: uniqueId(d, "midi"), type: "external", output: "midi", items: [] };
+  if (kind === "visuals") {
+    return { id: uniqueId(d, "visuals"), type: "external", output: "visuals", items: [] };
+  }
+  if (kind === "midi-curve") {
+    return { id: uniqueId(d, "midi-curve"), type: "external", output: "midi",
+             channel: 1, cc: 1, points: [[0, 0]] };
+  }
+  return undefined;
+}
 
 /** A new automation lane for `target`, starting at its neutral value. */
 export function automationRow(d: RowsDoc, target: string): Row {
@@ -718,6 +743,8 @@ function AddLane({ history }: { history: History }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits"
                       ? { id, type: "hits", items: [] }
@@ -986,7 +1013,16 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         }}>Delete</button>
       </div>
       <div className="d-insp-grid">
-        {!it.hit && (
+        {row.type === "external" && row.output === "osc" && (
+          <OscCue item={it} set={set} />
+        )}
+        {row.type === "external" && row.output === "midi" && (
+          <MidiCue item={it} set={set} />
+        )}
+        {row.type === "external" && (row.output === "visuals" || row.output === "vj") && (
+          <VisualCue item={it} set={set} />
+        )}
+        {!it.hit && row.type !== "external" && (
           <div>
             <span className="small muted">Fade in</span>
             <div className="d-chips">
@@ -1084,6 +1120,187 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
   );
 }
 
+const OSC_WHEN: Record<"on" | "while" | "off", string> = {
+  on: "When it starts", while: "While it plays (on change, 30/s at most)",
+  off: "When it ends",
+};
+
+/** An OSC cue's three messages, for the track and routine inspectors. */
+function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  return (
+    <>
+      {(["on", "while", "off"] as const).map((k) => (
+        <OscField key={`${item.id}-${k}`} which={k} message={item[k]}
+                  onChange={(m) => set({ [k]: m })} />))}
+    </>
+  );
+}
+
+const ROLE_COLORS = ["@primary", "@secondary", "@accent"];
+
+/** A visuals cue: its scene, and that scene's parameters. A video's file is
+ *  picked from the show folder's media/. */
+function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const [media, setMedia] = useState<string[] | null>(null);
+  const scene = item.scene ?? "wash";
+  useEffect(() => {
+    if (scene !== "video") return;
+    let live = true;
+    apiFetch<{ media: { file: string }[] }>("/api/media")
+      .then((r) => { if (live) setMedia(r.media.map((m) => m.file)); })
+      .catch(() => { if (live) setMedia([]); });
+    return () => { live = false; };
+  }, [scene]);
+  const params = item.params ?? {};
+  const setParam = (name: string, value: unknown) => {
+    const next = { ...params };
+    if (value === undefined || value === "") delete next[name]; else next[name] = value;
+    set({ params: next });
+  };
+  const rules: Record<string, VisualRule> = { ...(VISUAL_PARAMS[scene] ?? {}), opacity: [0, 1] };
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="visuals scene">
+        {VISUAL_SCENES.map((s) => (
+          <button key={s} className={scene === s ? "on" : ""}
+                  onClick={() => set({ scene: s,
+                                       params: s === "video" ? { loop: true } : { color: "@primary" } })}>
+            {s}</button>))}
+      </div>
+      {Object.entries(rules).map(([name, rule]) => {
+        const value = params[name];
+        const label = `visuals ${name}`;
+        if (rule === "color") {
+          const role = typeof value === "string" && value.startsWith("@") ? value : "";
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={role || (typeof value === "string" ? "hex" : "")}
+                      onChange={(e) => setParam(name, e.target.value === "hex"
+                        ? "#ffffff" : e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {ROLE_COLORS.map((r) => <option key={r} value={r}>{r}</option>)}
+                <option value="hex">a colour…</option>
+              </select>
+              {typeof value === "string" && value.startsWith("#") && (
+                <input type="color" aria-label={`${label} colour`} value={value}
+                       onChange={(e) => setParam(name, e.target.value)} />)}
+            </label>
+          );
+        }
+        if (rule === "file") {
+          const files = media ?? [];
+          return (
+            <label key={name} className="small">file{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">{media == null ? "…" : files.length ? "(pick one)" : "(media/ is empty)"}</option>
+                {typeof value === "string" && value && !files.includes(value) && (
+                  <option value={value}>{value} (not in media/)</option>)}
+                {files.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+          );
+        }
+        if (rule === "bool") {
+          return (
+            <label key={name} className="small">
+              <input type="checkbox" aria-label={label} checked={value !== false}
+                     onChange={(e) => setParam(name, e.target.checked)} /> {name}
+            </label>
+          );
+        }
+        if (typeof rule[0] === "string") {
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {(rule as string[]).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          );
+        }
+        const [lo, hi] = rule as [number, number];
+        return (
+          <label key={name} className="small">{name}{" "}
+            <input type="number" className="d-num" min={lo} max={hi} step={hi <= 1 ? 0.05 : 1}
+                   aria-label={label} placeholder="default"
+                   value={typeof value === "number" ? value : ""}
+                   onChange={(e) => setParam(name, e.target.value === ""
+                     ? undefined : Number(e.target.value))} />
+          </label>
+        );
+      })}
+    </>
+  );
+}
+
+const MIDI_KINDS = { note: "Note", cc: "CC", pc: "Program" } as const;
+
+/** A MIDI cue: a note held for its length, a CC (and the value it leaves
+ *  behind), or a program change -- on a channel. */
+function MidiCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const kind = item.note != null ? "note" : item.cc != null ? "cc" : "pc";
+  const num = (label: string, field: keyof Item, value: number | undefined,
+               lo: number, hi: number, optional = false) => (
+    <label className="small">{label}{" "}
+      <input type="number" className="d-num" min={lo} max={hi} aria-label={`midi ${field}`}
+             value={value ?? ""} placeholder={optional ? "none" : undefined}
+             onChange={(e) => set({ [field]: e.target.value === "" && optional
+               ? undefined : Number(e.target.value) })} />
+    </label>
+  );
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="midi kind">
+        {(Object.keys(MIDI_KINDS) as (keyof typeof MIDI_KINDS)[]).map((k) => (
+          <button key={k} className={kind === k ? "on" : ""}
+                  onClick={() => set({
+                    note: k === "note" ? 60 : undefined, velocity: k === "note" ? 100 : undefined,
+                    cc: k === "cc" ? 1 : undefined, value: k === "cc" ? 127 : undefined,
+                    off_value: undefined, pc: k === "pc" ? 0 : undefined })}>
+            {MIDI_KINDS[k]}</button>))}
+      </div>
+      {num("Channel", "channel", item.channel ?? 1, 1, 16)}
+      {kind === "note" && <>{num("Note", "note", item.note, 0, 127)}
+        {num("Velocity", "velocity", item.velocity ?? 100, 1, 127)}</>}
+      {kind === "cc" && <>{num("CC", "cc", item.cc, 0, 127)}
+        {num("Value", "value", item.value ?? 127, 0, 127)}
+        {num("Then", "off_value", item.off_value, 0, 127, true)}</>}
+      {kind === "pc" && num("Program", "pc", item.pc, 0, 127)}
+    </>
+  );
+}
+
+/** One OSC message of a cue: its address and arguments, or none. */
+function OscField({ which, message, onChange }: {
+  which: "on" | "while" | "off"; message?: OscMessage;
+  onChange: (m: OscMessage | undefined) => void;
+}) {
+  if (!message) {
+    return (
+      <div>
+        <span className="small muted">{OSC_WHEN[which]}</span>
+        <div><button className="small" onClick={() => onChange({ address: "/", args: [] })}>
+          + {which} message</button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="d-osc">
+      <span className="small muted">{OSC_WHEN[which]}</span>
+      <input className="mono" aria-label={`${which} address`} value={message.address}
+             onChange={(e) => onChange({ ...message, address: e.target.value })} />
+      <input className="mono" aria-label={`${which} args`}
+             defaultValue={oscArgsText(message.args)}
+             placeholder="1, $bar, $progress"
+             onBlur={(e) => onChange({ ...message, args: parseOscArgs(e.target.value) })} />
+      <button className="small" aria-label={`remove ${which} message`}
+              onClick={() => onChange(undefined)}>×</button>
+    </div>
+  );
+}
+
 function Param({ name, param, value, onChange }: {
   name: string; param: { type: string; default?: unknown; min?: number; max?: number; unit?: string };
   value: unknown; onChange: (v: unknown) => void;
@@ -1168,5 +1385,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector,
+  PointInspector, uniqueId, OscCue, MidiCue, VisualCue,
 };

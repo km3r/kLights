@@ -115,8 +115,16 @@ expression it names, in the Triggers window's File menu:
 
 Then go online. 25 times a second they send the tempo master's position and
 playing state (`/klights/v1/pos`), its identity whenever the deck or track
-changes (`/klights/v1/track`, with rekordbox id and signature), and on every
-beat its tempo and bar phase (`/bpm`, `/beat`), which the clock reads as before.
+changes (`/klights/v1/track`, with rekordbox id and signature), its phrase from
+the rekordbox analysis on the DJ's USB whenever it changes and every bar
+(`/klights/v1/phrase` -- so a guest's track gets phrase templates; it needs the
+track exported with rekordbox 6 or later, which writes that analysis), and on
+every beat its tempo and bar phase (`/bpm`, `/beat`), which the clock reads as
+before. They also say what **every** deck has loaded whenever that changes
+(`/klights/v1/deck`), so the engine matches the next track and builds its show
+while the DJ is still cueing it -- when it becomes the master, its timeline
+drives from the first frame. Identity is only sent once the deck's metadata
+describes the track it reports; until then the expressions try again each tick.
 `engine/tests/data/blt_klights_v1_golden.json` holds the exact bytes they must
 produce; the engine decodes them and `bridge.py --blt` reproduces them, so a
 desk test with `--blt` is a test of this encoding.
@@ -272,7 +280,7 @@ dropped:
 
 ### `/klights/v1` — our own namespace
 
-The beat-link-trigger expressions we ship send two messages, each with
+The beat-link-trigger expressions we ship send four messages, each with
 **several** arguments. Unlike the flat addresses they are decoded strictly:
 the exact argument count, each of the right kind, or the whole message is
 rejected.
@@ -281,8 +289,14 @@ rejected.
 |---|---|
 | `/klights/v1/pos` | deck, playing, time_s, pitch, beat_number, master, on_air |
 | `/klights/v1/track` | deck, rekordbox_id, signature, title, artist, album, duration_s |
+| `/klights/v1/phrase` | deck, label, beats_into, beats_left -- an empty label: no phrase analysis |
+| `/klights/v1/deck` | deck, rekordbox_id, signature, title, artist, album, duration_s -- what ANY deck has loaded; an empty title: the deck was emptied |
 
-Numbers may be OSC `i`, `f`, `d` or `h`. Both are tagged `source: "blt"`.
+Numbers may be OSC `i`, `f`, `d` or `h`. All are tagged `source: "blt"`.
+`beats_into` is what places the phrase's start exactly, which is where a
+template starts the routine it picks. `deck` arrives as `loaded_*` fields that
+never reach the transport -- it follows the tempo master alone -- and only let
+the engine build a show in advance.
 Identity arrives whole in one message, so a track change and a jump from this
 source count at once; from rkbx_link, whose identity arrives a field at a time,
 both wait a moment for the rest (see `engine/transport.py`).

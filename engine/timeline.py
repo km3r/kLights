@@ -53,6 +53,12 @@ fires. A hit shorter than a frame would fall between two frames, so in forward
 play one that STARTED since the last frame is reported once even if it has
 already ended -- never after a jump, which did not play through it.
 
+**External rows** (milestone 3) belong to other outputs -- OSC, MIDI, the
+built-in visuals. Their items are windows exactly like hits, and a row may
+carry a curve too; what an item says is that output's business
+(`outputs.py`). So a VJ cue a loop jumps into is on, and one a hot cue jumps
+over never fires.
+
 Pure: no I/O, no clock, no threads. Build on the worker; query anywhere.
 """
 
@@ -415,7 +421,61 @@ class HitRow:
                 if i.end <= beat]
 
 
+# -- other outputs ------------------------------------------------------------
+
+class ExternalRow:
+    """A row for an output other than the lights -- OSC, MIDI, visuals
+    (milestone 3). Its items are windows, like hits: on from `at` for `len`
+    beats, whatever the deck did to get there. It may also carry a curve
+    (`points`), sent as a value. What an item SAYS -- an OSC address, a note,
+    a scene -- is the output's business; `data` is the whole row, read-only."""
+
+    def __init__(self, row_id: str, output: str, data: Mapping,
+                 items: Sequence[Item], curve: Optional[Curve]):
+        self.id = row_id
+        self.output = output
+        self.data = MappingProxyType(dict(data))
+        self.windows = HitRow(row_id, items)
+        self.curve = curve
+
+    @property
+    def items(self) -> tuple[Item, ...]:
+        return self.windows.items
+
+
+@dataclass(frozen=True)
+class ExternalFrame:
+    """One external row at one beat: the items on (and, in forward play, any
+    too short to have been on for a whole frame), and its curve's value."""
+    row: ExternalRow
+    items: tuple[Hit, ...]
+    value: Optional[float]
+
+    def public(self) -> dict:
+        out: dict = {"row": self.row.id, "output": self.row.output,
+                     "items": [{"item": h.item.id, "progress": round(h.progress, 3),
+                                **({"crossed": True} if h.crossed else {})}
+                               for h in self.items]}
+        if self.value is not None:
+            out["value"] = round(self.value, 4)
+        return out
+
+
 # -- the whole thing ----------------------------------------------------------
+
+def _external_row(row: Mapping) -> ExternalRow:
+    rid = row.get("id") or "external"
+    where = f"row {rid!r}"
+    output = row.get("output")
+    if not isinstance(output, str) or not output:
+        raise TimelineError(f"{where} names no output")
+    items = [Item.from_dict(i, where) for i in row.get("items") or ()]
+    points = row.get("points")
+    curve = Curve.from_points(points, where) if points else None
+    if curve is not None and not curve.numeric:
+        raise TimelineError(f"{where}: an external curve's values must be numbers")
+    return ExternalRow(rid, output, row, items, curve)
+
 
 def _own_target(row: Mapping) -> tuple[str, ...]:
     return (row["target"],)
@@ -441,6 +501,7 @@ class Timeline:
         self.hit_rows = tuple(hit_rows)
         self.curves = MappingProxyType(dict(curves))
         self.external = tuple(MappingProxyType(dict(r)) for r in external)
+        self.external_rows = tuple(_external_row(r) for r in self.external)
         self.meta = MappingProxyType(dict(meta or {}))
         order: list[str] = []
         by_channel: dict[str, list[ClipRow]] = {}
@@ -490,7 +551,8 @@ class Timeline:
                 curve = Curve.from_points(row.get("points") or (), where)
                 curves.setdefault(target, (rid, curve))  # the higher row wins
             elif kind == "external":
-                external.append(row)            # another output's; kept as is
+                _external_row(row)              # refuse what cannot be built
+                external.append(row)            # and keep it whole
             else:
                 raise TimelineError(f"{where} has unknown type {kind!r}")
         return cls(clip_rows, hit_rows, curves, external, meta)
@@ -568,6 +630,20 @@ class Timeline:
                 out.extend(row.crossed(prev, beat))
         return tuple(out)
 
+    def external_at(self, beat: float, prev: Optional[float] = None,
+                    jumped: bool = False) -> tuple[ExternalFrame, ...]:
+        """Every external row at `beat`: its items on, by window -- so a jump
+        lands inside one exactly as continuous play would -- plus, in forward
+        play since `prev`, the ones too short for any frame to have seen."""
+        out: list[ExternalFrame] = []
+        for row in self.external_rows:
+            items = row.windows.active(beat)
+            if prev is not None and not jumped and prev < beat:
+                items.extend(row.windows.crossed(prev, beat))
+            value = row.curve.value(beat) if row.curve is not None else None
+            out.append(ExternalFrame(row, tuple(items), value))
+        return tuple(out)
+
     def at(self, beat: float, prev: Optional[float] = None,
            jumped: bool = False) -> Frame:
         return Frame(
@@ -589,6 +665,12 @@ class Timeline:
         for _, curve in self.curves.values():
             lo.append(curve.beats[0])
             hi.append(curve.beats[-1])
+        for row in self.external_rows:
+            lo.extend(i.at for i in row.items)
+            hi.extend(i.end for i in row.items)
+            if row.curve is not None:
+                lo.append(row.curve.beats[0])
+                hi.append(row.curve.beats[-1])
         return (min(lo), max(hi)) if lo else None
 
     def explain(self, beat: float) -> dict:
@@ -602,7 +684,12 @@ class Timeline:
                 auto[target] = {"from": a, "to": b, "t": round(t, 3)}
             else:
                 auto[target] = round(value, 4)
-        return {"beat": beat,
-                "channels": {ch: c.public() for ch, c in frame.channels.items()},
-                "automation": auto,
-                "hits": [h.public() for h in frame.hits]}
+        out = {"beat": beat,
+               "channels": {ch: c.public() for ch, c in frame.channels.items()},
+               "automation": auto,
+               "hits": [h.public() for h in frame.hits]}
+        external = [e.public() for e in self.external_at(beat)
+                    if e.items or e.value is not None]
+        if external:
+            out["external"] = external
+        return out

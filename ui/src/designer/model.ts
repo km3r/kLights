@@ -33,6 +33,13 @@ export interface TrackDoc {
   [key: string]: unknown;
 }
 
+/** One OSC message an external item sends (milestone 3). Arguments are
+ *  numbers and text, or `$beat`, `$bar`, `$phase`, `$progress`, `$value`. */
+export interface OscMessage {
+  address: string;
+  args?: (number | string)[];
+}
+
 export interface Item {
   id: string;
   at: number;
@@ -53,6 +60,20 @@ export interface Item {
   envelope?: "hold" | "decay";
   block?: string;
   args?: Record<string, unknown>;
+  /** An OSC cue: sent when it comes on, when it goes off, and while it plays. */
+  on?: OscMessage;
+  off?: OscMessage;
+  while?: OscMessage;
+  /** A MIDI cue: one of a note, a CC or a program change, on a channel 1-16. */
+  channel?: number;
+  note?: number;
+  velocity?: number;
+  cc?: number;
+  value?: number;
+  off_value?: number;
+  pc?: number;
+  /** A visuals cue: a scene, and its parameters in `params`. */
+  scene?: string;
   [key: string]: unknown;
 }
 
@@ -67,7 +88,14 @@ export interface Row {
   label?: string;
   items?: Item[];
   points?: Point[];
+  /** An external row's output: osc, midi, visuals (`vj` is read as visuals). */
   output?: string;
+  /** OSC: where a curve's value goes, and what it sends (default `$value`). */
+  address?: string;
+  args?: (number | string)[];
+  /** MIDI: the lane's channel, and the CC a curve drives. */
+  channel?: number;
+  cc?: number;
   [key: string]: unknown;
 }
 
@@ -278,8 +306,47 @@ export function findItem(doc: { rows: Row[] }, id: string | null): { row: Row; i
 }
 
 /** A clip's name on a lane: what it IS, in a word or two. */
+/** The end of an OSC address, which is the part that says what it does:
+ *  `/composition/layers/1/clips/3/connect` is `clips/3/connect`. */
+/** The built-in visuals' scenes and what each reads -- a copy of
+ *  `engine/showfiles.VISUAL_PARAMS`: "color", "file", "bool", a list of
+ *  choices, or a [min, max] range. Every scene also takes `opacity`. */
+export const VISUAL_SCENES = ["wash", "bars", "tunnel", "particles", "strobe", "video"] as const;
+export type VisualRule = "color" | "file" | "bool" | string[] | [number, number];
+export const VISUAL_PARAMS: Record<string, Record<string, VisualRule>> = {
+  wash: { color: "color", pulse: [0, 1] },
+  bars: { color: "color", count: [1, 64], speed: [0, 8] },
+  tunnel: { color: "color", speed: [0, 8], depth: [2, 40] },
+  particles: { color: "color", count: [1, 2000], burst: [0, 1] },
+  strobe: { color: "color", rate: [0.25, 16] },
+  video: { file: "file", loop: "bool", rate: ["beat", "normal"], bpm: [20, 400] },
+};
+
+export function shortAddress(address: string): string {
+  const parts = address.split("/").filter(Boolean);
+  return parts.length > 3 ? parts.slice(-3).join("/") : address;
+}
+
+/** OSC arguments as typed in a text field: comma separated, numbers as
+ *  numbers, anything else as text. */
+export function parseOscArgs(text: string): (number | string)[] {
+  return text.split(",").map((a) => a.trim()).filter((a) => a !== "")
+    .map((a) => (/^-?\d+(\.\d+)?$/.test(a) ? Number(a) : a));
+}
+
+export function oscArgsText(args?: (number | string)[]): string {
+  return (args ?? []).map(String).join(", ");
+}
+
 export function itemName(it: Item): string {
   if (it.hit) return it.hit;
+  const osc = it.on ?? it.while ?? it.off;
+  if (osc?.address) return shortAddress(osc.address);
+  if (it.note != null) return `note ${it.note}`;
+  if (it.cc != null) return `cc ${it.cc}`;
+  if (it.pc != null) return `program ${it.pc}`;
+  if (it.scene) return it.scene === "video" && typeof it.params?.file === "string"
+    ? `video ${it.params.file}` : it.scene;
   if (it.kind === "routine") return it.routine ?? "routine";
   if (it.kind === "look") return it.look ?? "look";
   if (it.kind === "snapshot") return it.preset ?? "snapshot";
@@ -291,6 +358,14 @@ export function itemName(it: Item): string {
 /** The line under a clip's name: variation and parameter values. */
 export function itemSub(it: Item): string {
   const parts: string[] = [];
+  if (it.on?.args?.length) parts.push(oscArgsText(it.on.args));
+  if (it.while) parts.push("while");
+  if (it.off) parts.push("off");
+  if (it.note != null) parts.push(`vel ${it.velocity ?? 100}`);
+  if (it.cc != null) {
+    parts.push(`→ ${it.value ?? 127}${it.off_value != null ? `, then ${it.off_value}` : ""}`);
+  }
+  if (it.channel != null) parts.push(`ch ${it.channel}`);
   if (it.variation) parts.push(it.variation);
   for (const [k, v] of Object.entries(it.params ?? {})) parts.push(`${k} ${String(v)}`);
   for (const [k, v] of Object.entries(it.args ?? {})) {

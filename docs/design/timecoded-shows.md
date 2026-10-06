@@ -60,8 +60,24 @@ arbitrary, the reason is next to it.
 | Follow DJ | **Starts disarmed.** One tap arms it. Printed at startup. |
 | Clock `speed` | **Left alone.** The timeline never uses `clock.speed`; it uses per-slot rate. The judder `speed` causes under a per-beat sync source is a known, documented issue, not fixed here. |
 | MCP | Read and write routines and timelines in milestone 1, through the same validation as the designer. |
-| Phone | Now playing and match state, which source drives each lane, Follow armed/safe, grab and release per lane. The template-set switcher arrives with templates in milestone 2. |
-| VJ | Later, and both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
+| Phone | Now playing and match state, which source drives each lane, Follow armed/safe, grab and release per lane, and (milestone 2) the template-set switcher. |
+| Template scope | Templates run **only while a DJ track plays and Follow is armed**; otherwise auto mode or the operator's show, as before (milestone 2, with the user). |
+| Set switch | A set switched mid-track takes over on the **next downbeat**, crossfading over the new set's `transition.fade_beats` (milestone 2, with the user). Not saved: show.json's `template_set` is the start-up default. |
+| Pad routines | A preset pad holding a routine starts it on the **next downbeat** (milestone 2, with the user). One whose routine cannot be built lands its looks alone on that downbeat, with a notice. Saving the pad again keeps its routine unless the console says `routine: null` (settled in the PR #13 review). |
+| CDJ phrases | Guest tracks on CDJs get phrase templates: the beat-link-trigger expressions are **extended to send the USB's phrase analysis** (milestone 2, with the user; unverified on hardware until captures). |
+| VJ | Both: drive external apps (OSC, MIDI, Art-Net timecode) and built-in browser visuals. The timeline core is output-generic so this is an adapter, not a rewrite. |
+| VJ app | **Generic OSC, user-mapped** (milestone 3, with the user): an OSC lane's cues name their own addresses and arguments -- `on`, `off`, and `while` (sent on change, at most 30 a second) -- and a curve lane sends its value to one address. No app is built in. |
+| MIDI | Through an **optional sidecar** with its own pinned dependency, fed by the engine over local UDP (milestone 3, with the user). |
+| Timecode | Art-Net ArtTimeCode carries **the matched track's position** -- it jumps with loops and hot cues, and stops when nothing matched is playing (milestone 3, with the user). |
+| Visuals | **Both** generative scenes and a video clip player, on a `#visuals` page (milestone 3, with the user). |
+| Output ownership | A track's timeline with rows for an output **owns** that output for the track, and the template's rows for it are silent; a timeline with none leaves it to the template (settled like the lanes' owning mode). |
+| Output gating | Follow gates the other outputs as it gates the lights: disarmed, nothing is cued and timecode is silent. A routine pad's cues play whenever the pad does. The designer's preview counts as armed (it needs the token). |
+| Projector strobe | The `#visuals` strobe obeys the engine's strobe policy (off, ceiling as brightness, `max_seconds`) and never flashes more than **three times a second** -- the broadcast limit for photosensitive viewers -- halving its rate to stay on the beat. A whole screen flashing is the strongest trigger there is. |
+| Visuals layering | Videos play underneath the generative scenes; a scene's `opacity` lets one through. Media are served with the token only, like audio. |
+| Failures | Nothing outside the lights can cost the lights a frame. If the other outputs raise, that frame's outputs are skipped and said once per message, at most every ten seconds. If the timeline or template code raises, that frame shows the operator's show, counted with the show errors. A waiting set switch whose set leaves the folder, or will not build, is called off with a notice (settled in the PR #13 review). |
+| Projector pulses | A wash's `pulse` is a full-screen flash, so it keeps to the strobe's three a second, pulsing every two or four beats at fast tempos. Only one strobe item flashes at a time (settled in the PR #13 review). |
+| Timecode details | Silent while the deck is paused (a stopped clock), sent only when its frame changes; 30 fps non-drop by default, to the broadcast address on Art-Net's port. |
+| OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
 
 ## The designer: layout B
 
@@ -150,7 +166,26 @@ bridge and no hardware:
 **Milestone 2:** template runtime and live phrase mode for unmatched tracks, the
 bar-count fallback, the template-set switcher, routines on preset pads.
 
+| stage | what |
+|---|---|
+| F22a | The template runtime: phrase label → routine pick, the bar-count cycle, crossfades between picks |
+| F22b | Templates on stage (timeline > template > fallback) and the phone's set switcher |
+| F22c | Live phrases from CDJs: the BLT expressions read the guest's USB analysis |
+| F22d | Routines on preset pads, from the next downbeat |
+| F22e | Per-deck pre-matching: a track's show built before it is the master |
+
+Milestones 2 and 3 were committed as F20a-e and F21a-d. F20 (the standalone
+previz) and F21 (parametric looks) reached main first, so they are F22 and F23
+everywhere but their commit messages.
+
 **Milestone 3:** VJ outputs.
+
+| stage | what |
+|---|---|
+| F23a | The output frame and generic OSC: external rows in timelines and routines, OSC lanes in the designer |
+| F23b | Art-Net ArtTimeCode from the matched track's position |
+| F23c | MIDI through the sidecar (`bridges/midi/`): note, CC and program cues, CC curves |
+| F23d | Built-in visuals: the `#visuals` page, its scenes and video from `media/`, template picks' scenes |
 
 ## Things to verify on hardware
 
@@ -162,4 +197,11 @@ called done, a ten-minute capture on each rig must show:
 - whether rkbx_link re-sends track metadata or sends it only on change, and in
   what order during a master switch;
 - rkbx_link's exact phrase strings in `string` format;
-- that beat-link-trigger delivers the signature and rekordbox id.
+- that beat-link-trigger delivers the signature and rekordbox id;
+- that it reads the song structure (PSSI) off a guest's USB, with the labels
+  rekordbox shows, and that `/klights/v1/phrase`'s beats-into lands the
+  template's routine on the phrase's first beat (milestone 2);
+- that `/klights/v1/deck` arrives for every player as tracks load (not just
+  the master), with the new track's title rather than the last one's, and that
+  a master switch to a drawn track engages its timeline on the first frame
+  (milestone 2).

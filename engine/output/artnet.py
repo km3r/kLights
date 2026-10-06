@@ -18,7 +18,10 @@ import struct
 
 ARTNET_PORT = 6454
 ARTNET_OP_DMX = 0x5000
+ARTNET_OP_TIMECODE = 0x9700
 ARTNET_PROT_VER = 14
+# ArtTimeCode's Type byte, by frame rate: Film, EBU, drop-frame NTSC, SMPTE.
+TIMECODE_TYPES = {24: 0, 25: 1, 29.97: 2, 30: 3}
 
 
 def build_artdmx(universe: int, data: bytes, sequence: int = 0) -> bytes:
@@ -37,6 +40,19 @@ def build_artdmx(universe: int, data: bytes, sequence: int = 0) -> bytes:
         + bytes([sub_uni, net])
         + struct.pack(">H", 512)                # Length, big-endian
         + payload
+    )
+
+
+def build_arttimecode(frames: int, seconds: int, minutes: int, hours: int,
+                      kind: int) -> bytes:
+    """One ArtTimeCode packet (Art-Net 4, OpCode 0x9700): 19 bytes. `kind`
+    is the Type byte -- 0 Film 24, 1 EBU 25, 2 DF 29.97, 3 SMPTE 30."""
+    return (
+        b"Art-Net\x00"
+        + struct.pack("<H", ARTNET_OP_TIMECODE)  # OpCode, little-endian
+        + struct.pack(">H", ARTNET_PROT_VER)    # ProtVer, big-endian
+        + bytes([0, 0])                         # Filler1, Filler2 (stream 0)
+        + bytes([frames, seconds, minutes, hours, kind])
     )
 
 

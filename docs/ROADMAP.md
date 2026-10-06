@@ -99,10 +99,12 @@ Open, in rough priority order.
 - **F19, timecoded shows — in progress.** Routines driven by which track is
   playing and where in it: phrase templates for any track, hand-built timelines
   for signature tracks, a desktop designer. Milestone 1 (one track end to end:
-  prep, design, play live from either source) is built; it waits on hardware
-  captures from real decks. Milestone 2 (the template runtime, live phrase mode)
-  and 3 (VJ) are next. Design record:
-  [`design/timecoded-shows.md`](design/timecoded-shows.md).
+  prep, design, play live from either source), milestone 2 (**F22**: phrase
+  templates for tracks nobody drew, live phrases from CDJs, the set switcher,
+  routines on pads, per-deck pre-matching) and milestone 3 (**F23**: OSC,
+  Art-Net timecode, MIDI through a sidecar, built-in `#visuals`) are built. All
+  of it waits on hardware captures from real decks and a real VJ app. Design
+  record: [`design/timecoded-shows.md`](design/timecoded-shows.md).
 - **Phrase-driven cues.** An `Up` arms the next cue, the `Chorus` downbeat fires
   it, `Outro` releases to ambient. The data arrives; nothing consumes it yet.
   This is the thing the APC40 show was doing by hand, and F19's phrase templates

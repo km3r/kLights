@@ -361,6 +361,103 @@ picked while it drives grabs those lanes (`program_grab` / `program_release`,
 operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
+With a template set active (show.json's `template_set`, or switched live with
+`template_set {id | null}`, operate tier) the chain is timeline, then template,
+then the operator's show -- still only while a DJ track plays with Follow
+armed. A matched track's template follows its own phrases in track beats (bars
+on its grid if it has none); a guest's follows the deck's live phrase in clock
+beats (`clock.phrase_start`: the bar line the label changed on, or where the
+source said the last phrase would end), else the bar cycle on the clock. The
+template's Show is the timeline program's fallback, so a fill gap shows it. A
+switch lands on the next bar line, crossfading over the new set's transition; a
+folder edit of the active set, like any folder change, waits for the next
+track. A waiting switch is rebuilt from each new load and after a rig change,
+and it is called off, with a notice, if its set leaves the folder or fails to
+build. The Track card's lanes say `template`, and it shows the phrase, the
+routine and the set switcher. Moving between the clock's beat and the track's
+grid is a jump, as a hot cue is: the two count from different places. So is
+the first frame back after frames on no beat (Follow disarmed, say), so the
+cues of the stretch in between never fire all at once.
+
+**A preset pad can carry a routine** (`routine: {id, variation?, params?}` in
+presets.json, saved from the console with a show folder). Pressed, it waits for
+the clock's next downbeat and then lands whole: its looks, and the routine over
+them from the routine's beat 0, as the operator's show -- so with the timeline
+or a template driving it grabs every lane like any preset. Picking a look, a
+plain preset or a cue puts it away. Its program is built on the worker when the
+folder loads, when it is saved, and after a rig reload; one that cannot be
+built lands its looks alone on the downbeat, with a notice. A save that does
+not mention `routine` keeps the pad's routine, and `routine: null` clears it.
+
+**The other outputs** ([`outputs.py`](../engine/outputs.py), milestone 3):
+`external` rows -- in a timeline or a routine -- carry cues for things that
+are not lights. Their items are windows like hits (`timeline.ExternalRow`,
+`Timeline.external_at`), and a row may carry a curve. Each program collects
+its own rows and its routine clips' rows (per loop pass) as it begins a
+frame; the player lists what is on stage (`TrackPlayer.stage`) and
+`output_frame()` gathers it into one immutable `ProgramFrame`. Each output
+compares one frame's items with the last's by key, so a jump into a cue turns
+it on, a jump out turns it off, and a cue shorter than a frame still fires
+once in forward play. A timeline with rows for an output owns it for its
+track; the template's rows for it are silent. **OSC** (`OscOut`) sends `on`,
+`off`, and `while` (on change, at most 30 a second) to an IPv4 address from
+show.json's `outputs.osc {host, port}`, overridden per machine by
+klights.local.json's `outputs`; arguments may be `$beat`, `$bar`, `$phase`,
+`$progress` and `$value`. A failed send is counted in the snapshot's
+`outputs`, never raised. Follow gates it: disarmed, nothing is cued. The
+outputs run inside the runner's `choose_show` hook, but fenced off from the
+lights: if they raise, that frame's outputs are skipped and the failure is
+said once per message (again after ten seconds), while the show goes on stage
+regardless. Anything else that raises
+in the hook shows the operator's own show for that frame, counted with the
+show errors, as `render_once` does.
+**Timecode** (`TimecodeOut`) sends Art-Net ArtTimeCode (OpCode 0x9700,
+`output/artnet.build_arttimecode`) carrying the matched track's position --
+latency applied, so it lines up with the lights -- whenever its frame
+changes, at 24, 25, 29.97 drop-frame or 30 fps (`outputs.timecode {host,
+port, fps}`, default broadcast on 6454 at 30). Silent while paused, disarmed,
+or with nothing matched; the designer's preview sends its own position.
+`shared/tools/artnet_listener.py --timecode` prints what arrives.
+**MIDI** (`MidiOut`) never opens a MIDI port: each frame's MIDI messages go as
+one JSON datagram (`klights.midi/1`) to the sidecar in
+[`bridges/midi/`](../bridges/midi/README.md), which owns the port and has its
+own pinned dependencies (`outputs.midi {host, port}`, default this machine on
+9123). A note cue holds its note for its length, a CC cue sets a value (and
+`off_value` at its end), a program cue sends a program change; a curve drives
+one CC, 0-1 as 0-127. Closing stops every note still sounding.
+**The built-in visuals** are a page, not an output: `#visuals` (its own UI
+chunk, never loaded by a phone) draws what the snapshot's `visuals` section
+says is on -- the beat, its tempo, the palette as hex, and each visuals item's
+scene, params and elapsed beats (`outputs.visuals_public`, built from the same
+frame every frame). Scenes are `wash`, `bars`, `tunnel`, `particles`, `strobe`
+and `video`; a template pick's `visuals {scene, params}` puts one on for its
+phrase. Videos come from the show folder's `media/` through `GET
+/api/media/<file>` (token, Range, video types only, never a link out of the
+folder); `GET /api/media` lists them. The page's strobe obeys the strobe policy
+and never flashes more than three times a second.
+
+**Pre-matching** (milestone 2, beat-link-trigger only): `/klights/v1/deck`
+says what any deck has loaded, as `loaded_*` sync fields that never touch the
+transport. The controller matches it against the folder at once and the player
+builds its timeline on the worker into a small cache (eight shows, oldest out),
+so when that track becomes the master `compile_for` finds it built and the
+timeline drives from the first frame. A rig reload or a folder load drops the
+cache -- a build still running for the old one is thrown away when it lands --
+and matches the decks again. The snapshot's `track.decks` lists the other
+decks: title, match, and whether the show is ready.
+
+**Templates** ([`templates.py`](../engine/templates.py), milestone 2) are the
+middle of the chain -- timeline, then template, then the operator's or auto
+mode's show. A template set maps rekordbox's phrase labels to routine picks
+(exact label, then without its number, then `*`) and cycles `bars.cycle` every
+`bars.every` bars where there are no phrases. `compile_set` builds one
+`Program` per distinct pick on the worker; a `TemplateRunner` plays them as ONE
+stable Show, each pick on its own beat counted from where its phrase began. The
+same pick into the next phrase carries on; a different one crossfades over the
+set's `transition.fade_beats` in parameter space, slot by slot, so a timeline
+can take the runner's Show as its fallback and show it through its fill gaps.
+A jump cuts.
+
 **The designer's side of the wire** ([`api.py`](../engine/api.py)): large reads
 are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 `routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with

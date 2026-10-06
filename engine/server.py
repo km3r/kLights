@@ -36,6 +36,7 @@ import queue
 import random
 import secrets
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -69,6 +70,8 @@ from . import showfiles
 from . import showlibrary
 from . import state as statemod
 from . import sync as syncmod
+from . import outputs as outputsmod
+from . import templates as templatesmod
 from . import timeline as timelinemod
 from . import tracks as tracksmod
 from . import transport as transportmod
@@ -240,8 +243,16 @@ class ShowController:
 
     def __init__(self, event_dir: Path, artnet: Optional[str] = None,
                  fps: float = 40.0, bpm: float = 124.0,
-                 show_dir: Optional[Path] = None):
+                 show_dir: Optional[Path] = None,
+                 local_outputs: Optional[dict] = None):
         self.event_dir = Path(event_dir)
+        # The other outputs (milestone 3): OSC and friends, pointed where the
+        # show folder says -- or this machine's klights.local.json, which wins.
+        self.outputs = outputsmod.Outputs()
+        self.local_outputs = dict(local_outputs or {})
+        self._output_frame: Optional[outputsmod.ProgramFrame] = None
+        # The last outputs failure said, and when: (message, engine time).
+        self._output_said: Optional[tuple[str, float]] = None
         self.rig = rigmod.load_rig(self.event_dir)
         self.reach = rig_reach(self.rig)
         errors = self.rig.validate()
@@ -412,14 +423,28 @@ class ShowController:
         # show folder; without one the runner never asks.
         self.player: Optional[playbackmod.TrackPlayer] = None
         self._frame_sample: Optional[transportmod.TrackSample] = None
+        # What the other decks have loaded (milestone 2), from beat-link-
+        # trigger: matched, and their timelines built in advance.
+        self.decks: dict[str, dict] = {}
         self.presets = load_presets(self.event_dir)
+        # Routines on preset pads (milestone 2): the one playing, the one
+        # waiting for its downbeat, and every routine pad built for this rig.
+        self.pad: Optional[dict] = None
+        self._pad_pending: Optional[dict] = None
+        # A routine that could not be built is kept here as its exception:
+        # the pad then lands its looks alone, rather than waiting for ever.
+        self._pad_programs: dict[str, Any] = {}
+        self._pad_gen = 0               # bumped when the rig or folder changes
         if self.show_dir is not None:
             self.player = playbackmod.TrackPlayer(
                 self.transport, pinned=lambda: self.pinned,
                 rigging=self._rigging, submit=self.worker.submit,
                 post=self.submit_call, note=self.note,
                 clock_beat=lambda: self.ctx.beat,
-                base_palette=self._base_palette)
+                base_palette=self._base_palette,
+                clock_phrase=lambda: (self.clock.phrase_label,
+                                      self.clock.phrase_start),
+                clock_bpm=lambda: self.clock.effective_bpm)
             self.runner.choose_show = self._choose_show
             self._install_library(showlibrary.load(self.show_dir))
             show = self.show_library.folder.show or {}
@@ -529,6 +554,7 @@ class ShowController:
         self.runner.stop()
         self.worker.stop()
         self.output.close()
+        self.outputs.close()
         try:
             patchmod.lock_path(str(self.event_dir)).unlink(missing_ok=True)
         except OSError:
@@ -539,13 +565,128 @@ class ShowController:
     def _before_frame(self) -> None:
         self._drain()
         self._frame_sample = self._track_frame()
+        self._pad_frame(self.runner.now())
 
     def _choose_show(self, fallback: statemod.Show) -> statemod.Show:
         """The runner's hook: the timeline's show while it drives, else
-        auto mode's, unchanged."""
+        auto mode's, unchanged. A routine pad playing is the operator's show
+        -- over the looks, which show wherever it says nothing."""
         now = self.runner.now()
+        pad = self.pad
+        if pad is not None:
+            prog = pad["program"]
+            prog.grabbed = frozenset()
+            prog.begin(self.clock.beat(now) - pad["start"], fallback=fallback,
+                       base_palette=self._base_palette())
+            fallback = prog.show
         sample = self._frame_sample or self.transport.sample(now)
-        return self.player.choose(fallback, sample, now)
+        show = self.player.choose(fallback, sample, now)
+        extra = ()
+        if pad is not None:
+            extra = (("pad", f"pad:{pad['name']}@{pad['start']:g}", pad["program"]),)
+        # Every frame, for the outputs and for the snapshot's visuals section
+        # (a #visuals page may be open whether or not anything else is on).
+        try:
+            frame = self.player.output_frame(extra)
+            self._output_frame = frame
+            if self.outputs.active:
+                self.outputs.send(frame, now)
+        except Exception as exc:                            # noqa: BLE001
+            # The other outputs never cost the lights a frame: the show chosen
+            # above goes on stage whatever an OSC, MIDI or timecode send did.
+            # Said once per message, or again after a while -- not 40 times a
+            # second, nor once per flap of one that fails every other frame.
+            self._output_frame = None
+            said = f"the other outputs failed and are skipped: {exc}"
+            last = self._output_said
+            if last is None or last[0] != said or now - last[1] >= OUTPUT_NOTE_S:
+                self._output_said = (said, now)
+                self.note(said)
+        return show
+
+    # routines on pads (milestone 2) -----------------------------------------
+
+    @staticmethod
+    def _pad_key(routine: dict) -> str:
+        return templatesmod.pick_key({"routine": routine.get("id"),
+                                      "variation": routine.get("variation"),
+                                      "params": routine.get("params") or None})
+
+    def _compile_pad(self, preset: dict) -> None:
+        """Build a routine pad's program for this rig, on the worker."""
+        routine = preset.get("routine") or {}
+        library = self.show_library
+        if not routine or library is None:
+            return
+        key = self._pad_key(routine)
+        if key in self._pad_programs:
+            return
+        pick = {"routine": routine.get("id"), "variation": routine.get("variation"),
+                "params": routine.get("params")}
+        routines, rigging, name = library.folder.routines, self._rigging(), preset["name"]
+        gen = self._pad_gen
+
+        def build():
+            # Returned, not raised: the worker never calls `done` for a job
+            # that raised, and a pad waiting on it would wait for ever.
+            try:
+                if pick["routine"] not in routines:
+                    raise ValueError(f"routine {pick['routine']!r} is not in routines/")
+                return programmod.compile(templatesmod.pick_timeline({}, pick),
+                                          routines, rigging, f"preset {name!r}")
+            except Exception as exc:                        # noqa: BLE001
+                return exc
+
+        def done(prog) -> None:
+            if gen != self._pad_gen:
+                return                  # built for a rig or load since replaced
+            self._pad_programs[key] = prog
+            if isinstance(prog, Exception):
+                self.note(f"preset {name!r}: its routine could not be built "
+                          f"({prog}); the pad applies its looks")
+            elif prog.problems:
+                self.note(f"preset {name!r}: {prog.problems[0]}")
+
+        self.worker.submit(build, done, label=f"building preset {name!r}'s routine")
+
+    def _compile_pads(self) -> None:
+        self._pad_gen += 1
+        self._pad_programs = {}
+        for preset in self.presets:
+            if preset.get("routine"):
+                self._compile_pad(preset)
+
+    def _clear_pad(self) -> None:
+        self.pad = None
+        self._pad_pending = None
+
+    def _pad_frame(self, now: float) -> None:
+        """A pressed routine pad lands on its downbeat (decided with the
+        user): the whole picture at once, its looks and its routine, from
+        beat 0 of the routine."""
+        pending = self._pad_pending
+        if pending is None:
+            return
+        beat = self.clock.beat(now)
+        if beat < pending["start"] - 1e-9:
+            return
+        prog = self._pad_programs.get(pending["key"])
+        if prog is None:
+            # Not built yet (just saved, or the rig just changed): the next
+            # downbeat instead, rather than starting it mid-bar.
+            pending["start"] = templatesmod.next_downbeat(beat + 1e-6)
+            return
+        self._pad_pending = None
+        self._apply_preset_looks(pending["preset"], now)
+        if isinstance(prog, Exception):
+            # Its routine could not be built: the looks alone, on the same
+            # downbeat, and said -- each press, as each press is a choice.
+            self.note(f"preset {pending['preset']['name']!r}: its routine could "
+                      f"not be built ({prog}); applied its looks")
+            return
+        self.pad = {"name": pending["preset"]["name"],
+                    "routine": pending["preset"]["routine"].get("id"),
+                    "start": pending["start"], "program": prog}
 
     def _rigging(self):
         from . import blocks as blocksmod
@@ -710,6 +851,16 @@ class ShowController:
         if self.player is not None:
             self.player.configure(library.folder.show)
             self.player.compile_idle(library)
+            self.player.compile_templates(library)
+            self._compile_pads()
+            # The other decks' shows were built from the last load: match them
+            # again against this one and build what changed.
+            self.player.drop_precompiled()
+            self._rematch_decks()
+            said = self.outputs.configure((library.folder.show or {}).get("outputs"),
+                                          self.local_outputs)
+            if said is not None and previous is not None:
+                self.note(said)
         if self.watcher is not None:
             # What this load read, so the watcher does not load it again.
             self.watcher.seen = library.signature
@@ -960,6 +1111,7 @@ class ShowController:
         entry = self.by_name.get(name)
         if entry is None:
             raise KeyError(f"no look named {name!r}")
+        self._clear_pad()
         slot = m.get("slot") or entry.slot
         if slot not in ("movement", "color", "level"):
             raise ValueError(f"unknown slot {slot!r}")
@@ -981,6 +1133,7 @@ class ShowController:
         slot = m["slot"]
         if slot not in ("movement", "color", "level"):
             raise ValueError(f"unknown slot {slot!r}")
+        self._clear_pad()
         if slot == "movement":
             raise ValueError(
                 "the movement slot cannot be empty -- with nothing aiming the "
@@ -1336,6 +1489,7 @@ class ShowController:
         self.director.release()
 
     def _cmd_next_look(self, m: dict, now: float) -> None:
+        self._clear_pad()
         self.setlist.advance()
         self._grab({"movement"})
         self._recompose()
@@ -1369,6 +1523,10 @@ class ShowController:
                  for p in others):
             raise ValueError(f"bank {where[0]} cell {where[1]} is already taken")
         tags = m.get("tags")
+        # Absent keeps the pad's routine (re-recording its looks is the
+        # common case); null clears it, making it a pad of looks again.
+        routine = (self._preset_routine(m["routine"]) if "routine" in m
+                   else previous.get("routine") if previous is not None else None)
         captured = self.capture_look_params(self.looks_named(self.selection))
         # Built whole and rebound once. Appending to the live list and then
         # sorting it in place is what let the broadcast thread serialise an
@@ -1391,9 +1549,41 @@ class ShowController:
             "bank": where[0], "cell": where[1],
             "tags": [str(t) for t in tags] if tags is not None
                     else list(previous.get("tags", [])) if previous else [],
+            **({"routine": routine} if routine else {}),
         }], key=_at)
         save_presets(self.event_dir, self.presets)
-        self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}")
+        if routine:
+            self._compile_pad(next(p for p in self.presets if p["name"] == name))
+        self.note(f"saved preset {name!r} to {where[0]}.{where[1] + 1}"
+                  + (f" with routine {routine['id']!r}" if routine else ""))
+
+    def _preset_routine(self, raw) -> Optional[dict]:
+        """A routine for a pad: {id, variation?, params?}, checked against the
+        show folder. None for a pad of looks only."""
+        if raw is None:
+            return None
+        library = self.show_library
+        if library is None:
+            raise ValueError("a routine pad needs a show folder -- start the "
+                             "engine with --show-dir")
+        if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+            raise ValueError('routine must be {"id": "<routine id>", ...}')
+        doc = library.folder.routines.get(raw["id"])
+        if doc is None:
+            raise ValueError(f"there is no routine {raw['id']!r} in routines/")
+        out: dict = {"id": raw["id"]}
+        variation = raw.get("variation")
+        if variation:
+            if variation not in (doc.get("variations") or {}):
+                raise ValueError(f"routine {raw['id']!r} has no variation "
+                                 f"{variation!r}")
+            out["variation"] = variation
+        params = raw.get("params")
+        if params:
+            if not isinstance(params, dict):
+                raise ValueError("routine params must be an object")
+            out["params"] = dict(params)
+        return out
 
     def _cmd_preset_move(self, m: dict, now: float) -> None:
         """Put a preset on a different pad, SWAPPING with whatever is there.
@@ -1441,6 +1631,25 @@ class ShowController:
         preset = next((p for p in self.presets if p["name"] == name), None)
         if preset is None:
             raise KeyError(f"no preset named {name!r}")
+        self._clear_pad()
+        routine = preset.get("routine")
+        if routine and self.show_library is not None:
+            # On the next downbeat (decided with the user): the whole picture
+            # lands then, so the routine's first bar is the music's.
+            key = self._pad_key(routine)
+            if key not in self._pad_programs:
+                self._compile_pad(preset)
+            self._pad_pending = {
+                "preset": preset, "key": key,
+                "start": templatesmod.next_downbeat(self.clock.beat(now))}
+            return
+        if routine:
+            self.note(f"preset {name!r}: its routine needs a show folder; "
+                      f"applying its looks")
+        self._apply_preset_looks(preset, now)
+
+    def _apply_preset_looks(self, preset: dict, now: float) -> None:
+        name = preset["name"]
         # A preset naming a look that has since been re-ported away applies the
         # rest rather than failing whole -- a preset is a shortcut, and half a
         # shortcut beats an error message mid-set.
@@ -1912,6 +2121,7 @@ class ShowController:
         `grab` False changes the slots without taking lanes from a running
         timeline -- for a cue nobody chose this instant (`_advance_due_cue`).
         """
+        self._clear_pad()
         for slot in ("color", "level"):
             wanted = getattr(cue, slot)
             if wanted:
@@ -2050,6 +2260,7 @@ class ShowController:
             phrase_measured=fields.get("phrase_measured"),
             phrase_label=fields.get("phrase_label"),
             phrase_ends_in=fields.get("phrase_ends_in"),
+            phrase_into=fields.get("phrase_into"),
             at=syncmod.now())
         if "deck" in fields:
             self.sync_deck = fields["deck"]
@@ -2058,10 +2269,43 @@ class ShowController:
         # `now` is when the datagram ARRIVED (see submit), which is what the
         # transport's line needs: applying it at the frame boundary instead
         # would quantise every position to the 25 ms frame grid.
+        if "loaded_deck" in fields:
+            self._prematch(fields)
         self.transport.ingest(fields, now)
         sample = self._track_frame(now)
         if sample is not None:
             self._check_grid(fields, sample, now)
+
+    def _prematch(self, fields: dict) -> None:
+        """Another deck loaded a track: match it now, and build its timeline
+        on the worker, so that when it becomes the master its show is already
+        there -- no frame of the operator's show while it compiles. Never
+        touches the transport, which follows the master alone."""
+        library = self.show_library
+        deck = fields["loaded_deck"]
+        if library is None or self.player is None:
+            return
+        match = library.index.match(
+            title=fields.get("loaded_title", ""), artist=fields.get("loaded_artist", ""),
+            album=fields.get("loaded_album", ""),
+            duration=fields.get("loaded_duration"),
+            rekordbox_id=fields.get("loaded_rekordbox_id"),
+            signature=fields.get("loaded_signature"))
+        tid = match.track_id
+        timeline = library.timelines.get(tid) if tid else None
+        # A new dict, assigned whole: the snapshot reads it from another thread.
+        self.decks = {**self.decks,
+                      deck: {"deck": deck, "title": fields.get("loaded_title") or None,
+                             "track_id": tid, "timeline": timeline,
+                             "fields": dict(fields)}}
+        if timeline is not None:
+            self.player.precompile(timeline, library.folder.routines,
+                                   f"timelines/{tid}.json")
+
+    def _rematch_decks(self) -> None:
+        """A new folder load or rig: the decks' matches and shows again."""
+        for d in list(self.decks.values()):
+            self._prematch(d["fields"])
 
     def sync_status(self) -> dict:
         return _sync_status(self)
@@ -2107,6 +2351,22 @@ class ShowController:
             raise ValueError("the timeline is not driving; there is nothing "
                              "to take a lane from")
         self.player.grab({slot})
+
+    def _cmd_template_set(self, m: dict, now: float) -> dict:
+        """Switch template set -- a vibe, live. It takes over on the next
+        downbeat (decided with the user), crossfading over its own transition;
+        `null` turns templates off. Not saved: show.json's `template_set` is
+        what the next start begins with."""
+        if self.player is None:
+            raise ValueError("no show folder -- start the engine with --show-dir")
+        set_id = m.get("id")
+        if set_id is not None and not isinstance(set_id, str):
+            raise ValueError("template_set needs id: a set's id, or null for none")
+        self.player.select_set(set_id)
+        names = dict(self.player.sets)
+        self.note(f"template set -> {names.get(set_id, set_id) if set_id else 'off'}"
+                  f" on the next downbeat")
+        return {"pending": set_id}
 
     def _cmd_program_release(self, m: dict, now: float) -> None:
         """Give a lane (or every lane) back to the timeline."""
@@ -2481,6 +2741,9 @@ class ShowController:
             self.player.recompile()
             if self.show_library is not None:
                 self.player.compile_idle(self.show_library)
+            self._clear_pad()
+            self._compile_pads()
+            self._rematch_decks()
 
         if old_heads != new_heads:
             self.note(f"rig reloaded, and the moving heads CHANGED "
@@ -2733,6 +2996,10 @@ class ShowController:
             "track": _track_status(self),
             "show": _show_status(self),
             "program": _program_status(self),
+            "pad": _pad_status(self),
+            "outputs": self.outputs.public(),
+            # What a #visuals page draws (milestone 3); None without a show folder.
+            "visuals": outputsmod.visuals_public(self._output_frame),
             "preview": (self.player.preview.public()
                         if self.player is not None and self.player.preview
                         else None),
@@ -2839,6 +3106,9 @@ class ShowController:
             "drift": self.last_drift,
         }
 
+
+# The same failure of the other outputs is said again after this long.
+OUTPUT_NOTE_S = 10.0
 
 BANK_SIZE = configmod.BANK_SIZE
 
@@ -2986,7 +3256,28 @@ def _track_status(controller: "ShowController") -> dict:
         "match": (pinned.public(controller.show_library) if current else None),
         "grid_warning": (check.warning if current and check is not None
                          else None),
+        # The other decks (milestone 2): what they have loaded, matched, and
+        # whether its show is built yet. An empty deck is left out.
+        "decks": [{"deck": d["deck"], "title": d["title"], "track_id": d["track_id"],
+                   "has_timeline": d["timeline"] is not None,
+                   "ready": (d["timeline"] is not None and controller.player is not None
+                             and controller.player.precompiled(d["timeline"]))}
+                  for d in sorted(list(controller.decks.values()),
+                                  key=lambda d: d["deck"])
+                  if d["deck"] != s.deck and (d["title"] or d["track_id"])],
     }
+
+
+def _pad_status(controller: "ShowController") -> Optional[dict]:
+    """A routine pad: playing, or waiting for its downbeat."""
+    pad, pending = controller.pad, controller._pad_pending
+    if pending is not None:
+        return {"name": pending["preset"]["name"],
+                "routine": pending["preset"]["routine"].get("id"),
+                "waiting": True}
+    if pad is not None:
+        return {"name": pad["name"], "routine": pad["routine"], "waiting": False}
+    return None
 
 
 def _program_status(controller: "ShowController") -> Optional[dict]:
@@ -3713,8 +4004,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     token = None if args.no_token else (args.token or secrets.token_urlsafe(6))
 
     show_dir = showfiles.resolve_show_dir(args.show_dir)
+    # This machine's own output addresses (milestone 3), over the show's.
+    local_outputs, problem = outputsmod.local_override(
+        showfiles.read_local_config().get("outputs"))
+    if problem is not None:
+        print(f"outputs: {problem}", file=sys.stderr)
     controller = ShowController(args.event, artnet=args.artnet, fps=args.fps,
-                                bpm=args.bpm, show_dir=show_dir)
+                                bpm=args.bpm, show_dir=show_dir,
+                                local_outputs=local_outputs)
     server = ShowServer(controller, port=args.port, ui_dir=args.ui,
                         token=token, bind=args.bind)
 
@@ -3787,6 +4084,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         problems = (f" -- {len(f.errors)} errors, see `python -m "
                     f"engine.showfiles check {library.root}`" if f.errors else "")
         print(f"shows   {library.root}: {library.describe()}{problems}")
+        print(f"outputs {controller.outputs.describe()}")
         if controller.player is not None:
             print("follow  " + ("ARMED -- a matched track's timeline drives the "
                                 "rig" if controller.player.armed else
