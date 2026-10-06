@@ -17,6 +17,22 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — the README says what kLights is, and starts from the launcher
+
+- **The intro covers the whole project**: Studio to design a show, Setup for
+  the rig and the room, and the console to run the night, each linking to its
+  section. The safety warning moved from the intro to *Running a show*.
+- **Quick start is the launcher**, with a screenshot and the four steps from
+  picking an event to the previz, and how to give Studio a show folder.
+  `python -m engine.server` and its flags are under *Without the launcher*.
+- **Screenshots retaken** from a live engine: the four phone tabs on cue 3
+  (Deep) with MH Breathe running, Setup at the patch, and Studio's timeline
+  driving the rig with the new right-hand panels. New: the launcher, and
+  Studio's track library. The plan-view diagram is gone; the Move tab shows
+  the real one.
+- Requirements say the launcher needs Tk, which Debian and Ubuntu ship
+  separately.
+
 ### Changed — Studio's right-hand panels say each thing once
 
 - **One layout for every details panel**: tracks, routines, template sets,

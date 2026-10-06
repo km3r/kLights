@@ -1,49 +1,99 @@
 # kLights
 
-A lighting console for a small moving-head rig, with 3D previsualization.
-
-It runs a **parametric show engine**: it holds parameters rather than stored DMX
-values, owns its own 40 fps frame clock, knows the room in three dimensions, and
-dims beams that get near people. You drive it from a phone. Unreal renders it by
-listening to the same Art-Net the rig hears.
-
-**Nothing needs installing.** The engine is stdlib-only Python and the web
-console ships pre-built, so a show laptop needs a checkout and a Python.
-
-> ⚠️ Read [`docs/SAFETY.md`](docs/SAFETY.md) before pointing this at people. The
-> beam taper is a **comfort feature for LED beams, not a protective device**,
-> and two things on this rig are a different category: **strobe** (nothing
-> limits the rate, and photosensitive epilepsy is a real risk) and **lasers**.
-
----
+Lighting for a small moving-head rig, from the first sketch of a show to the
+night itself: **design** it in Studio, **set up** the rig in the room it hangs
+in, and **run** it from a phone. A 3D previz shows all of it before a single
+fixture is hung.
 
 <img src="docs/images/previz-ball.png" alt="Unreal previz: two beams on a mirror ball scattering across a hazy room" width="100%">
 
 *The Unreal previz — the same Art-Net the rig receives, rendered in 3D.*
 
-<img src="docs/images/plan-view.svg" alt="Plan view of the room from above, beams drawn to where they land" width="520">
+## What it is
 
-*The console's plan view: the room from above, every lit beam drawn to where it
-actually lands, at the width it actually spreads to. No GPU, no install — this
-runs on the show laptop.*
+Three places to work, one engine underneath:
+
+- **Studio — design the show.** A show-making app for a computer. Tracks come
+  in from rekordbox with their beat grid, phrases and waveform, and each gets a
+  timeline drawn bar by bar against them: scene, movement, colour and palette
+  lanes, hits, automation with waves on it, and cues for a VJ app, MIDI gear or
+  a projector. Shows are built from reusable **routines** written against roles
+  (movers, pinspots) rather than fixtures, and **template sets** light any track
+  nobody drew, phrase by phrase.
+  → [Timecoded shows](#timecoded-shows)
+- **Setup — describe the rig and the room.** The patch, where each fixture
+  hangs, calibration, and the room in three dimensions. Because the engine
+  knows the room, a move aims at a *place* — the mirror ball, the far wall —
+  rather than storing pan and tilt, and a second night in the same room is a
+  one-line change. From the console's Setup tab, the CLI, or an assistant over
+  MCP.
+  → [Editing the rig](#editing-the-rig)
+- **Show — run the night.** The engine serves its own web console, built for a
+  phone in one hand: a cue list behind one GO button, pages of preset pads,
+  independent movement, colour and level, and tempo from a tap or the DJ's
+  decks. Arm **Follow** and each track's timeline plays itself as the DJ mixes
+  it in. Several people can be on it at once.
+  → [Using the console](#using-the-console)
+
+Underneath is a **parametric show engine**: it holds parameters rather than
+stored DMX values, owns its own 40 fps frame clock, and sends Art-Net. The
+previz is an Unreal app that renders the show by listening to that same
+Art-Net, so it can never break one.
+
+**Nothing needs installing.** The engine is stdlib-only Python and the web
+console ships pre-built, so a show laptop needs a checkout and a Python.
 
 ## Quick start
 
 ```bash
 git clone <this repo>
 cd kLights
-python -m engine.server
 ```
 
-That runs the despacio show against a **null output** — no DMX on the wire —
-which is the safe way to try it with a rig plugged in. Open the URL it prints
-(including its `?token=`) on a phone or a laptop.
+Then double-click **`kLights.pyw`**, or run `python -m launcher` from a
+terminal. One window starts the engine and opens everything else:
 
-To actually drive a rig:
+<img src="docs/images/launcher.png" alt="The launcher: the despacio event picked; the engine running on port 8765 with Art-Net to 127.0.0.1; Open console, Open Setup, Open Studio and Copy phone link; the previz controls; and the engine log" width="560">
+
+1. **Event** — pick the show. `despacio` is the example rig, and the line under
+   it says what is in it.
+2. **Start engine.** Leave **Art-Net to** at `127.0.0.1` to try it: nothing
+   leaves this laptop. To drive a rig, set it to the rig's node or a broadcast
+   address such as `255.255.255.255`.
+3. **Open console** to run the show, **Open Setup** for the rig and the room,
+   or **Open Studio** to design. **Copy phone link** puts the console's URL on
+   the clipboard, token included, for a phone on the same network.
+4. **Launch previz** for the 3D view, once **Build previz...** has built it
+   (building needs Unreal 5.8; running it does not).
+
+Studio works on a **show folder** of tracks and timelines. To try it on the
+example, put `--show-dir shared/show-example` in **Extra flags** before
+starting the engine; for a real show, see [Timecoded shows](#timecoded-shows).
+Extra flags is also where `--sync-port` (tempo from a DJ) goes.
+
+The engine runs as its own process, so closing the launcher does not stop a
+show, and reopening it finds the engine again. The launcher remembers its
+settings.
+
+Before a show, run everything that must be green:
 
 ```bash
-python -m engine.server --artnet 255.255.255.255
+python scripts/preflight.py
 ```
+
+### Without the launcher
+
+The launcher is a window over `python -m engine.server`, which works on its own
+-- over SSH, in a script, or on a Python without Tk:
+
+```bash
+python -m engine.server                             # despacio, no DMX on the wire
+python -m engine.server --artnet 255.255.255.255    # drive a rig
+```
+
+Without `--artnet` the engine runs against a **null output**, which is the safe
+way to try it with a rig plugged in. Open the URL it prints (including its
+`?token=`) on a phone or a laptop.
 
 Useful flags: `--event` (which show), `--port`, `--bpm`, `--bind`, `--token` /
 `--no-token`, `--sync-port` (tempo from a DJ), `--show-dir` (prepped tracks
@@ -51,18 +101,6 @@ and their timelines -- see [Timecoded shows](#timecoded-shows)). `--help`
 lists them all.
 `--artnet` takes a list, so one engine can feed the rig's node and a previz on
 the same laptop: `--artnet 10.0.0.50,127.0.0.1`.
-
-Or double-click **`kLights.pyw`** (`python -m launcher` from a terminal): one
-window to pick the event, start and stop the engine, open the console, its
-Setup tab or Studio, copy the phone link, and launch or build the 3D previz.
-The engine runs as its own process, so closing the launcher does not stop a
-show, and reopening it finds the engine again.
-
-Before a show, run everything that must be green:
-
-```bash
-python scripts/preflight.py
-```
 
 ## Using the console
 
@@ -73,13 +111,13 @@ bar becomes a side rail and the panels widen.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/console-show.png" alt="Show tab: the Night cue list on cue 1 of 9, the four independent slots that are up now, and the preset pads"></td>
-<td width="50%"><img src="docs/images/console-color.png" alt="Color tab: the colour look list, filtered by fixture group, with Split Warm/Cool selected"></td>
+<td width="50%"><img src="docs/images/console-show.png" alt="Show tab: the Night cue list on cue 3 of 9, Deep, with GO for Spiral next; the Track card with Follow safe and the Club template set; the four independent slots that are up now"></td>
+<td width="50%"><img src="docs/images/console-color.png" alt="Color tab: the colour look list, filterable by fixture group, with Duo Cyan/Pink up on the movers and Pin Ball Glow on the pinspots"></td>
 </tr>
 <tr align="center"><td><b>Show</b></td><td><b>Color</b></td></tr>
 <tr>
-<td width="50%"><img src="docs/images/console-move.png" alt="Move tab: the plan view with four beams converging on the mirror ball, and the route list below"></td>
-<td width="50%"><img src="docs/images/console-bright.png" alt="Bright tab: level chases with MH Breathe running, and the per-slot rate control"></td>
+<td width="50%"><img src="docs/images/console-move.png" alt="Move tab: the plan view with four beams sweeping out to the walls, each named with where it landed and how far, and the route list below"></td>
+<td width="50%"><img src="docs/images/console-bright.png" alt="Bright tab: the level chases, with MH Breathe running on the movers"></td>
 </tr>
 <tr align="center"><td><b>Move</b></td><td><b>Bright</b></td></tr>
 </table>
@@ -88,13 +126,17 @@ Five tabs, all driven by the same live state.
 
 | tab | what it is for |
 |---|---|
-| **Show** | the cue list, preset banks, tempo and tap, auto mode, DJ sync, panic |
+| **Show** | the cue list, the Track card (Follow and the template set), preset banks, tempo and tap, auto mode, DJ sync, panic |
 | **Color** | colour looks, a quick palette, a per-fixture picker, colour rate |
 | **Move** | the plan view, movement routes, shape macros, movement rate |
 | **Bright** | level patterns, hand dimming, momentary flash, strobe policy |
 | **Setup** | the rig, the room, calibration and the patch editor |
 
 Master and Blackout are in the header on every tab.
+
+The **plan view** on Move is the room from above: every lit beam drawn to where
+it actually lands, at the width it actually spreads to, and named with what it
+hit. No GPU and no install — it runs in the same browser tab as everything else.
 
 **Several people can be on it at once.** Every client sees the same state over a
 WebSocket, and Setup shows who is connected and who last touched what. There is
@@ -130,6 +172,11 @@ tap, not a tooltip, because a phone has no hover. Studio has its own
 
 Full procedure for the day, including what to do when something breaks:
 **[`docs/runbook.md`](docs/runbook.md)**.
+
+Read [`docs/SAFETY.md`](docs/SAFETY.md) before pointing this at people. The
+beam taper is a **comfort feature for LED beams, not a protective device**, and
+two things on this rig are a different category: **strobe** (nothing limits the
+rate, and photosensitive epilepsy is a real risk) and **lasers**.
 
 ## Previz
 
@@ -170,13 +217,21 @@ For a signature track, the lights can follow **which track is playing and where
 in it**, not just the tempo: a show drawn bar by bar against the track, played
 back on the night from the DJ's own position.
 
-<img src="docs/images/studio-timeline.png" alt="Studio's timeline editor: a browser of routines on the left; a bar ruler, rekordbox's phrase bands and the waveform across the top; the timeline's lanes below -- scene clips, a palette lane, hit diamonds, master automation, a size lane with a sine wave on it, OSC and projector lanes; the rig from above and who drives each lane at the playhead on the right; the selected clip's settings and actions along the bottom" width="100%">
+<img src="docs/images/studio-timeline.png" alt="Studio's timeline editor, driving the rig: a browser of routines on the left; a bar ruler, rekordbox's phrase bands and the waveform across the top; the timeline's lanes below -- scene clips, a palette lane, hit diamonds, master automation, a size lane with a sine wave on it, OSC and projector lanes; on the right the rig preview with pink beams, what drives each lane at the playhead, and the track's palettes; the selected chorus clip's settings and actions along the bottom" width="100%">
 
 *Studio's timeline editor on the example show, given a waveform and a wave on
-its size lane. rekordbox's phrases and the waveform run across the top, with
-the timeline's lanes below them (the higher lane wins). The browser is on the
-left. The rig from above and "who drives each lane" at the playhead are on the
-right, and the selected clip is along the bottom.*
+its size lane, and driving the rig. rekordbox's phrases and the waveform run
+across the top, with the timeline's lanes below them (the higher lane wins).
+The browser is on the left. On the right are the rig preview, what drives each
+lane at the playhead, and the track's palettes; the selected clip is along the
+bottom.*
+
+<img src="docs/images/studio-library.png" alt="Studio's track library: five tracks with what lights each on the night (one timeline, four by the Club template set), their phrase bars, BPM and length; the selected track's waveform, phrases and checks on the right" width="100%">
+
+*Studio opens on the library: every track in the show folder, what will light
+it on the night, its phrases, and anything that needs attention. Shown with
+four made-up tracks added to the example, which the Club template set lights
+until they have timelines of their own.*
 
 ```bash
 python -m engine.showfiles init shows/              # a show folder (or use shared/show-example)
@@ -281,7 +336,7 @@ python -m engine.patch add --name "Par 5" ...   # one-shot edits
 Edits are validated, written atomically, and applied to the running show without
 a restart. A rig that will not load is refused and the old one keeps running.
 
-<img src="docs/images/console-setup.png" alt="Setup tab on a laptop: the patch editor listing six fixtures with their universe, address and tags, above the room's dimensions and crowd head band" width="100%">
+<img src="docs/images/console-setup.png" alt="Setup tab on a laptop: the patch, read-only until unlocked, listing six fixtures with their universe, address, tags and live level, above the room's dimensions and crowd head band" width="100%">
 
 *The Setup tab on a laptop — the same console, with the tab bar as a side rail.
 The patch is read-only until you unlock it, because it is load-in work rather
@@ -368,6 +423,9 @@ safety taper reads.
   have no pip dependencies at all. Two optional sidecars carry their own, behind
   a process boundary: reading rekordbox's database needs `sqlcipher3`, and MIDI
   out needs `bridges/midi/requirements.txt`.
+- **Tk**, only for the launcher window. It comes with Python from python.org on
+  Windows and macOS; on Debian or Ubuntu it is `apt install python3-tk`. The
+  engine never needs it.
 - **Node 18+**, only to rebuild the UI. Never needed at a venue.
 - **Unreal Engine 5.8**, only for the 3D previz.
 
