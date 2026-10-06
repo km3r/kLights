@@ -52,17 +52,25 @@ def close(a, b, tol=1e-9):
 
 # -- 0. output-generic --------------------------------------------------------
 print("\n0. it knows nothing about lights")
-tree = ast.parse((REPO / "engine" / "timeline.py").read_text(encoding="utf-8"))
-imported = set()
-for node in ast.walk(tree):
-    if isinstance(node, ast.Import):
-        imported.update(a.name.split(".")[0] for a in node.names)
-    elif isinstance(node, ast.ImportFrom):
-        imported.add("." * node.level + (node.module or ""))
+def imports_of(name):
+    tree = ast.parse((REPO / "engine" / name).read_text(encoding="utf-8"))
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.add("." * node.level + (node.module or ""))
+    return out
+
+
 STDLIB = {"__future__", "bisect", "dataclasses", "types", "typing", "math"}
-check("timeline.py imports only the standard library -- a VJ output must be "
-      "able to use it without the lights coming along",
-      imported <= STDLIB, f"{sorted(imported - STDLIB)}")
+imported = imports_of("timeline.py")
+check("timeline.py imports only the standard library and waves.py -- a VJ "
+      "output must be able to use it without the lights coming along",
+      imported <= STDLIB | {".waves"}, f"{sorted(imported - STDLIB)}")
+check("and waves.py, the shapes a lane's wave follows, imports only the "
+      "standard library itself", imports_of("waves.py") <= STDLIB,
+      f"{sorted(imports_of('waves.py') - STDLIB)}")
 
 
 # -- 1. one row ---------------------------------------------------------------
@@ -207,6 +215,24 @@ check("ease is smoothstep: slow at both ends, half way at the middle",
 check("the value holds before the first point and after the last",
       close(curve.value(-10), 0.0) and close(curve.value(99), 1.0))
 check("at a point, the point's value", close(curve.value(8), 1.0))
+waved = tl.Timeline.from_rows([
+    {"id": "s", "type": "automation", "target": "size", "points": [[0, 1.0]],
+     "wave": {"shape": "square", "bars": 1, "depth": 0.5}},
+    {"id": "c", "type": "automation", "target": "param.c", "points": [[0, "#ff0000"]],
+     "wave": {"shape": "square", "bars": 1, "toward": "#0000ff", "depth": 0.5}}])
+check("a wave adds to its points: a square of depth 0.5 is 1.0, then 1.5",
+      close(waved.automation("size", 1), 1.0) and close(waved.automation("size", 3), 1.5))
+check("a colour lane's wave is in what the timeline explains: the points' blend, "
+      "then what it swings toward and how far",
+      waved.automation("param.c", 3) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.5)
+      and waved.automation("param.c", 1) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.0))
+try:
+    tl.Timeline.from_rows([{"id": "s", "type": "automation", "target": "size",
+                            "points": [[0, 1.0]], "wave": {"shape": "wobble", "bars": 1}}])
+    check("a wave the timeline cannot evaluate is refused, not guessed at", False)
+except tl.TimelineError as exc:
+    check("a wave the timeline cannot evaluate is refused, not guessed at",
+          "wobble" in str(exc), str(exc))
 single = tl.Curve.from_points([[32, 0.7]])
 check("one point is a constant", close(single.value(0), 0.7)
       and close(single.value(100), 0.7))

@@ -7,11 +7,10 @@ import {
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
 import {
-  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, externalRow, parsePointId,
-  uniqueId,
-  useEditorKeys, useHistory,
+  AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
+  parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
 } from "./edit";
-import type { History } from "./edit";
+import type { History, LaneSpecs } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import "./designer.css";
@@ -129,8 +128,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const rigBound = usesRig(doc);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
+  const paramLanes = routineLaneSpecs(doc);
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href={back}
@@ -171,7 +173,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
                     selected={selected} onSelect={setSelected} history={history}
                     beat={loop.beat} roles={roles} />
             ))}
-            <AddLane history={history} roles={roles} />
+            <AddLane history={history} roles={roles} params={paramLanes} />
             {doc.rows.length === 0 && (
               <p className="small muted" style={{ paddingLeft: HEADER_W + 8 }}>
                 Empty. Add a block from the right, or a lane from “+ lane”.</p>)}
@@ -194,12 +196,15 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
       {history.listView
         ? <Editor.EventList history={history} />
+        : waveRow
+          ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow
           ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                    onSelect={setSelected} />
           : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
                             onDeleted={() => setSelected(null)} />}
     </div>
+    </ParamLanes.Provider>
   );
 }
 
@@ -209,9 +214,9 @@ function usesRig(doc: Doc): boolean {
 
 // -- lanes ------------------------------------------------------------------------
 
-function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
-  const doc = history.doc!;
-  const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
+function AddLane({ history, roles, params }: {
+  history: RHistory; roles: string[]; params: LaneSpecs;
+}) {
   return (
     <div className="d-row d-add">
       <div className="d-head">
@@ -238,15 +243,7 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
           <option value="midi-curve">MIDI curve</option>
           <option value="visuals">Visuals</option>
         </select>
-        <select aria-label="add automation" value=""
-                onChange={(e) => {
-                  const target = e.target.value;
-                  if (target) history.apply((d) => { d.rows.push(automationRow(d, target)); });
-                }}>
-          <option value="">+ automation</option>
-          {Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t)).map((t) => (
-            <option key={t} value={t}>{t}</option>))}
-        </select>
+        <AutomationMenu history={history} params={params} />
       </div>
     </div>
   );

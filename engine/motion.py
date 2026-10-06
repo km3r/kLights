@@ -35,6 +35,7 @@ import math
 from typing import Callable, Optional, Sequence
 
 from . import geometry as geo
+from . import waves
 
 # A movement function: (phase 0..1) -> (d_bearing, d_elevation) in degrees.
 #
@@ -337,32 +338,8 @@ def as_move(offset_fn: Offset, bars: Optional[float] = None,
 
 # ------------------------------------------------------------------ hashing --
 
-_MASK = 0xFFFFFFFFFFFFFFFF
-
-
-def sampled(seed: int, *key: int) -> float:
-    """A stable pseudo-random -1..1 for a (seed, ...) tuple.
-
-    A HASH, not a stream, and deliberately not `random`. A stateful RNG makes
-    the output depend on how many frames have been rendered, so the rig and the
-    previz diverge the instant either drops a frame and no parity sweep can
-    reproduce anything. `random.Random` also refuses a tuple seed on 3.11+, and
-    constructing a Mersenne Twister per sample costs ~600 operations inside a
-    25 ms frame budget the F2 timing spike showed is not generous.
-
-    This is splitmix64's finalizer: a few multiplies and shifts, with the
-    avalanche behaviour the looks need -- adjacent heads and adjacent stations
-    must not land near each other, or a scatter reads as a wave.
-
-    Lives here, the bottom of the import graph, because both a block
-    (`scatter`) and a modulator shape (`hold`) need it.
-    """
-    x = seed & _MASK
-    for k in key:
-        x = (x * 0x9E3779B97F4A7C15 + (k & _MASK) + 0x165667B19E3779F9) & _MASK
-        x ^= x >> 30
-        x = (x * 0xBF58476D1CE4E5B9) & _MASK
-        x ^= x >> 27
-        x = (x * 0x94D049BB133111EB) & _MASK
-        x ^= x >> 31
-    return (x / _MASK) * 2.0 - 1.0
+# `sampled` (a stable pseudo-random -1..1 per key) moved to `waves`, below
+# everything, when a show-folder lane's `hold` wave needed it inside
+# `timeline.py`, which imports only the standard library. Re-exported here
+# because a block (`scatter`) reads it as `motion.sampled`.
+sampled = waves.sampled

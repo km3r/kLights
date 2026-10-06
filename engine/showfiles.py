@@ -52,11 +52,13 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
+from . import blocks as blocksmod
 from . import config as configmod
 from . import timeline as timelinemod
 from . import tracktime
+from . import waves
 
 REPO = Path(__file__).resolve().parent.parent
 LOCAL_CONFIG = REPO / "klights.local.json"
@@ -113,6 +115,11 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
 # (`server.rig_reach`), which on a real rig is often wider on one side and
 # narrower on the other. A show folder does not know which rig will play it, so
 # it is authored against the range every rig can be expected to understand.
+#
+# Besides these, `param.<name>` drives a routine's open parameter. It has no
+# range here because each routine declares its own: a routine's lane is held to
+# its declaration (`_check_points`), a timeline's to the declarations of the
+# routines it places (`param_lane_problems`).
 AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
     "master": (0.0, 1.0),
     "size": (0.0, 3.0),
@@ -343,6 +350,21 @@ _EXTERNAL_ROW = {
     "cc": S(int, **_MIDI_7BIT, fix="MIDI: the controller a curve drives"),
 }
 
+# A musical shape added on top of an automation row's points (`waves.Wave`).
+# What `depth` and `toward` must be depends on the lane -- a number or a colour
+# -- so that is checked in meaning, by `_check_wave`.
+_WAVE = S(dict, of={
+    "shape": S(str, required=True, choices=waves.SHAPES),
+    "bars": S(N, required=True, min=0.25, max=256,
+              fix="one cycle, in bars -- musical, so right at any tempo"),
+    "depth": S(N, fix="how far above the points it swings, in the lane's own "
+                      "units; negative swings below. On a colour lane, 0-1: "
+                      "how far toward `toward`"),
+    "phase": S(N, min=0, max=1, fix="where in its cycle it starts, in cycles"),
+    "seed": S(int, fix="which run of levels a hold wave picks"),
+    "toward": S(fix="a colour lane's wave: the colour it swings toward"),
+}, fix='{"shape": "sine", "bars": 4, "depth": 0.5}')
+
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "clips": {"target": S(str, required=True, choices=CLIP_TARGETS),
               "gap": S(str, choices=("fill", "exclusive"),
@@ -354,7 +376,8 @@ _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "hits": {"items": S(list, required=True, each=_HIT)},
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True,
-                               fix='[[beat, value], [beat, value, "ease"], ...]')},
+                               fix='[[beat, value], [beat, value, "ease"], ...]'),
+                   "wave": _WAVE},
     "external": _EXTERNAL_ROW,
 }))
 
@@ -385,7 +408,7 @@ _ROUTINE_ROW = S(dict, of=_ROW_COMMON, variants=("type", {
               "items": S(list, required=True, each=_BLOCK_ITEM)},
     "hits": {"items": S(list, required=True, each=_HIT)},
     "automation": {"target": S(str, required=True, non_empty=True),
-                   "points": S(list, required=True)},
+                   "points": S(list, required=True), "wave": _WAVE},
     "external": _EXTERNAL_ROW,
 }))
 
@@ -721,18 +744,149 @@ def _check_curve(points: list, result: Result, where: str) -> None:
             result.errors.append(f"{at} is not after the point before it")
         prev = point[0]
 
+PARAM_PREFIX = "param."
+
+
+def param_name(target: Any) -> Optional[str]:
+    """The parameter a `param.<name>` automation target drives, or None."""
+    if (isinstance(target, str) and target.startswith(PARAM_PREFIX)
+            and len(target) > len(PARAM_PREFIX)):
+        return target[len(PARAM_PREFIX):]
+    return None
+
+
+# A look parameter names a library entry, and `blocks._look` reads it once,
+# when the routine is bound to a rig -- not per frame, the way a number or a
+# colour is read. A lane for one would draw a curve and change nothing, so it
+# is refused rather than accepted and ignored. Switching looks over time is two
+# items on a lane.
+LOOK_NOT_AUTOMATABLE = ("is a look, which is chosen once when the routine is "
+                        "built, not per frame, so a lane cannot change it; put "
+                        "two items on the lane to switch looks")
+
+
+ARG_PREFIX = blocksmod.ARG_PREFIX
+
+# The kinds of block argument a lane can move. Each is read per frame (inside
+# the block's layer, through `Env`), and each has a halfway between two values;
+# a choice, a switch or a list of points has neither.
+LANE_ARG_KINDS = ("number", "integer", "color")
+
+
+def arg_target(target: Any) -> Optional[tuple[str, str]]:
+    """(item id, argument) for an `arg.<item>.<arg>` target, or None. Split at
+    the LAST dot: an argument's name is an identifier, an item's id is free
+    text and may hold dots of its own."""
+    if not isinstance(target, str) or not target.startswith(ARG_PREFIX):
+        return None
+    item, sep, arg = target[len(ARG_PREFIX):].rpartition(".")
+    return (item, arg) if sep and item and arg else None
+
+
+def arg_declaration(item_id: str, arg: str, rows: Iterable[Mapping]
+                    ) -> tuple[Optional[str], Optional[dict], Any]:
+    """What a routine's `arg.<item>.<arg>` lane drives: (why it cannot, None,
+    None), or (None, a declaration its values are held to, the block's `Param`).
+
+    The declaration is the one `blocks.PARAMS` makes for the argument, put in
+    the shape a routine param has, so a lane on `orbit.radius` and a lane on a
+    `$radius` that feeds it are held to their ranges by the same code."""
+    item = next((i for r in rows if r.get("type") == "clips"
+                 for i in r.get("items") or [] if i.get("id") == item_id), None)
+    if item is None:
+        return f"there is no item {item_id!r} in this routine", None, None
+    block = item.get("block")
+    if block in RIG_BOUND_BLOCKS:
+        return (f"item {item_id!r} is a {block}, which plays a stored look and "
+                f"has no arguments a lane can move"), None, None
+    declared = blocksmod.PARAMS.get(block, ())
+    spec = next((p for p in declared if p.name == arg), None)
+    if spec is None:
+        return (f"{block} has no argument {arg!r}; one of "
+                + ", ".join(p.name for p in declared)), None, None
+    if spec.kind not in LANE_ARG_KINDS:
+        return (f"{block}'s {arg} is a {spec.kind}, which a lane cannot move: "
+                f"there is no halfway between two of them"), None, None
+    literal = (item.get("args") or {}).get(arg)
+    if isinstance(literal, str) and literal.startswith("$"):
+        return (f"item {item_id!r} takes its {arg} from {literal}; automate "
+                f"param.{literal[1:]} instead, or give it a value"), None, None
+    if spec.kind == "color":
+        return None, {"type": "color"}, spec
+    return None, {"type": "number", "min": spec.min, "max": spec.max}, spec
+
 
 def _check_points(row: dict, result: Result, where: str,
-                  allow_params: bool) -> None:
+                  params: Optional[Mapping],
+                  rows: Optional[list] = None) -> None:
+    """One automation row. In a routine, `params` is its declarations and
+    `rows` its rows (for `arg.` lanes); in a timeline both are None -- its
+    `param.<name>` lanes reach routines in OTHER files and are checked against
+    them by `param_lane_problems`, where both halves are in hand."""
     target = row["target"]
     rng = AUTOMATION_RANGES.get(target)
-    is_param = target.startswith("param.") and len(target) > len("param.")
-    if rng is None and not (allow_params and is_param):
-        allowed = ", ".join(AUTOMATION_RANGES) + (
-            ", param.<name>" if allow_params else "")
+    name = param_name(target)
+    arg = arg_target(target)
+    if rng is None and name is None and arg is None:
+        allowed = ", ".join(AUTOMATION_RANGES) + ", param.<name>" + (
+            ", arg.<item>.<argument>" if rows is not None else "")
         result.errors.append(f"{where}: {target!r} is not something that can be "
                              f"automated; one of {allowed}")
         return
+    # How a value is checked: `check(value)` says why it cannot be, under
+    # `label`; `kind` is number or colour once known; `soft` reports as a
+    # warning (an absolute angle, whose real bound is the rig's reach).
+    check: Optional[Callable[[Any], Optional[str]]] = None
+    label, kind, soft = target, None, False
+    if rng is not None:
+        lo, hi = rng
+
+        def check(v: Any) -> Optional[str]:
+            if _num(v) and lo <= v <= hi:
+                return None
+            return f"must be a number from {lo:g} to {hi:g}, got {v!r}"
+        kind = "number"
+    elif arg is not None:
+        if rows is None:
+            result.errors.append(
+                f"{where}: {target} drives one block's argument, and a "
+                f"timeline has no blocks -- automate the routine's param.<name>, "
+                f"or put this lane in the routine")
+            return
+        why, decl, spec = arg_declaration(arg[0], arg[1], rows)
+        if why:
+            result.errors.append(f"{where}: {target}: {why}")
+            return
+
+        def check(v: Any, decl: dict = decl) -> Optional[str]:
+            return _param_value_problem(decl, v)
+        label = f"{arg[0]}'s {arg[1]}"
+        kind = "colour" if decl["type"] == "color" else "number"
+        soft = spec.reach is not None
+        if spec.name == "bars":
+            # A cycle length moved under a running block re-times the cycle
+            # it is part-way through: phase is position / bars, so the heads
+            # jump. Speed belongs on rate.<slot>, which integrates.
+            result.warnings.append(
+                f"{where}: {target} changes a cycle length while it runs, which "
+                f"makes the block jump; automate rate.<slot> to change speed "
+                f"smoothly")
+    elif params is not None:
+        param = params.get(name)
+        if param is None:
+            result.errors.append(f"{where}: {target} automates ${name}, which "
+                                 f"this routine does not declare in params")
+            return
+        if isinstance(param, dict) and param.get("type") == "look":
+            result.errors.append(f"{where}: ${name} {LOOK_NOT_AUTOMATABLE}")
+            return
+        if isinstance(param, dict) and param.get("type") in PARAM_TYPES:
+            def check(v: Any, param: dict = param) -> Optional[str]:
+                return _param_value_problem(param, v)
+            kind = "colour" if param["type"] == "color" else "number"
+        label = f"${name}"
+    report = result.warnings.append if soft else result.errors.append
+    kinds: set[str] = set()
     prev = None
     for i, point in enumerate(row["points"]):
         at = f"{where} point {i}"
@@ -749,13 +903,147 @@ def _check_points(row: dict, result: Result, where: str,
             result.errors.append(f"{at} is at beat {beat:g}, not after the "
                                  f"previous point at {prev:g}")
         prev = beat
-        if rng is not None:
-            if not _num(value) or not rng[0] <= value <= rng[1]:
-                result.errors.append(f"{at} {target} must be a number from "
-                                     f"{rng[0]:g} to {rng[1]:g}, got {value!r}")
-        elif not _num(value) and color_problem(value) is not None:
+        if check is not None:
+            problem = check(value)
+            if problem:
+                report(f"{at} {label} {problem}")
+        elif _num(value):
+            kinds.add("number")
+        elif color_problem(value) is None:
+            kinds.add("colour")
+        else:
             result.errors.append(f"{at} must be a number or a colour, got "
                                  f"{value!r}")
+    # A curve from a number to a colour means nothing: `timeline.Curve` would
+    # hand the block a blend of the two, which is neither.
+    if len(kinds) > 1:
+        result.errors.append(f"{where}: {target} mixes numbers and colours; one "
+                             f"lane drives one parameter, which is one or the "
+                             f"other")
+    if row.get("wave") is not None:
+        if kind is None and len(kinds) == 1:
+            kind = next(iter(kinds))
+        _check_wave(row, kind, check, label, report, result, where)
+
+
+def _check_wave(row: dict, kind: Optional[str],
+                check: Optional[Callable[[Any], Optional[str]]], label: str,
+                report: Callable[[str], None], result: Result,
+                where: str) -> None:
+    """A row's wave, against what its lane is. The swing is checked at every
+    point: between points a lane's resting value stays between theirs, so if
+    each point plus `depth` is in range, the whole swing is -- exactly, not
+    sampled, which is what lets a rate lane's wave keep its phase without a
+    clamp breaking `Curve.integral`."""
+    wave = row["wave"]
+    at = f"{where} wave"
+    toward = wave.get("toward")
+    depth = wave.get("depth")
+    if kind == "colour":
+        if toward is None:
+            result.errors.append(f"{at} on a colour lane needs toward: the "
+                                 f"colour it swings to")
+        else:
+            problem = color_problem(toward)
+            if problem:
+                result.errors.append(f"{at} toward: {problem}")
+        if depth is not None and not 0.0 <= depth <= 1.0:
+            result.errors.append(f"{at} depth on a colour lane is how far toward "
+                                 f"{toward!r} it goes, 0 to 1, got {depth!r}")
+        return
+    if toward is not None:
+        result.errors.append(f"{at} has a toward colour, but this lane is a "
+                             f"number: it swings by depth")
+    if depth is None:
+        result.errors.append(f"{at} needs a depth: how far above its points it "
+                             f"swings (negative for below)")
+        return
+    if check is None:
+        return                       # a timeline's param lane: see below
+    for i, point in enumerate(row["points"]):
+        if not isinstance(point, list) or len(point) < 2 or not _num(point[1]):
+            continue
+        top = point[1] + depth
+        problem = check(top)
+        if problem:
+            report(f"{at}: at point {i} it reaches {top:g}, and {label} "
+                   f"{problem}")
+            return
+
+
+def param_lane_problems(timeline: Mapping,
+                        routines: Mapping[str, Mapping]) -> list[str]:
+    """A timeline's `param.<name>` lanes against the routines it places: each
+    point checked against every one of them that declares the parameter, as
+    that routine declares it -- its range, colour or number, look or not.
+
+    WARNINGS, although the same value in the routine's own lane is an error.
+    The two halves are separate files in a folder that syncs one file at a
+    time -- the routine may be mid-edit, its new range not yet arrived -- and
+    refusing the timeline over it would make one file's save hang on another's
+    (the rule `load_folder` states for every cross-file problem). A lane that
+    reaches no routine is said too: it does nothing, which is nearly always a
+    typo or a routine since taken off the timeline."""
+    rows = timeline.get("rows") or []
+    used = sorted({item.get("routine") for row in rows
+                   if row.get("type") == "clips"
+                   for item in row.get("items") or []
+                   if item.get("kind") == "routine"
+                   and isinstance(item.get("routine"), str)})
+    out: list[str] = []
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is None:
+            continue
+        where = f"row {row.get('id')!r}"
+        decls = [(rid, ((routines.get(rid) or {}).get("params") or {}).get(name))
+                 for rid in used]
+        decls = [(rid, p) for rid, p in decls if isinstance(p, dict)]
+        if not decls:
+            out.append(f"{where}: no routine on this timeline has ${name}, so "
+                       f"its lane does nothing")
+            continue
+        for rid, param in decls:
+            if param.get("type") == "look":
+                out.append(f"{where}: ${name} in routine {rid!r} "
+                           f"{LOOK_NOT_AUTOMATABLE}")
+                continue
+            wave = row.get("wave") if isinstance(row.get("wave"), dict) else {}
+            depth = wave.get("depth")
+            for i, point in enumerate(row.get("points") or []):
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                problem = _param_value_problem(param, point[1])
+                if problem:
+                    out.append(f"{where} point {i}: routine {rid!r} ${name} "
+                               f"{problem}")
+                elif (param.get("type") != "color" and _num(depth)
+                      and _num(point[1])):
+                    # The swing, as `_check_wave` checks a routine's own lane.
+                    problem = _param_value_problem(param, point[1] + depth)
+                    if problem:
+                        out.append(f"{where} wave: at point {i} it reaches "
+                                   f"{point[1] + depth:g}, and routine {rid!r} "
+                                   f"${name} {problem}")
+            if param.get("type") == "color" and wave and wave.get("toward") is None:
+                out.append(f"{where} wave: ${name} in routine {rid!r} is a "
+                           f"colour, so the wave needs toward: the colour it "
+                           f"swings to")
+    return out
+
+
+def _automated_params(rows: list) -> dict[str, str]:
+    """A routine's own param lanes: param name -> the row automating it."""
+    out: dict[str, str] = {}
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is not None:
+            out.setdefault(name, row["id"])
+    return out
 
 
 def _check_palettes(doc: dict, result: Result) -> None:
@@ -850,7 +1138,7 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
             _check_external(row, result, where)
             continue
         if kind == "automation":
-            _check_points(row, result, where, allow_params=True)
+            _check_points(row, result, where, None)
             continue
         _check_items(row, result, where)
         if kind == "hits":
@@ -896,6 +1184,13 @@ def _semantic_routine(doc: dict, result: Result) -> None:
     usable: dict = {}
     for name, p in params.items():
         where = f"param {name!r}"
+        if name.startswith(ARG_PREFIX):
+            # The engine plays an `arg.<item>.<arg>` lane as a hidden
+            # parameter of that very name (`routines.instantiate`), so a
+            # declared one would be shadowed by it.
+            result.errors.append(f"{where}: names starting {ARG_PREFIX!r} are "
+                                 f"kept for argument lanes; rename it")
+            continue
         if not isinstance(p, dict) or p.get("type") not in PARAM_TYPES:
             result.errors.append(f"{where} needs a type: "
                                  + ", ".join(PARAM_TYPES))
@@ -927,12 +1222,23 @@ def _semantic_routine(doc: dict, result: Result) -> None:
     rows = doc["rows"]
     _unique_ids(rows, result, "routine")
     _shadowed_automation(rows, result)
+    # The routine's own lane is the parameter's value wherever the routine is,
+    # so a fixed value for it -- from a variation here, or a use site
+    # (`_check_use`) -- is never heard. Legal, and worth saying.
+    automated = _automated_params(rows)
+    for vname, values in (doc.get("variations") or {}).items():
+        for pname in (values if isinstance(values, dict) else {}):
+            if pname in automated:
+                result.warnings.append(
+                    f"variation {vname!r} sets {pname!r}, which row "
+                    f"{automated[pname]!r} automates; the lane wins, so the "
+                    f"variation's value is never heard")
     length = doc["bars"] * tracktime.BEATS_PER_BAR
     rig_bound = False
     for row in rows:
         where = f"row {row['id']!r}"
         if row["type"] == "automation":
-            _check_points(row, result, where, allow_params=False)
+            _check_points(row, result, where, params, rows)
             continue
         if row["type"] == "external":
             _check_external(row, result, where)
@@ -957,6 +1263,20 @@ def _semantic_routine(doc: dict, result: Result) -> None:
                 if ref not in params:
                     result.errors.append(f"{at} refers to ${ref}, which this "
                                          f"routine does not declare in params")
+    if doc.get("loop", True):
+        for row in rows:
+            wave = row.get("wave") if row["type"] == "automation" else None
+            bars = wave.get("bars") if isinstance(wave, dict) else None
+            # A looping routine reads its lanes in its own beats, wrapped, so
+            # its waves restart every pass. Unless a whole number of cycles
+            # fits, that restart is a jump, once per loop.
+            if _num(bars) and bars > 0 and abs(
+                    doc["bars"] / bars - round(doc["bars"] / bars)) > 1e-6:
+                result.warnings.append(
+                    f"row {row['id']!r}: its wave's {bars:g}-bar cycle does not "
+                    f"fit the routine's {doc['bars']:g} bars a whole number of "
+                    f"times, so it jumps back to the start of its cycle every "
+                    f"pass")
     if rig_bound and not doc.get("rig"):
         result.errors.append(
             "this routine uses a look or snapshot, which only exist on one rig; "
@@ -1238,6 +1558,8 @@ def _cross_check(folder: Folder) -> None:
                 if item.get("kind") == "routine":
                     _check_use(folder, f"timelines/{track_id}.json item "
                                        f"{item['id']!r}", item)
+        for problem in param_lane_problems(tl, folder.routines):
+            warn(f"timelines/{track_id}.json {problem}")
     for set_id, ts in folder.templates.items():
         picks = list(ts["phrases"].values()) + list(
             (ts.get("bars") or {}).get("cycle") or [])
@@ -1283,11 +1605,17 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
         folder.warnings.append(f"{where}: routine {use['routine']!r} has no "
                                f"variation {variation!r}")
     params = routine.get("params") or {}
+    automated = _automated_params(routine["rows"])
     for name, value in (use.get("params") or {}).items():
         if name not in params:
             folder.warnings.append(f"{where} sets {name!r}, which routine "
                                    f"{use['routine']!r} does not have")
             continue
+        if name in automated:
+            folder.warnings.append(
+                f"{where} sets {name!r}, which routine {use['routine']!r} "
+                f"automates on its own lane {automated[name]!r}; the lane wins, "
+                f"so this value is never heard")
         problem = _param_value_problem(params[name], value)
         if problem:
             folder.warnings.append(f"{where} {name}: {problem}")

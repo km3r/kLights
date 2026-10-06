@@ -228,6 +228,15 @@ try:
     check("and one that is valid but will not work on THIS rig says that",
           r["ok"] and r["data"]["errors"] == []
           and any("Not A Look" in p for p in r["data"]["problems"]), f"{r}")
+    wide = json.loads(json.dumps(doc))
+    wide["rows"].append({"id": "w", "type": "automation", "target": "param.width",
+                         "points": [[0, 40], [16, 500]]})
+    r = ask({"type": "timeline_draft", "doc": wide, "id": 5})
+    check("a draft's param lane is held to the routines it places, as a warning "
+          "(fan-drop's $width stops at 120)",
+          r["ok"] and r["data"]["errors"] == []
+          and any("'fan-drop' $width" in w and "above the maximum 120" in w
+                  for w in r["data"]["warnings"]), f"{r}")
     r = ask({"type": "timeline_draft", "doc": doc, "id": 4}, client=viewer)
     check("drafts and saves are configure-tier",
           r and r["ok"] is False and "needs configure" in r["error"])

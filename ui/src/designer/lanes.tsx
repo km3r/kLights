@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, curveValue } from "./model";
+import { BEATS_PER_BAR, curveValue, laneValue } from "./model";
 import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
-import { Editor } from "./edit";
+import { Editor, defaultWave, laneTitle, useLaneSpec, waveId } from "./edit";
 import type { Edits } from "./edit";
 
 /**
@@ -243,12 +243,32 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
   history: Edits; beat: number;
   selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
-  const now = curveValue(row.points ?? [], beat);
+  const spec = useLaneSpec(row);
+  const points = row.points ?? [];
+  // A colour lane has no number to show; it says the colour it last passed.
+  const now = spec.kind === "color"
+    ? [...points].reverse().find((p) => p[0] <= beat)?.[1] ?? points[0]?.[1] ?? null
+    : laneValue(row, beat);
   return (
     <div className="d-row d-auto">
       <div className="d-head">
-        <span>{row.target === "master" ? "Master" : row.target}
-          <span className="muted small mono"> {now == null ? "" : now.toFixed(2)}</span></span>
+        <span title={spec.reaches ? `drives $${spec.label} on ${spec.reaches.join(", ")}` : undefined}>
+          {laneTitle(row.target ?? "", spec)}
+          <span className="muted small mono">
+            {" "}{now == null ? "" : typeof now === "number" ? now.toFixed(2) : String(now)}</span></span>
+        <button className={`small d-wave${row.wave ? " on" : ""}`}
+                aria-label={`wave on ${row.id}`}
+                title={row.wave ? `${row.wave.shape} every ${row.wave.bars} bars -- edit it`
+                  : "Add a wave on top of the points"}
+                onClick={() => {
+                  if (!row.wave) {
+                    history.apply((d) => {
+                      const r = d.rows.find((q) => q.id === row.id);
+                      if (r) r.wave = defaultWave(r, spec);
+                    });
+                  }
+                  onSelect?.(waveId(row.id));
+                }}>∿</button>
         <Editor.LaneMenu row={row} index={-1} history={history} />
       </div>
       <Editor.AutoSvg row={row} x={x} width={width} history={history}

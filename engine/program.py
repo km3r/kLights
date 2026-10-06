@@ -42,8 +42,10 @@ authored there, every pass.
 
 Automation: the timeline's `size` multiplies the operator's, `spread` and
 `center` add to them, `master` multiplies the final intensity; a routine's own
-automation stacks on top for its own fixtures only. `param.<name>` overrides
-that parameter on every routine clip that has it.
+automation stacks on top for its own fixtures only. The timeline's
+`param.<name>` overrides that parameter on every routine clip that has it; a
+routine's own `param.<name>` lane drives it in that routine's beats wherever
+the timeline does not.
 
 Hits -- flash, strobe, blackout -- come from the timeline's hit rows and from
 the hit rows of any routine clip on top of a lane, scaled by its weight. Flash
@@ -77,7 +79,10 @@ BAR = float(tracktime.BEATS_PER_BAR)
 TABLE_STEP = 1.0 / 16.0           # beats, for a rate warp with two curves
 # How far such a table reaches. Past it the warp runs on at its last rate --
 # exact once both curves have settled, which a curve does after its last
-# point. Bounded so one long clip cannot ask for millions of entries.
+# point. Bounded so one long clip cannot ask for millions of entries. A curve
+# with a wave never settles, so on a clip longer than this with rate lanes in
+# both the timeline and its routine, the far end drifts; the horizon is the
+# clip's own length, so that is a clip of over half an hour.
 TABLE_MAX_BEATS = 8192.0
 ROLES = showfiles.PALETTE_ROLES
 WHITE = blocksmod.WHITE
@@ -212,6 +217,12 @@ class RoutineSource:
         inst = self.inst
         local = clip.local
         sched = inst.sched(local)
+        # Where its own param and argument lanes are read, set where it is
+        # EVALUATED. Setting it only for the routines `_visible_routines`
+        # finds is not enough: that stops at the first full-weight clip, but a
+        # routine on a lower lane still plays for the fixtures the top one
+        # leaves alone, and read a stale beat there.
+        inst.now = sched
         entries = inst.timeline.entries(slot, sched)
         if not entries:
             return fallback()
@@ -296,10 +307,8 @@ class Program:
         self._master = self.timeline.automation("master", beat)
 
     def _param_automation(self, name: str) -> Any:
-        value = self.timeline.automation(f"param.{name}", self._beat)
-        if isinstance(value, tuple):
-            return blocksmod.Blend(*value)
-        return value
+        entry = self.timeline.curves.get(showfiles.PARAM_PREFIX + name)
+        return blocksmod.automation_value(entry[1], self._beat) if entry else None
 
     def _resolve_palette(self, entries, i: int, default: Palette) -> Palette:
         if i >= len(entries) or entries[i] is timelinemod.BLANK:
@@ -611,6 +620,15 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
                 sources[(row.id, item.id)] = LeafSource(built,
                                                         _warps(timeline, item, None))
             # palette clips are read straight off the palette lane
+    # A `hold` wave's integral is a running sum of its levels, memoised as it
+    # is first asked for (`waves.area`). A rate lane is integrated every
+    # frame, so take that first sum here, on the worker, out to the end of the
+    # last clip -- not on the output thread on the first frame after a seek.
+    end = max((i.at + i.len for row in timeline.clip_rows for i in row.items),
+              default=0.0)
+    for target, (_, curve) in timeline.curves.items():
+        if target.startswith("rate.") and curve.wave is not None and curve.numeric:
+            curve.integral(end)
     palettes: dict[str, Palette] = {}
     for name, pal in (timeline.meta.get("palettes") or {}).items():
         if isinstance(pal, Mapping):

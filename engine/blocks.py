@@ -69,6 +69,12 @@ SLOT_OF: dict[str, Optional[str]] = {
 RGB = tuple[float, float, float]
 WHITE: RGB = (1.0, 1.0, 1.0)
 
+# A routine's `arg.<item>.<arg>` lane drives one item's argument. It plays as a
+# hidden parameter of that very name, which the item's argument is pointed at
+# (`routines.instantiate`) -- so it is read per frame exactly as a `$param` is,
+# with no second path into the blocks.
+ARG_PREFIX = "arg."
+
 
 # -- what each block takes ------------------------------------------------------
 #
@@ -313,6 +319,17 @@ class Blend:
     t: float
 
 
+def automation_value(curve: Any, beat: float) -> Any:
+    """A `timeline.Curve` at a beat, as a parameter reads it: a number, or a
+    Blend for a colour curve, which only `Env.color` knows how to mix -- with a
+    colour wave, the points' blend blended again toward the wave's colour."""
+    if curve.numeric:
+        return curve.value(beat)
+    value = Blend(*curve.segment(beat))
+    pull = curve.pull(beat)
+    return value if pull is None else Blend(value, pull[0], pull[1])
+
+
 def parse_hex(text: str) -> Optional[RGB]:
     if (isinstance(text, str) and len(text) == 7 and text[0] == "#"):
         try:
@@ -343,9 +360,20 @@ class Env:
         # name -> the timeline's automation of `param.<name>` at this beat, or
         # None. Set per frame.
         self.automate: Callable[[str], Any] = lambda name: None
+        # name -> the routine's OWN lane for `param.<name>` where the routine
+        # is now, or None. Set once by `routines.instantiate`.
+        self.lanes: Callable[[str], Any] = lambda name: None
 
     def param(self, name: str) -> Any:
-        auto = self.automate(name)
+        # The timeline's lane, then the routine's own, then the fixed value.
+        # The routine's lane is how the routine moves its parameter; a track
+        # drawing the same parameter is the show taking it over for that
+        # track, so the track wins -- the same way a use's values beat the
+        # routine's defaults. An argument lane's hidden parameter is the
+        # routine's alone: no timeline can name one item's argument.
+        auto = None if name.startswith(ARG_PREFIX) else self.automate(name)
+        if auto is None:
+            auto = self.lanes(name)
         return self.params.get(name) if auto is None else auto
 
     def raw(self, value: Any) -> Any:

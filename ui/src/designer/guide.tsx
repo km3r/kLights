@@ -52,9 +52,14 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Arm <b>Record</b>, play, and tap <b>Flash</b>, <b>Strobe</b>,{" "}
             <b>Blackout</b> or <b>Next scene</b> in time with the music.</>,
           <><b>+ lane</b> adds a lane. <b>+ automation</b> adds a curve for
-            master, size, spread, centre or rate.</>,
+            master, size, spread, centre or rate, or for a parameter of the
+            routines on this track. A <code>$name</code> lane drives that
+            parameter on every routine that has it.</>,
           <>On a curve, click to add a point and drag to move it. Select a
             point to choose how it arrives: linear, step or ease.</>,
+          <><b>∿</b> on a curve adds a wave on top of its points: a sine,
+            triangle, ramp, saw, square or hold every few bars. Depth is how
+            far above the points it swings; negative swings below.</>,
           <><b>List</b> shows every item in order, with nudge buttons for exact
             timing.</>,
         ],
@@ -118,6 +123,13 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Add an <b>open parameter</b> and set a block's value to{" "}
             <code>$name</code>. Each clip, or a <b>variation</b>, can then
             choose the value.</>,
+          <><b>+ automation</b> also lists each parameter, so it can change
+            over the routine on its own lane. A lane overrides the clip's or
+            variation's value. Look parameters can't be automated.</>,
+          <>It lists each block's number and colour arguments too, like{" "}
+            <code>orbit.radius</code>, so one item can move without making a
+            parameter. A lane on a cycle length makes the block jump: use a{" "}
+            rate lane to change speed.</>,
           <>A colour can be a palette role, a fixed colour or a parameter. Use
             roles and the routine follows the track's palette.</>,
           <>Blocks under <b>This rig only</b> use this event's own looks or

@@ -10,7 +10,9 @@ import {
 import type {
   RoutineSummary, TimelineDoc, TrackDoc, TrackLine, Wave,
 } from "./model";
-import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
+import {
+  Editor, ParamLanes, parsePointId, parseWaveId, timelineLaneSpecs, useEditorKeys, useHistory,
+} from "./edit";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
@@ -344,10 +346,13 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const selectedItem = findItem(doc, selected);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
+  const paramLanes = timelineLaneSpecs(doc, routines);
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href="#designer" title="All tracks">◂</a>
@@ -480,12 +485,15 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         {guide.drawer}
       </div>
 
-      {selectedPoint && pointRow && !history.listView
+      {waveRow && !history.listView
+        ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
+        : selectedPoint && pointRow && !history.listView
         ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                  onSelect={setSelected} />
         : <Editor.Inspector history={history} item={selectedItem} routines={routines}
                             engine={engine} onDeleted={() => setSelected(null)} />}
     </div>
+    </ParamLanes.Provider>
   );
 }
 

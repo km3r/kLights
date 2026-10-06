@@ -6,8 +6,8 @@ This is the core every output shares. It knows rows, items, curves and hits; it
 does not know what a mover is. The lights compiler (F19h) asks it "what is on
 the movement channel at beat 161.5" and turns the answer into layers; a VJ
 adapter (milestone 3) will ask the same question of its own rows. So it imports
-nothing from the lights -- nothing from the engine at all -- and a test holds
-it to that.
+nothing from the lights -- nothing from the engine but `waves.py`, which is
+standard-library-only itself -- and a test holds both to that.
 
 **Positions are beats** on the track's grid (`tracktime.py` turns audio
 seconds into them). Every query is a pure function of the beat, so whatever the
@@ -47,6 +47,12 @@ curve]`. The curve named on a point shapes the segment ARRIVING at it:
 phase: computing it from the beat rather than accumulating it per frame is what
 makes a loop land on the same phase every pass.
 
+A row may also carry a `wave` (`waves.Wave`): a musical shape added on top of
+its points -- `depth` times a sine, a triangle, a ramp... over `bars` -- so a
+lane can breathe without a point per bar. Its integral is exact too, which is
+why the shapes live in `waves.py` with their areas, and why that module is as
+standard-library-only as this one.
+
 **Hits** (flash, strobe, blackout) are windows: on from `at` for `len` beats.
 Jump into the middle of one and it shows from there; jump over one and it never
 fires. A hit shorter than a frame would fall between two frames, so in forward
@@ -68,6 +74,8 @@ import bisect
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Union
+
+from .waves import Wave
 
 CURVES = ("linear", "step", "ease")
 FILL = "fill"
@@ -290,15 +298,18 @@ def _shape_area(curve: str, x: float) -> float:
 
 @dataclass(frozen=True)
 class Curve:
-    """Automation: values at beats, shaped between them. Values are numbers,
-    or anything else (a colour) for `segment` alone."""
+    """Automation: values at beats, shaped between them, plus an optional wave
+    on top (`waves.Wave`). Values are numbers, or anything else (a colour) for
+    `segment` and `pull` alone."""
     beats: tuple[float, ...]
     values: tuple[Any, ...]
     shapes: tuple[str, ...]          # shapes[i] shapes the segment INTO point i
     areas: Optional[tuple[float, ...]]   # integral up to each point; numeric only
+    wave: Optional[Wave] = None
 
     @classmethod
-    def from_points(cls, points: Sequence, where: str = "curve") -> "Curve":
+    def from_points(cls, points: Sequence, where: str = "curve",
+                    wave: Optional[Wave] = None) -> "Curve":
         if not points:
             raise TimelineError(f"{where} has no points")
         beats, values, shapes = [], [], []
@@ -328,7 +339,7 @@ class Curve:
                 a, b = values[i - 1], values[i]
                 acc.append(acc[-1] + w * (a + (b - a) * _shape_area(shapes[i], 1.0)))
             areas = tuple(acc)
-        return cls(tuple(beats), tuple(values), tuple(shapes), areas)
+        return cls(tuple(beats), tuple(values), tuple(shapes), areas, wave)
 
     @property
     def numeric(self) -> bool:
@@ -350,23 +361,33 @@ class Curve:
         if not self.numeric:
             raise TimelineError("value() needs a numeric curve; use segment()")
         a, b, t = self.segment(beat)
-        return a + (b - a) * t
+        base = a + (b - a) * t
+        return base if self.wave is None else base + self.wave.level(beat)
+
+    def pull(self, beat: float) -> Optional[tuple[Any, float]]:
+        """A colour curve's wave at `beat`: (the colour it swings toward, how
+        far, 0..1), or None without one. The caller blends, as for `segment`."""
+        if self.wave is None or self.numeric:
+            return None
+        return self.wave.toward, max(0.0, min(1.0, self.wave.level(beat)))
 
     def integral(self, beat: float) -> float:
-        """The area under the curve from its first point to `beat` (negative
-        before it). Exact."""
+        """The area under the curve to `beat`, from a fixed origin -- only
+        differences of it mean anything. Exact, wave included (`waves.area`)."""
         if self.areas is None:
             raise TimelineError("only a numeric curve has an integral")
+        wave = self.wave.integral(beat) if self.wave is not None else 0.0
         beats, values = self.beats, self.values
         if beat <= beats[0]:
-            return values[0] * (beat - beats[0])
+            return values[0] * (beat - beats[0]) + wave
         if beat >= beats[-1]:
-            return self.areas[-1] + values[-1] * (beat - beats[-1])
+            return self.areas[-1] + values[-1] * (beat - beats[-1]) + wave
         i = bisect.bisect_right(beats, beat)
         w = beats[i] - beats[i - 1]
         x = (beat - beats[i - 1]) / w
         a, b = values[i - 1], values[i]
-        return self.areas[i - 1] + w * (a * x + (b - a) * _shape_area(self.shapes[i], x))
+        return (self.areas[i - 1] + w * (a * x + (b - a) * _shape_area(self.shapes[i], x))
+                + wave)
 
 
 # -- hits ---------------------------------------------------------------------
@@ -486,7 +507,8 @@ class Frame:
     """Everything a timeline says at one beat."""
     beat: float
     channels: Mapping[str, Channel]
-    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers
+    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers,
+                                     # with (toward, pull) after it when a wave swings it
     hits: tuple[Hit, ...]
 
 
@@ -548,7 +570,13 @@ class Timeline:
                 target = row.get("target")
                 if not isinstance(target, str) or not target:
                     raise TimelineError(f"{where} automates nothing")
-                curve = Curve.from_points(row.get("points") or (), where)
+                wave = None
+                if row.get("wave") is not None:
+                    try:
+                        wave = Wave.from_spec(row["wave"], f"{where} wave")
+                    except ValueError as exc:
+                        raise TimelineError(str(exc)) from None
+                curve = Curve.from_points(row.get("points") or (), where, wave)
                 curves.setdefault(target, (rid, curve))  # the higher row wins
             elif kind == "external":
                 _external_row(row)              # refuse what cannot be built
@@ -612,12 +640,17 @@ class Timeline:
         return Channel(tuple(layers), rest=True)
 
     def automation(self, target: str, beat: float) -> Any:
-        """The value of an automated target, None if nothing automates it."""
+        """The value of an automated target, None if nothing automates it: a
+        number, or for a colour (from, to, t) -- and, when a wave swings it,
+        (toward, pull) after those, so an explanation shows the whole value."""
         entry = self.curves.get(target)
         if entry is None:
             return None
         curve = entry[1]
-        return curve.value(beat) if curve.numeric else curve.segment(beat)
+        if curve.numeric:
+            return curve.value(beat)
+        pull = curve.pull(beat)
+        return curve.segment(beat) + (pull if pull is not None else ())
 
     def hits(self, beat: float, prev: Optional[float] = None,
              jumped: bool = False) -> tuple[Hit, ...]:

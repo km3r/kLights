@@ -77,7 +77,22 @@ export interface Item {
   [key: string]: unknown;
 }
 
-export type Point = [number, number | string] | [number, number | string, string];
+/** A number, or a colour for a colour parameter's lane: a palette role, a
+ *  hex colour, `[r, g, b]` from 0 to 1, or a colour look's name. */
+export type PointValue = number | string | number[];
+export type Point = [number, PointValue] | [number, PointValue, string];
+
+/** A musical shape added on top of an automation row's points (`waves.Wave`):
+ *  `depth` times the shape over `bars`, or for a colour lane a swing `toward`
+ *  a colour, `depth` (0-1) of the way. */
+export interface WaveSpec {
+  shape: string;
+  bars: number;
+  depth?: number;
+  phase?: number;
+  seed?: number;
+  toward?: PointValue;
+}
 
 export interface Row {
   id: string;
@@ -88,6 +103,7 @@ export interface Row {
   label?: string;
   items?: Item[];
   points?: Point[];
+  wave?: WaveSpec;
   /** An external row's output: osc, midi, visuals (`vj` is read as visuals). */
   output?: string;
   /** OSC: where a curve's value goes, and what it sends (default `$value`). */
@@ -248,6 +264,56 @@ export function curveValue(points: Point[], beat: number): number | null {
   const shape = b[2] ?? "linear";
   const t = shape === "step" ? 0 : shape === "ease" ? x * x * (3 - 2 * x) : x;
   return (a[1] as number) + ((b[1] as number) - (a[1] as number)) * t;
+}
+
+// -- waves ---------------------------------------------------------------------
+//
+// The engine's shapes (`engine/waves.py`), copied because the designer draws a
+// lane's wave as it is edited. `wave-vectors.json`, written from the engine,
+// holds the copy to the original -- `hold` included, whose levels are a 64-bit
+// hash and so need BigInt to come out the same.
+
+const MASK = (1n << 64n) - 1n;
+
+/** `waves.sampled`: splitmix64's finalizer, a stable -1..1 per key. */
+export function sampled(seed: number, ...key: number[]): number {
+  let x = BigInt(seed) & MASK;
+  for (const k of key) {
+    x = (x * 0x9E3779B97F4A7C15n + (BigInt(k) & MASK) + 0x165667B19E3779F9n) & MASK;
+    x ^= x >> 30n;
+    x = (x * 0xBF58476D1CE4E5B9n) & MASK;
+    x ^= x >> 27n;
+    x = (x * 0x94D049BB133111EBn) & MASK;
+    x ^= x >> 31n;
+  }
+  return (Number(x) / Number(MASK)) * 2 - 1;
+}
+
+/** A shape at `p` cycles, 0..1. */
+export function waveUnit(shape: string, p: number, seed = 0): number {
+  const f = p - Math.floor(p);
+  switch (shape) {
+    case "sine": return 0.5 - 0.5 * Math.cos(2 * Math.PI * f);
+    case "triangle": return f < 0.5 ? 2 * f : 2 - 2 * f;
+    case "ramp": return f;
+    case "saw": return 1 - f;
+    case "square": return f < 0.5 ? 0 : 1;
+    case "hold": return (sampled(seed, Math.floor(p)) + 1) / 2;
+    default: return 0;
+  }
+}
+
+/** What a wave adds at a beat: depth times its shape. */
+export function waveLevel(wave: WaveSpec, beat: number): number {
+  const cycles = beat / (wave.bars * BEATS_PER_BAR) + (wave.phase ?? 0);
+  return (wave.depth ?? 1) * waveUnit(wave.shape, cycles, wave.seed ?? 0);
+}
+
+/** A numeric lane's value at a beat: its points, plus its wave. */
+export function laneValue(row: Row, beat: number): number | null {
+  const base = curveValue(row.points ?? [], beat);
+  if (base == null || !row.wave) return base;
+  return base + waveLevel(row.wave, beat);
 }
 
 /** What a row drives: a scene lane drives every slot. */
@@ -450,6 +516,8 @@ export interface ArgSpec {
   unit?: string;
   choices?: string[];
   help?: string;
+  /** An absolute angle, really bounded by the playing rig's reach. */
+  reach?: string;
 }
 
 /** One engine declaration as an editor field. Integers are numbers to a field;
@@ -463,7 +531,7 @@ function argSpec(p: ParamSpec): ArgSpec {
     step: p.step ?? (p.kind === "integer" ? 1 : undefined),
     min: p.min, max: p.max,
     unit: unit && unit !== p.name ? unit : undefined,
-    choices: p.choices, help: p.help,
+    choices: p.choices, help: p.help, reach: p.reach,
   };
 }
 
