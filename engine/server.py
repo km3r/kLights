@@ -476,12 +476,23 @@ class ShowController:
         # channel footprint to answer "does this address clash", and rescanning
         # shared/fixtures/ per keystroke on a phone is not the way.
         self.profiles = rigmod.ProfileLibrary()
-        # Set when an edit has been written that the running show is not using.
-        # The UI turns this into a standing banner, because a patch that is
-        # saved and not loaded is exactly the state where the file and the rig
-        # disagree and nothing on screen says so.
-        self.pending_patch = False
+        # The files written that the running show is not using yet: rig.json
+        # from a patch edit, calibration.json from a solve. The UI turns this
+        # into a standing banner with Apply now, because a rig that is saved
+        # and not loaded is exactly the state where the file and the rig
+        # disagree and nothing on screen says so. Apply (`reload_rig`) loads
+        # both, since the rig is read from both.
+        self.pending_files: list[str] = []
         self._recompose()
+
+    @property
+    def pending_patch(self) -> bool:
+        """Something is saved that the running show is not using."""
+        return bool(self.pending_files)
+
+    def _saved_not_live(self, name: str) -> None:
+        if name not in self.pending_files:
+            self.pending_files.append(name)
 
     @property
     def selection(self) -> dict[str, dict[str, str]]:
@@ -1973,7 +1984,12 @@ class ShowController:
                    "source": "solved from the web UI", "heads": heads}
         configmod.write_json_atomic(path, payload)
         calibmod.save_snapshot(self.event_dir, payload, note="after web solve")
-        self.note(f"wrote {path.name}; restart the engine to load it")
+        # Not loaded here, for the same reason a patch edit is not: a new
+        # calibration moves every look that aims at something, and when that
+        # happens is the operator's call. Apply now loads it, live.
+        self._saved_not_live(path.name)
+        self.note(f"wrote {path.name} -- not live yet. Apply it to load it into "
+                  f"the running show")
 
     def _cmd_drift(self, m: dict, now: float) -> None:
         """Compare fresh ball readings against the stored calibration.
@@ -2093,7 +2109,7 @@ class ShowController:
         It does NOT take effect on the running show by itself. Re-deriving
         profiles, channel offsets and head indices in the middle of an edit
         would change what every layer is writing to underneath a look that is
-        up, so the edit is only saved and `pending_patch` says so. Applying it
+        up, so the edit is only saved and `pending_files` says so. Applying it
         (`patch_apply` -> `reload_rig`) swaps the saved rig in at a frame
         boundary, with no restart.
 
@@ -2110,7 +2126,7 @@ class ShowController:
         for warning in result.warnings:
             self.note(f"patch: {warning}")
         patchmod.write_rig(str(self.event_dir), result.config)
-        self.pending_patch = True
+        self._saved_not_live("rig.json")
         self.note("patch saved to rig.json -- not live yet. Apply it to load it "
                   "into the running show")
 
@@ -2983,7 +2999,8 @@ class ShowController:
         # for a head nobody has checked since.
         self.last_drift = None
         self._recompose()
-        self.pending_patch = False
+        calibrated = "calibration.json" in self.pending_files
+        self.pending_files = []
         if self.player is not None:
             # Programs are built against fixtures; the old ones are dropped at
             # once (the operator's show runs) and rebuilt for the new rig.
@@ -3003,6 +3020,8 @@ class ShowController:
         else:
             self.note(f"rig reloaded live -- {len(new_rig.fixtures)} fixtures, "
                       f"no restart needed")
+        if calibrated:
+            self.note("the new calibration is live: every look aims from it")
         for warning in new_rig.warnings():
             self.note(f"rig: {warning}")
         return True
@@ -3213,10 +3232,12 @@ class ShowController:
             # engine it is actually driving, rather than the operator guessing.
             "version": __version__,
             # An edit is on disk that the running show is not using. A patch
-            # saved and not loaded is precisely the state where the file and the
-            # rig disagree, so it gets a standing banner rather than a notice
-            # that scrolls away.
+            # or a calibration saved and not loaded is precisely the state
+            # where the file and the rig disagree, so it gets a standing banner
+            # rather than a notice that scrolls away. `pending_files` says
+            # which, so the banner shows where that edit was made.
             "pending_patch": self.pending_patch,
+            "pending_files": list(self.pending_files),
             "strobe_policy": {
                 "enabled": self.ctx.strobe_policy.enabled,
                 "ceiling": self.ctx.strobe_policy.ceiling,

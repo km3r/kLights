@@ -99,7 +99,9 @@ On the **Setup** tab, jog every head onto the mirror ball, then press **Check
 all heads** in **Drift check**. It tells you whether anything has moved since
 the stored calibration, in degrees, and refuses until every head has been aimed.
 If a head shows **MOVED**, re-aim it: jog it onto the mirror ball, capture, then
-capture two more targets, then solve.
+capture two more targets, then **Solve & write**. The new calibration is saved
+but not yet live: **Apply now**, under the button, loads it into the running
+show without a restart. Then **Stop all**.
 
 > **Jog bypasses the safety taper**, necessarily — the taper works from the aim,
 > the aim comes from the geometry, and the geometry is what you are establishing.

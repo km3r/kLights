@@ -358,7 +358,7 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 321 tests: the console against a fixture captured from a
+npm test         # 324 tests: the console against a fixture captured from a
                  # real engine, Studio against the example show folder
 npm run build    # writes ui/dist/
 ```

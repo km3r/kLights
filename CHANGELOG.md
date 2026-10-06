@@ -17,6 +17,24 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — a solved calibration applies live, like a patch edit
+
+- **Solve & write no longer ends in "restart the engine to load it."** The
+  engine reads the rig from `calibration.json` as well as `rig.json`, so the
+  reload behind a patch's **Apply now** loads a calibration too; the solve just
+  never offered it. Now it does: the calibration is saved, the running show
+  keeps aiming from the old one, and **Apply now** appears under the Solve
+  buttons. It is not loaded on write, because a new calibration moves every
+  look that aims at something and when that happens is the operator's call.
+- The snapshot's new `pending_files` says what is waiting (`rig.json`,
+  `calibration.json`, or both), and the banner shows in the card where each was
+  saved — Patch or Capture — naming everything one Apply will load. A reload
+  that brings in a calibration says so in the notices. Its **Apply now** button
+  no longer squeezes to a few letters a line beside the sentence.
+- The Capture card's help, the "Re-aim a head" guide and the runbook say Apply,
+  not restart. `ui/src/__fixtures__/despacio.json` is regenerated, which also
+  picks up four snapshot keys it had fallen behind on.
+
 ### Added — the launcher has a field for the show folder
 
 - **Show folder** sits between Event and Engine, with **Browse...**. It used to
