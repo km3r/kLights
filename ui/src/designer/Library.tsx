@@ -4,6 +4,7 @@ import { PHRASE_HUE, decodeWave, mmss, normalizeName, phraseFamily } from "./mod
 import type { TrackLine } from "./model";
 import { draftKey } from "./edit";
 import { putPending } from "./pending";
+import { Badge, DetailHead, DetailSection } from "./detail";
 
 /**
  * Studio's track library: every track in the show folder, what will light it
@@ -29,18 +30,20 @@ export function gridMoved(t: TrackLine): boolean {
   return !!(t.timeline?.grid_rev && t.grid_rev && t.timeline.grid_rev !== t.grid_rev);
 }
 
-/** What needs attention on a track, worst first, in words. */
+/** The two problems that can make a track go wrong on the night, said the
+ *  same way in the table's "!" and the details panel's checks. */
+const GRID_MOVED = { text: "Timeline drawn on an older grid",
+                     why: "rekordbox has re-gridded the track since, so clips may sit off the beat." };
+const NO_SIGNATURE = { text: "No CDJ signature",
+                       why: "A CDJ playing it from a USB stick can only be matched by title and "
+                         + "artist. Prep it again from rekordbox to add one." };
+
+/** What needs attention on a track, worst first, in words: the table's "!"
+ *  and its Needs attention filter. The details panel's checks (trackChecks)
+ *  say these and everything else a track lacks, which is not all urgent. */
 export function attention(t: TrackLine): string[] {
-  const out: string[] = [];
-  if (gridMoved(t)) {
-    out.push("rekordbox has re-gridded this track since its timeline was drawn, so clips "
-      + "may sit off the beat.");
-  }
-  if ((t.signatures ?? 0) === 0) {
-    out.push("No CDJ signature: a CDJ playing it from a USB stick can only be matched by "
-      + "title and artist. Prep it again from rekordbox to add one.");
-  }
-  return out;
+  return [gridMoved(t) ? GRID_MOVED : null, (t.signatures ?? 0) === 0 ? NO_SIGNATURE : null]
+    .filter((c) => c != null).map((c) => `${c.text}: ${c.why}`);
 }
 
 /** What lights the track on the night, in a few words, with Follow armed: its
@@ -275,13 +278,43 @@ function useAudioCheck(t: TrackLine): AudioCheck {
   return state;
 }
 
-const AUDIO_TEXT: Record<AudioCheck, string> = {
-  checking: "Looking for its audio file…",
-  found: "Audio file found on this machine",
-  missing: "No audio file on this machine: the timeline plays silent until you open one",
-  none: "A streaming track: no file for Studio to play",
-  unknown: "Could not ask the engine for its audio",
-};
+/** One thing a track needs before the night: whether it has it, and if not,
+ *  why that matters. `ok` null is not known yet. */
+interface Check { ok: boolean | null; text: string; why?: string }
+
+function audioCheck(audio: AudioCheck): Check {
+  switch (audio) {
+    case "found": return { ok: true, text: "Audio file" };
+    case "checking": return { ok: null, text: "Looking for its audio file…" };
+    case "missing": return { ok: false, text: "No audio file on this machine",
+                             why: "The timeline plays silent until you open one." };
+    case "none": return { ok: false, text: "A streaming track", why: "No file for Studio to play." };
+    default: return { ok: false, text: "Could not ask the engine for its audio" };
+  }
+}
+
+/** Everything a track needs, problems and all: the details panel's checklist.
+ *  The table's "!" flags only the urgent two (attention). */
+export function trackChecks(t: TrackLine, audio: AudioCheck, draft = false): Check[] {
+  const checks: Check[] = [
+    t.grid_rev ? { ok: true, text: "Beat grid" } : { ok: false, text: "No beat grid" },
+    t.phrases > 0 ? { ok: true, text: "Phrases" }
+      : { ok: false, text: "No phrase analysis",
+          why: "A draft from a template set follows its bar cycle instead." },
+    { ok: t.has_waveform, text: t.has_waveform ? "Waveform" : "No waveform" },
+    audioCheck(audio),
+    (t.signatures ?? 0) > 0 ? { ok: true, text: "CDJ signature" } : { ok: false, ...NO_SIGNATURE },
+  ];
+  if (t.has_timeline) {
+    checks.push(gridMoved(t) ? { ok: false, ...GRID_MOVED }
+      : { ok: true, text: "Timeline on the current grid" });
+  }
+  if (draft) {
+    checks.unshift({ ok: false, text: "Unsaved changes in this browser",
+                     why: "Open the timeline to restore or discard them." });
+  }
+  return checks;
+}
 
 export function TrackDetail({ t, set, playing, sets, live }: {
   t: TrackLine; set: ActiveSet; playing: ActiveSet;
@@ -293,7 +326,6 @@ export function TrackDetail({ t, set, playing, sets, live }: {
   useEffect(() => {
     if (!draftSet && (set.id || sets[0])) setDraftSet(set.id ?? sets[0]!.id);
   }, [set.id, sets, draftSet]);
-  const notes = attention(t);
   const families = new Map<string, number>();
   for (const [, , label] of t.phrase_items ?? []) {
     const f = phraseFamily(label);
@@ -302,72 +334,50 @@ export function TrackDetail({ t, set, playing, sets, live }: {
   const night = t.has_timeline
     ? `Its own timeline plays: ${t.timeline?.rows ?? 0} lane${t.timeline?.rows === 1 ? "" : "s"}, `
       + `${t.timeline?.items ?? 0} clips and points.`
-    : (playing.id
-      ? `No timeline yet, so when it plays the ${playing.name ?? playing.id} template set `
-        + "lights it, a routine per phrase. Draft a timeline from a set to make it its own."
-      : "No timeline yet, and no template set is on, so when it plays the operator's show "
-        + "runs. Draft one from a template set to give it its own.")
-      + (t.phrases ? "" : " With no phrases, a draft follows the set's bar cycle.");
-  const checks: [boolean, string][] = [
-    [!!t.grid_rev, t.grid_rev ? "Beat grid from rekordbox" : "No beat grid"],
-    [t.phrases > 0, t.phrases ? `${t.phrases} phrases from rekordbox` : "No phrase analysis"],
-    [t.has_waveform, t.has_waveform ? "Waveform" : "No waveform"],
-    [audio === "found" || audio === "checking", AUDIO_TEXT[audio]],
-    [(t.signatures ?? 0) > 0, (t.signatures ?? 0) > 0
-      ? "CDJ signature: a CDJ will recognise it" : "No CDJ signature"],
-  ];
-  if (t.has_timeline) {
-    checks.push([!gridMoved(t), gridMoved(t) ? "Timeline drawn on an older grid"
-      : "Timeline is on the current grid"]);
-  }
+    : playing.id
+      ? `No timeline yet: the ${playing.name ?? playing.id} template set lights it, a routine `
+        + "per phrase."
+      : "No timeline yet, and no template set is on: the operator's show runs.";
+  const draft = hasDraft(t.id);
+  const checks = trackChecks(t, audio, draft);
+  const issues = checks.filter((c) => c.ok !== true);
+  const passed = checks.filter((c) => c.ok === true);
   const wavePath = heights?.map((h, i) => {
     const x = i * 2 + 1;
     const y = Math.max(0.5, h * 18);
     return `M${x} ${(20 - y).toFixed(1)}v${(2 * y).toFixed(1)}`;
   }).join("") ?? "";
-  const draft = hasDraft(t.id);
   const openDraft = () => {
     putPending({ kind: "timeline", id: t.id, set: draftSet });
     location.hash = `#studio/track/${t.id}`;
   };
+  const facts = [t.bpm ? `${t.bpm.toFixed(t.bpm % 1 ? 2 : 0)} BPM` : "", mmss(t.duration_s)]
+    .filter(Boolean).join(" · ");
+  const byline = [t.artist, t.album].filter(Boolean).join(" · ");
 
   return (
     <div className="s-detail" aria-label="selected track">
-      <div>
-        <span className="s-kicker">{nightOf(t, playing)}{live ? " · playing now" : ""}</span>
-        <h2>{t.title}</h2>
-        <span className="muted">{[t.artist, t.album].filter(Boolean).join(" · ")}</span>
-      </div>
+      <DetailHead kind="Track" title={t.title}
+                  badges={live ? <Badge tone="good">Playing now</Badge> : undefined}
+                  meta={(byline || facts) ? <>
+                    {byline && <span>{byline}</span>}
+                    {facts && <span className="mono">{facts}</span>}
+                  </> : undefined} />
       <div className="s-wave">
-        {heights ? (
+        {heights && (
           <svg viewBox="0 0 300 40" preserveAspectRatio="none" aria-label="waveform">
             <path d={wavePath} />
           </svg>
-        ) : <span className="muted small">{t.has_waveform ? "" : "No waveform"}</span>}
+        )}
         <PhraseStrip items={t.phrase_items} tall />
         {families.size > 0 && <span className="muted small">
           {[...families].map(([f, n]) => (n > 1 ? `${f} ×${n}` : f)).join(", ")}</span>}
       </div>
-      <dl className="s-facts">
-        <div><dt>BPM</dt><dd className="mono">{t.bpm ? t.bpm.toFixed(t.bpm % 1 ? 2 : 0) : "–"}</dd></div>
-        <div><dt>Time</dt><dd className="mono">{mmss(t.duration_s) || "–"}</dd></div>
-        <div><dt>Phrases</dt><dd className="mono">{t.phrases}</dd></div>
-      </dl>
-      <div className="s-note"><b>On the night</b>{night}</div>
-      {notes.map((n) => <div key={n} className="s-note warn" role="note">{n}</div>)}
-      {draft && <div className="s-note info" role="note">Unsaved changes are kept in this
-        browser. Open the timeline to restore or discard them.</div>}
-      <ul className="s-checks" aria-label="checks">
-        {checks.map(([ok, text]) => (
-          <li key={text} className={ok ? "ok" : "bad"}>
-            <span aria-hidden="true">{ok ? "✓" : "!"}</span>{text}</li>
-        ))}
-      </ul>
       <div className="s-detail-actions">
         <a className="s-button d-primary s-wide" href={`#studio/track/${t.id}`}>
           {t.has_timeline ? "Open timeline" : "Make a timeline"}</a>
         {sets.length > 0 && (
-          <div className="s-inline">
+          <div className="s-split">
             <button onClick={openDraft} disabled={!draftSet}
                     title="Open the timeline with this set's draft laid on its scene lane: undoable, and saved only when you press Save">
               {t.has_timeline ? "Redraft from" : "Draft from"}</button>
@@ -378,6 +388,26 @@ export function TrackDetail({ t, set, playing, sets, live }: {
           </div>
         )}
       </div>
+      <DetailSection title="On the night">
+        <p className="s-text">{night}</p>
+      </DetailSection>
+      <DetailSection title="Checks" aside={<span className="small muted">
+        {passed.length} of {checks.length} ready</span>}>
+        <ul className="s-checks" aria-label="checks">
+          {issues.map((c) => (
+            <li key={c.text} className={c.ok === false ? "bad" : "wait"}>
+              <span aria-hidden="true">{c.ok === false ? "!" : "…"}</span>
+              <div>{c.text}{c.why && <span className="s-why">{c.why}</span>}</div>
+            </li>
+          ))}
+          {passed.length > 0 && (
+            <li className="ok">
+              <span aria-hidden="true">✓</span>
+              <div>{passed.map((c) => c.text).join(" · ")}</div>
+            </li>
+          )}
+        </ul>
+      </DetailSection>
     </div>
   );
 }

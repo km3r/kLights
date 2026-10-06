@@ -2,11 +2,11 @@ import {
   Fragment, createContext, useCallback, useContext, useEffect, useRef, useState,
   useSyncExternalStore,
 } from "react";
-import { HelpHeading } from "../components";
 import type { EngineState, FixtureState, LookInfo, Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
+import { SideSection } from "./detail";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue,
   draftFromTemplate, hexColor, itemName, itemSub, laneValue, normalizeName, oscArgsText,
@@ -1795,14 +1795,14 @@ function Shelf({ history, routines, beat, track }: {
   const doc = history.doc;
   if (!doc) return null;
   // The routines to place are in the browser, on the left; this keeps what
-  // works on the whole track.
+  // works on the whole track: its palettes, then the tools that write lanes.
   void routines;
   return (
-    <section>
+    <>
+      <Palettes history={history} />
       <Templates history={history} track={track ?? null} />
       <RecordPads history={history} beat={beat} />
-      <Palettes history={history} />
-    </section>
+    </>
   );
 }
 
@@ -1831,21 +1831,22 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
     }
   };
   return (
-    <div className="d-templates">
-      <HelpHeading topic="Draft from template" help={<>
-        <p>Fills the scene lane with one routine per rekordbox phrase. It looks
-          for the exact label (Verse 2), then the family (Verse), then{" "}
-          <code>*</code>. If the set has palettes, it fills the palette lane
-          too, and if its picks have visuals, the visuals lane.</p>
-        <p>It replaces what's there, but it's only a starting point. Undo puts the
-          lanes back.</p>
-      </>}>Draft from template</HelpHeading>
-      {sets.map((s) => (
-        <button key={s.id} onClick={() => void draft(s.id)}
-                title="Replace the scene lane with this template's routines, phrase by phrase">
-          {s.name ?? s.id}</button>))}
+    <SideSection id="timeline-draft" title="Draft from template" help={<>
+      <p>Fills the scene lane with one routine per rekordbox phrase. It looks
+        for the exact label (Verse 2), then the family (Verse), then{" "}
+        <code>*</code>. If the set has palettes, it fills the palette lane
+        too, and if its picks have visuals, the visuals lane.</p>
+      <p>It replaces what's there, but it's only a starting point. Undo puts the
+        lanes back.</p>
+    </>}>
+      <div className="d-templates">
+        {sets.map((s) => (
+          <button key={s.id} onClick={() => void draft(s.id)}
+                  title="Replace the scene lane with this template's routines, phrase by phrase">
+            {s.name ?? s.id}</button>))}
+      </div>
       {error && <p className="d-error small">{error}</p>}
-    </div>
+    </SideSection>
   );
 }
 
@@ -1872,25 +1873,24 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
     lane.items!.push(tail);
   });
   return (
-    <div className="d-record">
-      <HelpHeading topic="Record" help={<>
-        <p>Arm it and play the track. Each pad lands at the playhead:{" "}
-          <b>Flash</b>, <b>Strobe</b> and <b>Blackout</b> as hits, and{" "}
-          <b>Next scene</b> splits the scene clip there.</p>
-      </>}>
-        <button className={history.recording ? "on" : ""}
-                onClick={() => history.setRecording(!history.recording)}>
-          {history.recording ? "● Recording" : "Record"}</button>
-      </HelpHeading>
-      {history.recording && (
+    <SideSection id="timeline-record" title="Record pads" topic="Record" help={<>
+      <p>Arm it and play the track. Each pad lands at the playhead:{" "}
+        <b>Flash</b>, <b>Strobe</b> and <b>Blackout</b> as hits, and{" "}
+        <b>Next scene</b> splits the scene clip there.</p>
+    </>} aside={
+      <button className={`small${history.recording ? " on" : ""}`}
+              onClick={() => history.setRecording(!history.recording)}>
+        {history.recording ? "● Recording" : "Record"}</button>
+    }>
+      {history.recording ? (
         <div className="d-pads">
           <button onClick={() => add("flash")}>Flash</button>
           <button onClick={() => add("strobe")}>Strobe</button>
           <button onClick={() => add("blackout")}>Blackout</button>
           <button onClick={nextScene}>Next scene</button>
         </div>
-      )}
-    </div>
+      ) : <span className="small muted">Tap hits in while the track plays.</span>}
+    </SideSection>
   );
 }
 
@@ -1933,19 +1933,19 @@ function Palettes({ history }: { history: History }) {
   const palettes = doc.palettes ?? {};
   const hex = (v: unknown) => (typeof v === "string" && v.startsWith("#") ? v : "#ffffff");
   return (
-    <div className="d-palettes">
-      <HelpHeading topic="Palettes" help={<>
-        <p>Each palette has three colours: primary, secondary and accent.
-          Routines use these roles instead of fixed colours, so they change with
-          the palette.</p>
-        <p>The selected palette plays wherever the palette lane is empty. A
-          palette clip switches it for its length.</p>
-        <p>These are this track's own copies. Changing a colour here changes
-          this track only; the library's palettes are on Studio's Palettes
-          page, which can bring copies up to date.</p>
-      </>}>This track's palettes</HelpHeading>
-      <p className="small muted">Changing a colour here changes this track only.{" "}
-        <a className="d-link" href="#studio/palettes">The library</a></p>
+    <SideSection id="timeline-palettes" title="This track's palettes" topic="Palettes"
+                 count={Object.keys(palettes).length} help={<>
+      <p>Each palette has three colours: primary, secondary and accent.
+        Routines use these roles instead of fixed colours, so they change with
+        the palette.</p>
+      <p>The selected palette plays wherever the palette lane is empty. A
+        palette clip switches it for its length.</p>
+      <p>These are this track's own copies. Changing a colour here changes
+        this track only; the library's palettes are on Studio's Palettes
+        page, which can bring copies up to date.</p>
+    </>} aside={<a className="small d-link" href="#studio/palettes"
+                   title="The show's palette library: changing a colour here changes this track only">
+      Library</a>}>
       {Object.entries(palettes).map(([name, pal]) => (
         <div key={name} className="d-palette">
           <label className="small">
@@ -1965,18 +1965,20 @@ function Palettes({ history }: { history: History }) {
           ))}
         </div>
       ))}
-      <FromLibrary library={library} has={Object.keys(palettes)}
-                   onPick={(name, colours) => history.apply((d) => {
-                     d.palettes = { ...(d.palettes ?? {}), [name]: colours };
-                     if (!d.palette) d.palette = name;
-                   })} />
-      <button className="small" onClick={() => history.apply((d) => {
-        const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
-        d.palettes = { ...(d.palettes ?? {}),
-                       [name]: { ...NEW_COLOURS } };
-        if (!d.palette) d.palette = name;
-      })}>+ palette</button>
-    </div>
+      <div className="d-form">
+        <FromLibrary library={library} has={Object.keys(palettes)}
+                     onPick={(name, colours) => history.apply((d) => {
+                       d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                       if (!d.palette) d.palette = name;
+                     })} />
+        <button className="small" onClick={() => history.apply((d) => {
+          const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
+          d.palettes = { ...(d.palettes ?? {}),
+                         [name]: { ...NEW_COLOURS } };
+          if (!d.palette) d.palette = name;
+        })}>+ palette</button>
+      </div>
+    </SideSection>
   );
 }
 

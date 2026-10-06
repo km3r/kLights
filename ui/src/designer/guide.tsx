@@ -108,8 +108,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <><b>this rig only</b> marks anything that uses this event's own
             looks or presets.</>,
           <>The buttons at the edges of the top bar fold the side panels away,
-            to give the lanes or the library the whole width. Studio
-            remembers them on this computer.</>,
+            to give the lanes or the library the whole width. In an editor's
+            side panel, click a section's heading to fold just that section.
+            Studio remembers both on this computer.</>,
           <>Press <b>?</b> to open or close this guide.</>,
         ],
       },

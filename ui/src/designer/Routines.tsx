@@ -3,6 +3,8 @@ import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { ID_RE, freeId as freeIdAmong, normalizeName, usageCount } from "./model";
 import type { RoutineDoc, RoutineSummary } from "./model";
+import { Badge, DetailHead, DetailSection, MoreMenu, Task, useWrite } from "./detail";
+import type { MenuItem } from "./detail";
 
 /**
  * Studio's routine library: every routine as a card -- what its rows drive, its
@@ -41,7 +43,6 @@ export function RoutinesView({ routines, selected, onSelect, onAction, onNew }: 
   const [view, setView] = useState<View>({ kind: "all" });
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("name");
-  const [menu, setMenu] = useState<string | null>(null);
   const list = routines ?? [];
   const folders = useMemo(() => [...new Set(list.map((r) => r.folder ?? UNFILED))]
     .filter((f) => f !== UNFILED).sort((a, b) => a.localeCompare(b)), [list]);
@@ -67,19 +68,6 @@ export function RoutinesView({ routines, selected, onSelect, onAction, onNew }: 
     <button key={label} className={`s-chip${is(v) ? " on" : ""}`} aria-pressed={is(v)}
             onClick={() => setView(v)}>{label} <span className="s-n">{n}</span></button>
   );
-
-  // A menu closes on a click anywhere else, or Escape.
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".s-menu-wrap")) return;
-      setMenu(null);
-    };
-    addEventListener("mousedown", close);
-    addEventListener("keydown", close);
-    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
-  }, [menu]);
 
   return (
     <section className="s-page" aria-label="routines">
@@ -136,22 +124,9 @@ export function RoutinesView({ routines, selected, onSelect, onAction, onNew }: 
                   <span className="muted mono">{r.id} · {r.bars} bar{r.bars === 1 ? "" : "s"}
                     {r.loop ? ", loops" : ", once"}</span>
                 </a>
-                <span className="s-menu-wrap">
-                  <button className="s-icon" aria-label={`more for ${nameOf(r)}`}
-                          aria-haspopup="menu" aria-expanded={menu === r.id}
-                          onClick={(e) => { e.stopPropagation(); setMenu(menu === r.id ? null : r.id); }}>
-                    ⋯</button>
-                  {menu === r.id && (
-                    <span className="s-menu" role="menu" aria-label={`${nameOf(r)} actions`}>
-                      <a role="menuitem" href={`#studio/routine/${r.id}`}>Open</a>
-                      {(["duplicate", "rename", "folder", "download", "delete"] as Action[]).map((a) => (
-                        <button key={a} role="menuitem" className={a === "delete" ? "s-danger" : ""}
-                                onClick={(e) => { e.stopPropagation(); setMenu(null); onAction(r.id, a); }}>
-                          {ACTION_LABEL[a]}</button>
-                      ))}
-                    </span>
-                  )}
-                </span>
+                <MoreMenu label={nameOf(r)}
+                          items={[{ label: "Open", href: `#studio/routine/${r.id}` },
+                                  ...actionItems(r, (a) => onAction(r.id, a))]} />
               </div>
               <div className="d-chips">
                 {Object.entries(r.roles).map(([name, role]) => (
@@ -178,11 +153,23 @@ export function RoutinesView({ routines, selected, onSelect, onAction, onNew }: 
 }
 
 export type Action = "duplicate" | "rename" | "folder" | "download" | "delete";
+const ACTIONS: Action[] = ["duplicate", "rename", "folder", "download", "delete"];
 
 const ACTION_LABEL: Record<Action, string> = {
   duplicate: "Duplicate…", rename: "Rename…", folder: "Move to folder…",
   download: "Download the file", delete: "Delete…",
 };
+
+/** A routine's menu, on its card and in its details: what can be done to its
+ *  file. One that is used cannot be deleted, and says so. */
+function actionItems(r: RoutineSummary, pick: (a: Action) => void): MenuItem[] {
+  const count = usageCount(r.used_by);
+  return ACTIONS.map((a) => ({
+    label: ACTION_LABEL[a], danger: a === "delete", onClick: () => pick(a),
+    ...(a === "delete" && count > 0
+      ? { disabled: true, note: `Used in ${count} place${count === 1 ? "" : "s"}` } : {}),
+  }));
+}
 
 // -- the selected routine -------------------------------------------------------------
 
@@ -203,11 +190,16 @@ export function download(name: string, doc: unknown): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, onSelect }: {
+export function RoutineDetail({ engine, r, routines, action, actionKey, onAsked, onDone,
+                               onSelect }: {
   engine: Engine; r: RoutineSummary; routines: RoutineSummary[];
   /** What the card's menu asked for, to open on; `actionKey` changes each
    *  time it is asked, so asking twice opens it twice. */
   action: Action | null; actionKey: number;
+  /** The ask was taken: forget it, so this panel mounting again (the details
+   *  shown again, a look at another page) does not download twice or reopen
+   *  a form that was closed. */
+  onAsked: () => void;
   /** Something was written, and what: re-read the folder, and say so where
    *  it survives this panel (a rename or a delete takes it away). */
   onDone: (said: string) => void;
@@ -217,14 +209,19 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   const used = r.used_by ?? { timelines: [], templates: [], show: [] };
   const count = usageCount(used);
   const folders = [...new Set(routines.map((x) => x.folder).filter((f): f is string => !!f))].sort();
-  const [mode, setMode] = useState<Action | null>(action);
+  const [mode, setMode] = useState<Action | null>(null);
   const [dupId, setDupId] = useState(() => freeId(routines, `${r.id}-copy`));
   const [toId, setToId] = useState(r.id);
   const [folder, setFolder] = useState(r.folder ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run: write, ask } = useWrite(engine, onDone);
   const field = useRef<HTMLInputElement | null>(null);
-  useEffect(() => { setMode(action); }, [action, actionKey]);
+  useEffect(() => {
+    if (!action) return;
+    setMode(action);
+    onAsked();
+    // Only a new ask opens a form; the callback is the parent's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action, actionKey]);
   useEffect(() => { if (mode && mode !== "download" && mode !== "delete") field.current?.focus(); },
             [mode]);
   // A download needs nothing more said: do it.
@@ -236,24 +233,7 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   }, [mode, r.id]);
 
   /** One write: `work` answers with what it did, or throws why not. */
-  const run = async (work: () => Promise<string>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const said = await work();
-      setMode(null);
-      onDone(said);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
-    const reply = await engine.request(command);
-    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
-    return reply.data;
-  };
+  const run = (work: () => Promise<string>) => write(work, () => setMode(null));
 
   const duplicate = () => run(async () => {
     const { doc } = await readRoutine(r.id);
@@ -284,108 +264,92 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   const dupOk = ID_RE.test(dupId) && !routines.some((x) => x.id === dupId);
   const toOk = ID_RE.test(toId) && toId !== r.id && !routines.some((x) => x.id === toId);
   const refs = used.timelines.length + used.templates.length + used.show.length;
+  const close = () => { setMode(null); setError(null); };
 
   return (
     <div className="s-detail" aria-label="selected routine">
-      <div>
-        <span className="s-kicker">Routine{r.folder ? ` · ${r.folder}` : ""}</span>
-        <h2>{nameOf(r)}</h2>
-        <span className="muted mono small">{r.id} · {r.bars} bars{r.loop ? ", loops" : ", once"}</span>
-        {r.rig && <span className="d-badge">this rig only ({r.rig})</span>}
-      </div>
+      <DetailHead kind={`Routine${r.folder ? ` · ${r.folder}` : ""}`} title={nameOf(r)}
+                  meta={<span className="mono">{r.id} · {r.bars} bar{r.bars === 1 ? "" : "s"}
+                    {r.loop ? ", loops" : ", once"}</span>}
+                  badges={r.rig && <span title={`Uses ${r.rig}'s own looks or presets`}>
+                    <Badge tone="warn">This rig only</Badge></span>}
+                  menu={<MoreMenu label={nameOf(r)}
+                                  items={actionItems(r, (a) => { setError(null); setMode(a); })} />} />
       <a className="s-button d-primary s-wide" href={`#studio/routine/${r.id}`}>Open the routine</a>
 
-      <section aria-label="where it is used" className="s-uses">
-        <b className="small">Where it's used</b>
+      {mode === "duplicate" && (
+        <Task title={`Duplicate ${r.id}`} readOnly={!canWrite} onCancel={close}>
+          <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
+            <input ref={field} value={dupId} aria-label="id of the copy"
+                   onChange={(e) => setDupId(e.target.value.trim())} />
+            <button type="submit" className="d-primary" disabled={!dupOk || busy || !canWrite}>
+              Make the copy</button>
+          </form>
+          <span className="muted small">Everything, under a new id. Nothing that uses {r.id} changes.</span>
+        </Task>
+      )}
+      {mode === "rename" && (
+        <Task title={`Rename ${r.id}`} readOnly={!canWrite} onCancel={close}>
+          <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
+            <input ref={field} value={toId} aria-label="new id"
+                   onChange={(e) => setToId(e.target.value.trim())} />
+            <button type="submit" className="d-primary" disabled={!toOk || busy || !canWrite}>
+              Rename it</button>
+          </form>
+          <span className="muted small">{refs
+            ? `Also rewrites the ${refs} file${refs === 1 ? "" : "s"} that use it, in one go.`
+            : "Nothing uses it, so only its own file changes."} The id is its file name;
+            its display name is set in the routine.</span>
+        </Task>
+      )}
+      {mode === "folder" && (
+        <Task title="Move to folder" readOnly={!canWrite} onCancel={close}>
+          <form className="d-form" onSubmit={(e) => { e.preventDefault(); void move(); }}>
+            <input ref={field} value={folder} list="s-folders" aria-label="folder"
+                   placeholder="none: unfiled" onChange={(e) => setFolder(e.target.value)} />
+            <datalist id="s-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
+            <button type="submit" className="d-primary"
+                    disabled={busy || !canWrite || folder.trim() === (r.folder ?? "")}>Move</button>
+          </form>
+          <span className="muted small">A folder is a name: a new one appears when a routine
+            is put in it.</span>
+        </Task>
+      )}
+      {mode === "delete" && !count && (
+        <Task title={`Delete ${r.id}`} label="confirm delete" readOnly={!canWrite} onCancel={close}>
+          <span className="small">Delete routines/{r.id}.json? Studio cannot undo it.</span>
+          <div className="d-form">
+            <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
+              Delete it</button>
+            <button onClick={close}>Keep it</button>
+          </div>
+        </Task>
+      )}
+      {error && <p className="small d-error" role="alert">{error}</p>}
+
+      <DetailSection title="Used in" label="where it is used" count={count}>
         {!count && <span className="muted small">Nowhere yet: no timeline places it, no template
           set picks it.</span>}
-        {used.timelines.map((t) => (
-          <a key={t.track} className="s-use" href={`#studio/track/${t.track}`}>
-            <b>{t.title ?? t.track}</b>
-            <span className="muted small">{t.clips} clip{t.clips === 1 ? "" : "s"}
-              {t.variations.length ? ` · ${t.variations.join(", ")}` : ""}</span>
-          </a>
-        ))}
-        {used.templates.map((t) => (
-          <div key={t.id} className="s-use">
-            <b>{t.name ?? t.id} <span className="muted small">template set</span></b>
-            <span className="muted small">{t.where.join(", ")}</span>
-          </div>
-        ))}
-        {used.show.map((s) => (
-          <div key={s} className="s-use"><b>Show settings</b><span className="muted small">{s}</span></div>
-        ))}
-      </section>
-
-      {error && <p className="small d-error" role="alert">{error}</p>}
-      {!canWrite && <p className="muted small">Changing routines writes the show folder: open
-        Studio from the link the engine printed.</p>}
-
-      <div className="s-actions">
-        <div className="s-action">
-          <button className={mode === "duplicate" ? "on" : ""} aria-expanded={mode === "duplicate"}
-                  onClick={() => setMode(mode === "duplicate" ? null : "duplicate")}>Duplicate</button>
-          {mode === "duplicate" && (
-            <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
-              <input ref={field} value={dupId} aria-label="id of the copy"
-                     onChange={(e) => setDupId(e.target.value.trim())} />
-              <button type="submit" className="d-primary" disabled={!dupOk || busy || !canWrite}>
-                Make the copy</button>
-              <span className="muted small">Everything, under a new id. Nothing that uses
-                {" "}{r.id} changes.</span>
-            </form>
-          )}
+        <div className="s-uses">
+          {used.timelines.map((t) => (
+            <a key={t.track} className="s-use" href={`#studio/track/${t.track}`}>
+              <b>{t.title ?? t.track}</b>
+              <span className="muted small">{t.clips} clip{t.clips === 1 ? "" : "s"}
+                {t.variations.length ? ` · ${t.variations.join(", ")}` : ""}</span>
+            </a>
+          ))}
+          {used.templates.map((t) => (
+            <a key={t.id} className="s-use" href={`#studio/templates/${t.id}`}>
+              <b>{t.name ?? t.id}</b>
+              <span className="muted small">template set · {t.where.join(", ")}</span>
+            </a>
+          ))}
+          {used.show.map((s) => (
+            <a key={s} className="s-use" href="#studio/show">
+              <b>Show settings</b><span className="muted small">{s}</span></a>
+          ))}
         </div>
-        <div className="s-action">
-          <button className={mode === "rename" ? "on" : ""} aria-expanded={mode === "rename"}
-                  onClick={() => setMode(mode === "rename" ? null : "rename")}>Rename</button>
-          {mode === "rename" && (
-            <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
-              <input ref={field} value={toId} aria-label="new id"
-                     onChange={(e) => setToId(e.target.value.trim())} />
-              <button type="submit" className="d-primary" disabled={!toOk || busy || !canWrite}>
-                Rename it</button>
-              <span className="muted small">{refs
-                ? `Also rewrites the ${refs} file${refs === 1 ? "" : "s"} that use it, in one go.`
-                : "Nothing uses it, so only its own file changes."} The id is its file name;
-                its display name is set in the routine.</span>
-            </form>
-          )}
-        </div>
-        <div className="s-action">
-          <button className={mode === "folder" ? "on" : ""} aria-expanded={mode === "folder"}
-                  onClick={() => setMode(mode === "folder" ? null : "folder")}>Move to folder</button>
-          {mode === "folder" && (
-            <form className="d-form" onSubmit={(e) => { e.preventDefault(); void move(); }}>
-              <input ref={field} value={folder} list="s-folders" aria-label="folder"
-                     placeholder="none: unfiled" onChange={(e) => setFolder(e.target.value)} />
-              <datalist id="s-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
-              <button type="submit" className="d-primary"
-                      disabled={busy || !canWrite || folder.trim() === (r.folder ?? "")}>Move</button>
-              <span className="muted small">A folder is a name: a new one appears when a routine
-                is put in it.</span>
-            </form>
-          )}
-        </div>
-        <div className="s-action">
-          <button onClick={() => setMode("download")}>Download the file</button>
-        </div>
-        <div className="s-action">
-          {count ? (
-            <button disabled title="Take it out of the timelines and sets above first">
-              Delete: used in {count} place{count === 1 ? "" : "s"}</button>
-          ) : mode === "delete" ? (
-            <div className="d-form" role="group" aria-label="confirm delete">
-              <span className="small">Delete routines/{r.id}.json? Studio cannot undo it.</span>
-              <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
-                Delete it</button>
-              <button onClick={() => setMode(null)}>Keep it</button>
-            </div>
-          ) : (
-            <button className="d-bad" onClick={() => setMode("delete")}>Delete…</button>
-          )}
-        </div>
-      </div>
+      </DetailSection>
     </div>
   );
 }
