@@ -107,7 +107,7 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
                   ? [tl ? `${tl} timeline${tl === 1 ? "" : "s"}` : "", sets ? `${sets} set${sets === 1 ? "" : "s"}` : ""]
                     .filter(Boolean).join(" · ")
                   : "no copies yet"}</span>
-                {differ > 0 && <span className="small s-warn">{differ} with older colours</span>}
+                {differ > 0 && <span className="small s-warn">{differ} cop{differ === 1 ? "y differs" : "ies differ"}</span>}
               </span>
             </button>
           );
@@ -188,12 +188,13 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
                                    accent: edit.accent.toLowerCase() });
   const save = () => run(async () => {
     await ask({ type: "palette_save", doc: doc(), base_rev: p.rev ?? "" });
-    return `Saved ${edit.name.trim()}.`;
+    return `Saved ${edit.name.trim()} to the library. Copies keep their own colours until you `
+      + "give them these.";
   });
   const sync = () => run(async () => {
     const { written } = await ask({ type: "palette_sync", palette: p.id,
                                     files: older.map((c) => c.file) }) as { written: string[] };
-    return `Updated ${written.length} cop${written.length === 1 ? "y" : "ies"} of ${p.name}.`;
+    return `Gave ${written.length} cop${written.length === 1 ? "y" : "ies"} of ${p.name} the library's colours.`;
   });
   const duplicate = () => run(async () => {
     const name = `${p.name} copy`;
@@ -213,7 +214,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
   return (
     <div className="s-detail" aria-label="selected palette">
       <div>
-        <span className="s-kicker">Library palette</span>
+        <span className="s-kicker">The library's palette</span>
         <input className="s-title-input" value={edit.name} aria-label="palette name"
                onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
         <span className="muted mono small">palettes/{p.id}.json</span>
@@ -230,19 +231,22 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
           </div>
         ))}
       </div>
+      <p className="s-note info">You are editing the library's {p.name}. Saving changes the
+        library only: each copy in a timeline or set keeps its own colours until you give it
+        these, below.</p>
       {edit.name.trim() !== p.name && p.copies.length > 0 && (
         <p className="s-note warn">Copies are found by name: the {p.copies.length} cop
           {p.copies.length === 1 ? "y" : "ies"} named {p.name} would no longer count as copies of
           this one.</p>)}
       <div className="d-form">
         <button className="d-primary" disabled={!dirty || !valid || busy || !canWrite}
-                onClick={() => void save()}>{dirty ? "Save" : "Saved"}</button>
+                onClick={() => void save()}>{dirty ? "Save to the library" : "Saved"}</button>
         {dirty && <button onClick={() => setEdit(saved)}>Revert</button>}
       </div>
       {error && <p className="small d-error" role="alert">{error}</p>}
 
       <section className="s-uses" aria-label="copies">
-        <b className="small">Copies</b>
+        <b className="small">Copies in timelines and sets</b>
         {!p.copies.length && <span className="muted small">No timeline or set has a palette
           called {p.name} yet. Pick it from the library in either editor.</span>}
         {p.copies.map((c) => (
@@ -251,7 +255,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
             <span className="s-copy-state">
               <Swatches c={c.colours as Partial<Colours>} />
               <span className={`small ${c.same ? "muted" : "s-warn"}`}>
-                {c.same ? "the same" : "older colours"}</span>
+                {c.same ? "the same" : "different"}</span>
             </span>
           </a>
         ))}
@@ -259,9 +263,10 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
           <div className="s-action">
             <button className="d-primary" disabled={busy || dirty || !canWrite}
                     onClick={() => void sync()}>
-              Update {older.length} cop{older.length === 1 ? "y" : "ies"} to these colours</button>
+              Give {older.length} cop{older.length === 1 ? "y" : "ies"} the library's colours</button>
             <span className="muted small">{dirty ? "Save first: copies take the saved colours."
-              : "Each file is written as it is now; one changed meanwhile is left alone and named."}</span>
+              : "Overwrites those copies' colours in their files. One changed meanwhile is left "
+                + "alone and named."}</span>
           </div>
         )}
       </section>

@@ -2,17 +2,18 @@ import { useCallback, useState } from "react";
 
 /**
  * Which of Studio's side panels are open: the library's sidebar (`nav`) and
- * details (`side`), and the editors' right-hand panel (`edit`).
+ * details (`side`), the editors' right-hand panel (`edit`), and the timeline's
+ * browser on the left (`browse`).
  *
  * Kept per browser rather than per page, because it is a property of the
  * screen: a laptop wants the timeline wide, a big monitor has room for
  * everything, and that does not change between one track and the next.
  */
 
-export interface Panels { nav: boolean; side: boolean; edit: boolean }
+export interface Panels { nav: boolean; side: boolean; edit: boolean; browse: boolean }
 
 const KEY = "klights.studio.panels";
-const OPEN: Panels = { nav: true, side: true, edit: true };
+const OPEN: Panels = { nav: true, side: true, edit: true, browse: true };
 
 function read(): Panels {
   try {

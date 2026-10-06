@@ -8,9 +8,15 @@ import {
   itemName, whoDrives,
 } from "./model";
 import type {
-  RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
+  Item, PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
 } from "./model";
-import { Editor, parsePointId, useEditorKeys, useHistory } from "./edit";
+import { PHRASE_HUE, phraseFamily } from "./model";
+import {
+  Editor, clipOps, copyRange, cutRange, parsePointId, rememberBack, setClipBoard, uniqueId,
+  useClipBoard, useEditorKeys, useHistory,
+} from "./edit";
+import type { Placeable, RowsDoc } from "./edit";
+import { Browser } from "./Browser";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
 import { useDesignerGuide } from "./guide";
@@ -137,6 +143,13 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const guide = useDesignerGuide("designer");
   const [panels, togglePanel] = usePanels();
   const [notice, setNotice] = useState<string | null>(null);
+  // The show's palette library, for the browser to copy from.
+  const [library, setLibrary] = useState<PaletteSummary[]>([]);
+  // A phrase picked as a section: what Fill, Copy, Paste and Clear act on.
+  const [section, setSection] = useState<{ start: number; end: number; label: string } | null>(null);
+  // A clip's menu, open at the pointer.
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const board = useClipBoard();
 
   useEffect(() => {
     apiFetch<{ doc: TrackDoc }>(`/api/tracks/${trackId}`)
@@ -150,6 +163,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       });
     apiFetch<{ routines: RoutineSummary[] }>("/api/routines")
       .then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
+    apiFetch<{ palettes: PaletteSummary[] }>("/api/palettes")
+      .then((r) => setLibrary(r.palettes)).catch(() => setLibrary([]));
     apiFetch<{ doc: { preview?: string; detail?: { format: string; rate?: number; data: string } } }>(
       `/api/waveforms/${trackId}`)
       .then((r) => setWave(decodeWave(r.doc))).catch(() => setWave(null));
@@ -253,8 +268,23 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   useEffect(() => () => { if (driving) send({ type: "preview_release" }); },
             [driving, send]);
 
+  const beatRef = useRef(0);
+  beatRef.current = beat;
   useEditorKeys({ history, selected, setSelected,
-                  playPause: () => transport.play(!transport.playing) });
+                  playPause: () => transport.play(!transport.playing),
+                  clip: { kind: "timeline", beat: () => beatRef.current } });
+  // A menu closes on a click anywhere else, or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".d-ctx")) return;
+      setMenu(null);
+    };
+    addEventListener("mousedown", close);
+    addEventListener("keydown", close);
+    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
+  }, [menu]);
 
   // While playing, keep the playhead in view: page the lanes along when it
   // reaches the right edge, so it does not run off the screen.
@@ -297,9 +327,117 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
 
+  /** One placement as an edit, its new item's id read from a dry run on a
+   *  copy (an edit is applied when React renders, too late to read back). */
+  const edit = (mutate: (d: RowsDoc) => string | null): string | null => {
+    const id = mutate(structuredClone(doc));
+    if (id) history.apply((d) => { mutate(d); });
+    return id;
+  };
+  const laneFor = (d: RowsDoc, target: string, make: () => Row): Row =>
+    d.rows.find((r) => r.type === "clips" && r.target === target)
+      ?? (() => { const r = make(); if (target === "scene") d.rows.unshift(r); else d.rows.push(r); return r; })();
+  /** Place what the browser offers: at a beat, on a lane if it was dropped
+   *  on one, else on the lane it belongs on. */
+  const place = (what: Placeable, at: number, rowId?: string) => {
+    const start = Math.max(0, history.snapBeat(at));
+    const onto = rowId ? doc.rows.find((r) => r.id === rowId) : undefined;
+    let made: string | null = null;
+    if (what.kind === "routine") {
+      const r = routines.find((x) => x.id === what.id);
+      if (!r) return;
+      if (onto && !(onto.type === "clips" && onto.target !== "palette")) {
+        setNotice("A routine goes on a scene, movement, colour or level lane.");
+        return;
+      }
+      made = edit((d) => {
+        const lane = onto ? d.rows.find((x) => x.id === onto.id)!
+          : laneFor(d, "scene", () => ({ id: uniqueId(d, "scene"), type: "clips", target: "scene",
+                                         gap: "fill", items: [] }));
+        const id = uniqueId(d, r.id);
+        (lane.items ??= []).push({ id, kind: "routine", routine: r.id, at: start,
+                                   len: r.bars * BEATS_PER_BAR });
+        return id;
+      });
+    } else if (what.kind === "palette") {
+      if (onto && onto.target !== "palette") {
+        setNotice("A palette goes on the palette lane.");
+        return;
+      }
+      // Until the phrase ends, if the playhead is in one; else four bars.
+      const phrase = (track.phrases?.items ?? []).find(([s, e]) => s <= start && start < e);
+      const len = phrase ? phrase[1] - start : 4 * BEATS_PER_BAR;
+      made = edit((d) => {
+        const tl = d as unknown as TimelineDoc;
+        if (!(tl.palettes ?? {})[what.name]) {
+          if (!what.colours) return null;
+          // From the library: this track gets its own copy, under its name.
+          tl.palettes = { ...(tl.palettes ?? {}), [what.name]: { ...what.colours } };
+        }
+        const lane = onto ? d.rows.find((x) => x.id === onto.id)!
+          : laneFor(d, "palette", () => ({ id: uniqueId(d, "palette"), type: "clips",
+                                           target: "palette", gap: "exclusive", items: [] }));
+        const id = uniqueId(d, `pal-${start}`);
+        (lane.items ??= []).push({ id, kind: "palette", palette: what.name, at: start, len });
+        return id;
+      });
+    } else {
+      if (onto && onto.type !== "hits") {
+        setNotice("A hit goes on a hits lane.");
+        return;
+      }
+      made = edit((d) => {
+        let lane = onto ? d.rows.find((x) => x.id === onto.id) : d.rows.find((r) => r.type === "hits");
+        if (!lane) {
+          lane = { id: uniqueId(d, "hits"), type: "hits", items: [] };
+          d.rows.push(lane);
+        }
+        const id = uniqueId(d, `${what.hit}-${start}`);
+        const item: Item = { id, hit: what.hit, at: start,
+                             len: what.hit === "strobe" ? 4 : what.hit === "flash" ? 2 : 1 };
+        if (what.hit === "flash") item.envelope = "decay";
+        (lane.items ??= []).push(item);
+        return id;
+      });
+    }
+    if (made) setSelected(made);
+  };
+
+  // -- a phrase as a section ------------------------------------------------
+  const fillSection = (routineId: string) => {
+    if (!section) return;
+    const { start, end } = section;
+    setSelected(edit((d) => {
+      const lane = laneFor(d, "scene", () => ({ id: uniqueId(d, "scene"), type: "clips",
+                                                 target: "scene", gap: "fill", items: [] }));
+      cutRange(d, lane, start, end);
+      const id = uniqueId(d, `${routineId}-${start}`);
+      (lane.items ??= []).push({ id, kind: "routine", routine: routineId, at: start, len: end - start });
+      return id;
+    }));
+  };
+  const copySection = () => {
+    if (!section) return;
+    const b = copyRange(doc, section.start, section.end, "timeline");
+    setClipBoard(b);
+    setNotice(`Copied ${section.label}: ${b.clips.length} clip${b.clips.length === 1 ? "" : "s"} and `
+      + "hits. Pick another phrase and Paste, or press Ctrl+V at the playhead.");
+  };
+  const clearSection = () => {
+    if (!section) return;
+    history.apply((d) => {
+      for (const row of d.rows) {
+        if (row.type === "clips" || row.type === "hits") cutRange(d, row, section.start, section.end);
+      }
+    });
+  };
+  const menuItem = menu ? findItem(doc, menu.id) : null;
+
   return (
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
+        <PanelToggle open={panels.browse} side="left" label="browser"
+                     onToggle={() => togglePanel("browse")} />
         <a className="d-link" href="#studio" title="Back to Studio's library">◂</a>
         <button className={transport.playing ? "on" : ""}
                 onClick={() => transport.play(!transport.playing)}>
@@ -339,6 +477,29 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         <PanelToggle open={panels.edit} side="right" label="side panel"
                      onToggle={() => togglePanel("edit")} />
       </header>
+      {section && (
+        <div className="d-section" role="toolbar" aria-label="section">
+          <i style={{ background: PHRASE_HUE[phraseFamily(section.label)] ?? "#475569" }} />
+          <b>{section.label}</b>
+          <span className="muted small">bars {Math.floor(section.start / BEATS_PER_BAR) + 1} to{" "}
+            {Math.floor(section.end / BEATS_PER_BAR)}</span>
+          <span className="grow" />
+          <label className="small">Fill with{" "}
+            <select value="" aria-label="fill the section with"
+                    onChange={(e) => { if (e.target.value) fillSection(e.target.value); }}>
+              <option value="">a routine…</option>
+              {routines.map((r) => <option key={r.id} value={r.id}>{r.name || r.id}</option>)}
+            </select>
+          </label>
+          <button onClick={copySection}>Copy section</button>
+          <button disabled={board?.kind !== "timeline"}
+                  title="Over what is there, from the start of this phrase"
+                  onClick={() => setSelected(clipOps.paste(history, "timeline", section.start))}>
+            Paste here</button>
+          <button onClick={clearSection}>Clear</button>
+          <button aria-label="let go of the section" onClick={() => setSection(null)}>×</button>
+        </div>
+      )}
       {notice && (
         <div className="d-banner d-info" role="status">
           {notice}<button onClick={() => setNotice(null)}>OK</button>
@@ -378,18 +539,31 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                onError={() => setAudioState("none")} />
       )}
 
-      <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
+      <div className="d-body" style={{ gridTemplateColumns: [
+        panels.browse ? "220px" : "", "minmax(0, 1fr)", panels.edit ? "320px" : "",
+        guide.open ? "min(400px, 34vw)" : ""].filter(Boolean).join(" ") }}>
+        {panels.browse && (
+          <Browser routines={routines} palettes={Object.keys(doc.palettes ?? {})} library={library}
+                   onPlace={(what) => place(what, beat)} />
+        )}
         <div className="d-lanes" role="region" aria-label="lanes" ref={lanesRef}>
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={seekBeat} />
-            <Phrases track={track} x={x} width={width} />
+            <Phrases track={track} x={x} width={width} picked={section?.start ?? null}
+                     onPick={(start, end, label) => setSection(
+                       section?.start === start ? null : { start, end, label })} />
             <WaveLane wave={wave} grid={grid} duration={duration} x={x} width={width} />
             {doc.rows.map((row, index) => (
               <Lane key={row.id} row={row} index={index} x={x} width={width}
                     zoom={zoom} selected={selected} onSelect={setSelected}
-                    history={history} beat={beat} />
+                    history={history} beat={beat}
+                    onMenu={(id, cx, cy) => setMenu({ id, x: cx, y: cy })}
+                    onDropItem={(rowId, what, at) => place(what, at, rowId)} />
             ))}
             <Editor.AddLane history={history} />
+            {section && (
+              <div className="d-section-mark" aria-hidden="true"
+                   style={{ left: HEADER_W + x(section.start), width: x(section.end) - x(section.start) }} />)}
             <div className="d-playhead" aria-hidden="true"
                  style={{ left: HEADER_W + x(beat) }} />
           </div>
@@ -414,8 +588,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
               <p>Which lane drives each slot right now. Higher lanes win: a movement
                 lane above the scene lane only overrides the scene's movement.</p>
               <p><b>rest</b> means the lane that owns this slot is empty here, so
-                nothing drives it. <b>template / show</b> means no lane has anything
-                here.</p>
+                nothing drives it. <b>operator's show</b> means no lane has anything
+                here, so whatever the operator is running shows through.</p>
             </>}>At the playhead · bar {barBeat(beat)}</HelpHeading>
             <table className="d-who">
               <tbody>
@@ -426,7 +600,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                       ? <><b>{itemName(d.item)}</b> <span className="muted">· {d.row}</span></>
                       : d.source === "blank"
                         ? <span className="muted">rest ({d.row} owns it)</span>
-                        : <span className="muted">template / show</span>}</td>
+                        : <span className="muted">operator's show</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -441,7 +615,41 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                  onSelect={setSelected} />
         : <Editor.Inspector history={history} item={selectedItem} routines={routines}
-                            engine={engine} onDeleted={() => setSelected(null)} />}
+                            engine={engine} onDeleted={() => setSelected(null)}
+                            beat={beat} onSelect={setSelected} />}
+
+      {menu && menuItem && (
+        <div className="d-ctx" role="menu" aria-label={`${itemName(menuItem.item)} actions`}
+             style={{ left: Math.min(menu.x, innerWidth - 240), top: Math.min(menu.y, innerHeight - 300) }}>
+          {[
+            ["Copy", "Ctrl+C", () => { clipOps.copy(history, menu.id, "timeline"); }],
+            ["Cut", "Ctrl+X", () => { clipOps.cut(history, menu.id, "timeline"); setSelected(null); }],
+            ...(board?.kind === "timeline"
+              ? [["Paste at the playhead", "Ctrl+V",
+                  () => setSelected(clipOps.paste(history, "timeline", Math.max(0, history.snapBeat(beat))))] as const]
+              : []),
+            ["Duplicate after it", "Ctrl+D",
+             () => setSelected(clipOps.duplicate(history, menu.id, "timeline"))],
+          ].map(([label, key, run]) => (
+            <button key={label as string} role="menuitem"
+                    onClick={() => { (run as () => void)(); setMenu(null); }}>
+              {label as string}<span className="k">{key as string}</span></button>
+          ))}
+          <button role="menuitem" disabled={!clipOps.inside(doc, menu.id, history.snapBeat(beat))}
+                  onClick={() => { setSelected(clipOps.split(history, menu.id, history.snapBeat(beat))); setMenu(null); }}>
+            Split at the playhead<span className="k">S</span></button>
+          {menuItem.item.kind === "routine" && menuItem.item.routine && (
+            <a role="menuitem" href={`#studio/routine/${menuItem.item.routine}`}
+               onClick={() => rememberBack()}>Open the routine</a>)}
+          <button role="menuitem" className="danger"
+                  onClick={() => {
+                    const id = menu.id;
+                    history.apply((d) => { for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== id); });
+                    setSelected(null);
+                    setMenu(null);
+                  }}>Delete<span className="k">Del</span></button>
+        </div>
+      )}
     </div>
   );
 }

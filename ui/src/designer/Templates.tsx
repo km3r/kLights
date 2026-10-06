@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, FromLibrary, ROLES, useHistory } from "./edit";
+import { Editor, FromLibrary, PaletteOrigin, ROLES, useHistory } from "./edit";
 import {
   EXACT_LABELS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
@@ -335,8 +335,9 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
         </section>
 
         <section className="s-box" aria-label="palettes">
-          <header><b>Palettes</b><span className="muted small">This set's own. A phrase
-            can switch to one; the default plays elsewhere.</span></header>
+          <header><b>This set's palettes</b><span className="muted small">Copies: changing a
+            colour here changes this set only. The library's are on the{" "}
+            <a className="d-link" href="#studio/palettes">Palettes</a> page.</span></header>
           {palettes.map((name) => {
             const pal = doc.palettes![name]!;
             return (
@@ -345,6 +346,8 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
                   <input type="radio" name={`default-palette-${id}`} checked={doc.palette === name}
                          aria-label={`${name} is the default`}
                          onChange={() => apply((d) => { d.palette = name; })} />{name}</label>
+                <PaletteOrigin library={library} name={name} colours={pal} here="set"
+                               onUseLibrary={(c) => apply((d) => { d.palettes![name] = c; })} />
                 {ROLES.map((role) => (
                   <input key={role} type="color" aria-label={`${name} ${role}`} value={hex(pal[role])}
                          onChange={(e) => {

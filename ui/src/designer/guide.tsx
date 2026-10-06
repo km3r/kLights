@@ -49,8 +49,14 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "Adding to it",
         notes: [
-          <>Click a routine under <b>Routines</b> to add it at the
-            playhead.</>,
+          <>Click a routine in the <b>browser</b> on the left to place it at the
+            playhead, or drag it onto the lane and beat you want. Its tabs hold
+            palettes and hits too.</>,
+          <>Click a <b>phrase</b> to select it as a section: fill it with a
+            routine, copy it, paste it over another phrase, or clear it.</>,
+          <>Right-click a clip, or use the buttons beside it below, to copy, cut,
+            duplicate or split it at the playhead. Ctrl+C, Ctrl+X, Ctrl+V,
+            Ctrl+D and S do the same.</>,
           <>Arm <b>Record</b>, play, and tap <b>Flash</b>, <b>Strobe</b>,{" "}
             <b>Blackout</b> or <b>Next scene</b> in time with the music.</>,
           <><b>+ lane</b> adds a lane. <b>+ automation</b> adds a curve for
@@ -80,6 +86,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
         notes: [
           <>Undo and Redo cover every edit. Delete removes the selection and
             Escape deselects it.</>,
+          <>A palette in <b>This track's palettes</b> is this track's own copy:
+            changing it changes this track only. The tag beside it says whether
+            it matches the library's.</>,
           <>Unsaved work is kept in this browser, so a crashed tab doesn't lose
             it.</>,
           <>If someone else saved the file after you opened it, your save is

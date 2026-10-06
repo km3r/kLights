@@ -11,6 +11,35 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — the timeline editor: a browser, sections, and clip actions
+
+- **A browser on the left of a track's timeline**, folding away like the other
+  panels. It has routines (filed by folder, with each one's length and the
+  slots it drives), palettes (this track's, then the library's) and hits.
+  Click one to place it at the playhead on the lane it belongs on, or drag it
+  onto a lane and beat. A library palette placed this way is copied into the
+  track first. It replaces the wall of routine buttons in the right-hand panel.
+- **A phrase is a section.** Click a phrase band to select it, then fill it
+  with a routine, copy it (every clip and hit, trimmed to the phrase), paste
+  it over another phrase, or clear it.
+- **Clip actions**: copy, cut, paste at the playhead, duplicate straight after,
+  and split at the playhead. They are on a right-click menu, on the
+  inspector's buttons, and on Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D and S. A paste
+  clears what it lands on rather than overlapping it. The routine editor
+  takes the same keys.
+- "At the playhead" says **operator's show** where nothing on the timeline
+  drives a slot, rather than "template / show".
+
+### Changed — it is always clear whose palette you are editing
+
+- In a timeline's and a template set's palette panels, each palette is tagged
+  **copy of library**, **differs from library** (with *use library's*) or
+  **only here**. The panels are called "This track's palettes" and "This
+  set's palettes", and say that a change there changes that file only.
+- The Palettes page says you are editing the library's palette. Its button is
+  **Save to the library**, a copy that differs is called **different** (not
+  older), and the update is **Give N copies the library's colours**.
+
 ### Added — a palette library for the show
 
 - **`palettes/<id>.json`**, a new kind of show-folder file: one palette, with

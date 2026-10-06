@@ -104,8 +104,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
   const length = (doc?.bars ?? 4) * BEATS_PER_BAR;
   const loop = useLoop(length, bpm);
+  const beatRef = useRef(0);
+  beatRef.current = loop.beat;
   useEditorKeys({ history, selected, setSelected,
-                  playPause: () => loop.setPlaying(!loop.playing) });
+                  playPause: () => loop.setPlaying(!loop.playing),
+                  clip: { kind: "routine", beat: () => beatRef.current } });
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;

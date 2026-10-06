@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act, cleanup, createEvent, fireEvent, render, screen, waitFor, within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -8,7 +10,9 @@ import {
   decodeWave, draftFromTemplate, newTimeline,
   whoDrives,
 } from "../designer/model";
-import { AUTOMATION_RANGES } from "../designer/edit";
+import {
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt,
+} from "../designer/edit";
 import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import type { RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
@@ -129,6 +133,45 @@ describe("designer model", () => {
       .toBe("this track has no phrases to draft from");
   });
 
+  it("cuts a stretch out of a lane: inside goes, an edge is trimmed, across both is split", () => {
+    const doc = { rows: [{ id: "s", type: "clips" as const, target: "scene", items: [
+      { id: "a", at: 0, len: 16, fade: 8 }, { id: "b", at: 20, len: 4 },
+      { id: "c", at: 28, len: 20 }, { id: "d", at: 60, len: 4 }] }] };
+    cutRange(doc, doc.rows[0]!, 12, 32);
+    expect(doc.rows[0]!.items.map((i) => [i.id, i.at, i.len, i.fade])).toEqual([
+      ["a", 0, 12, 8], ["c", 32, 16, undefined], ["d", 60, 4, undefined]]);
+    const across = { rows: [{ id: "s", type: "clips" as const, target: "scene",
+                              items: [{ id: "a", at: 0, len: 32 }] }] };
+    cutRange(across, across.rows[0]!, 8, 16);
+    expect(across.rows[0]!.items.map((i) => [i.id, i.at, i.len])).toEqual([["a", 0, 8], ["a-2", 16, 16]]);
+  });
+
+  it("copies a stretch trimmed to it, and pastes it over what is there", () => {
+    const doc = timelineDoc as unknown as TimelineDoc;
+    const board = copyRange(doc, 160, 224, "timeline");          // the first Chorus
+    expect(board.span).toBe(64);
+    expect(board.clips.map((c) => [c.row.id, itemNameOf(c.item), c.item.at])).toEqual([
+      ["scene", "fan-drop", 0], ["palette", "Hot", 0], ["hits", "flash", 0]]);
+    const into = structuredClone(doc);
+    const ids = pasteBoard(into, board, 0);
+    const scene = into.rows.find((r) => r.id === "scene")!.items!;
+    // Phase a, at 0..64, was under the paste: it is gone, not overlapped.
+    expect(scene.filter((i) => i.at < 64).map((i) => i.routine)).toEqual(["fan-drop"]);
+    expect(ids).toHaveLength(3);
+    expect(new Set(into.rows.flatMap((r) => (r.items ?? []).map((i) => i.id))).size)
+      .toBe(into.rows.flatMap((r) => r.items ?? []).length);   // every id still unique
+  });
+
+  it("splits a clip in two at a beat inside it, and nowhere else", () => {
+    const doc = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    const id = doc.rows.find((r) => r.id === "scene")!.items!.find((i) => i.at === 160)!.id;
+    expect(splitAt(doc, id, 100)).toBeNull();
+    const tail = splitAt(doc, id, 192)!;
+    const scene = doc.rows.find((r) => r.id === "scene")!.items!;
+    expect(scene.find((i) => i.id === id)).toMatchObject({ at: 160, len: 32 });
+    expect(scene.find((i) => i.id === tail)).toMatchObject({ at: 192, len: 32, routine: "fan-drop" });
+  });
+
   it("decodes rekordbox's colour waveform", () => {
     // rrrgggbbbhhhhh-- : full red, height 31
     const v = (7 << 13) | (31 << 2);
@@ -138,6 +181,10 @@ describe("designer model", () => {
     expect(wave.colors![0]).toEqual([1, 0, 0]);
   });
 });
+
+function itemNameOf(i: { routine?: string; palette?: string; hit?: string }): string {
+  return i.routine ?? i.palette ?? i.hit ?? "";
+}
 
 // -- the designer itself ------------------------------------------------------------
 
@@ -838,7 +885,8 @@ describe("studio library", () => {
     expect(screen.getByRole("complementary", { name: "side panel" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Hide the side panel" }));
     expect(screen.queryByRole("complementary", { name: "side panel" })).toBeNull();
-    expect(document.querySelector(".d-body")).toHaveClass("d-no-side");
+    expect((document.querySelector(".d-body") as HTMLElement).style.gridTemplateColumns)
+      .not.toContain("320px");
   });
 
   it("drafts a track from a set when its timeline opens, as an undoable unsaved edit", async () => {
@@ -892,6 +940,116 @@ describe("studio library", () => {
     expect(within(page).getByText(/\$color \$width \$rate · tight, wide/)).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: /^Tracks/ }));
     expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+});
+
+describe("timeline editing", () => {
+  async function timeline() {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    return { user, socket, lanes };
+  }
+  const pick = (lanes: HTMLElement, label: string) =>
+    fireEvent.pointerDown(within(lanes).getByLabelText(label).querySelector("rect")!);
+  const key = (k: string, ctrl = false) => fireEvent.keyDown(document.body, { key: k, ctrlKey: ctrl });
+
+  it("copies a clip and pastes it at the playhead, over what is there; duplicates it after", async () => {
+    const { lanes } = await timeline();
+    pick(lanes, "fan-drop at bar 41.1");
+    key("c", true);
+    key("v", true);                                       // the playhead is at bar 1
+    expect(within(lanes).getByLabelText("fan-drop at bar 1.1")).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("Phase a at bar 1.1")).toBeNull();
+    key("d", true);
+    expect(within(lanes).getByLabelText("fan-drop at bar 17.1")).toBeInTheDocument();
+    key("x", true);
+    expect(within(lanes).queryByLabelText("fan-drop at bar 17.1")).toBeNull();
+  });
+
+  it("splits a clip at the playhead with S, and from the inspector", async () => {
+    const { lanes } = await timeline();
+    const ruler = within(lanes).getByRole("slider", { name: "seek" });
+    fireEvent.click(ruler, { clientX: 6 * 168 });         // beat 168: bar 43
+    pick(lanes, "fan-drop at bar 41.1");
+    key("s");
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("fan-drop at bar 43.1")).toBeInTheDocument();
+    pick(lanes, "verse-sweep at bar 17.1");
+    // The playhead is not inside it, so there is nothing to split.
+    expect(within(screen.getByRole("contentinfo", { name: "inspector" }))
+      .getByRole("button", { name: "Split" })).toBeDisabled();
+  });
+
+  it("opens a clip's menu with the other button", async () => {
+    const { user, lanes } = await timeline();
+    fireEvent.contextMenu(within(lanes).getByLabelText("fan-drop at bar 41.1"));
+    const menu = screen.getByRole("menu", { name: "fan-drop actions" });
+    expect(within(menu).getByRole("menuitem", { name: /Open the routine/ }))
+      .toHaveAttribute("href", "#studio/routine/fan-drop");
+    await user.click(within(menu).getByRole("menuitem", { name: /Duplicate after it/ }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(lanes).getByLabelText("fan-drop at bar 57.1")).toBeInTheDocument();
+  });
+
+  it("picks a phrase as a section to fill, copy, paste and clear", async () => {
+    const { user, lanes } = await timeline();
+    await user.click(within(lanes).getByRole("button", { name: "select Chorus, bars 41 to 56" }));
+    const bar = screen.getByRole("toolbar", { name: "section" });
+    expect(bar).toHaveTextContent("Chorus");
+    await user.selectOptions(within(bar).getByLabelText("fill the section with"), "idle-orbit");
+    expect(within(lanes).getByLabelText("idle-orbit at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("fan-drop at bar 41.1")).toBeNull();
+    await user.click(within(bar).getByRole("button", { name: "Copy section" }));
+    expect(screen.getByText(/Copied Chorus: 3 clips and hits/)).toBeInTheDocument();
+    await user.click(within(lanes).getByRole("button", { name: "select Chorus, bars 73 to 88" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "section" }))
+      .getByRole("button", { name: "Paste here" }));
+    expect(within(lanes).getByLabelText("idle-orbit at bar 73.1")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("toolbar", { name: "section" }))
+      .getByRole("button", { name: "Clear" }));
+    expect(within(lanes).queryByLabelText("idle-orbit at bar 73.1")).toBeNull();
+    expect(within(lanes).queryByLabelText("flash at bar 73.1")).toBeNull();
+  });
+
+  it("places from the browser with a click, or where it is dropped", async () => {
+    const { user, lanes } = await timeline();
+    const browser = screen.getByRole("complementary", { name: "browser" });
+    await user.click(within(browser).getByRole("tab", { name: "Hits" }));
+    await user.click(within(browser).getByRole("button", { name: "Flash" }));
+    expect(within(lanes).getByLabelText("flash at bar 1.1")).toBeInTheDocument();
+    // jsdom has no DragEvent, so the pointer's x is set on the event by hand.
+    const drop = (lane: string, what: unknown, clientX: number) => {
+      const el = within(lanes).getByLabelText(lane);
+      const ev = createEvent.drop(el, {
+        dataTransfer: { types: [PLACE_MIME], getData: () => JSON.stringify(what) } });
+      Object.defineProperty(ev, "clientX", { value: clientX });
+      fireEvent(el, ev);
+    };
+    drop("lane scene", { kind: "routine", id: "idle-orbit" }, 6 * 96);
+    expect(within(lanes).getByLabelText("idle-orbit at bar 25.1")).toBeInTheDocument();
+    drop("lane palette", { kind: "routine", id: "idle-orbit" }, 6 * 96);
+    expect(screen.getByText("A routine goes on a scene, movement, colour or level lane."))
+      .toBeInTheDocument();
+  });
+
+  it("copies a library palette in when the browser places it, and says whose each palette is", async () => {
+    const { user, lanes } = await timeline();
+    const browser = screen.getByRole("complementary", { name: "browser" });
+    await user.click(within(browser).getByRole("tab", { name: "Palettes" }));
+    await user.click(within(browser).getByRole("button", { name: "Ice" }));
+    expect(within(lanes).getByLabelText("Ice at bar 1.1")).toBeInTheDocument();
+    const side = screen.getByRole("complementary", { name: "side panel" });
+    expect(within(side).getByText("This track's palettes")).toBeInTheDocument();
+    const row = (name: string) => within(side).getByLabelText(`${name} primary`).closest(".d-palette")!;
+    expect(row("Ice")).toHaveTextContent("copy of library");
+    expect(row("Hot")).toHaveTextContent("copy of library");
+    expect(row("Cool")).toHaveTextContent("only here");
+    fireEvent.input(within(side).getByLabelText("Hot primary"), { target: { value: "#00ff00" } });
+    expect(row("Hot")).toHaveTextContent("differs from library");
+    await user.click(within(side).getByRole("button", { name: "use the library's colours for Hot" }));
+    expect(within(side).getByLabelText("Hot primary")).toHaveValue("#ff2d6f");
+    expect(row("Hot")).toHaveTextContent("copy of library");
   });
 });
 
@@ -1113,9 +1271,9 @@ describe("palette library", () => {
     const { page } = await library();
     const hot = within(page).getByRole("button", { name: /^Hot/ });
     expect(hot).toHaveTextContent("1 timeline · 1 set");
-    expect(hot).toHaveTextContent("1 with older colours");
+    expect(hot).toHaveTextContent("1 copy differs");
     const copies = within(aside()).getByRole("region", { name: "copies" });
-    expect(within(copies).getByRole("link", { name: /synthetic 128.*older colours/ }))
+    expect(within(copies).getByRole("link", { name: /synthetic 128.*different/ }))
       .toHaveAttribute("href", "#studio/track/synth-128");
     expect(within(copies).getByRole("link", { name: /Club \(set\).*the same/ }))
       .toHaveAttribute("href", "#studio/templates/club");
@@ -1123,12 +1281,14 @@ describe("palette library", () => {
     expect(found).toHaveTextContent(/Cool.*Club \(set\)/);
   });
 
-  it("updates the copies that still have the older colours, and only those", async () => {
+  it("gives the copies that differ the library's colours, and only those", async () => {
     const { user, socket } = await library();
-    await user.click(within(aside()).getByRole("button", { name: "Update 1 copy to these colours" }));
+    // It says whose palette this is: the library's, not any track's.
+    expect(within(aside()).getByText(/You are editing the library's Hot/)).toBeInTheDocument();
+    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colours" }));
     const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
     expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
-    expect(await screen.findByText("Updated 1 copy of Hot.")).toBeInTheDocument();
+    expect(await screen.findByText("Gave 1 copy of Hot the library's colours.")).toBeInTheDocument();
   });
 
   it("saves an edit with the rev it read, and copies wait for the save", async () => {
@@ -1136,8 +1296,8 @@ describe("palette library", () => {
     const hex = within(aside()).getByLabelText("primary hex");
     await user.clear(hex);
     await user.type(hex, "#00ff00");
-    expect(within(aside()).getByRole("button", { name: /Update 1 copy/ })).toBeDisabled();
-    await user.click(within(aside()).getByRole("button", { name: "Save" }));
+    expect(within(aside()).getByRole("button", { name: /Give 1 copy/ })).toBeDisabled();
+    await user.click(within(aside()).getByRole("button", { name: "Save to the library" }));
     const sent = reply(socket, "palette_save", true, { rev: "r:p2" }) as unknown as PalSaved;
     expect(sent.base_rev).toBe("r:p");
     expect(sent.doc).toMatchObject({ kind: "klights.palette", id: "hot", name: "Hot",

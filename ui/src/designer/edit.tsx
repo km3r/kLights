@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { HelpHeading } from "../components";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
@@ -110,6 +110,7 @@ export type History<D extends object = TimelineDoc> = ReturnType<typeof useHisto
 
 /** What the lanes need of a history -- the same for a timeline and a routine. */
 export interface Edits {
+  doc: RowsDoc | null;
   apply(change: (draft: RowsDoc) => void): void;
   snap: Snap;
   snapBeat(beat: number): number;
@@ -167,12 +168,36 @@ export function useKeys(handler: (e: KeyboardEvent) => void): void {
 
 /** The designer's plain keys, the same in both editors: Space plays and
  *  stops, Delete (or Backspace) removes what is selected, Escape lets go of it. */
-export function useEditorKeys({ history, selected, setSelected, playPause }: {
+export function useEditorKeys({ history, selected, setSelected, playPause, clip }: {
   history: Edits; selected: string | null; setSelected: (id: string | null) => void;
   playPause: () => void;
+  /** Copy, cut, paste, duplicate (Ctrl/Cmd C X V D) and split at the
+   *  playhead (S): what kind of document this is, and where the playhead is. */
+  clip?: { kind: ClipKind; beat: () => number };
 }): void {
   useKeys((e) => {
-    if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (typing(e) || e.altKey) return;
+    const item = selected && !parsePointId(selected) ? selected : null;
+    if (clip && (e.metaKey || e.ctrlKey)) {
+      const k = e.key.toLowerCase();
+      const at = () => Math.max(0, history.snapBeat(clip.beat()));
+      if (k === "c" && item) { e.preventDefault(); clipOps.copy(history, item, clip.kind); }
+      else if (k === "x" && item) { e.preventDefault(); clipOps.cut(history, item, clip.kind); setSelected(null); }
+      else if (k === "v" && clipBoard()?.kind === clip.kind) {
+        e.preventDefault();
+        setSelected(clipOps.paste(history, clip.kind, at()));
+      } else if (k === "d" && item) {
+        e.preventDefault();
+        setSelected(clipOps.duplicate(history, item, clip.kind) ?? item);
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) return;
+    if (clip && item && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      clipOps.split(history, item, history.snapBeat(clip.beat()));
+      return;
+    }
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (e.key === " " && tag !== "BUTTON" && tag !== "A") {
       e.preventDefault();
@@ -198,6 +223,192 @@ export function removeSelected(d: RowsDoc, id: string): void {
   }
   for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== id);
 }
+
+// -- the clipboard ------------------------------------------------------------------
+
+export type ClipKind = "timeline" | "routine";
+
+/** Clips copied from a document: each with the row it came from, at a beat
+ *  counted from the start of what was copied, and how long that stretch is.
+ *  Kept for the page, so a copy from one track pastes into the next -- but
+ *  only into the same kind of document: a timeline's clips are not a
+ *  routine's rows. */
+export interface ClipBoard {
+  kind: ClipKind;
+  span: number;
+  clips: { row: Pick<Row, "id" | "type" | "target" | "role" | "gap">; item: Item }[];
+}
+
+let board: ClipBoard | null = null;
+const boardListeners = new Set<() => void>();
+export function clipBoard(): ClipBoard | null { return board; }
+export function setClipBoard(next: ClipBoard | null): void {
+  board = next;
+  boardListeners.forEach((l) => l());
+}
+function subscribeBoard(listener: () => void): () => void {
+  boardListeners.add(listener);
+  return () => { boardListeners.delete(listener); };
+}
+/** The clipboard, for a button that can only paste when it holds something. */
+export function useClipBoard(): ClipBoard | null {
+  return useSyncExternalStore(subscribeBoard, clipBoard);
+}
+
+const CLIP_ROWS = new Set(["clips", "hits"]);
+function rowKey(row: Row): ClipBoard["clips"][number]["row"] {
+  const key: ClipBoard["clips"][number]["row"] = { id: row.id, type: row.type };
+  if (row.target !== undefined) key.target = row.target;
+  if (row.role !== undefined) key.role = row.role;
+  if (row.gap !== undefined) key.gap = row.gap;
+  return key;
+}
+
+/** Take [start, end) out of a row: an item inside it goes, one across an
+ *  edge is trimmed to the outside, and one across both is split in two. */
+export function cutRange(d: RowsDoc, row: Row, start: number, end: number): void {
+  if (!row.items || end <= start) return;
+  const out: Item[] = [];
+  for (const it of row.items) {
+    const a = it.at;
+    const b = it.at + it.len;
+    if (b <= start || a >= end) { out.push(it); continue; }
+    if (a < start) {
+      const head: Item = { ...it, len: start - a };
+      if ((head.fade ?? 0) > head.len) head.fade = head.len;
+      out.push(head);
+    }
+    if (b > end) {
+      // What carries on after the cut starts there, with no fade in of its own.
+      const tail: Item = { ...structuredClone(it), id: a < start ? uniqueId(d, it.id) : it.id,
+                           at: end, len: b - end };
+      delete tail.fade;
+      out.push(tail);
+    }
+  }
+  row.items = out;
+}
+
+/** What overlaps [start, end) on the clip and hit rows, trimmed to it. */
+export function copyRange(doc: RowsDoc, start: number, end: number, kind: ClipKind): ClipBoard {
+  const clips: ClipBoard["clips"] = [];
+  for (const row of doc.rows) {
+    if (!CLIP_ROWS.has(row.type)) continue;
+    for (const it of row.items ?? []) {
+      const a = Math.max(it.at, start);
+      const b = Math.min(it.at + it.len, end);
+      if (b <= a) continue;
+      const item: Item = { ...structuredClone(it), at: a - start, len: b - a };
+      if (it.at < start) delete item.fade;
+      else if ((item.fade ?? 0) > item.len) item.fade = item.len;
+      clips.push({ row: rowKey(row), item });
+    }
+  }
+  return { kind, span: end - start, clips };
+}
+
+export function copyItem(doc: RowsDoc, id: string, kind: ClipKind): ClipBoard | null {
+  for (const row of doc.rows) {
+    const it = (row.items ?? []).find((i) => i.id === id);
+    if (it) return { kind, span: it.len, clips: [{ row: rowKey(row), item: { ...structuredClone(it), at: 0 } }] };
+  }
+  return null;
+}
+
+/** Paste at a beat: each clip onto the row it came from, else a row of the
+ *  same kind, else a new one -- over what is there, which the stretch pasted
+ *  clears first. Returns the new items' ids. */
+export function pasteBoard(d: RowsDoc, b: ClipBoard, at: number): string[] {
+  const rows = new Map<string, Row>();
+  for (const { row: key } of b.clips) {
+    if (rows.has(key.id)) continue;
+    let row = d.rows.find((r) => r.id === key.id && r.type === key.type && r.target === key.target)
+      ?? d.rows.find((r) => r.type === key.type && r.target === key.target
+                     && (key.role === undefined || r.role === key.role));
+    if (!row) {
+      row = { ...key, id: uniqueId(d, key.target ?? key.type), items: [] };
+      d.rows.push(row);
+    }
+    cutRange(d, row, at, at + b.span);
+    rows.set(key.id, row);
+  }
+  const ids: string[] = [];
+  for (const { row: key, item } of b.clips) {
+    const id = uniqueId(d, item.id);
+    (rows.get(key.id)!.items ??= []).push({ ...structuredClone(item), id, at: at + item.at });
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Split an item at a beat inside it. Returns the second half's id. */
+export function splitAt(d: RowsDoc, id: string, beat: number): string | null {
+  for (const row of d.rows) {
+    const it = (row.items ?? []).find((i) => i.id === id);
+    if (!it) continue;
+    if (!(it.at < beat && beat < it.at + it.len)) return null;
+    const tail: Item = { ...structuredClone(it), id: uniqueId(d, it.id), at: beat,
+                         len: it.at + it.len - beat };
+    delete tail.fade;
+    it.len = beat - it.at;
+    if ((it.fade ?? 0) > it.len) it.fade = it.len;
+    row.items!.push(tail);
+    return tail.id;
+  }
+  return null;
+}
+
+/** The clip operations as one undoable edit each, for the keys, the clip's
+ *  menu and the inspector alike. Each answers with what should be selected:
+ *  a paste's first new clip, a duplicate, a split's second half. Ids are
+ *  worked out on a copy first -- an edit is applied when React renders, too
+ *  late to read them back from it -- and `uniqueId` gives the same answer on
+ *  the same document. */
+export const clipOps = {
+  copy(h: Edits, id: string, kind: ClipKind): boolean {
+    const b = h.doc ? copyItem(h.doc, id, kind) : null;
+    if (b) setClipBoard(b);
+    return b != null;
+  },
+  cut(h: Edits, id: string, kind: ClipKind): void {
+    if (clipOps.copy(h, id, kind)) h.apply((d) => removeSelected(d, id));
+  },
+  paste(h: Edits, kind: ClipKind, at: number): string | null {
+    const b = clipBoard();
+    if (!b || b.kind !== kind || !h.doc) return null;
+    const ids = pasteBoard(structuredClone(h.doc), b, at);
+    h.apply((d) => { pasteBoard(d, b, at); });
+    return ids[0] ?? null;
+  },
+  duplicate(h: Edits, id: string, kind: ClipKind): string | null {
+    if (!h.doc) return null;
+    const b = copyItem(h.doc, id, kind);
+    const it = itemOf(h.doc, id);
+    if (!b || !it) return null;
+    const at = it.at + it.len;
+    const ids = pasteBoard(structuredClone(h.doc), b, at);
+    h.apply((d) => { pasteBoard(d, b, at); });
+    return ids[0] ?? null;
+  },
+  split(h: Edits, id: string, beat: number): string | null {
+    if (!h.doc) return null;
+    const tail = splitAt(structuredClone(h.doc), id, beat);
+    if (tail) h.apply((d) => { splitAt(d, id, beat); });
+    return tail;
+  },
+  /** Whether a beat falls inside an item, so it can be split there. */
+  inside(doc: RowsDoc | null, id: string, beat: number): boolean {
+    const it = doc ? itemOf(doc, id) : undefined;
+    return !!it && it.at < beat && beat < it.at + it.len;
+  },
+};
+
+/** The kind of thing a browser or a drop places, as dragged between them. */
+export const PLACE_MIME = "application/x-klights-place";
+export type Placeable =
+  | { kind: "routine"; id: string }
+  | { kind: "palette"; name: string; colours?: Record<"primary" | "secondary" | "accent", string> }
+  | { kind: "hit"; hit: "flash" | "strobe" | "blackout" };
 
 function rowOf(doc: RowsDoc, id: string): Row | undefined {
   return doc.rows.find((r) => r.id === id);
@@ -381,10 +592,20 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
 
 const LANE_H = 40;
 
-function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
+function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem }: {
   row: Row; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void; history: Edits;
+  /** A clip's menu, asked for with the other mouse button. */
+  onMenu?: (id: string, clientX: number, clientY: number) => void;
+  /** Something dragged from the browser, let go at a beat on this lane. */
+  onDropItem?: (what: Placeable, beat: number) => void;
 }) {
+  const menu = (e: React.MouseEvent, id: string) => {
+    if (!onMenu) return;
+    e.preventDefault();
+    onSelect(id);
+    onMenu(id, e.clientX, e.clientY);
+  };
   // A drag is shown live from local state and committed as ONE edit on release.
   const [drag, setDrag] = useState<{ id: string; mode: "move" | "resize";
                                      start: number; at: number; len: number;
@@ -428,6 +649,16 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target === e.currentTarget) onSelect(null);
+         }}
+         onDragOver={(e) => {
+           if (onDropItem && e.dataTransfer.types.includes(PLACE_MIME)) e.preventDefault();
+         }}
+         onDrop={(e) => {
+           const raw = e.dataTransfer.getData(PLACE_MIME);
+           if (!onDropItem || !raw) return;
+           e.preventDefault();
+           const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+           onDropItem(JSON.parse(raw) as Placeable, Math.max(0, (e.clientX - r.left) / zoom));
          }}>
       {items.map((it) => {
         const live = drag?.id === it.id ? drag : null;
@@ -439,6 +670,7 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
           return (
             <g key={it.id} className={`d-hit d-hit-${it.hit}${sel ? " sel" : ""}`}
                onPointerDown={(e) => begin(e, it, "move")} role="button"
+               onContextMenu={(e) => menu(e, it.id)}
                aria-label={`${it.hit} at bar ${barBeat(at)}`}>
               <rect x={cx} y={LANE_H / 2 - 3} width={Math.max(2, x(len) - x(0))} height={6}
                     rx={3} className="d-hit-span" />
@@ -450,7 +682,8 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
         const fadeW = Math.min(w, x(it.fade ?? 0) - x(0));
         return (
           <g key={it.id} className={`d-clip d-clip-${it.kind ?? "block"}${sel ? " sel" : ""}`}
-             role="button" aria-label={`${itemName(it)} at bar ${barBeat(at)}`}>
+             role="button" aria-label={`${itemName(it)} at bar ${barBeat(at)}`}
+             onContextMenu={(e) => menu(e, it.id)}>
             <rect x={x(at)} y={2} width={w} height={LANE_H - 4} rx={4}
                   onPointerDown={(e) => begin(e, it, "move")} />
             {fadeW > 0 && (
@@ -755,30 +988,11 @@ function Shelf({ history, routines, beat, track }: {
 }) {
   const doc = history.doc;
   if (!doc) return null;
-  const scene = doc.rows.find((r) => r.type === "clips" && r.target === "scene");
-  const place = (r: RoutineSummary) => history.apply((d) => {
-    let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
-    if (!lane) {
-      lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill", items: [] };
-      d.rows.unshift(lane);
-    }
-    const at = Math.max(0, history.snapBeat(beat));
-    (lane.items ??= []).push({ id: uniqueId(d, r.id), kind: "routine", routine: r.id,
-                               at, len: r.bars * BEATS_PER_BAR });
-  });
+  // The routines to place are in the browser, on the left; this keeps what
+  // works on the whole track.
+  void routines;
   return (
     <section>
-      <h3>Routines</h3>
-      <p className="small muted">Click to place at the playhead on the scene lane.</p>
-      <div className="d-shelf">
-        {routines.map((r) => (
-          <button key={r.id} onClick={() => place(r)}
-                  title={`${r.bars} bars${r.loop ? ", loops" : ""}${r.rig ? ", this rig only" : ""}`}>
-            {r.name ?? r.id}{r.rig && <span className="d-badge">rig</span>}
-          </button>
-        ))}
-      </div>
-      {!scene && <p className="small muted">No scene lane yet -- placing one adds it.</p>}
       <Templates history={history} track={track ?? null} />
       <RecordPads history={history} beat={beat} />
       <Palettes history={history} />
@@ -876,6 +1090,33 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
   );
 }
 
+/** Where a document's palette came from, said beside it: a copy of the
+ *  library's (and whether it still matches), or one that lives only here.
+ *  Editing it here never changes the library -- this says so, in place. */
+export function PaletteOrigin({ library, name, colours, here, onUseLibrary }: {
+  library: PaletteSummary[]; name: string; colours: Record<string, unknown>;
+  /** "track" or "set": whose copy this is. */
+  here: string;
+  onUseLibrary: (colours: { primary: string; secondary: string; accent: string }) => void;
+}) {
+  const lib = library.find((p) => p.name === name);
+  if (!lib) {
+    return <span className="d-origin" title={`Made in this ${here}: no library palette is called ${name}`}>
+      only here</span>;
+  }
+  const same = ROLES.every((r) => typeof colours[r] === "string"
+    && (colours[r] as string).toLowerCase() === lib[r].toLowerCase());
+  const tip = `A copy of the library's ${name}. Changing it here changes this ${here} only; `
+    + "the library's is changed on Studio's Palettes page.";
+  return same ? <span className="d-origin lib" title={tip}>copy of library</span> : (
+    <span className="d-origin differs" title={tip}>differs from library
+      <button className="small" aria-label={`use the library's colours for ${name}`}
+              onClick={() => onUseLibrary({ primary: lib.primary, secondary: lib.secondary,
+                                            accent: lib.accent })}>use library's</button>
+    </span>
+  );
+}
+
 function Palettes({ history }: { history: History }) {
   const doc = history.doc;
   // The show's library, to copy a palette in from.
@@ -895,7 +1136,12 @@ function Palettes({ history }: { history: History }) {
           the palette.</p>
         <p>The selected palette plays wherever the palette lane is empty. A
           palette clip switches it for its length.</p>
-      </>}>Palettes</HelpHeading>
+        <p>These are this track's own copies. Changing a colour here changes
+          this track only; the library's palettes are on Studio's Palettes
+          page, which can bring copies up to date.</p>
+      </>}>This track's palettes</HelpHeading>
+      <p className="small muted">Changing a colour here changes this track only.{" "}
+        <a className="d-link" href="#studio/palettes">The library</a></p>
       {Object.entries(palettes).map(([name, pal]) => (
         <div key={name} className="d-palette">
           <label className="small">
@@ -903,6 +1149,9 @@ function Palettes({ history }: { history: History }) {
                    onChange={() => history.apply((d) => { d.palette = name; })} />
             {name}
           </label>
+          <PaletteOrigin library={library} name={name} colours={pal as Record<string, unknown>}
+                         here="track"
+                         onUseLibrary={(c) => history.apply((d) => { d.palettes![name] = c; })} />
           {ROLES.map((role) => (
             <input key={role} type="color" aria-label={`${name} ${role}`} value={hex(pal[role])}
                    onChange={(e) => {
@@ -949,9 +1198,11 @@ export function FromLibrary({ library, has, onPick }: {
 
 // -- the inspector ----------------------------------------------------------------
 
-function Inspector({ history, item, routines, engine, onDeleted }: {
+function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect }: {
   history: History; item: { row: Row; item: Item } | null; routines: RoutineSummary[];
   engine: Engine; onDeleted: () => void;
+  /** The playhead, for Split, and how to select what an operation made. */
+  beat?: number; onSelect?: (id: string | null) => void;
 }) {
   if (history.listView) return <EventList history={history} />;
   if (!item) {
@@ -982,6 +1233,18 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         <span className="muted mono"> · bar {barBeat(it.at)} → {barBeat(it.at + it.len)}
           {" "}({it.len} beats)</span>
         <span className="grow" />
+        <span className="d-clip-tools" role="group" aria-label="clip">
+          <button title="Ctrl+C" onClick={() => clipOps.copy(history, it.id, "timeline")}>Copy</button>
+          <button title="Ctrl+X" onClick={() => { clipOps.cut(history, it.id, "timeline"); onDeleted(); }}>
+            Cut</button>
+          <button title="Ctrl+D: a copy straight after it"
+                  onClick={() => onSelect?.(clipOps.duplicate(history, it.id, "timeline"))}>
+            Duplicate</button>
+          <button title="S: in two, at the playhead"
+                  disabled={beat == null || !clipOps.inside(history.doc, it.id, history.snapBeat(beat))}
+                  onClick={() => onSelect?.(clipOps.split(history, it.id, history.snapBeat(beat ?? 0)))}>
+            Split</button>
+        </span>
         <button onClick={() => {
           history.apply((d) => {
             for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== it.id);

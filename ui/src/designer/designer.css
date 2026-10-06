@@ -515,3 +515,74 @@ a.s-use:hover b { color: var(--accent); }
 .s-role-row input[type="color"] { width: 44px; height: 32px; padding: 0; }
 .s-copy { flex-direction: row; justify-content: space-between; align-items: center; }
 .s-copy-state { display: inline-flex; align-items: center; gap: 6px; }
+
+/* The timeline's browser, on the left: tabs, a search, and items to click or
+   drag -- each with its length and which slots it drives. */
+.d-browser {
+  overflow: auto; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel); border-right: 1px solid var(--line);
+}
+.d-tabs { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line); }
+.designer .d-tabs button { flex: 1; border: 0; border-radius: 7px; background: transparent; color: #aab4c5; }
+.designer .d-tabs button.on { background: var(--panel-2); color: var(--text); }
+.d-browse-list { display: flex; flex-direction: column; gap: 2px; }
+.d-browse-group {
+  display: block; padding: 8px 6px 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--dim);
+}
+.designer .d-browse-item {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; cursor: grab;
+}
+.designer .d-browse-item:hover { background: var(--panel-2); border-color: var(--line); }
+.d-browse-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-browse-meta { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; }
+.d-slots { display: inline-flex; gap: 2px; }
+.d-slots > i { display: block; width: 5px; height: 11px; border-radius: 2px; background: var(--line); }
+.d-slots > i.movement { background: #3b6db0; }
+.d-slots > i.color { background: #8b5cc4; }
+.d-slots > i.level { background: #b88a2c; }
+.d-swatch-row { display: inline-flex; gap: 2px; }
+.d-swatch-row > i { display: block; width: 10px; height: 10px; border-radius: 2px; }
+
+/* A phrase picked as a section: its band lit, a wash over the lanes, and the
+   section's tools under the top bar. */
+.d-phrase.pickable { cursor: pointer; }
+.d-phrase.pickable:focus { outline: none; }
+.d-phrase.pickable:focus rect { stroke: var(--text); stroke-width: 1.5; }
+.d-phrase.on rect { stroke: var(--text); stroke-width: 2; }
+.d-section-mark {
+  position: absolute; top: 24px; bottom: 0; pointer-events: none; z-index: 1;
+  background: rgba(90, 169, 255, 0.07); border-left: 1px dashed var(--accent); border-right: 1px dashed var(--accent);
+}
+.d-section {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 10px; flex: none;
+  background: #142033; border-bottom: 1px solid var(--accent);
+}
+.d-section > i { display: block; width: 10px; height: 16px; border-radius: 3px; }
+
+/* A clip's menu, at the pointer. */
+.d-ctx {
+  position: fixed; z-index: 30; width: 230px; padding: 5px; display: flex; flex-direction: column;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.d-ctx > a, .designer .d-ctx > button {
+  display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 10px; border: 0;
+  border-radius: 7px; background: transparent; color: var(--text); font-size: 12px; text-align: left;
+  text-decoration: none;
+}
+.d-ctx > a:hover, .designer .d-ctx > button:hover:not(:disabled) { background: var(--line); }
+.designer .d-ctx > button.danger { color: #ff8a83; }
+.d-ctx .k { margin-left: auto; color: var(--dim); font-size: 11px; }
+.d-clip-tools { display: inline-flex; gap: 4px; margin-right: 8px; }
+
+/* Whose palette a palette is: a copy of the library's, one that differs from
+   it, or one that lives only in this file. */
+.d-origin {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 0 6px;
+  border-radius: 8px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap;
+}
+.d-origin.lib { border-color: #2c5a41; color: var(--good); }
+.d-origin.differs { border-color: var(--warn); color: var(--warn); }
+.designer .d-origin button { min-height: 18px; padding: 0 6px; font-size: 10px; }
