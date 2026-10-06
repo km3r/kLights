@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine.output.artnet import ARTNET_PORT, ArtNetOutput, build_artdmx, parse_targets
+from engine.output.base import FanOut, NullOutput
 
 failures: list[str] = []
 
@@ -79,6 +80,55 @@ for s in (a, b):
     s.close()
 out.close()
 bcast.close()
+
+print("\n4. the output interface: a null output, and fanning out")
+null = NullOutput()
+frame = bytearray([10, 20, 30])
+null.send(0, frame)
+frame[0] = 99
+null.send(1, bytes([1]))
+check("NullOutput counts frames and keeps the last per universe",
+      null.frames == 2 and set(null.last) == {0, 1})
+check("...as a copy, so a buffer the caller reuses cannot rewrite history",
+      null.last[0] == bytes([10, 20, 30]))
+null.close()
+
+
+class Broken:
+    """An output whose network went away: what a previz on a dropped Wi-Fi is."""
+
+    def __init__(self, exc):
+        self.exc, self.sent, self.closed = exc, 0, False
+
+    def send(self, universe, data):
+        self.sent += 1
+        raise self.exc
+
+    def close(self):
+        self.closed = True
+        raise self.exc
+
+
+rig_out, previz, also = NullOutput(), Broken(OSError(101, "Network is unreachable")), NullOutput()
+fan = FanOut([rig_out, previz, also])
+for n in range(3):
+    fan.send(0, bytes([n]))
+check("a failing output does not stop the others: every frame reached the rig",
+      rig_out.frames == 3 and also.frames == 3 and also.last[0] == bytes([2]))
+check("the failure is recorded once, by index, for the UI to show",
+      list(fan.failures) == [1] and "OSError" in fan.failures[1], f"{fan.failures}")
+check("and the failed output is dropped, not retried every frame", previz.sent == 1)
+fan.close()
+check("close reaches every output and swallows a failing close", previz.closed)
+check("an empty fan-out is a valid output", (FanOut([]).send(0, b"x"), True)[1])
+program_bug = FanOut([Broken(ValueError("bad frame"))])
+try:
+    program_bug.send(0, b"x")
+    escaped = False
+except ValueError:
+    escaped = True
+check("only OSError is treated as an output dropping out -- a ValueError is a bug "
+      "in the caller and is not hidden", escaped)
 
 print()
 if failures:
