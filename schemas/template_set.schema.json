@@ -56,6 +56,9 @@
               "params": {
                 "type": "object"
               },
+              "bind": {
+                "type": "object"
+              },
               "palette": {
                 "type": "string"
               },

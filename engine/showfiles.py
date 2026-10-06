@@ -438,6 +438,8 @@ _PARAM = S(dict, of={"type": S(str, required=True, choices=PARAM_TYPES,
 
 _PICK = S(dict, of={"routine": S(str, required=True, non_empty=True),
                     "variation": S(str), "params": S(dict),
+                    # which tag (or fixture) a role plays on, as a clip's bind
+                    "bind": S(dict),
                     "palette": S(str),
                     # what the built-in visuals show for this pick (milestone 3)
                     "visuals": S(dict, of={

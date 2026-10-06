@@ -96,7 +96,7 @@ def bars_pick(doc: Mapping, block: int) -> Optional[Mapping]:
 
 def pick_key(p: Mapping) -> str:
     """What makes two picks the same program."""
-    return json.dumps({k: p.get(k) for k in ("routine", "variation", "params",
+    return json.dumps({k: p.get(k) for k in ("routine", "variation", "params", "bind",
                                               "palette", "visuals")}, sort_keys=True)
 
 

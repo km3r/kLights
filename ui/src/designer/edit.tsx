@@ -1,15 +1,16 @@
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore,
+  Fragment, createContext, useCallback, useContext, useEffect, useRef, useState,
+  useSyncExternalStore,
 } from "react";
 import { HelpHeading } from "../components";
-import type { Reply } from "../types";
+import type { EngineState, FixtureState, LookInfo, Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue,
-  draftFromTemplate, hexColor, itemName, itemSub, laneValue, oscArgsText, parseOscArgs, uniqueId,
-  waveLevel,
+  draftFromTemplate, hexColor, itemName, itemSub, laneValue, normalizeName, oscArgsText,
+  parseOscArgs, uniqueId, waveLevel,
 } from "./model";
 import type {
   Item, OscMessage, PaletteSummary, Point, PointValue, RoutineSummary, Row, TemplateSetDoc,
@@ -628,13 +629,18 @@ function placeable(raw: string): Placeable | null {
     if (v?.kind === "routine" && typeof v.id === "string") return v as Placeable;
     if (v?.kind === "palette" && typeof v.name === "string") return v as Placeable;
     if (v?.kind === "hit" && ["flash", "strobe", "blackout"].includes(v.hit as string)) return v as Placeable;
+    if (v?.kind === "look" && typeof v.name === "string") return v as Placeable;
+    if (v?.kind === "snapshot" && typeof v.preset === "string") return v as Placeable;
   } catch { /* not ours */ }
   return null;
 }
 export type Placeable =
   | { kind: "routine"; id: string }
   | { kind: "palette"; name: string; colours?: Record<"primary" | "secondary" | "accent", string> }
-  | { kind: "hit"; hit: "flash" | "strobe" | "blackout" };
+  | { kind: "hit"; hit: "flash" | "strobe" | "blackout" }
+  /** This rig's own: a look from its library, or a preset as a snapshot. */
+  | { kind: "look"; name: string }
+  | { kind: "snapshot"; preset: string };
 
 function rowOf(doc: RowsDoc, id: string): Row | undefined {
   return doc.rows.find((r) => r.id === id);
@@ -817,17 +823,246 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
   );
 }
 
+// -- adding at a spot on a lane ----------------------------------------------------
+
+/** The grid line at or before a beat: a click on a lane adds in the cell it
+ *  lands in, not at the next line when it lands past the middle of one. */
+export function snapDown(history: Pick<Edits, "snap" | "snapBeat">, beat: number): number {
+  // Back a step at a time until the nearest line is not past the click: one
+  // step for beats and bars, more for phrases, whose lines are far apart.
+  const step = history.snap === "beat" ? 1 : BEATS_PER_BAR;
+  for (let b = beat; b > -step; b -= step) {
+    const snapped = history.snapBeat(b);
+    if (snapped <= beat) return Math.max(0, snapped);
+  }
+  return 0;
+}
+
+/** Where something added by a click on a lane's empty space starts: the grid
+ *  line at or before the click -- but not inside the item before it, whose
+ *  end is where the gap that was clicked begins. */
+export function gapStart(history: Pick<Edits, "snap" | "snapBeat">, items: Item[],
+                         beat: number): number {
+  const before = Math.max(0, ...items.map((i) => i.at + i.len).filter((end) => end <= beat));
+  return Math.max(snapDown(history, beat), before);
+}
+
+/** The hits, as every place that adds one offers them. */
+export const HITS = [
+  { hit: "flash", label: "Flash", text: "a burst, decaying" },
+  { hit: "strobe", label: "Strobe", text: "for a bar" },
+  { hit: "blackout", label: "Blackout", text: "a beat of dark" },
+] as const;
+export type HitKind = (typeof HITS)[number]["hit"];
+
+/** A new hit's length and envelope: a flash decays over two beats, a strobe
+ *  runs a bar, a blackout is one beat. */
+export function newHit(hit: HitKind): Pick<Item, "hit" | "len" | "envelope"> {
+  return { hit, len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
+           ...(hit === "flash" ? { envelope: "decay" as const } : {}) };
+}
+
+/** What the built-in visuals show when a scene is first picked: a video
+ *  loops, anything else takes the palette's primary. */
+export function newVisuals(scene: string = "wash"): { scene: string; params: Record<string, unknown> } {
+  return { scene, params: scene === "video" ? { loop: true } : { color: "@primary" } };
+}
+
+/** A menu that closes on a press anywhere outside it (`.d-ctx`), or Escape. */
+export function useMenuDismiss(open: boolean, close: () => void): void {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".d-ctx")) return;
+      closeRef.current();
+    };
+    addEventListener("mousedown", handler);
+    addEventListener("keydown", handler);
+    return () => { removeEventListener("mousedown", handler); removeEventListener("keydown", handler); };
+  }, [open]);
+}
+
+/** One thing a lane's menu offers: what it shows, the words it is found by,
+ *  the heading it is filed under, and what choosing it does. */
+export interface PickEntry {
+  key: string;
+  label: React.ReactNode;
+  text?: string;
+  group?: string;
+  add: () => void;
+}
+
+/** Past this many entries, the menu has a search box (and starts in it). */
+const PICK_SEARCH = 12;
+
+/**
+ * What can go where a lane's empty space was clicked, as a menu at the
+ * pointer: the entries under their headings, with a search box once there are
+ * enough to need one -- a show's routines and its rig's looks run to
+ * hundreds. Enter in the search box takes the first match.
+ */
+export function PickMenu({ label, head, x, y, entries, empty }: {
+  label: string; head: React.ReactNode; x: number; y: number;
+  entries: PickEntry[];
+  /** Said when there is nothing at all to offer. */
+  empty: string;
+}) {
+  const [query, setQuery] = useState("");
+  const search = entries.length > PICK_SEARCH;
+  const words = normalizeName(query).split(" ").filter(Boolean);
+  const shown = entries.filter((e) => words.every((w) => normalizeName(e.text ?? e.key).includes(w)));
+  // Placed for the whole list, so it stays put while a search narrows it.
+  const height = Math.min(entries.length * 28 + (search ? 110 : 60), 420, innerHeight * 0.6);
+  return (
+    <div className="d-ctx d-pick" role="menu" aria-label={label}
+         style={{ left: Math.max(8, Math.min(x, innerWidth - 240)),
+                  top: Math.max(8, Math.min(y, innerHeight - height - 8)) }}>
+      <span className="d-ctx-head small muted">{head}</span>
+      {search && (
+        <input type="search" value={query} placeholder="Search" aria-label={`search ${label}`}
+               autoFocus onChange={(e) => setQuery(e.target.value)}
+               onKeyDown={(e) => {
+                 if (e.key !== "Enter" || !shown.length) return;
+                 e.preventDefault();
+                 shown[0]!.add();
+               }} />)}
+      <div className="d-pick-list">
+        {shown.map((e, i) => (
+          <Fragment key={e.key}>
+            {e.group && e.group !== shown[i - 1]?.group && (
+              <span className="d-ctx-group">{e.group}</span>)}
+            <button role="menuitem" autoFocus={!search && i === 0} onClick={e.add}>{e.label}</button>
+          </Fragment>
+        ))}
+      </div>
+      {!shown.length && (
+        <span className="small muted d-ctx-head">{entries.length ? "Nothing matches." : empty}</span>)}
+    </div>
+  );
+}
+
+// -- who a role plays on ------------------------------------------------------------
+
+/** The fixtures a role's tag reaches, found the way the engine finds them
+ *  (`Rigging.tagged`): carrying the tag, or named it. */
+export function tagged(state: EngineState | null | undefined, tag: string): FixtureState[] {
+  return (state?.fixtures ?? []).filter((f) => f.tags.includes(tag) || f.name === tag);
+}
+
+/** Every tag on the rig's fixtures, the widest first. Not the engine's
+ *  `groups`: those fold tags that name the same fixtures into one (despacio's
+ *  heads are both "movers" and "corner movers") to make filters, and a role
+ *  may name any of them. */
+export function rigTags(state: EngineState | null | undefined): string[] {
+  const count = new Map<string, number>();
+  for (const f of state?.fixtures ?? []) for (const t of f.tags) count.set(t, (count.get(t) ?? 0) + 1);
+  return [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+}
+
+/** How many fixtures a tag reaches on this rig -- or that it reaches none, so
+ *  a role on it lights nothing. Nothing is said with no engine to ask. */
+export function Reach({ state, tag, optional }: {
+  state: EngineState | null | undefined; tag: string; optional?: boolean;
+}) {
+  if (!state || !tag) return null;
+  const found = tagged(state, tag);
+  if (found.length) {
+    return <span className="small muted d-reach" title={found.map((f) => f.name).join(", ")}>
+      {found.length} fixture{found.length === 1 ? "" : "s"}</span>;
+  }
+  return <span className={`small d-reach${optional ? " muted" : " none"}`}
+               title="No fixture carries this tag or has this name. Tags are set on the console's Setup tab">
+    {optional ? "none here (optional)" : "no fixtures on this rig"}</span>;
+}
+
+/** The looks a picker offers: none retired for something better, and no
+ *  single step of a chase -- the console files those under their chase. */
+export function offeredLooks(looks: LookInfo[] | undefined): LookInfo[] {
+  return (looks ?? []).filter((l) => !l.retired && !l.step_of);
+}
+
+/** Where a fixture's tags are set: the console's Setup tab. */
+export function EditTags() {
+  return <a className="small d-link" href="#setup"
+            title="Tags are set per fixture on the console's Setup tab (Design mode)">Edit tags</a>;
+}
+
+/**
+ * Which fixtures each of a routine's roles plays on, for ONE use of it -- a
+ * clip, a template set's pick: its default tag, or another tag, or one
+ * fixture by name (`bind`). A binding the routine has no role for -- left by
+ * an edit to the routine -- is shown so it can be taken off.
+ */
+export function RoleBinds({ label, roles, bind, state, onChange }: {
+  label: string;
+  roles: Record<string, { default: string; optional?: boolean }>;
+  bind: Record<string, string> | undefined;
+  state: EngineState | null | undefined;
+  onChange: (bind: Record<string, string> | undefined) => void;
+}) {
+  const tags = rigTags(state);
+  const names = (state?.fixtures ?? []).map((f) => f.name).filter((n) => !tags.includes(n));
+  const setRole = (role: string, value: string) => {
+    const next = { ...(bind ?? {}) };
+    if (value) next[role] = value; else delete next[role];
+    onChange(Object.keys(next).length ? next : undefined);
+  };
+  const stale = Object.keys(bind ?? {}).filter((r) => !(r in roles));
+  return (
+    <div className="d-binds" role="group" aria-label={`${label} roles`}>
+      <span className="small muted">Plays on</span>
+      {Object.entries(roles).map(([role, spec]) => {
+        const value = bind?.[role] ?? "";
+        const known = !value || tags.includes(value) || names.includes(value);
+        return (
+          <span key={role} className="d-bind">
+            <span className="mono small">{role}</span>
+            <select value={value} aria-label={`${role} plays on`}
+                    onChange={(e) => setRole(role, e.target.value)}>
+              <option value="">its default, {spec.default}</option>
+              {!known && <option value={value}>{value} (not on this rig)</option>}
+              {tags.length > 0 && (
+                <optgroup label="Tags">{tags.map((t) => <option key={t} value={t}>{t}</option>)}</optgroup>)}
+              {names.length > 0 && (
+                <optgroup label="One fixture">
+                  {names.map((n) => <option key={n} value={n}>{n}</option>)}</optgroup>)}
+            </select>
+            <Reach state={state} tag={value || spec.default} optional={spec.optional} />
+          </span>
+        );
+      })}
+      {stale.map((role) => (
+        <span key={role} className="d-bind small d-error">
+          binds {role}, which this routine has no role for
+          <button className="small" aria-label={`drop the binding for ${role}`}
+                  onClick={() => setRole(role, "")}>×</button>
+        </span>
+      ))}
+      <EditTags />
+    </div>
+  );
+}
+
 // -- lanes ----------------------------------------------------------------------
 
 const LANE_H = 40;
 
-function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem }: {
+function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem, onAdd,
+                   noun }: {
   row: Row; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void; history: Edits;
   /** A clip's menu, asked for with the other mouse button. */
   onMenu?: (id: string, clientX: number, clientY: number) => void;
   /** Something dragged from the browser, let go at a beat on this lane. */
   onDropItem?: (what: Placeable, beat: number) => void;
+  /** A click on the lane's empty space, to add something there: at the beat
+   *  clicked, or null for the playhead (Enter, with the lane focused). */
+  onAdd?: (beat: number | null, clientX: number, clientY: number) => void;
+  /** What a click adds, for an empty lane to say: "a block", "a routine". */
+  noun?: string;
 }) {
   const menu = (e: React.MouseEvent, id: string) => {
     if (!onMenu) return;
@@ -872,12 +1107,26 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onD
     });
   };
 
+  const addable = noun ?? (hits ? "a hit" : "a block");
   return (
-    <svg width={width} height={LANE_H} className="d-lane"
+    <svg width={width} height={LANE_H} className={`d-lane${onAdd ? " d-addable" : ""}`}
          aria-label={`lane ${row.id}`}
+         tabIndex={onAdd ? 0 : undefined}
+         aria-keyshortcuts={onAdd ? "Enter" : undefined}
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
-           if (e.target === e.currentTarget) onSelect(null);
+           if (e.target !== e.currentTarget) return;
+           onSelect(null);
+           if (onAdd) {
+             const r = e.currentTarget.getBoundingClientRect();
+             onAdd(Math.max(0, (e.clientX - r.left) / zoom), e.clientX, e.clientY);
+           }
+         }}
+         onKeyDown={(e) => {
+           if (!onAdd || e.key !== "Enter" || e.target !== e.currentTarget) return;
+           e.preventDefault();
+           const r = e.currentTarget.getBoundingClientRect();
+           onAdd(null, r.left, r.bottom);
          }}
          onDragOver={(e) => {
            if (onDropItem && e.dataTransfer.types.includes(PLACE_MIME)) e.preventDefault();
@@ -889,6 +1138,9 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onD
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
            onDropItem(what, Math.max(0, (e.clientX - r.left) / zoom));
          }}>
+      {onAdd && !items.length && (
+        <text x={8} y={LANE_H / 2 + 4} className="d-lane-hint" pointerEvents="none">
+          Empty -- click to add {addable}</text>)}
       {items.map((it) => {
         const live = drag?.id === it.id ? drag : null;
         const at = it.at + (live?.dAt ?? 0);
@@ -1584,7 +1836,7 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
         <p>Fills the scene lane with one routine per rekordbox phrase. It looks
           for the exact label (Verse 2), then the family (Verse), then{" "}
           <code>*</code>. If the set has palettes, it fills the palette lane
-          too.</p>
+          too, and if its picks have visuals, the visuals lane.</p>
         <p>It replaces what's there, but it's only a starting point. Undo puts the
           lanes back.</p>
       </>}>Draft from template</HelpHeading>
@@ -1600,16 +1852,14 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
 /** Record pads: tap along while the track plays, and each tap lands as an
  *  item at the snapped playhead. */
 function RecordPads({ history, beat }: { history: History; beat: number }) {
-  const add = (hit: "flash" | "strobe" | "blackout") => history.apply((d) => {
+  const add = (hit: HitKind) => history.apply((d) => {
     let lane = d.rows.find((r) => r.type === "hits");
     if (!lane) {
       lane = { id: uniqueId(d, "hits"), type: "hits", items: [] };
       d.rows.push(lane);
     }
     const at = Math.max(0, Math.round(beat));
-    (lane.items ??= []).push({ id: uniqueId(d, `${hit}-${at}`), hit, at,
-                               len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
-                               ...(hit === "flash" ? { envelope: "decay" as const } : {}) });
+    (lane.items ??= []).push({ id: uniqueId(d, `${hit}-${at}`), at, ...newHit(hit) });
   });
   const nextScene = () => history.apply((d) => {
     const lane = d.rows.find((r) => r.type === "clips" && r.target === "scene");
@@ -1774,8 +2024,10 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
   });
   const routine = it.kind === "routine" ? routines.find((r) => r.id === it.routine) : undefined;
   const rigBound = it.kind === "look" || it.kind === "snapshot" || !!routine?.rig;
-  const looks = engine.state?.looks.map((l) => l.name) ?? [];
-  const groups = engine.state?.groups ?? [];
+  const looks = offeredLooks(engine.state?.looks).map((l) => l.name);
+  // A hit's "role" is read as a role's tag is: any tag, or one fixture's name.
+  const hitTargets = [...new Set([...rigTags(engine.state),
+                                  ...(engine.state?.fixtures ?? []).map((f) => f.name)])];
   const palettes = Object.keys(history.doc?.palettes ?? {});
 
   return (
@@ -1831,7 +2083,7 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
             <label className="small">Routine{" "}
               <select value={it.routine} aria-label="routine"
                       onChange={(e) => set({ routine: e.target.value, variation: undefined,
-                                             params: {} })}>
+                                             params: {}, bind: undefined })}>
                 {routines.map((r) => <option key={r.id} value={r.id}>{r.name ?? r.id}</option>)}
               </select>
             </label>
@@ -1856,17 +2108,24 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
                      }} />
             ))}
             {routine && (
+              <RoleBinds label={it.id} roles={routine.roles} bind={it.bind} state={engine.state}
+                         onChange={(bind) => set({ bind })} />)}
+            {routine && (
               <a className="small d-link" href={`#studio/routine/${routine.id}`}
                  onClick={() => rememberBack()}>
                 Open routine · {routine.bars} bars{routine.loop ? ", loops" : ""}</a>)}
           </>
         )}
         {it.kind === "look" && (
-          <label className="small">Look{" "}
-            <input list="d-looks" value={it.look ?? ""} aria-label="look"
-                   onChange={(e) => set({ look: e.target.value })} />
-            <datalist id="d-looks">{looks.map((l) => <option key={l} value={l} />)}</datalist>
-          </label>
+          <>
+            <label className="small">Look{" "}
+              <input list="d-looks" value={it.look ?? ""} aria-label="look"
+                     onChange={(e) => set({ look: e.target.value })} />
+              <datalist id="d-looks">{looks.map((l) => <option key={l} value={l} />)}</datalist>
+            </label>
+            <LookGroups groups={it.groups} state={engine.state}
+                        onChange={(groups) => set({ groups })} />
+          </>
         )}
         {it.kind === "snapshot" && (
           <label className="small">Preset{" "}
@@ -1900,7 +2159,9 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
               <select value={it.role ?? ""} aria-label="hit role"
                       onChange={(e) => set({ role: e.target.value || undefined })}>
                 <option value="">everything</option>
-                {groups.map((g) => <option key={g} value={g}>{g}</option>)}
+                {it.role && !hitTargets.includes(it.role) && (
+                  <option value={it.role}>{it.role} (not on this rig)</option>)}
+                {hitTargets.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </label>
             {it.hit === "flash" && (
@@ -1911,6 +2172,37 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
         )}
       </div>
     </footer>
+  );
+}
+
+/** Which fixtures a look clip plays on: every one the look covers, or only
+ *  those with the tags picked (`groups`, read as the engine reads a role's
+ *  tag: a tag, or one fixture's name). */
+function LookGroups({ groups, state, onChange }: {
+  groups: string[] | undefined; state: EngineState | null | undefined;
+  onChange: (groups: string[] | undefined) => void;
+}) {
+  const tags = rigTags(state);
+  const on = groups ?? [];
+  const offered = [...tags, ...on.filter((g) => !tags.includes(g))];
+  const toggle = (tag: string) => {
+    const next = on.includes(tag) ? on.filter((g) => g !== tag) : [...on, tag];
+    onChange(next.length ? next : undefined);
+  };
+  if (!offered.length) return null;
+  return (
+    <div>
+      <span className="small muted">Only on</span>
+      <div className="d-chips" role="group" aria-label="look plays on">
+        <button className={on.length ? "" : "on"} onClick={() => onChange(undefined)}>
+          all it covers</button>
+        {offered.map((t) => (
+          <button key={t} className={on.includes(t) ? "on" : ""} aria-pressed={on.includes(t)}
+                  title={tagged(state, t).map((f) => f.name).join(", ") || "nothing on this rig"}
+                  onClick={() => toggle(t)}>{t}</button>))}
+        <EditTags />
+      </div>
+    </div>
   );
 }
 
@@ -1957,8 +2249,7 @@ function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => 
       <div className="d-chips" role="group" aria-label="visuals scene">
         {VISUAL_SCENES.map((s) => (
           <button key={s} className={scene === s ? "on" : ""}
-                  onClick={() => set({ scene: s,
-                                       params: s === "video" ? { loop: true } : { color: "@primary" } })}>
+                  onClick={() => set(newVisuals(s))}>
             {s}</button>))}
       </div>
       {Object.entries(rules).map(([name, rule]) => {

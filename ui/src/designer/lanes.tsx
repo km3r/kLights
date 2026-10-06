@@ -1,8 +1,13 @@
-import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, PHRASE_HUE, curveValue, laneValue, phraseFamily } from "./model";
+import { useEffect, useRef, useState } from "react";
+import {
+  BEATS_PER_BAR, PHRASE_HUE, VISUAL_SCENES, barBeat, curveValue, laneValue, phraseFamily,
+} from "./model";
 import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
-import { Editor, defaultWave, laneTitle, useLaneSpec, waveId } from "./edit";
-import type { Edits, Placeable } from "./edit";
+import {
+  Editor, PickMenu, defaultWave, gapStart, laneTitle, newVisuals, useLaneSpec, useMenuDismiss,
+  waveId,
+} from "./edit";
+import type { Edits, PickEntry, Placeable } from "./edit";
 
 /**
  * The designer's lanes and bands, shared by the track designer and the routine
@@ -128,7 +133,7 @@ const TARGET_LABEL: Record<string, string> = {
 };
 
 export function Lane({ row, index, x, width, zoom, selected, onSelect, history, beat,
-                      roles, onMenu, onDropItem }: {
+                      roles, onMenu, onDropItem, onAdd }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
   history: Edits; beat: number;
@@ -138,6 +143,9 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   /** A routine's lane: its rows play on a ROLE rather than owning a slot of
    *  the track, so the head picks the role and there is no gap mode. */
   roles?: string[];
+  /** A click on a clips or hits lane's empty space, to offer what goes
+   *  there: at a beat, or null for the playhead. */
+  onAdd?: (rowId: string, beat: number | null, clientX: number, clientY: number) => void;
 }) {
   if (row.type === "automation") {
     return <AutoLane row={row} x={x} width={width} history={history} beat={beat}
@@ -148,7 +156,7 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
         || row.output === "vj") {
       return <ExternalLane row={row} index={index} x={x} width={width} zoom={zoom}
                            selected={selected} onSelect={onSelect} history={history}
-                           beat={beat} />;
+                           beat={beat} addable={!!onAdd} />;
     }
     return (
       <div className="d-row d-external">
@@ -160,6 +168,9 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
     );
   }
   const hits = row.type === "hits";
+  // What a click on the empty lane adds, for the lane to say so.
+  const noun = hits ? "a hit" : roles ? "a block" : row.target === "palette" ? "a palette"
+    : "a routine or look";
   return (
     <div className={`d-row ${hits ? "d-hits" : "d-clips"}`}>
       <div className="d-head">
@@ -183,7 +194,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
       </div>
       <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                       onSelect={onSelect} history={history} onMenu={onMenu}
-                      onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))} />
+                      onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))}
+                      onAdd={onAdd && ((at, cx, cy) => onAdd(row.id, at, cx, cy))} noun={noun} />
     </div>
   );
 }
@@ -191,7 +203,7 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
 /** A new cue on an OSC or MIDI lane, before its author says what it sends. */
 function newCue(output: string): Partial<Item> {
   if (output === "midi") return { note: 60, velocity: 100 };
-  if (output === "visuals" || output === "vj") return { scene: "wash", params: { color: "@primary" } };
+  if (output === "visuals" || output === "vj") return newVisuals();
   return { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
 }
 
@@ -200,11 +212,16 @@ const OUTPUT_LABEL: Record<string, string> = {
 };
 
 /** An OSC or MIDI lane (milestone 3): cues as the track plays -- or, with
- *  points, a curve sent to one OSC address or one MIDI controller. */
-function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history, beat }: {
+ *  points, a curve sent to one OSC address or one MIDI controller. A cue goes
+ *  in with "+ cue" at the playhead, or from the menu a click on the lane's
+ *  empty space opens (a visuals lane's lists its scenes) -- a menu, so a click
+ *  meant only to let go of a selection adds nothing. */
+function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history, beat, addable }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
   history: Edits; beat: number;
+  /** Whether a click on the empty lane adds a cue there, as in the editors. */
+  addable?: boolean;
 }) {
   const curve = row.points != null;
   const now = curve ? curveValue(row.points ?? [], beat) : null;
@@ -213,6 +230,29 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
     if (r) Object.assign(r, fields);
   });
   const midi = row.output === "midi";
+  /** A new cue at a beat, selected so its inspector opens. */
+  const addCue = (at: number, cue: Partial<Item> = newCue(row.output ?? "")) => {
+    if (!history.doc) return;
+    // Named first: the edit itself runs later, inside React's update.
+    const id = Editor.uniqueId(history.doc, "cue");
+    history.apply((d) => {
+      const r = d.rows.find((q) => q.id === row.id);
+      if (!r) return;
+      r.items = [...(r.items ?? []), { id, at, len: 16, ...cue }];
+    });
+    onSelect(id);
+  };
+  // The menu a click on the empty lane opens: where, and the beat it starts on.
+  const [adding, setAdding] = useState<{ at: number; x: number; y: number } | null>(null);
+  useMenuDismiss(!!adding, () => setAdding(null));
+  const add = (cue?: Partial<Item>) => () => {
+    if (adding) addCue(adding.at, cue);
+    setAdding(null);
+  };
+  const visuals = row.output === "visuals" || row.output === "vj";
+  const entries: PickEntry[] = visuals
+    ? VISUAL_SCENES.map((s) => ({ key: s, label: s, add: add(newVisuals(s)) }))
+    : [{ key: "cue", label: midi ? "A MIDI note" : "An OSC cue", add: add() }];
   return (
     <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
       <div className="d-head">
@@ -234,26 +274,22 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
           </span>)}
         {!curve && (
           <button className="small" aria-label={`add a cue to ${row.id}`}
-                    onClick={() => {
-                      if (!history.doc) return;
-                      // Named first: the edit itself runs later, inside React's update.
-                      const id = Editor.uniqueId(history.doc, "cue");
-                      const at = history.snapBeat(beat);
-                      history.apply((d) => {
-                        const r = d.rows.find((q) => q.id === row.id);
-                        if (!r) return;
-                        r.items = [...(r.items ?? []), { id, at, len: 16,
-                                                          ...newCue(row.output ?? "") }];
-                      });
-                      onSelect(id);
-                    }}>+ cue</button>)}
+                    onClick={() => addCue(Math.max(0, history.snapBeat(beat)))}>+ cue</button>)}
         <Editor.LaneMenu row={row} index={index} history={history} />
       </div>
       {curve
         ? <Editor.AutoSvg row={row} x={x} width={width} history={history}
                           selected={selected} onSelect={onSelect} />
         : <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
-                          onSelect={onSelect} history={history} />}
+                          onSelect={onSelect} history={history} noun="a cue"
+                          onAdd={addable ? (at, cx, cy) => setAdding({
+                            at: at == null ? Math.max(0, history.snapBeat(beat))
+                              : gapStart(history, row.items ?? [], at),
+                            x: cx, y: cy }) : undefined} />}
+      {adding && (
+        <PickMenu label={`add to ${row.id}`} x={adding.x} y={adding.y} entries={entries}
+                  empty="Nothing goes on this lane."
+                  head={`Add a cue at bar ${barBeat(adding.at)}`} />)}
     </div>
   );
 }

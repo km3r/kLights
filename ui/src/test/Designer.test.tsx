@@ -11,8 +11,8 @@ import {
   templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, paramSpec, pasteBoard,
-  routineLaneSpecs, splitAt, timelineLaneSpecs,
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, gapStart, paramSpec, pasteBoard,
+  routineLaneSpecs, snapDown, splitAt, timelineLaneSpecs,
 } from "../designer/edit";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
@@ -196,6 +196,77 @@ describe("designer model", () => {
     expect(doc.grid_rev).toBe("g:834af7");
   });
 
+  it("starts a click's addition in the gap clicked, on the grid", () => {
+    const bars = { snap: "bar" as const, snapBeat: (b: number) => Math.round(b / 4) * 4 };
+    // past a bar line's middle still means that bar...
+    expect(snapDown(bars, 7)).toBe(4);
+    // ...but not inside the block before the gap: its end is where the gap starts
+    expect(gapStart(bars, [{ id: "a", at: 0, len: 6 }] as never, 7)).toBe(6);
+    expect(gapStart(bars, [{ id: "a", at: 0, len: 2 }] as never, 7)).toBe(4);
+    // phrases: back to the line before the click, however far; none, the start
+    const lines = [32, 96];
+    const phrases = { snap: "phrase" as const,
+                      snapBeat: (b: number) => lines.reduce((best, p) => (
+                        Math.abs(p - b) < Math.abs(best - b) ? p : best)) };
+    expect(snapDown(phrases, 90)).toBe(32);
+    expect(snapDown(phrases, 10)).toBe(0);
+  });
+
+  it("counts two clips that bind the same roles as the same pick, however written", () => {
+    // Two Verses play fan-drop bound alike (48 beats each), a third plays
+    // idle-orbit (80): together the fan-drops win -- unless the order the
+    // bindings were written in split them into two picks of 48.
+    const track = { ...structuredClone(trackDoc),
+                    phrases: { items: [[0, 48, "Verse"], [48, 96, "Verse"], [96, 176, "Verse"]] } };
+    const tl = { kind: "klights.timeline", version: 1, track: "synth-128", rows: [
+      { id: "scene", type: "clips", target: "scene", items: [
+        { id: "a", kind: "routine", routine: "fan-drop", at: 0, len: 48,
+          bind: { pins: "pinspots", movers: "corner movers" } },
+        { id: "b", kind: "routine", routine: "fan-drop", at: 48, len: 48,
+          bind: { movers: "corner movers", pins: "pinspots" } },
+        { id: "c", kind: "routine", routine: "idle-orbit", at: 96, len: 80 }] }] };
+    const set = templateFromTimeline("mine", "Mine", track as never, tl as never)!;
+    expect(set.phrases.Verse).toEqual({ routine: "fan-drop",
+                                        bind: { pins: "pinspots", movers: "corner movers" } });
+  });
+
+  it("drafts a pick's role bindings onto its clips", () => {
+    const set = structuredClone(clubDoc) as unknown as TemplateSetDoc;
+    set.phrases.Chorus = { ...set.phrases.Chorus!, bind: { pins: "Pinspot #1" } };
+    const doc = newTimeline(trackDoc as never);
+    expect(draftFromTemplate(doc, trackDoc as never, set as never)).toBeNull();
+    const scene = doc.rows.find((r) => r.target === "scene")!.items!;
+    expect(scene.find((i) => i.at === 160)).toMatchObject({ routine: "fan-drop",
+                                                             bind: { pins: "Pinspot #1" } });
+    expect(scene.find((i) => i.at === 64)!.bind).toBeUndefined();
+  });
+
+  it("drafts the set's visuals onto a visuals lane, so the timeline does not silence them", () => {
+    // A new timeline: a visuals lane, a cue a phrase, each as the set picks it.
+    const fresh = newTimeline(trackDoc as never);
+    expect(draftFromTemplate(fresh, trackDoc as never, clubDoc as never)).toBeNull();
+    const vis = fresh.rows.filter((r) => r.type === "external" && r.output === "visuals");
+    expect(vis).toHaveLength(1);
+    expect(vis[0]!.items!.map((i) => [i.at, i.scene])).toEqual([
+      [0, "wash"], [64, "bars"], [128, "particles"], [160, "tunnel"], [224, "wash"],
+      [256, "particles"], [288, "tunnel"], [352, "wash"]]);
+    expect(vis[0]!.items![3]).toMatchObject({ len: 64, params: { color: "@primary", speed: 2 } });
+    // The example timeline already has one: its cues are replaced, as the
+    // scene lane's are, rather than a second lane fighting it.
+    const drawn = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    expect(draftFromTemplate(drawn, trackDoc as never, clubDoc as never)).toBeNull();
+    const screens = drawn.rows.filter((r) => r.type === "external" && r.output === "visuals");
+    expect(screens.map((r) => r.id)).toEqual(["screen"]);
+    expect(screens[0]!.items!.map((i) => i.scene)).toEqual(vis[0]!.items!.map((i) => i.scene));
+    // A set without visuals leaves the visuals lane alone.
+    const plain = structuredClone(clubDoc) as unknown as TemplateSetDoc;
+    for (const pick of Object.values(plain.phrases)) delete pick.visuals;
+    const kept = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    draftFromTemplate(kept, trackDoc as never, plain as never);
+    expect(kept.rows.find((r) => r.id === "screen")).toEqual(
+      (timelineDoc as unknown as TimelineDoc).rows.find((r) => r.id === "screen"));
+  });
+
   it("drafts a track with a grid and no phrases from the set's bar cycle", () => {
     const track = { ...structuredClone(trackDoc), phrases: { items: [] } } as never;
     const doc = newTimeline(track);
@@ -214,12 +285,13 @@ describe("designer model", () => {
   it("makes a set from a timeline: what each phrase family's scene lane plays most", () => {
     const set = templateFromTimeline("mine", "Mine", trackDoc as never, timelineDoc as never)!;
     // The Intro is a snapshot, not a routine, so it says nothing. The two
-    // Choruses tie (wide and tight, 16 bars each): the first one wins.
+    // Choruses tie (wide and tight, 16 bars each): the first one wins -- with
+    // the role it binds, which is part of what it plays.
     expect(set.phrases).toEqual({
       Verse: { routine: "verse-sweep", params: { color: "@secondary" } },
       Up: { routine: "build-rise" },
       Chorus: { routine: "fan-drop", variation: "wide", params: { color: "@primary" },
-                palette: "Hot" },
+                bind: { pins: "pinspots" }, palette: "Hot" },
       Down: { routine: "idle-orbit", params: { color: "@secondary" } },
       Outro: { routine: "idle-orbit" },
       "*": { routine: "verse-sweep", params: { color: "@secondary" } },
@@ -779,6 +851,167 @@ describe("designer", () => {
     expect(within(lanes).getByLabelText("blackout at bar 41.4")).toBeInTheDocument();
   });
 
+  it("fills any lane from a click on its empty space, with what that lane can hold", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+
+    // The movement lane: the browser's click only reaches the scene lane.
+    // Its menu has the routines and this rig's MOVEMENT looks -- no colour
+    // looks, no snapshots -- and, being long, a search box it starts in.
+    const move = within(lanes).getByLabelText("lane move");
+    fireEvent.click(move, { clientX: 6 * 34, clientY: 20 });         // inside bar 9
+    let menu = screen.getByRole("menu", { name: "add to move" });
+    expect(menu).toHaveTextContent("Add at bar 9.1");
+    expect(within(menu).getByRole("menuitem", { name: /Idle orbit/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Heads - Ball" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: "MH Red" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "opener" })).toBeNull();
+    expect(within(menu).getByLabelText("search add to move")).toHaveFocus();
+    await user.keyboard("idle{Enter}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(move).getByLabelText("idle-orbit at bar 9.1")).toBeInTheDocument();
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/routine on move/)).toBeInTheDocument();
+    fireEvent.click(move, { clientX: 6 * 48, clientY: 20 });
+    await user.keyboard("heads floor{Enter}");
+    expect(within(move).getByLabelText("Heads - Floor at bar 13.1")).toBeInTheDocument();
+
+    // A second scene lane is reachable too, and a scene lane takes this
+    // rig's presets as snapshots.
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "scene");
+    const scene2 = within(lanes).getByLabelText("lane scene-2");
+    expect(within(scene2).getByText(/Empty -- click to add a routine or look/)).toBeInTheDocument();
+    fireEvent.click(scene2, { clientX: 6 * 4, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to scene-2" });
+    await user.click(within(menu).getByRole("menuitem", { name: "opener" }));
+    expect(within(scene2).getByLabelText("opener at bar 2.1")).toBeInTheDocument();
+
+    // The palette lane: this track's palettes, and copies of the library's.
+    const palette = within(lanes).getByLabelText("lane palette");
+    fireEvent.click(palette, { clientX: 6 * 8, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to palette" });
+    expect(within(menu).queryByRole("menuitem", { name: "Idle orbit" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: "Cool" }));
+    expect(within(palette).getByLabelText("Cool at bar 3.1")).toBeInTheDocument();
+
+    // The hits lane: hits. Escape closes a menu with nothing added.
+    const hits = within(lanes).getByLabelText("lane hits");
+    fireEvent.click(hits, { clientX: 6 * 16, clientY: 20 });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(hits, { clientX: 6 * 16, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to hits" }))
+      .getByRole("menuitem", { name: /strobe/ }));
+    expect(within(hits).getByLabelText("strobe at bar 5.1")).toBeInTheDocument();
+
+    // A cue lane has a menu too, so a click meant only to let go of a
+    // selection adds nothing: an OSC lane offers a cue, a visuals lane its scenes.
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "osc");
+    const osc = within(lanes).getByLabelText("lane osc");
+    expect(within(osc).getByText(/Empty -- click to add a cue/)).toBeInTheDocument();
+    fireEvent.click(osc, { clientX: 6 * 6, clientY: 20 });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(osc).queryByRole("button")).toBeNull();
+    fireEvent.click(osc, { clientX: 6 * 6, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to osc" }))
+      .getByRole("menuitem", { name: "An OSC cue" }));
+    expect(within(inspector).getByText(/item on osc/)).toBeInTheDocument();
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "visuals");
+    fireEvent.click(within(lanes).getByLabelText("lane visuals"), { clientX: 6 * 8, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to visuals" }))
+      .getByRole("menuitem", { name: "tunnel" }));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
+      Command & { doc: TimelineDoc };
+    const row = (id: string) => save.doc.rows.find((r) => r.id === id)!;
+    expect(row("move").items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "routine", routine: "idle-orbit", at: 32, len: 32 }),
+      expect.objectContaining({ kind: "look", look: "Heads - Floor", at: 48 })]));
+    expect(row("scene-2").items).toEqual([
+      expect.objectContaining({ kind: "snapshot", preset: "opener", at: 4 })]);
+    expect(row("palette").items).toContainEqual(
+      expect.objectContaining({ kind: "palette", palette: "Cool", at: 8 }));
+    expect(row("hits").items).toContainEqual(expect.objectContaining({ hit: "strobe", at: 16 }));
+    expect(row("osc").items).toEqual([expect.objectContaining({ at: 4, len: 16 })]);
+    expect(row("visuals").items).toEqual([expect.objectContaining(
+      { at: 8, scene: "tunnel", params: { color: "@primary" } })]);
+  });
+
+  it("places this rig's looks and snapshots from the browser", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const browser = screen.getByRole("complementary", { name: "browser" });
+    await user.click(within(browser).getByRole("tab", { name: "Looks" }));
+    expect(within(browser).queryByRole("button", { name: "MH Red" })).toBeInTheDocument();
+    await user.type(within(browser).getByLabelText("search looks"), "walls");
+    await user.click(within(browser).getByRole("button", { name: "Heads - Walls" }));
+    const scene = within(lanes).getByLabelText("lane scene");
+    expect(within(scene).getByLabelText("Heads - Walls at bar 1.1")).toBeInTheDocument();
+    await user.clear(within(browser).getByLabelText("search looks"));
+    await user.click(within(browser).getByRole("button", { name: "peak" }));
+    expect(within(scene).getByLabelText("peak at bar 1.1")).toBeInTheDocument();
+    // a look retired for something better, or one step of a chase, is not offered
+    expect(within(browser).queryByRole("button", { name: "Lazy Circle" })).toBeNull();
+    expect(within(browser).queryByRole("button", { name: "Ball Spiral Step 1" })).toBeNull();
+    expect(within(browser).getByRole("button", { name: "Ball Spiral" })).toBeInTheDocument();
+  });
+
+  it("says which fixtures a clip's roles play on, and binds them for that clip", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const roles = within(inspector).getByRole("group", { name: "chorus1 roles" });
+    // the example binds the pinspots role; movers plays on its default tag
+    expect(within(roles).getByLabelText("pins plays on")).toHaveValue("pinspots");
+    expect(within(roles).getByLabelText("movers plays on")).toHaveValue("");
+    expect(within(roles).getByText("4 fixtures")).toBeInTheDocument();
+    expect(within(roles).getByText("2 fixtures")).toBeInTheDocument();
+    // every tag, even one the engine folds into another as a filter
+    const movers = within(roles).getByLabelText("movers plays on");
+    expect(within(movers).getByRole("option", { name: "movers" })).toBeInTheDocument();
+    expect(within(movers).getByRole("option", { name: "corner movers" })).toBeInTheDocument();
+    await user.selectOptions(movers, "Moving Head #2");
+    expect(within(roles).getByText("1 fixture")).toHaveAttribute("title", "Moving Head #2");
+    expect(within(roles).getByRole("link", { name: "Edit tags" })).toHaveAttribute("href", "#setup");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    let save = reply(socket, "timeline_save", true, { rev: "r:ffffffffffff" }) as
+      Command & { doc: TimelineDoc };
+    const chorus = () => save.doc.rows.find((r) => r.id === "scene")!.items!
+      .find((i) => i.id === "chorus1")!;
+    expect(chorus().bind).toEqual({ pins: "pinspots", movers: "Moving Head #2" });
+
+    // another routine's roles are its own: the bindings do not carry over
+    await user.selectOptions(within(inspector).getByLabelText("routine"), "idle-orbit");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    save = reply(socket, "timeline_save", true, { rev: "r:gggggggggggg" }) as
+      Command & { doc: TimelineDoc };
+    expect(chorus().routine).toBe("idle-orbit");
+    expect(chorus().bind).toBeUndefined();
+
+    // a hit can target any tag, as a role can -- or one fixture
+    fireEvent.pointerDown(within(lanes).getByLabelText("flash at bar 41.1").querySelector("path")!);
+    const who = within(inspector).getByLabelText("hit role");
+    expect(within(who).getByRole("option", { name: "movers" })).toBeInTheDocument();
+    expect(within(who).getByRole("option", { name: "Pinspot #2" })).toBeInTheDocument();
+
+    // a look clip can be held to some of its fixtures
+    fireEvent.pointerDown(within(lanes).getByLabelText("Lazy Circle at bar 89.1").querySelector("rect")!);
+    const only = within(inspector).getByRole("group", { name: "look plays on" });
+    await user.click(within(only).getByRole("button", { name: "corner movers" }));
+    expect(within(only).getByRole("button", { name: "corner movers" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    save = reply(socket, "timeline_save", true, { rev: "r:hhhhhhhhhhhh" }) as
+      Command & { doc: TimelineDoc };
+    expect(save.doc.rows.find((r) => r.id === "move")!.items![0]!.groups).toEqual(["corner movers"]);
+  });
+
   it("drafts the scene lane from a template set, phrase by phrase", async () => {
     const user = userEvent.setup();
     await open();
@@ -958,6 +1191,80 @@ describe("routine editor", () => {
     const level = doc.rows.find((r) => r.id === "p")!;
     expect(level.items!.find((i) => i.block === "pulse"))
       .toMatchObject({ at: 0, len: 32, args: { depth: "$depth" } });
+  });
+
+  it("fills a lane from a click on its empty space, with what that lane can hold", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // a second colour lane, for the pinspots: the shelf only reaches the first
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "color");
+    await user.selectOptions(within(lanes).getByLabelText("color role"), "pins");
+    const lane = within(lanes).getByLabelText("lane color");
+    expect(within(lane).getByText(/Empty -- click to add a block/)).toBeInTheDocument();
+
+    fireEvent.click(lane, { clientX: 8 * 16, clientY: 20 });          // bar 3
+    let menu = screen.getByRole("menu", { name: "add to color" });
+    expect(menu).toHaveTextContent("Add at bar 3.1, for pins");
+    // the colour blocks, and the rig's own; no movement or level blocks
+    expect(within(menu).getByRole("menuitem", { name: "solid" })).toHaveFocus();
+    expect(within(menu).getByRole("menuitem", { name: /look/ })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: "orbit" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: "duo" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(lane).getByLabelText("duo at bar 3.1")).toBeInTheDocument();
+    // selected, so its arguments are open below
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("block")).toHaveValue("duo");
+    expect(within(inspector).getByText(/on color, for pins/)).toBeInTheDocument();
+
+    // a click past the middle of a beat still lands in that beat, and the
+    // block runs up to the next one on the lane rather than over it
+    fireEvent.click(lane, { clientX: 2.7 * 16, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to color" }))
+      .getByRole("menuitem", { name: "solid" }));
+    expect(within(lane).getByLabelText("solid at bar 1.3")).toBeInTheDocument();
+
+    // a hits lane offers hits; Escape closes the menu with nothing added
+    const hits = within(lanes).getByLabelText("lane h");
+    fireEvent.click(hits, { clientX: 4 * 16, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to h" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(hits, { clientX: 4 * 16, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to h" });
+    expect(within(menu).queryByRole("menuitem", { name: "duo" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: /flash/ }));
+    expect(within(hits).getByLabelText("flash at bar 2.1")).toBeInTheDocument();
+
+    // and from the keyboard: Enter on a lane offers it at the playhead
+    lane.focus();
+    fireEvent.keyDown(lane, { key: "Enter" });
+    expect(screen.getByRole("menu", { name: "add to color" })).toHaveTextContent("Add at bar 1.1");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:h" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.id === "color")).toMatchObject({
+      type: "clips", target: "color", role: "pins",
+      items: [{ block: "duo", at: 8, len: 24 }, { block: "solid", at: 2, len: 6 }] });
+    expect(doc.rows.find((r) => r.id === "h")!.items!.find((i) => i.hit === "flash"))
+      .toMatchObject({ at: 4, len: 2, envelope: "decay" });
+  });
+
+  it("says how many fixtures each role reaches on this rig", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    const side = screen.getByRole("complementary", { name: "side panel" });
+    expect(side).toHaveTextContent(/movers\s*4 fixtures/);
+    expect(side).toHaveTextContent(/pins\s*2 fixtures/);
+    await user.type(screen.getByLabelText("+ role name"), "pars");
+    await user.click(screen.getByRole("button", { name: "+ role" }));
+    expect(side).toHaveTextContent(/pars\s*no fixtures on this rig/);
+    // one fixture, by name, is a role's tag too
+    fireEvent.change(screen.getByLabelText("pars tag"), { target: { value: "Pinspot #2" } });
+    expect(within(side).getByText("1 fixture")).toHaveAttribute("title", "Pinspot #2");
+    expect(within(side).getByRole("link", { name: "Edit tags" })).toHaveAttribute("href", "#setup");
   });
 
   it("automates its own parameters on lanes, held to their declared range", async () => {
@@ -1562,8 +1869,61 @@ describe("template sets", () => {
     await user.click(within(page).getByRole("button", { name: "Save" }));
     const saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as SetSaved;
     expect(saved.base_rev).toBe("r:c");
-    expect(saved.doc.phrases.Verse).toEqual({ routine: "idle-orbit" });
+    // the variation goes with the old routine; the pick's visuals stay
+    expect(saved.doc.phrases.Verse).toEqual({ routine: "idle-orbit",
+                                              visuals: clubDoc.phrases.Verse.visuals });
     expect(saved.doc.phrases.Chorus).toMatchObject({ routine: "fan-drop", variation: "wide" });
+  });
+
+  it("binds a pick's roles, and keeps its visuals when its routine changes", async () => {
+    const { user, socket, page } = await sets();
+    await user.click(within(page).getByRole("button", { name: "Chorus settings" }));
+    const roles = within(page).getByRole("group", { name: "Chorus roles" });
+    await user.selectOptions(within(roles).getByLabelText("pins plays on"), "Pinspot #1");
+    expect(within(roles).getByText("1 fixture")).toHaveAttribute("title", "Pinspot #1");
+    // the binding, and the visuals the pick already had
+    expect(within(page).getByRole("button", { name: "Chorus settings" })).toHaveTextContent("2 set");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    let saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as SetSaved;
+    expect(saved.doc.phrases.Chorus).toMatchObject({ routine: "fan-drop",
+                                                     bind: { pins: "Pinspot #1" } });
+
+    // the bindings are the routine's; the palette and the visuals are the pick's
+    await user.selectOptions(within(page).getByLabelText("Chorus routine"), "idle-orbit");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    saved = reply(socket, "template_save", true, { rev: "r:c3" }) as unknown as SetSaved;
+    expect(saved.doc.phrases.Chorus).toEqual({ routine: "idle-orbit", palette: "Hot",
+                                               visuals: clubDoc.phrases.Chorus.visuals });
+  });
+
+  it("edits what the built-in visuals show for a pick, or takes them off", async () => {
+    const { user, socket, page } = await sets();
+    await user.click(within(page).getByRole("button", { name: "Chorus settings" }));
+    let vis = within(page).getByRole("group", { name: "Chorus visuals" });
+    expect(within(within(vis).getByRole("group", { name: "visuals scene" }))
+      .getByRole("button", { name: "tunnel" })).toHaveClass("on");
+    expect(within(vis).getByLabelText("visuals speed")).toHaveValue(2);
+    fireEvent.change(within(vis).getByLabelText("visuals speed"), { target: { value: "4" } });
+    await user.click(within(within(vis).getByRole("group", { name: "visuals scene" }))
+      .getByRole("button", { name: "bars" }));
+    // the Down's visuals off, then a fresh one on the bar cycle's second step
+    await user.click(within(page).getByRole("button", { name: "Down settings" }));
+    await user.click(within(page).getByRole("button", { name: "no visuals for Down" }));
+    vis = within(page).getByRole("group", { name: "Down visuals" });
+    expect(vis).toHaveTextContent(/none/);
+    await user.click(within(page).getByRole("button", { name: "step 2 settings" }));
+    await user.click(within(within(page).getByRole("group", { name: "step 2 visuals" }))
+      .getByRole("button", { name: "+ visuals" }));
+    // a pick whose routine is missing from routines/ keeps its visuals in reach
+    await user.click(within(page).getByRole("button", { name: "Verse settings" }));
+    expect(within(page).getByRole("group", { name: "Verse visuals" })).toBeInTheDocument();
+
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c4" }) as unknown as SetSaved;
+    expect(saved.doc.phrases.Chorus!.visuals).toEqual({ scene: "bars", params: { color: "@primary" } });
+    expect(saved.doc.phrases.Down).not.toHaveProperty("visuals");
+    expect(saved.doc.bars!.cycle[1]).toEqual({ routine: "fan-drop", palette: "Hot",
+                                               visuals: { scene: "wash", params: { color: "@primary" } } });
   });
 
   it("adds an exact label, starting from its family's pick", async () => {
@@ -1648,6 +2008,23 @@ describe("template sets", () => {
     expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
                                       name: "Late Night!",
                                       phrases: { "*": { routine: "fan-drop" } } });
+  });
+
+  it("will not start a blank set with no routine to pick", async () => {
+    const served = fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
+      new URL(url, "http://engine").pathname === "/api/routines"
+        ? { ok: true, status: 200, json: async () => ({ routines: [] }) }
+        : served(url))));
+    const user = userEvent.setup();
+    await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await user.click(await within(page).findByRole("button", { name: "New set…" }));
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /Blank/ }));
+    expect(within(dialog).getByRole("radio", { name: /Blank/ }))
+      .toHaveTextContent(/make a routine first/);
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
   });
 });
 

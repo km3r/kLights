@@ -17,6 +17,60 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — every lane can be filled where it is, and roles say what they reach
+
+- **Click an empty spot on a lane** to choose what goes there, in both editors.
+  - In the routine editor, a clips lane offers its slot's blocks, then the
+    rig's own (look, snapshot), and a hits lane offers flash, strobe and
+    blackout. Before, the Blocks shelf always used the first lane of a slot, so
+    a second colour lane for another role could not be filled, and a routine's
+    hits lane could not be filled at all.
+  - On a track, a scene, movement, colour or level lane offers routines and
+    this rig's looks (a slot's lane, the looks for that slot), and a scene lane
+    offers presets as snapshots. The palette lane offers this track's palettes
+    and copies of the library's, and a hits lane offers hits. Before, the
+    browser's click only reached the first lane of each kind, and any other
+    lane needed a drag.
+  - On an OSC or MIDI cue lane, the menu adds a cue; on a visuals lane, it
+    lists the scenes.
+  - What is added starts on the grid line at or before the click, never inside
+    the item before the gap, and is selected so its settings open below. A long menu has a search box, and Enter takes the first match.
+    Enter on a focused lane opens the menu at the playhead. An empty lane says
+    what a click adds.
+- **Looks and snapshots can be placed on a track**: a Looks tab in the browser,
+  and the lane menus. The inspector already edited them, but nothing in Studio
+  could make one. A look clip can also be held to some of its fixtures
+  (**Only on**), and a hit's **Who** offers every tag and fixture, as a role
+  does.
+- **Plays on**: a routine clip on a track, and a template set's pick (under its
+  settings), show which fixtures each role reaches and can bind a role to
+  another tag or to one fixture by name for that use (`bind`). The engine
+  always honoured `bind`, but Studio could not show or set it. Changing a clip's
+  routine now drops its old bindings, which named the old routine's roles.
+- **Roles say what they reach**: the routine editor shows how many fixtures
+  each role's tag reaches on this rig, or "no fixtures on this rig", with a
+  link to where tags are set. Tags that the engine folds together as filters
+  (despacio's "movers" and "corner movers") are all offered.
+- Template sets: a pick's `bind` is now declared in the format and schema, and
+  a draft from the set carries it onto the clips. A set made from a timeline
+  keeps the clips' bindings, and counts two clips as one pick however their
+  parameters' or bindings' keys happen to be ordered. Two picks that differ only in their bindings are
+  now two programs: before, the engine played one for both.
+- Template sets: **a pick's visuals can be edited** under its settings: the
+  scene the built-in visuals show while it plays, and that scene's settings,
+  or none. Before, only a hand edit to the file could change them, and changing
+  the pick's routine silently dropped them. A pick whose routine is missing
+  from `routines/` keeps its settings in reach.
+- **Drafting from a set brings its visuals**: each pick's visuals become a cue
+  on the timeline's visuals lane, the way the palettes fill the palette lane.
+  Live, a timeline with a visuals lane of its own silences the set's, so a
+  draft that left them behind went dark on the projector.
+- A blank template set is not offered when the show has no routines: the
+  engine refuses a set with no pick, so it could never be saved. Adding an
+  exact label or a bar cycle no longer writes a pick with no routine.
+- Studio's look pickers (New from a look, a block's or parameter's look, a look
+  clip) leave out retired looks and single chase steps, as the console does.
+
 ### Added — Studio's + New: one way in to making anything
 
 - **+ New** sits in the top bar of Studio's library pages. It makes a timeline for a

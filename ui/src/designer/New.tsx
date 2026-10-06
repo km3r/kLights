@@ -8,6 +8,7 @@ import type {
   FoundPalette, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, TemplateSetDoc,
   TemplateSummary, TimelineDoc, TrackDoc, TrackLine,
 } from "./model";
+import { offeredLooks } from "./edit";
 import { newRoutine } from "./RoutineEditor";
 import { newTemplateSet } from "./Templates";
 import { putPending } from "./pending";
@@ -142,7 +143,8 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   // A copy is filed with its original, unless a folder is typed.
   const folder = folderTyped
     ?? (start === "copy" ? routines.find((r) => r.id === copyRoutine)?.folder ?? "" : "");
-  const looks = engine.state?.looks ?? [];
+  const allLooks = engine.state?.looks;
+  const looks = useMemo(() => offeredLooks(allLooks), [allLooks]);
   const [look, setLook] = useState(looks[0]?.name ?? "");
   // A rig has a couple of hundred looks: listed by the slot they play on.
   const lookSlots = useMemo(() => {
@@ -360,7 +362,10 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     );
   } else if (kind === "template") {
     go = () => void goTemplate();
-    ready = idOk && (start !== "copy" || !!copySet) && (start !== "timeline" || !!fromTimeline);
+    // A set is a routine per phrase: with no routine to pick, a blank one could
+    // never be saved (the engine needs at least one pick).
+    ready = idOk && (start !== "copy" || !!copySet) && (start !== "timeline" || !!fromTimeline)
+      && (start !== "blank" || routines.length > 0);
     body = (
       <>
         {nameRow}
@@ -370,7 +375,9 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
                                text: "Every phrase, the bar cycle and the palettes." }] : []),
           ...(drawn.length ? [{ id: "timeline", title: "A track's timeline",
                                 text: "For each phrase family, what its scene lane plays most; its palettes too." }] : []),
-          { id: "blank", title: "Blank", text: "Anything else plays one routine until you choose more." },
+          { id: "blank", title: "Blank", text: routines.length
+            ? "Anything else plays one routine until you choose more."
+            : "A set picks routines, and this show has none yet: make a routine first." },
         ]}>{{
           copy: (
             <select value={copySet} aria-label="copy of" onChange={(e) => setCopySet(e.target.value)}>

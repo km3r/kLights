@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, FromLibrary, PaletteOrigin, ROLES, useHistory } from "./edit";
+import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, newVisuals, useHistory } from "./edit";
 import {
   EXACT_LABELS, ID_RE, NEW_COLOURS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
@@ -89,6 +89,33 @@ export function TemplatesView({ engine, sets, routines, library, current, onDoc,
 
 // -- one set ---------------------------------------------------------------------------
 
+type Visuals = NonNullable<TemplatePick["visuals"]>;
+
+/** What the built-in visuals show while a pick plays: none, or a scene and its
+ *  settings -- the same controls as a visuals cue on a timeline. */
+function PickVisuals({ label, visuals, onChange }: {
+  label: string; visuals: Visuals | undefined; onChange: (v: Visuals | undefined) => void;
+}) {
+  if (!visuals) {
+    return (
+      <div className="s-pick-visuals" role="group" aria-label={`${label} visuals`}>
+        <span className="small muted">Visuals: none -- the built-in visuals show nothing for it.</span>
+        <button className="small" onClick={() => onChange(newVisuals())}>+ visuals</button>
+      </div>
+    );
+  }
+  return (
+    <div className="s-pick-visuals" role="group" aria-label={`${label} visuals`}>
+      <span className="small muted">Visuals</span>
+      <Editor.VisualCue item={{ id: label, at: 0, len: 0, scene: visuals.scene, params: visuals.params }}
+                        set={(fields) => onChange({ scene: fields.scene ?? visuals.scene,
+                                                    params: fields.params ?? visuals.params ?? {} })} />
+      <button className="small" aria-label={`no visuals for ${label}`}
+              onClick={() => onChange(undefined)}>×</button>
+    </div>
+  );
+}
+
 function TemplateEditor({ engine, id, routines, library, onDoc }: {
   engine: Engine; id: string; routines: RoutineSummary[]; library: PaletteSummary[];
   onDoc: (doc: TemplateSetDoc | null, dirty: boolean, rev: string) => void;
@@ -136,21 +163,25 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
   });
   const setStep = (i: number, next: TemplatePick) => apply((d) => { d.bars!.cycle[i] = next; });
 
-  /** The fields of one pick: routine, variation, parameters, palette. */
+  /** The fields of one pick: routine, variation, its settings (parameters,
+   *  which fixtures its roles play on, what the built-in visuals show),
+   *  palette. */
   const pickFields = (key: string, pick: TemplatePick | undefined,
                       onChange: (p: TemplatePick | null) => void, none: string | null) => {
     const routine = pick ? byId.get(pick.routine) : undefined;
-    const params = Object.entries(routine?.params ?? {});
-    const set = Object.keys(pick?.params ?? {}).length;
+    const set = Object.keys(pick?.params ?? {}).length + Object.keys(pick?.bind ?? {}).length
+      + (pick?.visuals ? 1 : 0);
     return (
       <>
         <select value={pick?.routine ?? ""} aria-label={`${key} routine`}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) { onChange(null); return; }
-                  // A routine's variation and parameters are its own: they do
-                  // not carry over to another. The palette does.
-                  onChange({ routine: v, ...(pick?.palette ? { palette: pick.palette } : {}) });
+                  // A routine's variation, parameters and role bindings are
+                  // its own: they do not carry over to another. The palette
+                  // and the visuals do.
+                  onChange({ routine: v, ...(pick?.palette ? { palette: pick.palette } : {}),
+                             ...(pick?.visuals ? { visuals: pick.visuals } : {}) });
                 }}>
           {none != null && <option value="">{none}</option>}
           {pick && !byId.has(pick.routine) && <option value={pick.routine}>{pick.routine} (missing)</option>}
@@ -166,10 +197,12 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             {routine.variations.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         ) : <span className="muted small">{pick ? "no variations" : ""}</span>}
-        {pick && params.length > 0 ? (
+        {pick ? (
           <button className={`small${open === key ? " on" : ""}`} aria-expanded={open === key}
+                  aria-label={`${key} settings`}
+                  title="Its parameters, which fixtures its roles play on, and its visuals"
                   onClick={() => setOpen(open === key ? null : key)}>
-            {set ? `${set} set` : "parameters"}</button>
+            {set ? `${set} set` : "settings"}</button>
         ) : <span />}
         {pick ? (
           <select value={pick.palette ?? ""} aria-label={`${key} palette`}
@@ -187,10 +220,12 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
   const paramRow = (key: string, pick: TemplatePick | undefined,
                     onChange: (p: TemplatePick) => void) => {
     const routine = pick ? byId.get(pick.routine) : undefined;
-    if (open !== key || !pick || !routine) return null;
+    if (open !== key || !pick) return null;
+    // A routine missing from routines/ has no parameters or roles to show;
+    // the pick's visuals are its own, so they stay in reach.
     return (
       <div className="s-param-row" role="group" aria-label={`${key} parameters`}>
-        {Object.entries(routine.params).map(([name, param]) => (
+        {routine && Object.entries(routine.params).map(([name, param]) => (
           <Editor.Param key={name} name={name} param={param} value={pick.params?.[name]}
                         onChange={(v) => {
                           const params = { ...(pick.params ?? {}) };
@@ -199,6 +234,17 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
                           onChange(Object.keys(params).length ? { ...rest, params } : rest);
                         }} />
         ))}
+        {routine && (
+          <RoleBinds label={key} roles={routine.roles} bind={pick.bind} state={engine.state}
+                     onChange={(bind) => {
+                       const { bind: _old, ...rest } = pick;
+                       onChange(bind ? { ...rest, bind } : rest);
+                     }} />)}
+        <PickVisuals label={key} visuals={pick.visuals}
+                     onChange={(visuals) => {
+                       const { visuals: _old, ...rest } = pick;
+                       onChange(visuals ? { ...rest, visuals } : rest);
+                     }} />
       </div>
     );
   };
@@ -257,7 +303,8 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
           if (!exact) return;
           apply((d) => {
             const from = d.phrases[phraseFamily(exact)] ?? d.phrases[ANY];
-            d.phrases[exact] = from ? structuredClone(from) : { routine: routines[0]?.id ?? "" };
+            if (from) d.phrases[exact] = structuredClone(from);
+            else if (routines[0]) d.phrases[exact] = { routine: routines[0].id };
           });
           setExact("");
         }}>
@@ -265,7 +312,8 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             <option value="">Exact label…</option>
             {freeExact.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
-          <button type="submit" disabled={!exact}>Add</button>
+          <button type="submit" disabled={!exact || (!routines.length
+            && !(doc.phrases[phraseFamily(exact)] ?? doc.phrases[ANY]))}>Add</button>
           <span className="muted small">For one numbered phrase that should differ from its
             family: Up 2 as the bigger build, say.</span>
         </form>
@@ -278,9 +326,10 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             <>
               <p className="muted small">Without one, a track with a grid and no phrases cannot be
                 drafted from this set.</p>
-              <div><button onClick={() => apply((d) => {
-                const first = d.phrases[ANY]?.routine ?? routines[0]?.id ?? "";
-                d.bars = { every: 16, cycle: [{ routine: first }] };
+              <div><button disabled={!(doc.phrases[ANY]?.routine ?? routines[0]?.id)}
+                           onClick={() => apply((d) => {
+                const first = d.phrases[ANY]?.routine ?? routines[0]?.id;
+                if (first) d.bars = { every: 16, cycle: [{ routine: first }] };
               })}>Add a bar cycle</button></div>
             </>
           ) : (

@@ -49,9 +49,16 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "Adding to it",
         notes: [
-          <>Click a routine in the <b>browser</b> on the left to place it at the
-            playhead, or drag it onto the lane and beat you want. Its tabs hold
-            palettes and hits too.</>,
+          <>Click an empty spot on any lane to choose what goes there: routines
+            and this rig's looks on a scene, movement, colour or level lane (and
+            presets, as snapshots, on a scene lane), palettes on the palette
+            lane, hits on a hits lane, a cue on a cue lane.</>,
+          <>Or click a routine in the <b>browser</b> on the left to place it at
+            the playhead on the scene lane, or drag it onto the lane and beat you
+            want. Its tabs hold palettes, hits and looks too.</>,
+          <>Select a routine clip to see which fixtures each of its roles plays
+            on. <b>Plays on</b> picks another tag, or one fixture, for that clip
+            only. Tags are set on the console's Setup tab.</>,
           <>Click a <b>phrase</b> to select it as a section: fill it with a
             routine, copy it, paste it over another phrase, or clear it.</>,
           <>Right-click a clip, or use the buttons beside it below, to copy, cut,
@@ -123,8 +130,10 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             Start it blank, as a copy of another, or from a look on the console.
             Or click <b>Open routine</b> on a clip.</>,
           <>Set the number of <b>Bars</b>, and whether it <b>loops</b>.</>,
-          <>Click a block under <b>Blocks</b> to add it at the playhead. Its
-            settings appear below.</>,
+          <>Add a lane from <b>+ lane</b> and pick its role, then click an
+            empty spot on the lane to choose a block for it. Or click a block
+            under <b>Blocks</b> to add it at the playhead. Click a block on a
+            lane to change its settings below.</>,
           <><b>Play</b> loops it at the <b>Tempo</b> you set here. To see it on
             the rig, put it on a track and drive the rig from there.</>,
           <><b>Save</b> (Ctrl+S).</>,

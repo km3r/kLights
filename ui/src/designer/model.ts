@@ -230,7 +230,12 @@ export interface TemplatePick {
   routine: string;
   variation?: string;
   params?: Record<string, unknown>;
+  /** Which tag (or fixture) each of the routine's roles plays on, where not
+   *  its default -- as a clip's `bind`. */
+  bind?: Record<string, string>;
   palette?: string;
+  /** What the built-in visuals show while the pick plays (milestone 3). */
+  visuals?: { scene: string; params?: Record<string, unknown> };
 }
 
 /** A template set: rekordbox phrase -> routine, for tracks with no timeline. */
@@ -340,10 +345,23 @@ export function phraseMatch(a: [number, number, string][], b: [number, number, s
   return n;
 }
 
+/** JSON with every object's keys in order, so two values that are the same
+ *  compare the same however their keys were written. A key holding nothing
+ *  is left out, as JSON.stringify leaves it out. */
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
 /**
  * A template set from a track's timeline: for each phrase family, what its
- * scene lane plays most over that family's phrases (routine, variation and
- * parameters together), and the palette clip most over them; for anything
+ * scene lane plays most over that family's phrases (routine, variation,
+ * parameters and role bindings together), and the palette clip most over them; for anything
  * else, what it plays most overall. The timeline's palettes come with it, and
  * the fade its routine clips most often use becomes the set's fade. Null if
  * the scene lane plays no routine on any phrase.
@@ -376,8 +394,10 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
     const pick: TemplatePick = { routine: best.routine! };
     if (best.variation) pick.variation = best.variation;
     if (best.params && Object.keys(best.params).length) pick.params = { ...best.params };
+    if (best.bind && Object.keys(best.bind).length) pick.bind = { ...best.bind };
     if (pal && tl.palettes?.[pal]) pick.palette = pal;
-    const key = JSON.stringify(pick);
+    // Counted as written however its parameters' or bindings' keys are ordered.
+    const key = canonicalJson(pick);
     add(phraseFamily(label), key, cover);
     add("*", key, cover);
   }
@@ -449,6 +469,7 @@ function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: numbe
   const item: Item = { id: uniqueId(d, stem), kind: "routine", routine: pick.routine, at, len };
   if (pick.variation) item.variation = pick.variation;
   if (pick.params) item.params = { ...pick.params };
+  if (pick.bind && Object.keys(pick.bind).length) item.bind = { ...pick.bind };
   if (fade > 0) item.fade = Math.min(fade, len);
   return item;
 }
@@ -456,7 +477,10 @@ function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: numbe
 /**
  * Draft from template: a template set laid onto a timeline's scene lane, one
  * routine per rekordbox phrase -- the exact label (Verse 2), then the family
- * (Verse), then `*` -- and its palettes onto the palette lane. A track with a
+ * (Verse), then `*` -- its palettes onto the palette lane, and its picks'
+ * visuals onto the visuals lane: live, a timeline with a visuals lane of its
+ * own silences the set's, so a draft that left them behind would go dark on
+ * the projector. A track with a
  * grid but no phrases gets the set's bar cycle instead, the way the engine
  * plays it live. Changes `d` in place (inside an undoable edit, or on a new
  * document); returns why it could not, or null.
@@ -501,6 +525,16 @@ export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
     if (ts.palette && !d.palette) d.palette = ts.palette;
     palLane.items = [];
   }
+  let visLane: Row | null = null;
+  if (spans.some(([, , pick]) => pick?.visuals)) {
+    visLane = d.rows.find((x) => x.type === "external" && x.points == null
+      && (x.output === "visuals" || x.output === "vj")) ?? null;
+    if (!visLane) {
+      visLane = { id: uniqueId(d, "visuals"), type: "external", output: "visuals", items: [] };
+      d.rows.push(visLane);
+    }
+    visLane.items = [];
+  }
   // The set's change between phrases, as each clip's own fade in: the first
   // clip comes in from nothing with it, and the rest crossfade on it.
   const fade = ts.transition?.fade_beats ?? 0;
@@ -510,6 +544,11 @@ export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
     if (pick.palette && palLane) {
       (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
                                     palette: pick.palette, at: start, len: end - start });
+    }
+    if (pick.visuals && visLane) {
+      (visLane.items ??= []).push({ id: uniqueId(d, `vis-${start}`), at: start, len: end - start,
+                                    scene: pick.visuals.scene,
+                                    params: structuredClone(pick.visuals.params ?? {}) });
     }
   }
   return null;

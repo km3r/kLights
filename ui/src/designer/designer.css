@@ -80,6 +80,11 @@
 .d-label { fill: var(--dim); font-size: 10px; }
 .d-ruler svg { cursor: pointer; }
 .d-lane { display: block; }
+/* A routine's clips and hits lanes: a click on empty space adds there. */
+.d-lane.d-addable { cursor: copy; }
+.d-lane.d-addable:focus { outline: none; }
+.d-lane.d-addable:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.d-lane-hint { fill: var(--dim); font-size: 11px; }
 .d-clip rect:first-child { fill: #24406a; stroke: #3b6db0; cursor: grab; }
 .d-clip-palette rect:first-child { fill: #4a2d5c; stroke: #8b5cc4; }
 .d-clip-look rect:first-child, .d-clip-snapshot rect:first-child { fill: #4b3a1c; stroke: #b88a2c; }
@@ -473,6 +478,7 @@ a.s-use:hover b { color: var(--accent); }
   grid-template-columns: 140px minmax(140px, 1.4fr) minmax(90px, 0.8fr) auto minmax(110px, 1fr) minmax(70px, 0.8fr);
 }
 .s-picks select { min-width: 0; width: 100%; }
+.s-picks button.small { white-space: nowrap; }
 .s-picks-head {
   font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim);
 }
@@ -483,6 +489,7 @@ a.s-use:hover b { color: var(--accent); }
   grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 8px 10px;
   border-radius: 8px; background: var(--bg); border: 1px solid #1e2430;
 }
+.s-pick-visuals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; }
 .s-steps { grid-template-columns: 22px minmax(120px, 1.4fr) minmax(80px, 0.8fr) auto minmax(100px, 1fr) auto; }
 .s-step-tools { display: inline-flex; gap: 2px; }
 .s-palette-row { display: flex; align-items: center; gap: 6px; }
@@ -536,7 +543,10 @@ a.s-use:hover b { color: var(--accent); }
   background: var(--panel); border-right: 1px solid var(--line);
 }
 .d-tabs { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line); }
-.designer .d-tabs button { flex: 1; border: 0; border-radius: 7px; background: transparent; color: #aab4c5; }
+.designer .d-tabs button {
+  flex: 1 1 auto; min-width: 0; padding: 0 4px; border: 0; border-radius: 7px; background: transparent;
+  color: #aab4c5; font-size: 12px; white-space: nowrap;
+}
 .designer .d-tabs button.on { background: var(--panel-2); color: var(--text); }
 .d-browse-list { display: flex; flex-direction: column; gap: 2px; }
 .d-browse-group {
@@ -588,6 +598,32 @@ a.s-use:hover b { color: var(--accent); }
 .d-ctx > a:hover, .designer .d-ctx > button:hover:not(:disabled) { background: var(--line); }
 .designer .d-ctx > button.danger { color: #ff8a83; }
 .d-ctx .k { margin-left: auto; color: var(--dim); font-size: 11px; }
+.d-ctx-head { padding: 4px 10px 6px; }
+/* A lane's menu of what goes there: a search box once it is long, a scrolling
+   list under headings. */
+.d-pick { max-height: min(60vh, 420px); }
+.d-pick-list { display: flex; flex-direction: column; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.designer .d-pick-list > button {
+  display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 10px; border: 0;
+  border-radius: 7px; background: transparent; color: var(--text); font-size: 12px; text-align: left;
+  flex: none;
+}
+.designer .d-pick-list > button:hover, .designer .d-pick-list > button:focus-visible {
+  background: var(--line); outline: none;
+}
+.d-pick > input { margin: 0 4px 4px; }
+.d-ctx-group {
+  padding: 6px 10px 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--dim);
+}
+
+/* Which fixtures a role plays on, for one use of a routine. */
+.d-binds { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; }
+.d-bind { display: inline-flex; align-items: center; gap: 4px; }
+.d-reach { white-space: nowrap; }
+.d-reach.none { color: var(--warn); }
+.d-role-name { display: flex; flex-direction: column; line-height: 1.2; }
+.designer .d-ctx > button:focus-visible { background: var(--line); outline: none; }
 .d-clip-tools { display: inline-flex; gap: 4px; margin-right: 8px; }
 
 /* Whose palette a palette is: a copy of the library's, one that differs from
