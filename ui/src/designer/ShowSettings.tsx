@@ -75,10 +75,12 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone }: {
   const follow = (doc.follow ?? {}) as Follow;
   const setPause = (change: Partial<Pause>) => setDoc((d) => d && clean({ ...d, pause: { ...pause, ...change } }));
   const setFollow = (change: Partial<Follow>) => setDoc((d) => d && clean({ ...d, follow: { ...follow, ...change } }));
-  const num = (raw: string, lo: number, hi: number): number | undefined => {
+  /** A number field's value: undefined when emptied (the engine's default),
+   *  null when it is out of range -- ignored, rather than read as emptied. */
+  const num = (raw: string, lo: number, hi: number): number | undefined | null => {
     if (raw === "") return undefined;
     const v = Number(raw);
-    return Number.isFinite(v) && v >= lo && v <= hi ? v : undefined;
+    return Number.isFinite(v) && v >= lo && v <= hi ? v : null;
   };
   const sources = Object.entries((doc.sources ?? {}) as Record<string, { latency_ms?: number }>);
   const save = async () => {
@@ -145,12 +147,18 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone }: {
         <label className="s-field">Silence before it counts as a pause
           <span><input type="number" min={0} max={60} step={0.5} style={{ width: 70 }}
                        value={pause.grace_s ?? ""} placeholder="default" aria-label="grace seconds"
-                       onChange={(e) => setPause({ grace_s: num(e.target.value, 0, 60) })} /> s</span>
+                       onChange={(e) => {
+                         const v = num(e.target.value, 0, 60);
+                         if (v !== null) setPause({ grace_s: v });
+                       }} /> s</span>
         </label>
         <label className="s-field">Fade into it
           <span><input type="number" min={0} max={64} style={{ width: 70 }}
                        value={pause.fade_beats ?? ""} placeholder="0" aria-label="fade beats"
-                       onChange={(e) => setPause({ fade_beats: num(e.target.value, 0, 64) })} /> beats</span>
+                       onChange={(e) => {
+                         const v = num(e.target.value, 0, 64);
+                         if (v !== null) setPause({ fade_beats: v });
+                       }} /> beats</span>
         </label>
       </section>
 
@@ -169,7 +177,10 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone }: {
           <span><input type="number" min={0} max={60} step={0.5} style={{ width: 70 }}
                        value={follow.min_track_change_s ?? ""} placeholder="default"
                        aria-label="track change seconds"
-                       onChange={(e) => setFollow({ min_track_change_s: num(e.target.value, 0, 60) })} /> s</span>
+                       onChange={(e) => {
+                         const v = num(e.target.value, 0, 60);
+                         if (v !== null) setFollow({ min_track_change_s: v });
+                       }} /> s</span>
         </label>
       </section>
 

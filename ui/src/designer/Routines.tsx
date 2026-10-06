@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { freeId as freeIdAmong, normalizeName, usageCount } from "./model";
+import { ID_RE, freeId as freeIdAmong, normalizeName, usageCount } from "./model";
 import type { RoutineDoc, RoutineSummary } from "./model";
 
 /**
@@ -15,7 +15,6 @@ import type { RoutineDoc, RoutineSummary } from "./model";
  * refuses while anything names it); duplicate and move are ordinary saves.
  */
 
-const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const UNFILED = "";
 type View = { kind: "all" } | { kind: "folder"; folder: string } | { kind: "rig" }
   | { kind: "unused" };

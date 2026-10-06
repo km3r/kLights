@@ -3,7 +3,7 @@ import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { Editor, FromLibrary, PaletteOrigin, ROLES, useHistory } from "./edit";
 import {
-  EXACT_LABELS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
+  EXACT_LABELS, ID_RE, NEW_COLOURS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
 import type {
   PaletteSummary, RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary,
@@ -27,7 +27,6 @@ import { download } from "./Routines";
  * the rev it read, and a recovery copy in this browser.
  */
 
-const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const ANY = "*";
 
 export function newTemplateSet(id: string, routines: RoutineSummary[]): TemplateSetDoc {
@@ -364,7 +363,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             if (!name || palettes.includes(name)) return;
             apply((d) => {
               d.palettes = { ...(d.palettes ?? {}),
-                             [name]: { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" } };
+                             [name]: { ...NEW_COLOURS } };
               if (!d.palette) d.palette = name;
             });
             setPalName("");
@@ -456,12 +455,12 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   });
   const rename = () => run(async () => {
     const { written } = await ask({ type: "template_rename", template: id, to: toId,
-                                    base_rev: summary?.rev ?? "" }) as { written: string[] };
+                                    base_rev: rev || summary?.rev || "" }) as { written: string[] };
     location.hash = `#studio/templates/${toId}`;
     return `Renamed ${id} to ${toId}: ${written.length} file${written.length === 1 ? "" : "s"} written.`;
   });
   const remove = () => run(async () => {
-    await ask({ type: "template_delete", template: id, base_rev: summary?.rev ?? "" });
+    await ask({ type: "template_delete", template: id, base_rev: rev || summary?.rev || "" });
     location.hash = "#studio/templates";
     return `Deleted templates/${id}.json.`;
   });

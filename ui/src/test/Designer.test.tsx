@@ -7,8 +7,8 @@ import App from "../App";
 import type { Command } from "../types";
 import {
   BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave, draftFromTemplate, newTimeline, phraseMatch, templateFromTimeline,
-  whoDrives,
+  decodeWave, draftFromTemplate, freeName, hexColor, newTimeline, phraseMatch,
+  templateFromTimeline, whoDrives,
 } from "../designer/model";
 import {
   AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt,
@@ -151,6 +151,16 @@ describe("designer model", () => {
     expect(set.transition).toEqual({ fade_beats: 2 });      // two 2s, two 8s, one 4: the first
     const bare = { ...structuredClone(timelineDoc), rows: [] };
     expect(templateFromTimeline("x", "X", trackDoc as never, bare as never)).toBeNull();
+  });
+
+  it("gives a copy a name of its own, and compares colours as the engine does", () => {
+    // Copies are found by name, so a library palette's name must be its own.
+    expect(freeName(["Hot", "Hot copy"], "Hot copy")).toBe("Hot copy 2");
+    expect(freeName(["Hot"], "Hot copy")).toBe("Hot copy");
+    expect(hexColor("#FF2D6F")).toBe("#ff2d6f");
+    expect(hexColor([1, 0, 0.5])).toBe("#ff0080");             // showfiles.hex_color's floats
+    expect(hexColor("red")).toBeNull();
+    expect(hexColor([1, 2, 3])).toBeNull();
   });
 
   it("says how far two tracks' phrases agree", () => {
@@ -1075,6 +1085,16 @@ describe("timeline editing", () => {
     drop("lane palette", { kind: "routine", id: "idle-orbit" }, 6 * 96);
     expect(screen.getByText("A routine goes on a scene, movement, colour or level lane."))
       .toBeInTheDocument();
+    // A drag can come from another window: what is not something to place is ignored.
+    const scene = within(lanes).getByLabelText("lane scene");
+    const before = within(scene).getAllByRole("button").length;
+    for (const data of ["not json", "null", JSON.stringify({ kind: "routine" }),
+                        JSON.stringify({ kind: "hit", hit: "explode" })]) {
+      const ev = createEvent.drop(scene, { dataTransfer: { types: [PLACE_MIME], getData: () => data } });
+      Object.defineProperty(ev, "clientX", { value: 6 * 96 });
+      fireEvent(scene, ev);
+    }
+    expect(within(scene).getAllByRole("button")).toHaveLength(before);
   });
 
   it("copies a library palette in when the browser places it, and says whose each palette is", async () => {
@@ -1281,6 +1301,23 @@ describe("template sets", () => {
     cleanup();
     await sets();
     expect(within(aside()).getByRole("button", { name: "Delete: it is the show's set" })).toBeDisabled();
+  });
+
+  it("renames a set right after a save, quoting the rev that save wrote", async () => {
+    const { user, socket, page } = await sets();
+    await user.type(within(page).getByLabelText("set name"), "!");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    reply(socket, "template_save", true, { rev: "r:c2" });
+    await within(page).findByRole("button", { name: "Saved" });
+    // The list still says r:c until the folder reloads; this editor knows better.
+    await user.click(within(aside()).getByRole("button", { name: "Rename" }));
+    await user.clear(within(aside()).getByLabelText("new id"));
+    await user.type(within(aside()).getByLabelText("new id"), "club-night");
+    await user.click(within(aside()).getByRole("button", { name: "Rename it" }));
+    const sent = reply(socket, "template_rename", true, { written: ["templates/club-night.json",
+                                                                   "show.json"] });
+    expect(sent).toMatchObject({ template: "club", to: "club-night", base_rev: "r:c2" });
+    await waitFor(() => expect(location.hash).toBe("#studio/templates/club-night"));
   });
 
   it("starts a new set and saves it as a new file", async () => {
@@ -1535,6 +1572,9 @@ describe("+ New", () => {
     expect(within(dialog).queryByLabelText("bars")).toBeNull();    // a copy keeps its own
     await user.clear(within(dialog).getByLabelText("name"));
     await user.type(within(dialog).getByLabelText("name"), "Fan sweep (late)");
+    // Filed with its original, unless another folder is typed.
+    expect(within(dialog).getByLabelText("folder")).toHaveValue("Drops");
+    await user.clear(within(dialog).getByLabelText("folder"));
     await user.type(within(dialog).getByLabelText("folder"), "Late");
     await user.click(within(dialog).getByRole("button", { name: "Open it" }));
     expect(location.hash).toBe("#studio/routine/fan-sweep-late");
@@ -1622,6 +1662,9 @@ describe("show settings", () => {
     expect(within(page).getByText("-15 ms")).toBeInTheDocument();
     await user.clear(within(page).getByLabelText("grace seconds"));
     await user.type(within(page).getByLabelText("grace seconds"), "6");
+    // 65 is past the most (60): the keystroke is ignored, and the 6 stays.
+    await user.type(within(page).getByLabelText("grace seconds"), "5");
+    expect(within(page).getByLabelText("grace seconds")).toHaveValue(6);
     await user.selectOptions(within(page).getByLabelText("follow default"), "armed");
     await user.click(within(page).getByRole("button", { name: "Save" }));
     const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {

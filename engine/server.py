@@ -2254,6 +2254,16 @@ class ShowController:
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)
 
+    @staticmethod
+    def _on_disk(root: Path, folder: "showfiles.Folder") -> "showfiles.Folder":
+        """The folder as it is on disk NOW, for a delete or a rename to judge
+        what names what. The loaded folder can be a couple of seconds behind
+        (the watcher waits for a change to hold still), and a timeline written
+        in that time -- by MCP, another machine, a save just ahead in the
+        queue -- must not be missed: deleting or renaming a routine it names
+        would leave it naming one that is gone. Runs on the worker."""
+        return showfiles.load_folder(root, previous=folder)
+
     def _cmd_routine_rename(self, m: dict, now: float) -> object:
         """Rename a routine and every reference to it (showfiles.rename_routine:
         new file first, references next, old file last). Answered with the
@@ -2272,9 +2282,10 @@ class ShowController:
             self.note(f"renamed routine {old!r} to {new!r}: {len(written)} file(s)")
             self.reload_library()
 
-        return self._on_worker(f"renaming routine {old}",
-                               lambda: showfiles.rename_routine(root, folder, old, new, base),
-                               then)
+        return self._on_worker(
+            f"renaming routine {old}",
+            lambda: showfiles.rename_routine(root, self._on_disk(root, folder), old, new, base),
+            then)
 
     def _cmd_template_draft(self, m: dict, now: float) -> object:
         """Check an unsaved template set: the format's rules, then what it asks
@@ -2315,7 +2326,8 @@ class ShowController:
             self.reload_library()
 
         return self._on_worker(f"renaming template set {old}",
-                               lambda: showfiles.rename_template_set(root, folder, old, new, base),
+                               lambda: showfiles.rename_template_set(
+                                   root, self._on_disk(root, folder), old, new, base),
                                then)
 
     def _cmd_template_delete(self, m: dict, now: float) -> object:
@@ -2329,7 +2341,7 @@ class ShowController:
         root, folder = library.root, library.folder
 
         def work():
-            uses = showfiles.template_set_uses(folder, tid)
+            uses = showfiles.template_set_uses(self._on_disk(root, folder), tid)
             if uses:
                 raise ValueError(f"{tid!r} is {uses[0]}: make another set the "
                                  f"show's first")
@@ -2345,7 +2357,18 @@ class ShowController:
 
     def _cmd_palette_save(self, m: dict, now: float) -> object:
         """Write a library palette. Its copies in timelines and sets are not
-        touched: `palette_sync` does that, on request."""
+        touched: `palette_sync` does that, on request. Its name must be its
+        own: copies are found by name, so two library palettes of one name
+        would both claim the same copies."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if isinstance(doc, dict):
+            pid, name = doc.get("id"), doc.get("name")
+            for other_id, other in library.folder.palettes.items():
+                if other_id != pid and other.get("name") == name:
+                    raise ValueError(f"the library already has a palette called {name!r} "
+                                     f"(palettes/{other_id}.json): copies are found by "
+                                     f"name, so each needs its own")
         return self._save("palette", m)
 
     def _cmd_palette_delete(self, m: dict, now: float) -> object:
@@ -2410,7 +2433,7 @@ class ShowController:
         root, folder = library.root, library.folder
 
         def work():
-            uses = showfiles.routine_uses(folder, rid)
+            uses = showfiles.routine_uses(self._on_disk(root, folder), rid)
             if uses:
                 raise ValueError(f"{rid!r} is still used by {'; '.join(uses)}: "
                                  f"take it out of those first")

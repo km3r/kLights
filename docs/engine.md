@@ -412,8 +412,8 @@ link, so compiling is unchanged; `palette_sync` brings chosen copies up to the
 library's colours. Adding tracks preps them (`rekordbox_prep`) and can start
 each one in the same step: a timeline drafted from a template set, an empty
 one, or none; the drafting is the timeline editor's own function, written with
-`timeline_save` and base_rev "". **+ New**, on every Studio page, makes any of
-these: a timeline (drafted from a set, copied from another track's, or empty),
+`timeline_save` and base_rev "". **+ New**, in the top bar of Studio's library
+pages, makes any of these: a timeline (drafted from a set, copied from another track's, or empty),
 a routine (blank, a copy, or a console look wrapped as one, bound to this rig),
 a template set (blank, a copy, or built from what a timeline's scene lane plays
 on each phrase family) or a palette. The first three open in their editor

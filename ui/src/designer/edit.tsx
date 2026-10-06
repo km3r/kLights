@@ -4,7 +4,8 @@ import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, draftFromTemplate, itemName, itemSub, uniqueId,
+  BEATS_PER_BAR, NEW_COLOURS, barBeat, curveValue, draftFromTemplate, hexColor, itemName, itemSub,
+  uniqueId,
 } from "./model";
 import type {
   Item, PaletteSummary, Point, RoutineSummary, Row, TemplateSetDoc, TimelineDoc, TrackDoc,
@@ -405,6 +406,18 @@ export const clipOps = {
 
 /** The kind of thing a browser or a drop places, as dragged between them. */
 export const PLACE_MIME = "application/x-klights-place";
+
+/** What was dropped, if it is something this page can place: a drag can come
+ *  from another window, so its data is read, not trusted. */
+function placeable(raw: string): Placeable | null {
+  try {
+    const v = JSON.parse(raw) as Partial<Placeable> | null;
+    if (v?.kind === "routine" && typeof v.id === "string") return v as Placeable;
+    if (v?.kind === "palette" && typeof v.name === "string") return v as Placeable;
+    if (v?.kind === "hit" && ["flash", "strobe", "blackout"].includes(v.hit as string)) return v as Placeable;
+  } catch { /* not ours */ }
+  return null;
+}
 export type Placeable =
   | { kind: "routine"; id: string }
   | { kind: "palette"; name: string; colours?: Record<"primary" | "secondary" | "accent", string> }
@@ -657,11 +670,11 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onD
            if (onDropItem && e.dataTransfer.types.includes(PLACE_MIME)) e.preventDefault();
          }}
          onDrop={(e) => {
-           const raw = e.dataTransfer.getData(PLACE_MIME);
-           if (!onDropItem || !raw) return;
+           const what = placeable(e.dataTransfer.getData(PLACE_MIME));
+           if (!onDropItem || !what) return;
            e.preventDefault();
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-           onDropItem(JSON.parse(raw) as Placeable, Math.max(0, (e.clientX - r.left) / zoom));
+           onDropItem(what, Math.max(0, (e.clientX - r.left) / zoom));
          }}>
       {items.map((it) => {
         const live = drag?.id === it.id ? drag : null;
@@ -1107,8 +1120,8 @@ export function PaletteOrigin({ library, name, colours, here, onUseLibrary }: {
     return <span className="d-origin" title={`Made in this ${here}: no library palette is called ${name}`}>
       only here</span>;
   }
-  const same = ROLES.every((r) => typeof colours[r] === "string"
-    && (colours[r] as string).toLowerCase() === lib[r].toLowerCase());
+  const same = ROLES.every((r) => hexColor(colours[r]) != null
+    && hexColor(colours[r]) === hexColor(lib[r]));
   const tip = `A copy of the library's ${name}. Changing it here changes this ${here} only; `
     + "the library's is changed on Studio's Palettes page.";
   return same ? <span className="d-origin lib" title={tip}>copy of library</span> : (
@@ -1172,7 +1185,7 @@ function Palettes({ history }: { history: History }) {
       <button className="small" onClick={() => history.apply((d) => {
         const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
         d.palettes = { ...(d.palettes ?? {}),
-                       [name]: { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" } };
+                       [name]: { ...NEW_COLOURS } };
         if (!d.palette) d.palette = name;
       })}>+ palette</button>
     </div>

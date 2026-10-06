@@ -354,6 +354,33 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
   return doc;
 }
 
+/** The engine's rule for an id, which is also the file's name (showfiles.ID_RE). */
+export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** A new palette's colours, until they are changed. */
+export const NEW_COLOURS: Readonly<Record<"primary" | "secondary" | "accent", string>> =
+  { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" };
+
+/** A palette colour as lower-case #rrggbb, compared the way the engine
+ *  compares copies (showfiles.hex_color): a hex string, or [r, g, b] of 0..1.
+ *  Null for anything else. */
+export function hexColor(v: unknown): string | null {
+  if (typeof v === "string") return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+  if (Array.isArray(v) && v.length === 3
+      && v.every((c) => typeof c === "number" && c >= 0 && c <= 1)) {
+    return `#${v.map((c: number) => Math.round(c * 255).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return null;
+}
+
+/** A name not taken by any of `names`: "Hot copy", then "Hot copy 2"... */
+export function freeName(names: Iterable<string>, stem: string): string {
+  const taken = new Set(names);
+  let name = stem;
+  for (let n = 2; taken.has(name); n++) name = `${stem} ${n}`;
+  return name;
+}
+
 /** An id not taken by any of `ids`, from a stem: "fan-drop-copy", then
  *  "fan-drop-copy-2"... */
 export function freeId(ids: Iterable<string>, stem: string): string {

@@ -13,7 +13,7 @@ the only record of them until a roadmap doc lands.
 
 ### Added — Studio's + New: one way in to making anything
 
-- **+ New** sits in Studio's top bar on every page. It makes a timeline for a
+- **+ New** sits in the top bar of Studio's library pages. It makes a timeline for a
   track, a routine, a template set or a palette, each with the starts that
   make sense for it. The keys T, R, S and P pick one while the menu is open,
   and **Tracks from rekordbox** is there too.
@@ -86,6 +86,9 @@ the only record of them until a roadmap doc lands.
   was read at, so a file changed meanwhile is left alone and named. A palette
   found inside a file can be **added to the library** in one click. Deleting a
   library palette leaves its copies where they are.
+- **A library palette's name is its own.** Copies are found by name, so the
+  engine refuses a second library palette of the same name, and Duplicate
+  picks a free one ("Hot copy 2").
 - **From the library**: the timeline editor's and the template set editor's
   palette panels can copy a library palette in under its name.
 
@@ -137,7 +140,9 @@ the only record of them until a roadmap doc lands.
   template sets, show.json) next, and removes the old file last -- so stopped
   anywhere, nothing names a routine that is gone. **Delete**
   (`routine_delete`) refuses while anything still uses the routine, and says
-  where. Both quote the rev the routine was read at.
+  where. Both quote the rev the routine was read at, and both judge what uses
+  it from the folder as it is on disk at that moment, not as last loaded: a
+  timeline saved a second ago (by MCP, another machine) is never missed.
 - **Folders** are an optional `folder` on a routine: a name, set from the
   library or the routine editor's settings. It changes nothing about how the
   routine plays.

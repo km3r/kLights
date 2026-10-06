@@ -327,6 +327,16 @@ try:
     check("a delete of a routine changed since it was read is refused",
           r["ok"] is False and "changed since" in r["error"]
           and (shows / "routines" / "spare.json").is_file(), f"{r}")
+    # A set that picks it, written straight to disk: the engine has not
+    # reloaded since, but a delete must still see it.
+    late = shows / "templates" / "late.json"
+    late.write_text(json.dumps({"kind": "klights.template_set", "version": 1, "id": "late",
+                                "phrases": {"*": {"routine": "spare"}}}))
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": spare_rev, "id": 29})
+    check("a delete reads the folder as it is now: a use written a moment ago refuses it",
+          r["ok"] is False and "templates/late.json" in r["error"]
+          and (shows / "routines" / "spare.json").is_file(), f"{r}")
+    late.unlink()
     r = ask({"type": "routine_delete", "routine": "spare", "base_rev": spare_rev, "id": 28})
     check("a routine nothing uses is deleted",
           r["ok"] and r["data"]["deleted"] == "routines/spare.json"
@@ -417,6 +427,10 @@ try:
           lib.get("name") == "Hot" and "timelines/synth-128.json" in copies
           and copies["timelines/synth-128.json"]["same"] is False
           and "Hot" not in {f["name"] for f in body["found"]}, f"{lib}")
+    r = ask({"type": "palette_save", "doc": {**hot, "id": "hot-2"}, "base_rev": "", "id": 46})
+    check("a second library palette of the same name is refused: copies are found by name",
+          r["ok"] is False and "already has a palette called 'Hot'" in r["error"]
+          and not (shows / "palettes" / "hot-2.json").exists(), f"{r}")
     r = ask({"type": "palette_sync", "palette": "hot", "files": ["timelines/nope.json"], "id": 42})
     check("an update names only files the folder has", r["ok"] is False and "nope" in r["error"], f"{r}")
     r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 43},

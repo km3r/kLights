@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Engine } from "./Designer";
 import { ROLES } from "./edit";
-import { freeId } from "./model";
+import { freeId, freeName } from "./model";
 import type { FoundPalette, PaletteDoc, PalettePlace, PaletteSummary } from "./model";
 import { download } from "./Routines";
 
@@ -119,7 +119,7 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
                   {f.places.map((p) => placeName(p)).join(", ")}
                   {mixed ? " · not the same colours in each" : ""}</span>
                 <button disabled={!canWrite || !usable}
-                        title={mixed ? "Takes the colours of the first; the others then show as older" : undefined}
+                        title={mixed ? "Takes the colours of the first; the others then show as different" : undefined}
                         onClick={() => void create(f.name, first as Colours, `Added ${f.name} to the library.`)}>
                   Add to the library</button>
               </div>
@@ -185,7 +185,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
     return `Gave ${written.length} cop${written.length === 1 ? "y" : "ies"} of ${p.name} the library's colours.`;
   });
   const duplicate = () => run(async () => {
-    const name = `${p.name} copy`;
+    const name = freeName(palettes.map((x) => x.name), `${p.name} copy`);
     const id = freeId(palettes.map((x) => x.id), name);
     await ask({ type: "palette_save", base_rev: "",
                 doc: { ...doc(), id, name, primary: p.primary, secondary: p.secondary,

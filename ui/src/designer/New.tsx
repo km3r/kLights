@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  freeId, phraseMatch, templateFromTimeline,
+  BEATS_PER_BAR, ID_RE, NEW_COLOURS, freeId, phraseMatch, templateFromTimeline,
 } from "./model";
 import type {
   FoundPalette, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, TemplateSetDoc,
@@ -25,7 +25,6 @@ import { putPending } from "./pending";
 
 export type NewKind = "timeline" | "routine" | "template" | "palette";
 
-const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const KINDS: { kind: NewKind; title: string; text: string; key: string }[] = [
   { kind: "timeline", title: "A timeline for a track", text: "For a track already in the show", key: "t" },
   { kind: "routine", title: "A routine", text: "A few bars for roles, to use anywhere", key: "r" },
@@ -138,8 +137,11 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const id = idEdited ?? freeId(takenIds, name || kind);
   const [bars, setBars] = useState(4);
   const [loops, setLoops] = useState(true);
-  const [folder, setFolder] = useState("");
+  const [folderTyped, setFolder] = useState<string | null>(null);
   const [copyRoutine, setCopyRoutine] = useState(routines[0]?.id ?? "");
+  // A copy is filed with its original, unless a folder is typed.
+  const folder = folderTyped
+    ?? (start === "copy" ? routines.find((r) => r.id === copyRoutine)?.folder ?? "" : "");
   const looks = engine.state?.looks ?? [];
   const [look, setLook] = useState(looks[0]?.name ?? "");
   // A rig has a couple of hundred looks: listed by the slot they play on.
@@ -217,7 +219,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   });
   const goPalette = () => run(async () => {
     const label = name.trim();
-    let colours = { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" };
+    let colours = { ...NEW_COLOURS };
     if (start === "copy") {
       const p = palettes.find((x) => x.id === copyPalette);
       if (p) colours = { primary: p.primary, secondary: p.secondary, accent: p.accent };
@@ -246,7 +248,8 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     if (a.length && same === a.length && same === (to.phrase_items ?? []).length) {
       return "Their phrases are the same, phrase for phrase.";
     }
-    return same ? `Their phrases agree up to bar ${Math.floor(a[same - 1]![1] / 4)}; after that, check the clips.`
+    return same ? `Their phrases agree up to bar ${Math.floor(a[same - 1]![1] / BEATS_PER_BAR)}; after that, `
+      + "check the clips."
       : "Their phrases differ: clips keep their bars, not their phrases.";
   })();
 
