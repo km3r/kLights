@@ -4,6 +4,7 @@ import { ROLES } from "./edit";
 import { freeId, freeName } from "./model";
 import type { FoundPalette, PaletteDoc, PalettePlace, PaletteSummary } from "./model";
 import { download } from "./Routines";
+import { Badge, DetailHead, DetailSection, MoreMenu, Task } from "./detail";
 
 /**
  * The show's palette library: one file a palette in `palettes/`.
@@ -201,80 +202,83 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
 
   return (
     <div className="s-detail" aria-label="selected palette">
-      <div>
-        <span className="s-kicker">The library's palette</span>
-        <input className="s-title-input" value={edit.name} aria-label="palette name"
-               onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
-        <span className="muted mono small">palettes/{p.id}.json</span>
-      </div>
-      <div className="s-roles">
-        {ROLES.map((r) => (
-          <div key={r} className="s-role-row">
-            <b>{r[0]!.toUpperCase() + r.slice(1)}</b>
-            <input type="color" aria-label={`${r} colour`}
-                   value={COLOR_RE.test(edit[r]) ? edit[r] : "#000000"}
-                   onChange={(e) => setEdit({ ...edit, [r]: e.target.value })} />
-            <input className="mono" aria-label={`${r} hex`} value={edit[r]} style={{ width: 90 }}
-                   onChange={(e) => setEdit({ ...edit, [r]: e.target.value.trim() })} />
+      <DetailHead kind="Library palette"
+                  title={<input className="s-title-input" value={edit.name} aria-label="palette name"
+                                onChange={(e) => setEdit({ ...edit, name: e.target.value })} />}
+                  meta={<span className="mono">palettes/{p.id}.json</span>}
+                  badges={dirty && <Badge tone="info">Unsaved</Badge>}
+                  menu={<MoreMenu label={p.name} items={[
+                    { label: "Duplicate", disabled: busy || !canWrite, onClick: () => void duplicate() },
+                    { label: "Download the file", onClick: () => download(`${p.id}.json`, doc()) },
+                    { label: "Delete…", danger: true, onClick: () => { setError(null); setConfirm(true); } },
+                  ]} />} />
+
+      {confirm && (
+        <Task title={`Delete ${p.name}`} label="confirm delete" onCancel={() => setConfirm(false)}>
+          <span className="small">Delete palettes/{p.id}.json? Its copies stay where they are.</span>
+          <div className="d-form">
+            <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
+              Delete it</button>
+            <button onClick={() => setConfirm(false)}>Keep it</button>
           </div>
-        ))}
-      </div>
-      <p className="s-note info">You are editing the library's {p.name}. Saving changes the
-        library only: each copy in a timeline or set keeps its own colours until you give it
-        these, below.</p>
-      {edit.name.trim() !== p.name && p.copies.length > 0 && (
-        <p className="s-note warn">Copies are found by name: the {p.copies.length} cop
-          {p.copies.length === 1 ? "y" : "ies"} named {p.name} would no longer count as copies of
-          this one.</p>)}
-      <div className="d-form">
-        <button className="d-primary" disabled={!dirty || !valid || busy || !canWrite}
-                onClick={() => void save()}>{dirty ? "Save to the library" : "Saved"}</button>
-        {dirty && <button onClick={() => setEdit(saved)}>Revert</button>}
-      </div>
+        </Task>
+      )}
       {error && <p className="small d-error" role="alert">{error}</p>}
 
-      <section className="s-uses" aria-label="copies">
-        <b className="small">Copies in timelines and sets</b>
-        {!p.copies.length && <span className="muted small">No timeline or set has a palette
-          called {p.name} yet. Pick it from the library in either editor.</span>}
-        {p.copies.map((c) => (
-          <a key={c.file} className="s-use s-copy" href={placeHref(c)}>
-            <span><b>{placeName(c)}</b></span>
-            <span className="s-copy-state">
-              <Swatches c={c.colours as Partial<Colours>} />
-              <span className={`small ${c.same ? "muted" : "s-warn"}`}>
-                {c.same ? "the same" : "different"}</span>
-            </span>
-          </a>
-        ))}
+      <DetailSection title="Colours">
+        <div className="s-roles">
+          {ROLES.map((r) => (
+            <div key={r} className="s-role-row">
+              <b>{r[0]!.toUpperCase() + r.slice(1)}</b>
+              <input type="color" aria-label={`${r} colour`}
+                     value={COLOR_RE.test(edit[r]) ? edit[r] : "#000000"}
+                     onChange={(e) => setEdit({ ...edit, [r]: e.target.value })} />
+              <input className="mono" aria-label={`${r} hex`} value={edit[r]}
+                     onChange={(e) => setEdit({ ...edit, [r]: e.target.value.trim() })} />
+            </div>
+          ))}
+        </div>
+        {edit.name.trim() !== p.name && p.copies.length > 0 && (
+          <p className="s-note warn">Copies are found by name: the {p.copies.length} cop
+            {p.copies.length === 1 ? "y" : "ies"} named {p.name} would no longer count as copies of
+            this one.</p>)}
+        {dirty && (
+          <div className="d-form">
+            <button className="d-primary" disabled={!valid || busy || !canWrite}
+                    onClick={() => void save()}>Save to the library</button>
+            <button onClick={() => setEdit(saved)}>Revert</button>
+          </div>
+        )}
+      </DetailSection>
+
+      <DetailSection title="Copies" label="copies" count={p.copies.length}>
+        {p.copies.length ? <span className="muted small">Timelines and sets keep their own
+          copy, by name. Saving here changes none of them until you update them.</span>
+          : <span className="muted small">No timeline or set has a palette called {p.name} yet.
+            Pick it from the library in either editor.</span>}
+        <div className="s-uses">
+          {p.copies.map((c) => (
+            <a key={c.file} className="s-use s-copy" href={placeHref(c)}>
+              <b>{placeName(c)}</b>
+              <span className="s-copy-state">
+                <Swatches c={c.colours as Partial<Colours>} />
+                <span className={`small ${c.same ? "muted" : "s-warn"}`}>
+                  {c.same ? "the same" : "different"}</span>
+              </span>
+            </a>
+          ))}
+        </div>
         {older.length > 0 && (
-          <div className="s-action">
-            <button className="d-primary" disabled={busy || dirty || !canWrite}
+          <>
+            <button className="d-primary s-self" disabled={busy || dirty || !canWrite}
                     onClick={() => void sync()}>
               Give {older.length} cop{older.length === 1 ? "y" : "ies"} the library's colours</button>
             <span className="muted small">{dirty ? "Save first: copies take the saved colours."
               : "Overwrites those copies' colours in their files. One changed meanwhile is left "
                 + "alone and named."}</span>
-          </div>
+          </>
         )}
-      </section>
-
-      <div className="s-actions">
-        <div className="s-action"><button disabled={busy || !canWrite} onClick={() => void duplicate()}>
-          Duplicate</button></div>
-        <div className="s-action"><button onClick={() => download(`${p.id}.json`, doc())}>
-          Download the file</button></div>
-        <div className="s-action">
-          {confirm ? (
-            <div className="d-form" role="group" aria-label="confirm delete">
-              <span className="small">Delete palettes/{p.id}.json? Its copies stay where they are.</span>
-              <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
-                Delete it</button>
-              <button onClick={() => setConfirm(false)}>Keep it</button>
-            </div>
-          ) : <button className="d-bad" onClick={() => setConfirm(true)}>Delete…</button>}
-        </div>
-      </div>
+      </DetailSection>
     </div>
   );
 }

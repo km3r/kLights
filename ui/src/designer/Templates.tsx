@@ -11,6 +11,7 @@ import type {
 } from "./model";
 import { clearPending, peekPending, putPending } from "./pending";
 import { download } from "./Routines";
+import { Badge, DetailHead, DetailSection, MoreMenu, Task } from "./detail";
 
 /**
  * Template sets: for each rekordbox phrase, which routine -- the exact label
@@ -520,28 +521,75 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   };
   const dupOk = ID_RE.test(dupId) && !sets.some((s) => s.id === dupId);
   const toOk = ID_RE.test(toId) && toId !== id && !sets.some((s) => s.id === toId);
+  const close = () => { setMode(null); setError(null); };
+  const openTask = (m: typeof mode) => () => { setError(null); setMode(m); };
+  const isNew = rev === "";
 
   return (
     <div className="s-detail" aria-label="selected set">
-      <div>
-        <span className="s-kicker">Template set{isShows ? " · the show's" : ""}</span>
-        <h2>{setName({ id, name: doc?.name ?? summary?.name })}</h2>
-      </div>
-      {isShows ? (
-        <p className="s-note"><b>The show's set</b>The engine starts on it: with Follow armed it
-          lights tracks with no timeline, until the operator switches set. New timelines
-          draft from it by default.</p>
-      ) : (
-        <div className="s-action">
-          <button onClick={() => void makeShows()} disabled={busy || !canWrite || rev === ""}
-                  title={rev === "" ? "Save it first" : undefined}>Make it the show's set</button>
-          <span className="muted small">The engine then starts on it, and new timelines draft
-            from it by default.</span>
-        </div>
-      )}
+      <DetailHead kind="Template set" title={setName({ id, name: doc?.name ?? summary?.name })}
+                  badges={<>
+                    {isShows && <Badge tone="good">Show's set</Badge>}
+                    {isNew ? <Badge>New</Badge> : dirty && <Badge tone="info">Unsaved</Badge>}
+                  </>}
+                  menu={<MoreMenu label={setName({ id, name: doc?.name ?? summary?.name })} items={[
+                    { label: "Duplicate…", disabled: !doc, onClick: openTask("duplicate") },
+                    { label: "Rename…", onClick: openTask("rename"),
+                      ...(isNew ? { disabled: true, note: "Save it first" } : {}) },
+                    { label: "Download the file", disabled: !doc,
+                      onClick: () => { if (doc) download(`${id}.json`, doc); } },
+                    ...(isNew ? [] : [{ label: "Delete…", danger: true, onClick: openTask("delete"),
+                      ...(isShows ? { disabled: true, note: "It is the show's set" } : {}) }]),
+                  ]} />} />
 
-      <section className="s-try" aria-label="try it on a track">
-        <b className="small">Try it on a track</b>
+      {mode === "duplicate" && (
+        <Task title={`Duplicate ${id}`} onCancel={close}>
+          <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
+            <input value={dupId} aria-label="id of the copy" autoFocus
+                   onChange={(e) => setDupId(e.target.value.trim())} />
+            <button type="submit" className="d-primary" disabled={!dupOk || busy || !canWrite}>
+              Make the copy</button>
+          </form>
+          <span className="muted small">As it is on screen, saved or not.</span>
+        </Task>
+      )}
+      {mode === "rename" && (
+        <Task title={`Rename ${id}`} onCancel={close}>
+          <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
+            <input value={toId} aria-label="new id" autoFocus onChange={(e) => setToId(e.target.value.trim())} />
+            <button type="submit" className="d-primary" disabled={!toOk || busy || !canWrite || dirty}>
+              Rename it</button>
+          </form>
+          {(dirty || isShows) && <span className="muted small">{dirty ? "Save or undo the changes first. " : ""}
+            {isShows ? "show.json is changed with it." : ""}</span>}
+        </Task>
+      )}
+      {mode === "delete" && !isShows && (
+        <Task title={`Delete ${id}`} label="confirm delete" onCancel={close}>
+          <span className="small">Delete templates/{id}.json? Studio cannot undo it.</span>
+          <div className="d-form">
+            <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
+              Delete it</button>
+            <button onClick={close}>Keep it</button>
+          </div>
+        </Task>
+      )}
+      {error && <p className="small d-error" role="alert">{error}</p>}
+
+      <DetailSection title="On the night">
+        <p className="s-text">{isShows
+          ? "The engine starts on it: with Follow armed it lights tracks with no timeline, "
+            + "until the operator switches set. New timelines draft from it by default."
+          : "It plays when the operator switches to it. As the show's set, the engine would "
+            + "start on it, and new timelines would draft from it."}</p>
+        {!isShows && (
+          <button className="s-self" onClick={() => void makeShows()}
+                  disabled={busy || !canWrite || isNew}
+                  title={isNew ? "Save it first" : undefined}>Make it the show's set</button>
+        )}
+      </DetailSection>
+
+      <DetailSection title="Try it on a track" label="try it on a track">
         {phrased.length ? (
           <>
             <select value={trackId} aria-label="track to try" onChange={(e) => setTrackId(e.target.value)}>
@@ -568,53 +616,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
             {!saved && <span className="muted small">Save first: a draft reads the saved set.</span>}
           </>
         ) : <span className="muted small">No track in the show has phrases to try it on.</span>}
-      </section>
-
-      {error && <p className="small d-error" role="alert">{error}</p>}
-      <div className="s-actions">
-        <div className="s-action">
-          <button className={mode === "duplicate" ? "on" : ""} aria-expanded={mode === "duplicate"}
-                  onClick={() => setMode(mode === "duplicate" ? null : "duplicate")}>Duplicate</button>
-          {mode === "duplicate" && (
-            <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
-              <input value={dupId} aria-label="id of the copy" onChange={(e) => setDupId(e.target.value.trim())} />
-              <button type="submit" className="d-primary" disabled={!dupOk || busy || !canWrite}>
-                Make the copy</button>
-              <span className="muted small">As it is on screen, saved or not.</span>
-            </form>
-          )}
-        </div>
-        <div className="s-action">
-          <button className={mode === "rename" ? "on" : ""} aria-expanded={mode === "rename"}
-                  disabled={rev === ""} onClick={() => setMode(mode === "rename" ? null : "rename")}>
-            Rename</button>
-          {mode === "rename" && (
-            <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
-              <input value={toId} aria-label="new id" onChange={(e) => setToId(e.target.value.trim())} />
-              <button type="submit" className="d-primary" disabled={!toOk || busy || !canWrite || dirty}>
-                Rename it</button>
-              <span className="muted small">{dirty ? "Save or undo the changes first. " : ""}
-                {isShows ? "show.json is changed with it." : ""}</span>
-            </form>
-          )}
-        </div>
-        <div className="s-action">
-          <button disabled={!doc} onClick={() => doc && download(`${id}.json`, doc)}>
-            Download the file</button>
-        </div>
-        <div className="s-action">
-          {isShows ? (
-            <button disabled title="Make another set the show's first">Delete: it is the show's set</button>
-          ) : rev === "" ? null : mode === "delete" ? (
-            <div className="d-form" role="group" aria-label="confirm delete">
-              <span className="small">Delete templates/{id}.json? Studio cannot undo it.</span>
-              <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
-                Delete it</button>
-              <button onClick={() => setMode(null)}>Keep it</button>
-            </div>
-          ) : <button className="d-bad" onClick={() => setMode("delete")}>Delete…</button>}
-        </div>
-      </div>
+      </DetailSection>
     </div>
   );
 }

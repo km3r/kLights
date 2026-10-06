@@ -16,6 +16,7 @@ import type { History, LaneSpecs, PickEntry } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
+import { SideSection } from "./detail";
 import { clearPending, peekPending } from "./pending";
 import "./designer.css";
 
@@ -349,8 +350,7 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
   }, []);
   const folder = typeof doc.folder === "string" ? doc.folder : "";
   return (
-    <section>
-      <h3>Routine</h3>
+    <SideSection id="routine-settings" title="Routine">
       <div className="d-form">
         <label className="small">Name{" "}
           <input value={doc.name ?? ""} aria-label="routine name"
@@ -364,7 +364,9 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
                    if (v >= 0.25 && v <= 256) history.apply((d) => { d.bars = v; });
                  }} />
         </label>
-        <label className="small">
+        <label className="small" title={loops
+          ? `Repeats every ${doc.bars} bar${doc.bars === 1 ? "" : "s"} for as long as its clip lasts`
+          : "Plays once; past its end it keeps running its last moment"}>
           <input type="checkbox" checked={loops} aria-label="loops"
                  onChange={() => history.apply((d) => { d.loop = !loops; })} /> loops
         </label>
@@ -379,9 +381,6 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
           <datalist id="d-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
         </label>
       </div>
-      <p className="small muted">
-        {loops ? `Repeats every ${doc.bars} bar${doc.bars === 1 ? "" : "s"} for as long as its clip lasts.`
-          : "Plays once; past its end it keeps running its last moment."}</p>
       {(rigBound || doc.rig) && (
         <div className="d-form">
           <label className="small">Rig{" "}
@@ -397,7 +396,7 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
           <p className="small muted">It uses looks or presets, which exist on one rig only.</p>
         </div>
       )}
-    </section>
+    </SideSection>
   );
 }
 
@@ -431,10 +430,11 @@ function Roles({ history, doc, engine }: PanelProps) {
     || (r.items ?? []).some((i) => i.role === name));
   const names = Object.keys(doc.roles);
   return (
-    <section>
-      <h3>Roles</h3>
-      <p className="small muted">Rows play on roles. Each plays on the fixtures with its tag
-        (or one fixture, by name), unless the clip that uses the routine binds it to another.</p>
+    <SideSection id="routine-roles" title="Roles" count={names.length} aside={<EditTags />} help={<>
+      <p>Rows play on roles. Each plays on the fixtures with its tag (or one fixture, by
+        name), unless the clip that uses the routine binds it to another.</p>
+      <p>Which fixtures carry a tag is set on the console's Setup tab.</p>
+    </>}>
       {Object.entries(doc.roles).map(([name, spec]) => (
         <div key={name} className="d-palette">
           <span className="grow d-role-name"><span className="mono small">{name}</span>
@@ -460,11 +460,9 @@ function Roles({ history, doc, engine }: PanelProps) {
         {tags.map((t) => <option key={t} value={t} />)}
         {fixtures.map((n) => <option key={n} value={n} label="one fixture" />)}
       </datalist>
-      <p className="small muted">Which fixtures carry a tag is set on the console's Setup
-        tab. <EditTags /></p>
       <NameAdder label="+ role" taken={names}
                  onAdd={(name) => history.apply((d) => { d.roles[name] = { default: name }; })} />
-    </section>
+    </SideSection>
   );
 }
 
@@ -504,10 +502,10 @@ function Params({ history, doc, engine }: PanelProps) {
   const used = (name: string) => doc.rows.some((r) => (r.items ?? []).some(
     (i) => JSON.stringify(i.args ?? {}).includes(`"$${name}"`)));
   return (
-    <section>
-      <h3>Open parameters</h3>
-      <p className="small muted">A block argument set to <span className="mono">$name</span> takes
-        the value from the clip that uses the routine, or its variation, or this default.</p>
+    <SideSection id="routine-params" title="Open parameters" count={Object.keys(params).length}
+                 help={<p>A block argument set to <span className="mono">$name</span> takes the
+                   value from the clip that uses the routine, or its variation, or this
+                   default.</p>}>
       {Object.entries(params).map(([name, def]) => (
         <div key={name} className="d-param">
           <div className="d-palette">
@@ -555,7 +553,7 @@ function Params({ history, doc, engine }: PanelProps) {
                  onAdd={(name) => history.apply((d) => {
                    d.params = { ...(d.params ?? {}), [name]: { ...PARAM_DEFAULTS.number } };
                  })} />
-    </section>
+    </SideSection>
   );
 }
 
@@ -563,9 +561,8 @@ function Variations({ history, doc, engine }: PanelProps) {
   const variations = doc.variations ?? {};
   const params = doc.params ?? {};
   return (
-    <section>
-      <h3>Variations</h3>
-      <p className="small muted">Named sets of parameter values, picked per clip.</p>
+    <SideSection id="routine-variations" title="Variations" count={Object.keys(variations).length}
+                 help={<p>Named sets of parameter values, picked per clip.</p>}>
       {Object.entries(variations).map(([vname, values]) => (
         <div key={vname} className="d-param">
           <div className="d-palette">
@@ -597,7 +594,7 @@ function Variations({ history, doc, engine }: PanelProps) {
                  onAdd={(name) => history.apply((d) => {
                    d.variations = { ...(d.variations ?? {}), [name]: {} };
                  })} />
-    </section>
+    </SideSection>
   );
 }
 
@@ -648,28 +645,26 @@ function Blocks({ history, doc, engine, beat, selected, onAdded }: PanelProps & 
     onAdded(added);
   };
   return (
-    <section>
-      <h3>Blocks</h3>
-      <p className="small muted">To put a block on a particular lane, click an empty spot on
-        that lane. Or click one here to add it at the playhead, to the end of the routine,
-        on the selected block's lane or the first lane of its slot.</p>
+    <SideSection id="routine-blocks" title="Blocks" help={<p>To put a block on a particular
+      lane, click an empty spot on that lane. Or click one here to add it at the playhead, to
+      the end of the routine, on the selected block's lane or the first lane of its slot.</p>}>
       {SLOTS.map((slot) => (
         <div key={slot}>
-          <span className="small muted">{LANE_NAMES[slot]}</span>
+          <span className="d-sub">{LANE_NAMES[slot]}</span>
           <div className="d-shelf">
             {blocksFor(slot).filter((b) => BLOCK_SLOT[b] === slot).map((b) => (
               <button key={b} onClick={() => add(b, slot)}>{b}</button>))}
           </div>
         </div>
       ))}
-      <span className="small muted">This rig only</span>
+      <span className="d-sub">This rig only</span>
       <div className="d-shelf">
         {RIG_BOUND.map((b) => (
           <button key={b} onClick={() => add(b, null)}
                   title="Uses this rig's own looks or presets: the routine becomes this-rig-only">
             {b}<span className="d-badge">rig</span></button>))}
       </div>
-    </section>
+    </SideSection>
   );
 }
 

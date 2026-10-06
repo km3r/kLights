@@ -20,6 +20,7 @@ import { StartDialog } from "./Start";
 import type { PrepPick, StartTrack } from "./Start";
 import { PanelToggle, usePanels } from "./panels";
 import { useDesignerGuide } from "./guide";
+import { DetailEmpty, Said } from "./detail";
 import "./designer.css";
 
 /**
@@ -29,8 +30,9 @@ import "./designer.css";
  *   top        Studio, the event, what the rig is doing, the console
  *   left       the sidebar: the library, then rekordbox's playlists
  *   middle     the page: a table of tracks, routines, or a playlist
- *   right      details: the selected track, or how much of a playlist the
- *              show covers
+ *   right      details: the selected track, routine, set or palette, or how
+ *              much of a playlist the show covers -- each built the same way
+ *              (detail.tsx), with what can be done to its file in a ⋯ menu
  *
  * Both side panels fold away (and stay folded, per browser) so a laptop can
  * give the whole width to a table. The timeline and routine editors are their
@@ -173,13 +175,13 @@ export default function Studio({ engine, route }: {
                           current={tplId} onDoc={onTemplateDoc} onNew={() => openNew("template")} />;
     side = (
       <>
-        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        <Said text={setSaid} />
         {tplId ? (
           <TemplateAside key={tplId} engine={engine} id={tplId} doc={tpl.doc} dirty={tpl.dirty}
                          rev={tpl.rev} summary={lib.sets.find((s) => s.id === tplId)}
                          sets={lib.sets} tracks={tracks} show={lib.show}
                          onDone={(said) => { setSetSaid(said); lib.reload(); }} />
-        ) : <p className="muted small">No template set yet.</p>}
+        ) : <DetailEmpty>No template set yet. Make one with New set.</DetailEmpty>}
       </>
     );
   } else if (route.view === "palettes") {
@@ -192,19 +194,19 @@ export default function Studio({ engine, route }: {
     const p = lib.palettes?.find((x) => x.id === shownPalette) ?? null;
     side = (
       <>
-        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        <Said text={setSaid} />
         {p ? (
           <PaletteDetail key={p.id} engine={engine} p={p} palettes={lib.palettes ?? []}
                          onSelect={setPaletteId}
                          onDone={(said) => { setSetSaid(said); lib.reload(); }} />
-        ) : <p className="muted small">{lib.palettes?.length ? "Select a palette."
-          : "The library is empty."}</p>}
+        ) : <DetailEmpty>{lib.palettes?.length ? "Select a palette to edit it."
+          : "The library is empty. Make a palette with New palette."}</DetailEmpty>}
       </>
     );
   } else if (route.view === "show") {
     main = (
       <>
-        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        <Said text={setSaid} />
         <ShowSettingsView engine={engine} show={lib.show} sets={lib.sets}
                           routines={lib.routines ?? []}
                           onDone={(said) => { setSetSaid(said); lib.reload(); }} />
@@ -223,7 +225,7 @@ export default function Studio({ engine, route }: {
     const r = lib.routines?.find((x) => x.id === routineId) ?? null;
     side = (
       <>
-        {routineSaid && <p className="small s-ok" role="status">{routineSaid}</p>}
+        <Said text={routineSaid} />
         {r ? (
           <RoutineDetail key={r.id} engine={engine} r={r} routines={lib.routines ?? []}
                          action={routineAsk.action} actionKey={routineAsk.n}
@@ -234,8 +236,8 @@ export default function Studio({ engine, route }: {
                            setRoutineAsk((ask) => ({ action: null, n: ask.n }));
                            lib.reload();
                          }} />
-        ) : <p className="muted small">{lib.routines?.length ? "Select a routine to see where it is used."
-          : "No routines yet."}</p>}
+        ) : <DetailEmpty>{lib.routines?.length ? "Select a routine to see where it is used."
+          : "No routines yet. Make one with New routine."}</DetailEmpty>}
       </>
     );
   } else {
@@ -252,7 +254,7 @@ export default function Studio({ engine, route }: {
     );
     side = sel ? <TrackDetail key={sel.id} t={sel} set={set} playing={playing} sets={lib.sets}
                               live={sel.id === liveTrack} />
-      : <p className="muted small">Select a track to see what it needs.</p>;
+      : <DetailEmpty>Select a track to see what it needs.</DetailEmpty>;
   }
 
   return (

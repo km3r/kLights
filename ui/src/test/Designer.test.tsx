@@ -1522,11 +1522,17 @@ describe("studio library", () => {
     await user.click(await within(tracks).findByRole("button", { name: /Night Drive/ }));
     const details = screen.getByRole("complementary", { name: "details" });
     expect(within(details).getByRole("heading", { name: "Night Drive" })).toBeInTheDocument();
-    expect(within(details).getByText(/when it plays the Club template set lights it/)).toBeInTheDocument();
+    expect(within(details).getByText(/the Club template set lights it, a routine per phrase/))
+      .toBeInTheDocument();
     expect(within(details).getByRole("link", { name: "Make a timeline" }))
       .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
     // The engine is asked whether it can find the audio; the mock has none.
-    expect(await within(details).findByText(/No audio file on this machine/)).toBeInTheDocument();
+    const checks = within(details).getByRole("list", { name: "checks" });
+    expect(await within(checks).findByText(/No audio file on this machine/)).toBeInTheDocument();
+    // Each problem once, with why it matters; what is fine, on one line.
+    expect(within(checks).getByText("No CDJ signature")).toHaveTextContent(/matched by title and artist/);
+    expect(within(checks).getAllByText(/No CDJ signature/)).toHaveLength(1);
+    expect(within(checks).getByText(/^Beat grid · Phrases/)).toBeInTheDocument();
   });
 
   it("folds its side panels away, and remembers that", async () => {
@@ -1546,6 +1552,28 @@ describe("studio library", () => {
     expect(screen.queryByRole("navigation", { name: "Studio" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Show the sidebar" }));
     expect(screen.getByRole("navigation", { name: "Studio" })).toBeInTheDocument();
+  });
+
+  it("folds a section of an editor's side panel, and keeps it folded", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    const side = screen.getByRole("complementary", { name: "side panel" });
+    const toggle = within(side).getByRole("button", { name: /^Variations/ });
+    expect(toggle).toHaveTextContent("2");                     // wide, tight
+    expect(within(side).getByLabelText("wide sets width")).toBeInTheDocument();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(side).queryByLabelText("wide sets width")).toBeNull();
+    // What it does is behind its "?", not always on screen.
+    expect(side).not.toHaveTextContent(/Named sets of parameter values/);
+    await user.click(within(side).getByRole("button", { name: "Help: Variations" }));
+    expect(side).toHaveTextContent(/Named sets of parameter values/);
+    cleanup();
+    await open("#studio/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    expect(screen.getByRole("button", { name: /^Variations/, expanded: false })).toBeInTheDocument();
+    expect(screen.queryByLabelText("wide sets width")).toBeNull();
   });
 
   it("folds the timeline's side panel away, so the lanes take the width", async () => {
@@ -1760,7 +1788,10 @@ describe("routine library", () => {
       .toHaveAttribute("href", "#studio/track/synth-128");
     expect(used).toHaveTextContent(/Club.*Chorus/);
     // Nothing that is used can be deleted from here.
-    expect(within(details()).getByRole("button", { name: "Delete: used in 2 places" })).toBeDisabled();
+    await user.click(within(details()).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    const del = within(details()).getByRole("menuitem", { name: /^Delete…/ });
+    expect(del).toBeDisabled();
+    expect(del).toHaveTextContent("Used in 2 places");
   });
 
   it("renames a routine, and every file that uses it with it", async () => {
@@ -1783,7 +1814,8 @@ describe("routine library", () => {
   it("says why when the engine will not rename", async () => {
     const { user, socket, page } = await library();
     await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
-    await user.click(within(details()).getByRole("button", { name: "Rename" }));
+    await user.click(within(details()).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("menuitem", { name: "Rename…" }));
     await user.clear(within(details()).getByLabelText("new id"));
     await user.type(within(details()).getByLabelText("new id"), "fan-sweep");
     await user.click(within(details()).getByRole("button", { name: "Rename it" }));
@@ -1810,7 +1842,8 @@ describe("routine library", () => {
   it("moves a routine to another folder with an ordinary save", async () => {
     const { user, socket, page } = await library();
     await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
-    await user.click(within(details()).getByRole("button", { name: "Move to folder" }));
+    await user.click(within(details()).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("menuitem", { name: "Move to folder…" }));
     const folder = within(details()).getByLabelText("folder");
     expect(folder).toHaveValue("Drops");
     await user.clear(folder);
@@ -1827,7 +1860,8 @@ describe("routine library", () => {
   it("deletes a routine nothing uses, after asking", async () => {
     const { user, socket, page } = await library();
     await user.click(within(page).getByRole("article", { name: "Idle orbit" }));
-    await user.click(within(details()).getByRole("button", { name: "Delete…" }));
+    await user.click(within(details()).getByRole("button", { name: "more for Idle orbit" }));
+    await user.click(within(details()).getByRole("menuitem", { name: "Delete…" }));
     const confirm = within(details()).getByRole("group", { name: "confirm delete" });
     expect(confirm).toHaveTextContent("Delete routines/idle-orbit.json?");
     await user.click(within(confirm).getByRole("button", { name: "Delete it" }));
@@ -1857,7 +1891,9 @@ describe("template sets", () => {
     expect(within(page).getByLabelText("Chorus routine")).toHaveValue("fan-drop");
     expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
     expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");
-    expect(within(aside()).getByText(/The show's set/)).toBeInTheDocument();
+    expect(within(aside()).getByText("Show's set")).toBeInTheDocument();
+    expect(within(aside()).getByRole("region", { name: "On the night" }))
+      .toHaveTextContent(/The engine starts on it/);
   });
 
   it("edits a pick, has the engine check it, and saves with the rev it read", async () => {
@@ -1963,13 +1999,17 @@ describe("template sets", () => {
 
   it("deletes a set that is not the show's, and never the show's", async () => {
     const { user, socket } = await sets("#studio/templates/warmup");
-    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    await user.click(within(aside()).getByRole("button", { name: "more for Warmup" }));
+    await user.click(within(aside()).getByRole("menuitem", { name: "Delete…" }));
     await user.click(within(aside()).getByRole("button", { name: "Delete it" }));
     const sent = reply(socket, "template_delete", true, { deleted: "templates/warmup.json" });
     expect(sent).toMatchObject({ template: "warmup", base_rev: "r:w" });
     cleanup();
-    await sets();
-    expect(within(aside()).getByRole("button", { name: "Delete: it is the show's set" })).toBeDisabled();
+    const again = await sets();
+    await again.user.click(within(aside()).getByRole("button", { name: "more for Club" }));
+    const del = within(aside()).getByRole("menuitem", { name: /^Delete…/ });
+    expect(del).toBeDisabled();
+    expect(del).toHaveTextContent("It is the show's set");
   });
 
   it("renames a set right after a save, quoting the rev that save wrote", async () => {
@@ -1979,7 +2019,8 @@ describe("template sets", () => {
     reply(socket, "template_save", true, { rev: "r:c2" });
     await within(page).findByRole("button", { name: "Saved" });
     // The list still says r:c until the folder reloads; this editor knows better.
-    await user.click(within(aside()).getByRole("button", { name: "Rename" }));
+    await user.click(within(aside()).getByRole("button", { name: /^more for Club/ }));
+    await user.click(within(aside()).getByRole("menuitem", { name: "Rename…" }));
     await user.clear(within(aside()).getByLabelText("new id"));
     await user.type(within(aside()).getByLabelText("new id"), "club-night");
     await user.click(within(aside()).getByRole("button", { name: "Rename it" }));
@@ -2056,7 +2097,7 @@ describe("palette library", () => {
   it("gives the copies that differ the library's colours, and only those", async () => {
     const { user, socket } = await library();
     // It says whose palette this is: the library's, not any track's.
-    expect(within(aside()).getByText(/You are editing the library's Hot/)).toBeInTheDocument();
+    expect(within(aside()).getByText("Library palette")).toBeInTheDocument();
     await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colours" }));
     const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
     expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
@@ -2131,7 +2172,8 @@ describe("palette library", () => {
 
   it("deletes a library palette, leaving its copies in their files", async () => {
     const { user, socket } = await library();
-    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    await user.click(within(aside()).getByRole("button", { name: "more for Hot" }));
+    await user.click(within(aside()).getByRole("menuitem", { name: "Delete…" }));
     expect(within(aside()).getByRole("group", { name: "confirm delete" }))
       .toHaveTextContent("Its copies stay where they are");
     await user.click(within(aside()).getByRole("button", { name: "Delete it" }));

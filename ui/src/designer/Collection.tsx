@@ -4,6 +4,7 @@ import { apiFetch } from "../useEngine";
 import { ALL_TRACKS } from "../studioRoute";
 import { mmss, normalizeName } from "./model";
 import type { Catalogue, CataloguePlaylist, CatalogueTrack, TrackLine } from "./model";
+import { DetailEmpty, DetailHead, DetailSection } from "./detail";
 
 /**
  * The DJ's rekordbox collection, to pick tracks from: the playlist tree in
@@ -335,8 +336,8 @@ export function RekordboxView({ scope, find, tracks, ticked, setTicked, onAdd, c
 export function Coverage({ scope, tracks }: { scope: string; tracks: TrackLine[] }) {
   const { cat } = useCatalogue();
   if (!cat) {
-    return <p className="muted small">Browse rekordbox to see how much of each playlist
-      the show covers.</p>;
+    return <DetailEmpty>Browse rekordbox to see how much of each playlist the show
+      covers.</DetailEmpty>;
   }
   const inShow = inShowMap(tracks, cat.db);
   const scoped = scopedTracks(cat, scope);
@@ -348,30 +349,32 @@ export function Coverage({ scope, tracks }: { scope: string; tracks: TrackLine[]
     ["Own timeline", own, "good"], ["In the show, no timeline", tpl, "tpl"],
     ["Not in the show", not, "none"], ["Can't be added yet", cant.length, "warn"]];
   return (
-    <section className="s-coverage" aria-label="coverage">
-      <h2>Is {scope === ALL ? "the collection" : scopeName(cat, scope)} covered?</h2>
-      <div className="s-bar" aria-hidden="true">
-        {parts.map(([label, n, k]) => n > 0 && <i key={label} className={k} style={{ flex: n }} />)}
-      </div>
-      <dl>
-        {parts.map(([label, n, k]) => (
-          <div key={label}><dt><i className={k} />{label}</dt><dd className="mono">{n}</dd></div>
-        ))}
-      </dl>
-      <p className="muted small">A track without a timeline, in the show or not, gets the
-        template set that is on when it plays (else the operator's show). Adding it lets the
-        set follow its own phrases, lets Studio draft it a timeline, and lets the engine
-        recognise it from rekordbox and from CDJs.</p>
-      {cant.length > 0 && (
-        <div>
-          <b className="small">Can't be added yet</b>
-          <ul className="s-names small">
-            {cant.slice(0, 8).map((t) => <li key={t.id}>{t.title}
-              <span className="muted"> · not analysed</span></li>)}
-          </ul>
-          <span className="muted small">Analyse them in rekordbox, then reload.</span>
+    <div className="s-detail s-coverage" role="region" aria-label="coverage">
+      <DetailHead kind={scope === ALL ? "Collection" : "Playlist"}
+                  title={scope === ALL ? "The whole collection" : scopeName(cat, scope)}
+                  meta={`${scoped.length} track${scoped.length === 1 ? "" : "s"}`} />
+      <DetailSection title="Covered by the show" label="how much is covered">
+        <div className="s-bar" aria-hidden="true">
+          {parts.map(([label, n, k]) => n > 0 && <i key={label} className={k} style={{ flex: n }} />)}
         </div>
+        <dl>
+          {parts.map(([label, n, k]) => (
+            <div key={label}><dt><i className={k} />{label}</dt><dd className="mono">{n}</dd></div>
+          ))}
+        </dl>
+        <span className="muted small">A track with no timeline plays the template set that is
+          on, in the show or not. Adding it lets the set follow its phrases, Studio draft it a
+          timeline, and the engine recognise it from rekordbox and CDJs.</span>
+      </DetailSection>
+      {cant.length > 0 && (
+        <DetailSection title="Can't be added yet" count={cant.length}>
+          <ul className="s-names small">
+            {cant.slice(0, 8).map((t) => <li key={t.id}>{t.title}</li>)}
+          </ul>
+          <span className="muted small">Not analysed: analyse {cant.length === 1 ? "it" : "them"} in
+            rekordbox, then reload.</span>
+        </DetailSection>
       )}
-    </section>
+    </div>
   );
 }

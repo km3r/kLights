@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Command, EngineState, Reply, Tier } from "../types";
 import { apiFetch, apiUrl } from "../useEngine";
-import { HelpHeading } from "../components";
+import { SideSection } from "./detail";
 import { PlanSvg } from "../Plan";
 import {
   BEATS_PER_BAR, DESIGNER_CHUNK, Grid, barBeat, clock, decodeWave, draftFromTemplate, findItem,
@@ -699,8 +699,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         </div>
 
         {panels.edit && <aside className="d-side" aria-label="side panel">
-          <section>
-            <h3>Preview · from the engine</h3>
+          <SideSection id="timeline-rig" title="Rig preview">
             {engine.state ? <PlanSvg state={engine.state} />
               : <p className="muted small">Not connected.</p>}
             <p className="small muted">
@@ -711,16 +710,16 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                   : "The rig is on the live show. Drive the rig to put this "
                     + "page's transport on it."}
             </p>
-          </section>
-          <section>
-            <HelpHeading topic="At the playhead" help={<>
-              <p>Which lane drives each slot right now. Higher lanes win: a movement
-                lane above the scene lane only overrides the scene's movement.</p>
-              <p><b>rest</b> means the lane that owns this slot is empty here, so
-                nothing drives it. <b>template set / show</b> means no lane has anything
-                here, so the template set that is on shows through, or the operator's show
-                where the set has nothing for this phrase.</p>
-            </>}>At the playhead · bar {barBeat(beat)}</HelpHeading>
+          </SideSection>
+          <SideSection id="timeline-playhead" topic="At the playhead"
+                       title={`At the playhead · bar ${barBeat(beat)}`} help={<>
+            <p>Which lane drives each slot right now. Higher lanes win: a movement
+              lane above the scene lane only overrides the scene's movement.</p>
+            <p><b>rest</b> means the lane that owns this slot is empty here, so
+              nothing drives it. <b>template set / show</b> means no lane has anything
+              here, so the template set that is on shows through, or the operator's show
+              where the set has nothing for this phrase.</p>
+          </>}>
             <table className="d-who">
               <tbody>
                 {drivers.map((d) => (
@@ -735,7 +734,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                 ))}
               </tbody>
             </table>
-          </section>
+          </SideSection>
           <Editor.Shelf history={history} routines={routines} beat={beat} track={track} />
         </aside>}
         {guide.drawer}

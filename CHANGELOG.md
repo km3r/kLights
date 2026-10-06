@@ -17,6 +17,31 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — Studio's right-hand panels say each thing once
+
+- **One layout for every details panel**: tracks, routines, template sets,
+  palettes and rekordbox coverage. Each has a head (what it is, its name, one
+  line of facts, badges such as *Show's set*, *This rig only*, *Playing now*
+  or *Unsaved*), one primary action, then sections under small headings with
+  a count where there is one.
+- **File actions are in a ⋯ menu** at the panel's head, the same one as a
+  routine card's: Duplicate, Rename, Move to folder, Download, Delete. The one
+  picked opens as a small form under the head. An action that can't be done
+  is disabled and says why (a used routine, the show's set, an unsaved set).
+- **A track's checks are one list**: problems first, each with why it matters
+  (a missing CDJ signature, a timeline drawn on an older grid), then what is
+  fine on one line. Its BPM, length, phrase count and waveform are no longer
+  repeated in tiles, notes and checks. *Draft from* and its set are one
+  control.
+- **A palette's long "you are editing the library's" note is gone**: the kicker
+  says *Library palette*, Save and Revert appear only once there is something
+  to save, and the copies say in one line that they keep their own colours.
+- **The editors' side panels fold by section**: click a heading to fold it;
+  Studio remembers which, per browser. Headings show counts (roles,
+  parameters, variations, palettes), and the explanations that were always on
+  screen are behind each heading's **?**. The routine editor's ticks and
+  radios are no longer drawn as tall buttons that wrapped their labels.
+
 ### Fixed — every lane can be filled where it is, and roles say what they reach
 
 - **Click an empty spot on a lane** to choose what goes there, in both editors.
