@@ -70,6 +70,9 @@ SCHEMAS = {
                                              "timeline."),
     "waveform": (showfiles.WAVEFORM, "A track's waveform, for the designer. "
                                      "Written by the prep tool."),
+    "palette": (showfiles.PALETTE, "One palette of the show's library: the "
+                                   "source timelines and template sets copy "
+                                   "by name, and Studio keeps in step."),
 }
 
 _JSON_TYPES = {int: "integer", float: "number", str: "string", bool: "boolean",

@@ -145,6 +145,8 @@ TIER: dict[str, str] = {
     "template_draft": "configure", "template_save": "configure",
     "template_rename": "configure", "template_delete": "configure",
     "show_save": "configure",
+    "palette_save": "configure", "palette_delete": "configure",
+    "palette_sync": "configure",
     "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
@@ -2340,6 +2342,53 @@ class ShowController:
             self.reload_library()
 
         return self._on_worker(f"deleting template set {tid}", work, then)
+
+    def _cmd_palette_save(self, m: dict, now: float) -> object:
+        """Write a library palette. Its copies in timelines and sets are not
+        touched: `palette_sync` does that, on request."""
+        return self._save("palette", m)
+
+    def _cmd_palette_delete(self, m: dict, now: float) -> object:
+        """Delete a library palette. Its copies stay where they are -- each
+        timeline and set keeps its own -- so nothing goes dark."""
+        library = self._need_library()
+        pid, base = m.get("palette"), m.get("base_rev")
+        if not isinstance(pid, str):
+            raise ValueError("palette_delete needs palette")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root = library.root
+
+        def work():
+            showfiles.delete_doc(showfiles.path_for(root, "palette", pid), base)
+            return f"{showfiles.SUBDIR['palette']}/{pid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting palette {pid}", work, then)
+
+    def _cmd_palette_sync(self, m: dict, now: float) -> object:
+        """Give copies of a library palette its colours: `files` are the
+        timelines and sets to update, as /api/palettes lists them."""
+        library = self._need_library()
+        pid, files = m.get("palette"), m.get("files")
+        if not isinstance(pid, str):
+            raise ValueError("palette_sync needs palette")
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files) \
+                or not files or len(files) > 1000:
+            raise ValueError("palette_sync needs files: the timelines and sets to update")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"palette {pid!r}: updated {len(written)} file(s)")
+            self.reload_library()
+
+        return self._on_worker(f"updating copies of palette {pid}",
+                               lambda: showfiles.sync_palette(root, folder, pid, files), then)
 
     def _cmd_show_save(self, m: dict, now: float) -> object:
         """Write show.json: the show's template set, the pause policy and idle

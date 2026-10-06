@@ -490,3 +490,28 @@ a.s-use:hover b { color: var(--accent); }
 .s-latency { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; font-size: 12px; }
 .s-latency > div { display: flex; gap: 8px; }
 .s-latency dd { margin: 0; }
+
+/* Palettes: cards of three bars, primary widest; the library's copies and the
+   palettes found only inside files beside them. */
+.s-swatches { display: inline-flex; gap: 2px; flex: none; }
+.s-swatches > i { display: block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.15); }
+.s-swatches.l { display: flex; width: 100%; gap: 0; height: 52px; border-radius: 10px 10px 0 0; overflow: hidden; }
+.s-swatches.l > i { height: auto; border: 0; border-radius: 0; }
+.s-swatches.l > i:nth-child(1) { flex: 3; }
+.s-swatches.l > i:nth-child(2) { flex: 2; }
+.s-swatches.l > i:nth-child(3) { flex: 1; }
+.s-palette-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 10px; }
+.designer .s-palette-card {
+  display: flex; flex-direction: column; align-items: stretch; padding: 0; min-height: 0;
+  border-radius: 12px; overflow: hidden; background: var(--panel); text-align: left;
+}
+.designer .s-palette-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--panel); color: var(--text); }
+.s-palette-card-text { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px 9px; font-size: 13px; }
+.s-found-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #1e2430; }
+.s-found-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.designer .s-title-input { display: block; width: 100%; margin: 2px 0; font-size: 16px; font-weight: 700; min-height: 32px; }
+.s-roles { display: flex; flex-direction: column; gap: 6px; }
+.s-role-row { display: grid; grid-template-columns: 80px 44px auto; gap: 8px; align-items: center; font-size: 12px; }
+.s-role-row input[type="color"] { width: 44px; height: 32px; padding: 0; }
+.s-copy { flex-direction: row; justify-content: space-between; align-items: center; }
+.s-copy-state { display: inline-flex; align-items: center; gap: 6px; }

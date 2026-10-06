@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, ROLES, useHistory } from "./edit";
+import { Editor, FromLibrary, ROLES, useHistory } from "./edit";
 import {
   EXACT_LABELS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
 import type {
-  RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary, TrackLine,
+  PaletteSummary, RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary,
+  TrackLine,
 } from "./model";
 import { DRAFT_ON_OPEN } from "./Library";
 import type { PendingDraft } from "./Library";
@@ -40,8 +41,10 @@ function setName(s: { id: string; name?: string | null }): string { return s.nam
 
 // -- the page -----------------------------------------------------------------------
 
-export function TemplatesView({ engine, sets, routines, current, onDoc }: {
+export function TemplatesView({ engine, sets, routines, library, current, onDoc }: {
   engine: Engine; sets: TemplateSummary[] | null; routines: RoutineSummary[];
+  /** The show's palette library, to copy a palette in from. */
+  library: PaletteSummary[];
   /** The set on screen: the route's, else the first. */
   current: string | null;
   /** The working copy, for the panel beside: try it, make it the show's. */
@@ -90,7 +93,7 @@ export function TemplatesView({ engine, sets, routines, current, onDoc }: {
         <p className="muted">No template sets yet. Name one above to start it.</p>)}
       {current && (
         <TemplateEditor key={current} engine={engine} id={current} routines={routines}
-                        onDoc={onDoc} />
+                        library={library} onDoc={onDoc} />
       )}
     </section>
   );
@@ -98,8 +101,8 @@ export function TemplatesView({ engine, sets, routines, current, onDoc }: {
 
 // -- one set ---------------------------------------------------------------------------
 
-function TemplateEditor({ engine, id, routines, onDoc }: {
-  engine: Engine; id: string; routines: RoutineSummary[];
+function TemplateEditor({ engine, id, routines, library, onDoc }: {
+  engine: Engine; id: string; routines: RoutineSummary[]; library: PaletteSummary[];
   onDoc: (doc: TemplateSetDoc | null, dirty: boolean, rev: string) => void;
 }) {
   const history = useHistory<TemplateSetDoc>();
@@ -375,6 +378,11 @@ function TemplateEditor({ engine, id, routines, onDoc }: {
                    placeholder="palette name" aria-label="new palette name" style={{ width: 130 }} />
             <button type="submit" disabled={!palName.trim() || palettes.includes(palName.trim())}>
               + Palette</button>
+            <FromLibrary library={library} has={palettes}
+                         onPick={(name, colours) => apply((d) => {
+                           d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                           if (!d.palette) d.palette = name;
+                         })} />
           </form>
         </section>
 

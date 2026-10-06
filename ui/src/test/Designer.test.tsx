@@ -181,6 +181,25 @@ const CATALOGUE = {
 };
 let rekordbox: [number, unknown] = [200, CATALOGUE];
 
+const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
+/** The library: Hot, copied into the timeline (with older colours) and Club
+ *  (the same); Ice, in nothing yet. Cool lives only in Club. */
+const PALETTES = {
+  palettes: [
+    { id: "hot", name: "Hot", ...HOT, rev: "r:p", copies: [
+      { file: "timelines/synth-128.json", kind: "timeline", id: "synth-128",
+        title: "synthetic 128", colours: { ...HOT, primary: "#ff0000" }, same: false },
+      { file: "templates/club.json", kind: "template_set", id: "club", title: "Club",
+        colours: HOT, same: true }] },
+    { id: "ice", name: "Ice", primary: "#bae6fd", secondary: "#ffffff", accent: "#38bdf8",
+      rev: "r:i", copies: [] },
+  ],
+  found: [{ name: "Cool", places: [{ file: "templates/club.json", kind: "template_set",
+                                     id: "club", title: "Club",
+                                     colours: { primary: "#3b82f6", secondary: "#14b8a6",
+                                                accent: "#e2e8f0" } }] }],
+};
+
 const PHRASE_ITEMS = trackDoc.phrases.items as [number, number, string][];
 
 /** A prepped track read back: the example track under another name. */
@@ -230,6 +249,7 @@ function serve(path: string): [number, unknown] {
         rev: "r:w" }] }];
   }
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
+  if (path === "/api/palettes") return [200, PALETTES];
   if (path === "/api/templates/warmup") {
     return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
   }
@@ -1075,6 +1095,108 @@ describe("template sets", () => {
     expect(saved.base_rev).toBe("");
     expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
                                       phrases: { "*": { routine: "fan-drop" } } });
+  });
+});
+
+describe("palette library", () => {
+  type PalSaved = { doc: Record<string, string>; base_rev: string };
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/palettes");
+    const page = await screen.findByRole("region", { name: "palettes" });
+    await within(page).findByRole("button", { name: /^Hot/ });
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+
+  it("shows each palette, where its copies are, and the palettes only in files", async () => {
+    const { page } = await library();
+    const hot = within(page).getByRole("button", { name: /^Hot/ });
+    expect(hot).toHaveTextContent("1 timeline · 1 set");
+    expect(hot).toHaveTextContent("1 with older colours");
+    const copies = within(aside()).getByRole("region", { name: "copies" });
+    expect(within(copies).getByRole("link", { name: /synthetic 128.*older colours/ }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
+    expect(within(copies).getByRole("link", { name: /Club \(set\).*the same/ }))
+      .toHaveAttribute("href", "#studio/templates/club");
+    const found = within(page).getByRole("region", { name: "palettes only in files" });
+    expect(found).toHaveTextContent(/Cool.*Club \(set\)/);
+  });
+
+  it("updates the copies that still have the older colours, and only those", async () => {
+    const { user, socket } = await library();
+    await user.click(within(aside()).getByRole("button", { name: "Update 1 copy to these colours" }));
+    const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
+    expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
+    expect(await screen.findByText("Updated 1 copy of Hot.")).toBeInTheDocument();
+  });
+
+  it("saves an edit with the rev it read, and copies wait for the save", async () => {
+    const { user, socket } = await library();
+    const hex = within(aside()).getByLabelText("primary hex");
+    await user.clear(hex);
+    await user.type(hex, "#00ff00");
+    expect(within(aside()).getByRole("button", { name: /Update 1 copy/ })).toBeDisabled();
+    await user.click(within(aside()).getByRole("button", { name: "Save" }));
+    const sent = reply(socket, "palette_save", true, { rev: "r:p2" }) as unknown as PalSaved;
+    expect(sent.base_rev).toBe("r:p");
+    expect(sent.doc).toMatchObject({ kind: "klights.palette", id: "hot", name: "Hot",
+                                     primary: "#00ff00", secondary: "#ff8a00" });
+  });
+
+  it("warns that renaming a palette lets go of its copies", async () => {
+    const { user } = await library();
+    await user.type(within(aside()).getByLabelText("palette name"), " Pink");
+    expect(within(aside()).getByText(/would no longer count as copies/)).toBeInTheDocument();
+  });
+
+  it("adds a palette that lives in a file to the library, and makes new ones", async () => {
+    const { user, socket, page } = await library();
+    const found = within(page).getByRole("region", { name: "palettes only in files" });
+    await user.click(within(found).getByRole("button", { name: "Add to the library" }));
+    const added = reply(socket, "palette_save", true, { rev: "r:c" }) as unknown as PalSaved;
+    expect(added.base_rev).toBe("");
+    expect(added.doc).toMatchObject({ id: "cool", name: "Cool", primary: "#3b82f6" });
+    await user.type(within(page).getByLabelText("new palette name"), "Neon Night");
+    await user.click(within(page).getByRole("button", { name: "New palette" }));
+    const made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.doc).toMatchObject({ id: "neon-night", name: "Neon Night" });
+  });
+
+  it("deletes a library palette, leaving its copies in their files", async () => {
+    const { user, socket } = await library();
+    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    expect(within(aside()).getByRole("group", { name: "confirm delete" }))
+      .toHaveTextContent("Its copies stay where they are");
+    await user.click(within(aside()).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "palette_delete", true, { deleted: "palettes/hot.json" });
+    expect(sent).toMatchObject({ palette: "hot", base_rev: "r:p" });
+  });
+
+  it("copies a library palette into a template set, under its name", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    const pick = await within(page).findByLabelText("add a palette from the library");
+    // Club has Hot already; Ice is the one to offer.
+    expect(within(pick).queryByRole("option", { name: "Hot" })).toBeNull();
+    await user.selectOptions(pick, "ice");
+    expect(within(page).getByLabelText("Ice primary")).toHaveValue("#bae6fd");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as {
+      doc: TemplateSetDoc };
+    expect(saved.doc.palettes!.Ice).toEqual({ primary: "#bae6fd", secondary: "#ffffff",
+                                              accent: "#38bdf8" });
+  });
+
+  it("copies a library palette into a timeline too", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    const pick = await screen.findByLabelText("add a palette from the library");
+    await user.selectOptions(pick, "ice");
+    expect(screen.getByLabelText("Ice primary")).toHaveValue("#bae6fd");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 });
 

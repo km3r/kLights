@@ -7,7 +7,7 @@ import {
   BEATS_PER_BAR, barBeat, curveValue, draftFromTemplate, itemName, itemSub, uniqueId,
 } from "./model";
 import type {
-  Item, Point, RoutineSummary, Row, TemplateSetDoc, TimelineDoc, TrackDoc,
+  Item, PaletteSummary, Point, RoutineSummary, Row, TemplateSetDoc, TimelineDoc, TrackDoc,
 } from "./model";
 
 /**
@@ -878,6 +878,12 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
 
 function Palettes({ history }: { history: History }) {
   const doc = history.doc;
+  // The show's library, to copy a palette in from.
+  const [library, setLibrary] = useState<PaletteSummary[]>([]);
+  useEffect(() => {
+    apiFetch<{ palettes: PaletteSummary[] }>("/api/palettes")
+      .then((r) => setLibrary(r.palettes)).catch(() => setLibrary([]));
+  }, []);
   if (!doc) return null;
   const palettes = doc.palettes ?? {};
   const hex = (v: unknown) => (typeof v === "string" && v.startsWith("#") ? v : "#ffffff");
@@ -906,6 +912,11 @@ function Palettes({ history }: { history: History }) {
           ))}
         </div>
       ))}
+      <FromLibrary library={library} has={Object.keys(palettes)}
+                   onPick={(name, colours) => history.apply((d) => {
+                     d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                     if (!d.palette) d.palette = name;
+                   })} />
       <button className="small" onClick={() => history.apply((d) => {
         const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
         d.palettes = { ...(d.palettes ?? {}),
@@ -913,6 +924,26 @@ function Palettes({ history }: { history: History }) {
         if (!d.palette) d.palette = name;
       })}>+ palette</button>
     </div>
+  );
+}
+
+/** A select of library palettes, for an editor that keeps its own copies: the
+ *  picked one is copied in under its library name. */
+export function FromLibrary({ library, has, onPick }: {
+  library: PaletteSummary[]; has: string[];
+  onPick: (name: string, colours: { primary: string; secondary: string; accent: string }) => void;
+}) {
+  const offer = library.filter((p) => !has.includes(p.name));
+  if (!library.length) return null;
+  return (
+    <select value="" aria-label="add a palette from the library" disabled={!offer.length}
+            onChange={(e) => {
+              const p = library.find((x) => x.id === e.target.value);
+              if (p) onPick(p.name, { primary: p.primary, secondary: p.secondary, accent: p.accent });
+            }}>
+      <option value="">{offer.length ? "+ From the library…" : "Every library palette is here"}</option>
+      {offer.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
   );
 }
 

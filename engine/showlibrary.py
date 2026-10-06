@@ -74,7 +74,8 @@ class Library:
     def counts(self) -> dict:
         f = self.folder
         return {"tracks": len(f.tracks), "timelines": len(f.timelines),
-                "routines": len(f.routines), "templates": len(f.templates)}
+                "routines": len(f.routines), "templates": len(f.templates),
+                "palettes": len(f.palettes)}
 
     def describe(self) -> str:
         c = self.counts

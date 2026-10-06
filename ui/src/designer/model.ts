@@ -202,6 +202,42 @@ export interface TemplateSetDoc {
   [key: string]: unknown;
 }
 
+/** A palette of the show's library: `palettes/<id>.json`. */
+export interface PaletteDoc {
+  kind: "klights.palette";
+  version: 1;
+  id: string;
+  /** What timelines and sets call it: copies are found by this name. */
+  name: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  [key: string]: unknown;
+}
+
+/** A timeline or set that carries a palette of a given name, and its colours there. */
+export interface PalettePlace {
+  file: string;
+  kind: "timeline" | "template_set";
+  id: string;
+  title?: string | null;
+  colours: Partial<Record<"primary" | "secondary" | "accent", string | null>>;
+}
+
+/** A line of `GET /api/palettes`: a library palette and its copies. */
+export interface PaletteSummary {
+  id: string;
+  name: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  rev?: string;
+  copies: (PalettePlace & { same: boolean })[];
+}
+
+/** A palette that lives only inside timelines and sets: none in the library has its name. */
+export interface FoundPalette { name: string; places: PalettePlace[] }
+
 /** A line of `GET /api/templates`. */
 export interface TemplateSummary {
   id: string;

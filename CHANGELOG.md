@@ -11,6 +11,27 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — a palette library for the show
+
+- **`palettes/<id>.json`**, a new kind of show-folder file: one palette, with
+  the name timelines and template sets know it by, and three `#rrggbb` colours.
+  `python -m engine.showfiles init` makes the folder; `schemas/palette.schema.json`
+  is generated with the rest.
+- **A library palette is a source, not a link.** Timelines and template sets
+  keep their own copies by name, as they always did, so each file still
+  describes its whole show and the engine compiles exactly as before.
+  `/api/palettes` lists each library palette with its copies, and whether each
+  copy still has the library's colours. It also lists the palettes that live
+  only inside timelines and sets.
+- **Studio's Palettes page** edits the library: make, rename, recolour,
+  duplicate, download, delete. After a change it offers **Update N copies to
+  these colours** (`palette_sync`), which writes each file quoting the rev it
+  was read at, so a file changed meanwhile is left alone and named. A palette
+  found inside a file can be **added to the library** in one click. Deleting a
+  library palette leaves its copies where they are.
+- **From the library**: the timeline editor's and the template set editor's
+  palette panels can copy a library palette in under its name.
+
 ### Added — template sets and show settings in Studio
 
 - **Template sets have an editor** (`#studio/templates`). Before this, only MCP

@@ -387,6 +387,7 @@ export interface ShowFolderState {
   timelines: number;
   routines: number;
   templates: number;
+  palettes?: number;
   errors: number;
   warnings: number;
   /** Files broken since they last loaded, running on their last good version. */
@@ -606,6 +607,12 @@ export type Command =
   | { type: "template_delete"; template: string; base_rev: string }
   /** Write show.json, refused if it changed since `base_rev`. */
   | { type: "show_save"; doc: unknown; base_rev: string }
+  /** A palette of the library: its own file in palettes/. */
+  | { type: "palette_save"; doc: unknown; base_rev: string }
+  /** Delete a library palette; its copies stay in their files. */
+  | { type: "palette_delete"; palette: string; base_rev: string }
+  /** Give copies of a library palette its colours: `files` as /api/palettes lists them. */
+  | { type: "palette_sync"; palette: string; files: string[] }
   | { type: "track_link"; track_id: string }
   /** Prep tracks from the DJ's rekordbox collection into the show folder, by
    *  rekordbox id. Answered when the bridge has finished. */

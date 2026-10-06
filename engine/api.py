@@ -17,6 +17,8 @@ the show.
     /api/timelines/<id>       a track's timeline and its rev (404: none yet)
     /api/routines[/<id>]      routines
     /api/templates[/<id>]     template sets
+    /api/palettes[/<id>]      the palette library, each with its copies, and
+                              the palettes that live only in timelines/sets
     /api/waveforms/<id>       a track's waveform, read from disk on request
     /api/audio/<id>           the track's audio file, with Range (206)
     /api/rekordbox            the DJ's rekordbox collection: playlists and
@@ -52,7 +54,7 @@ AUDIO_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff",
 
 _ID = r"[a-z0-9][a-z0-9_-]{0,63}"
 _ROUTE = re.compile(rf"^/api/(show|tracks|timelines|routines|templates|waveforms"
-                    rf"|audio|rekordbox)(?:/({_ID}))?/?$")
+                    rf"|audio|rekordbox|palettes)(?:/({_ID}))?/?$")
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
@@ -144,12 +146,27 @@ def handle(library, path: str, range_header: Optional[str] = None,
              "show": tid == show_set,
              "rev": folder.revs.get(f"templates/{tid}.json")}
             for tid, doc in sorted(folder.templates.items())]})
+    if what == "palettes" and ident is None:
+        places = showfiles.palette_places(folder)
+        names = {doc.get("name") for doc in folder.palettes.values()}
+        return _json({
+            # The library, each palette with its copies (showfiles.palette_copies).
+            "palettes": [{"id": pid, "name": doc.get("name"),
+                          **{r: doc.get(r) for r in showfiles.PALETTE_ROLES},
+                          "copies": showfiles.palette_copies(folder, pid),
+                          "rev": folder.revs.get(f"palettes/{pid}.json")}
+                         for pid, doc in sorted(folder.palettes.items())],
+            # Palettes that live only inside timelines and sets: no library
+            # palette has their name.
+            "found": [{"name": name, "places": where}
+                      for name, where in sorted(places.items()) if name not in names]})
     if ident is None:
         return _error(404, f"/api/{what} needs an id")
 
-    if what in ("tracks", "timelines", "routines", "templates"):
+    if what in ("tracks", "timelines", "routines", "templates", "palettes"):
         docs = {"tracks": folder.tracks, "timelines": folder.timelines,
-                "routines": folder.routines, "templates": folder.templates}[what]
+                "routines": folder.routines, "templates": folder.templates,
+                "palettes": folder.palettes}[what]
         doc = docs.get(ident)
         if doc is None:
             return _error(404, f"no {what[:-1]} {ident!r}")
@@ -186,7 +203,7 @@ def _lane_line(row: dict) -> dict:
 
 
 _KIND = {"tracks": "track", "timelines": "timeline", "routines": "routine",
-         "templates": "template_set"}
+         "templates": "template_set", "palettes": "palette"}
 
 
 def _track_line(library, tid: str, doc: dict) -> dict:

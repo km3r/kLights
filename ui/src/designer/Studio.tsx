@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { TemplateSetDoc, TemplateSummary } from "./model";
+import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } from "./model";
+import { PaletteDetail, PalettesView } from "./Palettes";
 import { TemplateAside, TemplatesView } from "./Templates";
 import { ShowSettingsView } from "./ShowSettings";
 import type { ReactNode } from "react";
@@ -41,6 +42,8 @@ interface Library {
   routines: RoutineSummary[] | null;
   show: ShowSummary | null;
   sets: TemplateSummary[];
+  palettes: PaletteSummary[] | null;
+  found: FoundPalette[];
   reload: () => void;
 }
 
@@ -53,6 +56,8 @@ function useLibrary(engine: Engine): Library {
   const [routines, setRoutines] = useState<RoutineSummary[] | null>(null);
   const [show, setShow] = useState<ShowSummary | null>(null);
   const [sets, setSets] = useState<TemplateSummary[]>([]);
+  const [palettes, setPalettes] = useState<{ palettes: PaletteSummary[] | null; found: FoundPalette[] }>(
+    { palettes: null, found: [] });
   const [asked, setAsked] = useState(0);
   const folderRev = engine.state?.show?.rev;
   useEffect(() => {
@@ -67,10 +72,14 @@ function useLibrary(engine: Engine): Library {
       .then((r) => { if (live) setShow(r); }).catch(() => { if (live) setShow(null); });
     apiFetch<{ templates: TemplateSummary[] }>("/api/templates")
       .then((r) => { if (live) setSets(r.templates); }).catch(() => { if (live) setSets([]); });
+    apiFetch<{ palettes: PaletteSummary[]; found: FoundPalette[] }>("/api/palettes")
+      .then((r) => { if (live) setPalettes(r); })
+      .catch(() => { if (live) setPalettes({ palettes: [], found: [] }); });
     return () => { live = false; };
   }, [folderRev, asked]);
   const reload = useCallback(() => setAsked((n) => n + 1), []);
-  return { tracks, error, routines, show, sets, reload };
+  return { tracks, error, routines, show, sets, palettes: palettes.palettes,
+           found: palettes.found, reload };
 }
 
 interface Dialog { title: string; prep?: PrepPick[]; tracks?: StartTrack[]; ran?: boolean }
@@ -102,6 +111,10 @@ export default function Studio({ engine, route }: {
   // What the last template-set or show.json change did (as above).
   const [setSaid, setSetSaid] = useState<string | null>(null);
   const tplId = route.view === "templates" ? (route.id ?? lib.sets[0]?.id ?? null) : null;
+  // The palette on screen. Undefined: none chosen yet, so the first; null:
+  // none, on purpose (the one shown was just deleted).
+  const [paletteId, setPaletteId] = useState<string | null | undefined>(undefined);
+  const shownPalette = paletteId === undefined ? (lib.palettes?.[0]?.id ?? null) : paletteId;
   useEffect(() => { setSetSaid(null); }, [tplId, route.view]);
 
   // Something to look at in the details panel from the start.
@@ -145,7 +158,8 @@ export default function Studio({ engine, route }: {
     side = <Coverage scope={route.find ? ALL : route.scope} tracks={tracks} />;
   } else if (route.view === "templates") {
     main = <TemplatesView engine={engine} sets={lib.routines == null ? null : lib.sets}
-                          routines={lib.routines ?? []} current={tplId} onDoc={onTemplateDoc} />;
+                          routines={lib.routines ?? []} library={lib.palettes ?? []}
+                          current={tplId} onDoc={onTemplateDoc} />;
     side = (
       <>
         {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
@@ -155,6 +169,24 @@ export default function Studio({ engine, route }: {
                          sets={lib.sets} tracks={tracks} show={lib.show}
                          onDone={(said) => { setSetSaid(said); lib.reload(); }} />
         ) : <p className="muted small">No template set yet.</p>}
+      </>
+    );
+  } else if (route.view === "palettes") {
+    main = (
+      <PalettesView engine={engine} palettes={lib.palettes} found={lib.found}
+                    selected={shownPalette} onSelect={(id) => { setSetSaid(null); setPaletteId(id); }}
+                    onDone={(said) => { setSetSaid(said); lib.reload(); }} />
+    );
+    const p = lib.palettes?.find((x) => x.id === shownPalette) ?? null;
+    side = (
+      <>
+        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        {p ? (
+          <PaletteDetail key={p.id} engine={engine} p={p} palettes={lib.palettes ?? []}
+                         onSelect={setPaletteId}
+                         onDone={(said) => { setSetSaid(said); lib.reload(); }} />
+        ) : <p className="muted small">{lib.palettes?.length ? "Select a palette."
+          : "The library is empty."}</p>}
       </>
     );
   } else if (route.view === "show") {
@@ -240,6 +272,9 @@ export default function Studio({ engine, route }: {
             <a className={`s-nav-item${route.view === "templates" ? " on" : ""}`} href="#studio/templates"
                aria-current={route.view === "templates" ? "page" : undefined}>
               <span className="s-nav-name">Template sets</span><span className="s-n">{lib.sets.length || ""}</span></a>
+            <a className={`s-nav-item${route.view === "palettes" ? " on" : ""}`} href="#studio/palettes"
+               aria-current={route.view === "palettes" ? "page" : undefined}>
+              <span className="s-nav-name">Palettes</span><span className="s-n">{lib.palettes?.length || ""}</span></a>
             <div className="s-sec">Show</div>
             <a className={`s-nav-item${route.view === "show" ? " on" : ""}`} href="#studio/show"
                aria-current={route.view === "show" ? "page" : undefined}>

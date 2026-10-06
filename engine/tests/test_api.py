@@ -394,6 +394,49 @@ try:
     check("a set that is no longer the show's can be deleted",
           r["ok"] and not (shows / "templates" / "club.json").exists(), f"{r}")
 
+    # -- 3d. the palette library -------------------------------------------------
+    print("\n3d. the palette library, and its copies")
+    status, body = jget("/api/palettes")
+    found = {f["name"]: f for f in body.get("found", [])} if status == 200 else {}
+    check("with no library yet, every palette is one that lives inside files",
+          status == 200 and body["palettes"] == [] and "Hot" in found
+          and any(p["file"] == "timelines/synth-128.json" for p in found["Hot"]["places"]),
+          f"{status} {body}")
+    hot = {"kind": "klights.palette", "version": 1, "id": "hot", "name": "Hot",
+           "primary": "#ff0000", "secondary": "#ff8800", "accent": "#ffffff"}
+    r = ask({"type": "palette_save", "doc": {**hot, "primary": "@primary"}, "base_rev": "", "id": 40})
+    check("a library palette is plain colours", r["ok"] is False and "#rrggbb" in r["error"], f"{r}")
+    r = ask({"type": "palette_save", "doc": hot, "base_rev": "", "id": 41})
+    check("a palette is saved into the library as its own file",
+          r and r["ok"] and (shows / "palettes" / "hot.json").is_file(), f"{r}")
+    status, body = jget("/api/palettes")
+    lib = body["palettes"][0] if status == 200 and body["palettes"] else {}
+    copies = {c["file"]: c for c in lib.get("copies", [])}
+    check("it lists its copies -- every timeline and set with a palette of its "
+          "name -- and whether each still has its colours",
+          lib.get("name") == "Hot" and "timelines/synth-128.json" in copies
+          and copies["timelines/synth-128.json"]["same"] is False
+          and "Hot" not in {f["name"] for f in body["found"]}, f"{lib}")
+    r = ask({"type": "palette_sync", "palette": "hot", "files": ["timelines/nope.json"], "id": 42})
+    check("an update names only files the folder has", r["ok"] is False and "nope" in r["error"], f"{r}")
+    r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 43},
+            client=viewer)
+    check("updates are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 44})
+    tl_doc = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    check("updating the copies gives each the library's colours, and nothing else changes",
+          r["ok"] and set(r["data"]["written"]) == set(copies)
+          and tl_doc["palettes"]["Hot"] == {"primary": "#ff0000", "secondary": "#ff8800",
+                                            "accent": "#ffffff"}
+          and "Cool" in tl_doc["palettes"], f"{r}")
+    lib = jget("/api/palettes")[1]["palettes"][0]
+    check("and then every copy is the same", all(c["same"] for c in lib["copies"]), f"{lib}")
+    r = ask({"type": "palette_delete", "palette": "hot", "base_rev": lib["rev"], "id": 45})
+    check("deleting a library palette leaves its copies where they are",
+          r["ok"] and not (shows / "palettes" / "hot.json").exists()
+          and "Hot" in json.loads((shows / "timelines" / "synth-128.json").read_text())["palettes"],
+          f"{r}")
+
     # -- 4. preview ----------------------------------------------------------
     print("\n4. the designer driving the rig")
     sc.apply({"type": "sync", "source": "blt", "deck": "1",
