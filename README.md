@@ -333,8 +333,12 @@ python -m engine.patch add --name "Par 5" ...   # one-shot edits
   write quoting the rev it read)
 - the **CLI** above, which needs no UI
 
-Edits are validated, written atomically, and applied to the running show without
-a restart. A rig that will not load is refused and the old one keeps running.
+Edits are validated and written atomically. On the Setup tab each edit is saved
+straight away, and **Apply now** swaps the saved rig into the running show at a
+frame boundary, with no restart; a rig that will not load is refused and the old
+one keeps running. The engine does not watch `rig.json`, so the CLI and the MCP
+server refuse to write a rig while an engine is running it: mid-show, edit on
+the Setup tab, or stop the show first.
 
 <img src="docs/images/console-setup.png" alt="Setup tab on a laptop: the patch, read-only until unlocked, listing six fixtures with their universe, address, tags and live level, above the room's dimensions and crowd head band" width="100%">
 
@@ -350,7 +354,7 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 315 tests: the console against a fixture captured from a
+npm test         # 321 tests: the console against a fixture captured from a
                  # real engine, Studio against the example show folder
 npm run build    # writes ui/dist/
 ```

@@ -2090,11 +2090,12 @@ class ShowController:
         second notion of "the patch" living in the server that the file does not
         agree with, and a half-applied patch is worse than either state.
 
-        It does NOT take effect on the running show. The engine resolves
-        profiles, channel offsets and head indices once at startup, and
-        re-deriving them mid-frame would change what every layer is writing to
-        underneath a look that is up. So every edit says so: this is load-in
-        work, and the restart is part of it.
+        It does NOT take effect on the running show by itself. Re-deriving
+        profiles, channel offsets and head indices in the middle of an edit
+        would change what every layer is writing to underneath a look that is
+        up, so the edit is only saved and `pending_patch` says so. Applying it
+        (`patch_apply` -> `reload_rig`) swaps the saved rig in at a frame
+        boundary, with no restart.
 
         Note this is the one writer that does not check the lockfile. The lock
         exists to stop an OUTSIDE tool editing behind a running engine's back;

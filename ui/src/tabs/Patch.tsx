@@ -15,12 +15,12 @@ import type { Command, EngineState } from "../types";
  *   * **Locked by default.** Nothing here is reachable until you say so. Every
  *     other control on this surface is recoverable by pressing it again; a
  *     re-addressed rig is a walk around the room with a torch.
- *   * **Nothing takes effect until a restart**, and it says so, permanently,
- *     until the engine is restarted. The engine resolves profiles, channel
- *     offsets and head indices once at startup — re-deriving them mid-frame
- *     would change what every layer writes underneath a look that is up. So a
- *     saved patch and a running rig genuinely do disagree in that window, and
- *     that is exactly the state that has to be visible.
+ *   * **Nothing takes effect until it is applied**, and it says so until it
+ *     is. Each edit is saved to rig.json at once; Apply now swaps the saved rig
+ *     into the running show at a frame boundary (`patch_apply`), and a rig that
+ *     will not load is refused while the old one keeps running. Until then a
+ *     saved patch and the running rig genuinely disagree, and that is exactly
+ *     the state that has to be visible.
  */
 export function PatchSection({ state, send }: {
   state: EngineState; send: (c: Command) => void;
@@ -50,9 +50,10 @@ export function PatchSection({ state, send }: {
       {!unlocked ? (
         <p className="small muted" style={{ marginBottom: 0 }}>
           {state.fixtures.length} fixture(s) patched. Unlock to change
-          addresses, tags and positions — this edits <code>rig.json</code> and
-          needs an engine restart to take effect, so it is load-in work rather
-          than something to reach for mid-set.
+          addresses, tags and positions. Each edit is saved
+          to <code>rig.json</code> and goes live when you apply it, with no
+          restart — but a re-addressed rig means re-dialling every unit, so it
+          is load-in work rather than something to reach for mid-set.
         </p>
       ) : (
         <>

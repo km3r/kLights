@@ -17,6 +17,16 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — the Patch card no longer says a patch needs a restart
+
+- A patch edit has applied live since **Apply now** arrived, but the Patch
+  card's locked text still said a restart was needed, and so did the comments
+  behind it and the CLI's and MCP server's refusals. They now say what happens:
+  each edit is saved to `rig.json` at once and goes live on **Apply now**, at a
+  frame boundary. The CLI and MCP still refuse to write while an engine runs
+  the event, because the engine does not watch `rig.json`; the refusal now
+  points at the Setup tab as well as at stopping the show.
+
 ### Changed — the README says what kLights is, and starts from the launcher
 
 - **The intro covers the whole project**: Studio to design a show, Setup for
@@ -25,6 +35,8 @@ the commit messages keep those labels.
 - **Quick start is the launcher**, with a screenshot and the four steps from
   picking an event to the previz, and how to give Studio a show folder.
   `python -m engine.server` and its flags are under *Without the launcher*.
+- *Editing the rig* says what actually happens: edits on the Setup tab apply
+  live with **Apply now**, and the CLI and MCP refuse while an engine runs.
 - **Screenshots retaken** from a live engine: the four phone tabs on cue 3
   (Deep) with MH Breathe running, Setup at the patch, and Studio's timeline
   driving the rig with the new right-hand panels. New: the launcher, and
