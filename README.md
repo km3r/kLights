@@ -53,23 +53,27 @@ cd kLights
 Then double-click **`kLights.pyw`**, or run `python -m launcher` from a
 terminal. One window starts the engine and opens everything else:
 
-<img src="docs/images/launcher.png" alt="The launcher: the despacio event picked; the engine running on port 8765 with Art-Net to 127.0.0.1; Open console, Open Setup, Open Studio and Copy phone link; the previz controls; and the engine log" width="560">
+<img src="docs/images/launcher.png" alt="The launcher: the despacio event; the show folder set to shared/show-example, with one track, one timeline, four routines and one template set in it; the engine running on port 8765 with Art-Net to 127.0.0.1; Open console, Open Setup, Open Studio and Copy phone link; the previz controls; and the engine log" width="560">
 
-1. **Event** — pick the show. `despacio` is the example rig, and the line under
-   it says what is in it.
-2. **Start engine.** Leave **Art-Net to** at `127.0.0.1` to try it: nothing
+1. **Event** — pick the rig. `despacio` is the example, and the line under it
+   says what is in it.
+2. **Show folder** — the tracks, timelines and routines that Studio edits and
+   the night plays. Browse to `shared/show-example` to try it. Left empty, the
+   engine uses the one named in `klights.local.json`, if any; the line under
+   the field says which folder that is and what is in it. The console runs
+   without one, but Studio needs one. A real show's folder lives outside the
+   repo; see [Timecoded shows](#timecoded-shows).
+3. **Start engine.** Leave **Art-Net to** at `127.0.0.1` to try it: nothing
    leaves this laptop. To drive a rig, set it to the rig's node or a broadcast
    address such as `255.255.255.255`.
-3. **Open console** to run the show, **Open Setup** for the rig and the room,
+4. **Open console** to run the show, **Open Setup** for the rig and the room,
    or **Open Studio** to design. **Copy phone link** puts the console's URL on
    the clipboard, token included, for a phone on the same network.
-4. **Launch previz** for the 3D view, once **Build previz...** has built it
+5. **Launch previz** for the 3D view, once **Build previz...** has built it
    (building needs Unreal 5.8; running it does not).
 
-Studio works on a **show folder** of tracks and timelines. To try it on the
-example, put `--show-dir shared/show-example` in **Extra flags** before
-starting the engine; for a real show, see [Timecoded shows](#timecoded-shows).
-Extra flags is also where `--sync-port` (tempo from a DJ) goes.
+Flags the launcher has no field for, such as `--sync-port` for tempo from a DJ,
+go in **Extra flags**.
 
 The engine runs as its own process, so closing the launcher does not stop a
 show, and reopening it finds the engine again. The launcher remembers its

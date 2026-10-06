@@ -48,7 +48,8 @@ try:
     print("\n1. settings")
     state = tmp / "state"
     check("no file: defaults", core.load_settings(state) == core.Settings())
-    s = core.Settings(event=str(SAMPLE), port=9123, artnet="10.0.0.5,127.0.0.1", use_token=False)
+    s = core.Settings(event=str(SAMPLE), port=9123, artnet="10.0.0.5,127.0.0.1", use_token=False,
+                      show_dir="D:/Dropbox/kLights show")
     s.engine = core.EngineRecord(pid=1, port=9123, event=str(SAMPLE), token="t", stop_file="x", log="y")
     core.save_settings(s, state)
     check("round trip, engine record included", core.load_settings(state) == s)
@@ -59,6 +60,19 @@ try:
     got = core.load_settings(state)
     check("wrongly typed and unknown keys are ignored, good ones kept",
           got.port == 8765 and got.use_token is True and got.previz_windowed is False)
+    # Before the show folder had a field, Extra flags was where it went.
+    (state / "settings.json").write_text(json.dumps(
+        {"extra_args": '--bpm 128 --show-dir "D:/My Show" --sync-port 9000'}), encoding="utf-8")
+    got = core.load_settings(state)
+    check("a --show-dir in Extra flags moves into the show folder field",
+          got.show_dir == "D:/My Show" and got.extra_args == "--bpm 128 --sync-port 9000",
+          f"{got.show_dir!r} {got.extra_args!r}")
+    got = core.Settings(extra_args="--show-dir=shows/")
+    check("...in its = form too", core.adopt_show_dir(got) and got.show_dir == "shows/"
+          and got.extra_args == "")
+    got = core.Settings(show_dir="a", extra_args="--show-dir b")
+    check("...but never over a folder the field already names",
+          not core.adopt_show_dir(got) and got.show_dir == "a" and got.extra_args == "--show-dir b")
 
     print("\n2. events")
     events = tmp / "events"
@@ -73,6 +87,36 @@ try:
     bad = core.describe_event(events / "not-an-event")
     check("a folder with no rig.json says so", "no rig.json" in bad.error)
 
+    print("\n2b. the show folder")
+    example = REPO / "shared" / "show-example"
+    got = core.describe_show_dir(str(example), env={}, local=tmp / "none.json")
+    check("the field's folder is described: what is in it", got.path == example and not got.error
+          and got.tracks == 1 and got.timelines == 1 and got.routines == 4
+          and got.template_sets == 1, got.summary())
+    got = core.describe_show_dir("shared/show-example", env={}, local=tmp / "none.json")
+    check("...a relative one from the repo, where the engine starts", got.path == example
+          and got.tracks == 1, got.summary())
+    got = core.describe_show_dir("", env={}, local=tmp / "none.json")
+    check("empty, and nothing else names one: none, and it says Studio needs one",
+          got.path is None and "Studio" in got.summary(), got.summary())
+    got = core.describe_show_dir("", env={"KLIGHTS_SHOW_DIR": str(example)}, local=tmp / "none.json")
+    check("empty: $KLIGHTS_SHOW_DIR is the engine's default, and it says so",
+          got.source == "env" and got.tracks == 1 and "KLIGHTS_SHOW_DIR" in got.summary(),
+          got.summary())
+    local = tmp / "klights.local.json"
+    local.write_text(json.dumps({"show_dir": str(example)}), encoding="utf-8")
+    got = core.describe_show_dir("", env={}, local=local)
+    check("...then klights.local.json's", got.source == "local" and got.tracks == 1
+          and "klights.local.json" in got.summary(), got.summary())
+    got = core.describe_show_dir(str(tmp / "no-such"), env={}, local=tmp / "none.json")
+    check("a folder that is not there says so", got.error and "init" in got.error, got.summary())
+    broken = tmp / "broken-show"
+    shutil.copytree(example, broken)
+    (broken / "routines" / "fan-drop.json").write_text("{", encoding="utf-8")
+    got = core.describe_show_dir(str(broken), env={}, local=tmp / "none.json")
+    check("files that will not load are counted, and where to look is named",
+          got.problems >= 1 and got.routines == 3 and "check" in got.summary(), got.summary())
+
     print("\n3. commands and links")
     s = core.Settings(event=str(events / "sample"), port=9000, artnet="", extra_args="--bpm 128")
     cmd = core.engine_command(s, None, tmp / "stop")
@@ -80,6 +124,14 @@ try:
     check("no token: --no-token", "--no-token" in cmd and "--token" not in cmd)
     check("the stop file is passed", cmd[cmd.index("--stop-file") + 1] == str(tmp / "stop"))
     check("extra flags are appended", cmd[-2:] == ["--bpm", "128"])
+    check("no show folder: no --show-dir, so the engine's own default",
+          not any(a.startswith("--show-dir") for a in cmd))
+    s.show_dir = "-odd name/show"
+    cmd = core.engine_command(s, None, tmp / "stop")
+    check("a show folder is passed as --show-dir=..., before the extra flags",
+          "--show-dir=-odd name/show" in cmd
+          and cmd.index("--show-dir=-odd name/show") < cmd.index("--bpm"))
+    s.show_dir = ""
     s.artnet = "10.0.0.5,127.0.0.1"
     cmd = core.engine_command(s, "abc", tmp / "stop")
     check("Art-Net and token passed through", cmd[cmd.index("--artnet") + 1] == "10.0.0.5,127.0.0.1"
@@ -139,7 +191,7 @@ try:
     print("\n7. a real engine, started and stopped the launcher's way")
     port = free_port()
     s = core.Settings(event=str(events / "sample"), port=port, artnet="", bind="127.0.0.1",
-                      use_token=True)
+                      use_token=True, show_dir="shared/show-example")
     handle = core.start_engine(s, state)
     try:
         got = core.wait_for_engine(port, 30.0, handle)
@@ -165,6 +217,9 @@ try:
         log = Path(handle.record.log).read_text(encoding="utf-8", errors="replace")
         ok = "access  token" in log and "stop requested" in log
         check("the log has the engine's output", ok, "" if ok else log[-300:])
+        shows = next((line for line in log.splitlines() if line.startswith("shows")), "")
+        check("...and it loaded the show folder from the field", "show-example" in shows
+              and "1 tracks" in shows, shows or log[-300:])
         check("a stopped engine is not resumed", core.EngineHandle.resume(handle.record) is None)
     finally:
         if handle.alive():

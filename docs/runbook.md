@@ -59,9 +59,9 @@ python -m engine.server --artnet 255.255.255.255
 Or double-click **`kLights.pyw`**, the launcher. Check **Art-Net to** before
 **Start engine**: it must reach the rig's node (for example
 `255.255.255.255`), not only `127.0.0.1`, which feeds a previz on this laptop
-and nothing else. Flags the launcher has no field for (`--show-dir`,
-`--sync-port`) go in **Extra flags**. The engine is its own process, so
-closing the launcher does not stop the show.
+and nothing else. The show folder has a field of its own, above the engine's;
+flags the launcher has no field for (`--sync-port`) go in **Extra flags**. The
+engine is its own process, so closing the launcher does not stop the show.
 
 Read the banner it prints. It states, every run:
 
@@ -138,6 +138,9 @@ folder and the sync port, then the bridge for the decks in use:
 ```bash
 python -m engine.server --artnet 255.255.255.255 --show-dir <show folder> --sync-port 9000
 ```
+
+From the launcher: the folder in **Show folder**, and `--sync-port 9000` in
+**Extra flags**.
 
 CDJs need beat-link-trigger and a DDJ needs rkbx_link, each pointed at that
 port. See [`bridges/prolink/`](../bridges/prolink/README.md).

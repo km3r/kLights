@@ -95,6 +95,8 @@ class Launcher:
         self.probe_port = 0
         self._probe_target = self.settings.port      # read by the poller thread
         self.event_info: Optional[core.EventInfo] = None
+        self.show_info: Optional[core.ShowInfo] = None
+        self._show_generation = 0
         self.lan: Optional[str] = None
         # This machine's addresses, from the poller: looking them up can wait
         # on DNS, and the window redraws seven times a second.
@@ -115,6 +117,7 @@ class Launcher:
         self._build_ui()
         self._load_event_list()
         self._event_changed()
+        self._show_changed()
         threading.Thread(target=self._poll_loop, name="launcher-poll", daemon=True).start()
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         root.after(150, self._pump)
@@ -147,9 +150,25 @@ class Launcher:
         self.lock_label = ttk.Label(ev, text="", foreground=AMBER)
         self.lock_label.grid(row=2, column=0, columnspan=2, sticky="w")
 
+        # Show folder: what Studio edits and the timecoded shows play. A field
+        # of its own, not an extra flag: without one Studio has nothing to open.
+        sf = ttk.LabelFrame(outer, text="Show folder", padding=8)
+        sf.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        sf.columnconfigure(0, weight=1)
+        self.show_var = tk.StringVar(value=self.settings.show_dir)
+        self.show_entry = ttk.Entry(sf, textvariable=self.show_var)
+        self.show_entry.grid(row=0, column=0, sticky="ew")
+        self.show_var.trace_add("write", lambda *a: self._settings_changed())
+        self.show_entry.bind("<FocusOut>", lambda e: self._show_changed())
+        self.show_entry.bind("<Return>", lambda e: self._show_changed())
+        self.show_browse_btn = ttk.Button(sf, text="Browse...", command=self._browse_show)
+        self.show_browse_btn.grid(row=0, column=1, padx=(6, 0))
+        self.show_label = ttk.Label(sf, text="", foreground=GREY)
+        self.show_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
         # Engine
         en = ttk.LabelFrame(outer, text="Engine", padding=8)
-        en.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        en.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         en.columnconfigure(3, weight=1)
         ttk.Label(en, text="Port").grid(row=0, column=0, sticky="w")
         self.port_var = tk.StringVar(value=str(self.settings.port))
@@ -192,7 +211,7 @@ class Launcher:
 
         # Console
         co = ttk.LabelFrame(outer, text="Console", padding=8)
-        co.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        co.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         co.columnconfigure(4, weight=1)
         self.console_btn = ttk.Button(co, text="Open console", command=lambda: self._open_console(None))
         self.console_btn.grid(row=0, column=0)
@@ -212,7 +231,7 @@ class Launcher:
 
         # Previz
         pv = ttk.LabelFrame(outer, text="Previz", padding=8)
-        pv.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        pv.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         pv.columnconfigure(5, weight=1)
         self.launch_btn = ttk.Button(pv, text="Launch previz", command=self._launch_previz)
         self.launch_btn.grid(row=0, column=0)
@@ -235,8 +254,8 @@ class Launcher:
 
         # Logs
         self.tabs = ttk.Notebook(outer)
-        self.tabs.grid(row=4, column=0, sticky="nsew", pady=(10, 0))
-        outer.rowconfigure(4, weight=1)
+        self.tabs.grid(row=5, column=0, sticky="nsew", pady=(10, 0))
+        outer.rowconfigure(5, weight=1)
         self.engine_log = LogView(self.tabs)
         self.build_log = LogView(self.tabs)
         self.tabs.add(self.engine_log, text="Engine log")
@@ -245,7 +264,7 @@ class Launcher:
         # Wrap status text to the width it actually has. A fixed wraplength is
         # in pixels, so on a scaled display it wraps a sentence at half the
         # window -- and a status line is what someone reads at a glance.
-        for label in (self.lock_label, self.artnet_problem, self.console_note,
+        for label in (self.lock_label, self.show_label, self.artnet_problem, self.console_note,
                       self.previz_status, self.feed_warning):
             self._wrap_to(label, label.master)
         self._wrap_to(self.engine_status, row, reserve=lambda: self.stop_btn.winfo_x()
@@ -289,6 +308,27 @@ class Launcher:
             self.q.put(("event", generation, core.describe_event(path)))
         threading.Thread(target=work, daemon=True).start()
 
+    def _browse_show(self) -> None:
+        current = self.show_var.get().strip()
+        start = core.REPO / current if current else core.REPO
+        chosen = filedialog.askdirectory(
+            title="The show folder (tracks, timelines, routines)",
+            initialdir=str(start if start.is_dir() else core.REPO))
+        if chosen:
+            self.show_var.set(str(Path(chosen)))
+            self._show_changed()
+
+    def _show_changed(self) -> None:
+        self._settings_changed()
+        self._show_generation += 1
+        generation = self._show_generation
+        self.show_label.configure(text="reading the show folder...", foreground=GREY)
+        text = self.settings.show_dir
+
+        def work():
+            self.q.put(("show", generation, core.describe_show_dir(text)))
+        threading.Thread(target=work, daemon=True).start()
+
     def _settings_changed(self) -> None:
         s = self.settings
         try:
@@ -300,6 +340,7 @@ class Launcher:
         bind = self.bind_var.get()
         s.bind = next((k for k, v in BIND_CHOICES.items() if v == bind), bind)
         s.use_token = bool(self.token_var.get())
+        s.show_dir = self.show_var.get().strip()
         s.extra_args = self.extra_var.get()
         try:
             s.previz_port = int(self.pport_var.get())
@@ -360,6 +401,10 @@ class Launcher:
             if generation == self._info_generation:
                 self.event_info = info
                 self.lock = info.lock
+        elif kind == "show":
+            _, generation, info = item
+            if generation == self._show_generation:
+                self.show_info = info
         elif kind == "lock":
             if item[1] == self._lock_event:
                 self.lock = item[2]
@@ -432,6 +477,12 @@ class Launcher:
                                       f"Locked: {self.lock}. Another engine is running this "
                                       f"event -- or one crashed and left its lock behind.")
 
+        # Show folder
+        show = self.show_info
+        if show is not None:
+            colour = RED if show.error else AMBER if show.path is None or show.problems else GREY
+            self.show_label.configure(text=show.summary(), foreground=colour)
+
         # Engine
         if ours:
             pid = self.engine.pid
@@ -466,8 +517,8 @@ class Launcher:
         self.stop_btn.state(["!disabled"] if ours else ["disabled"])
         self.stop_btn.configure(text="Force stop" if ours and self.stopping_since is not None
                                 and time.monotonic() - self.stopping_since > 10 else "Stop")
-        for widget in (self.event_box, self.browse_btn, self.port_box, self.artnet_box,
-                       self.extra_entry, self.token_chk):
+        for widget in (self.event_box, self.browse_btn, self.show_entry, self.show_browse_btn,
+                       self.port_box, self.artnet_box, self.extra_entry, self.token_chk):
             widget.state(["disabled"] if ours else ["!disabled"])
         self.bind_box.state(["disabled"] if ours else ["!disabled", "readonly"])
 

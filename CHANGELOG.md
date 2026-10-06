@@ -17,6 +17,20 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — the launcher has a field for the show folder
+
+- **Show folder** sits between Event and Engine, with **Browse...**. It used to
+  be an extra flag, and an engine started without one opened a Studio that
+  waited on "Loading the show folder" with nothing to say why.
+- **The line under it says what the engine will load**: how many tracks,
+  timelines, routines and template sets, and how many files will not load.
+  Left empty, it names the folder `$KLIGHTS_SHOW_DIR` or `klights.local.json`
+  gives the engine, or says there is none and that Studio needs one. The
+  folder is read off the Tk thread, like the rig.
+- **A `--show-dir` already in Extra flags moves into the field** the next time
+  the launcher opens. Extra flags come last on the command line, so left there
+  it would win over the field.
+
 ### Fixed — the Patch card no longer says a patch needs a restart
 
 - A patch edit has applied live since **Apply now** arrived, but the Patch
@@ -32,9 +46,9 @@ the commit messages keep those labels.
 - **The intro covers the whole project**: Studio to design a show, Setup for
   the rig and the room, and the console to run the night, each linking to its
   section. The safety warning moved from the intro to *Running a show*.
-- **Quick start is the launcher**, with a screenshot and the four steps from
-  picking an event to the previz, and how to give Studio a show folder.
-  `python -m engine.server` and its flags are under *Without the launcher*.
+- **Quick start is the launcher**, with a screenshot and the steps from
+  picking an event and a show folder to the previz. `python -m engine.server`
+  and its flags are under *Without the launcher*.
 - *Editing the rig* says what actually happens: edits on the Setup tab apply
   live with **Apply now**, and the CLI and MCP refuse while an engine runs.
 - **Screenshots retaken** from a live engine: the four phone tabs on cue 3
