@@ -8,7 +8,8 @@ import {
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
 import {
   AutomationMenu, EditTags, Editor, FADES, ParamLanes, PickMenu, ROLES, Reach, backHash,
-  externalRow, parsePointId, parseWaveId, rigTags, routineLaneSpecs, snapDown, uniqueId,
+  externalRow, offeredLooks, parsePointId, parseWaveId, rigTags, routineLaneSpecs, snapDown,
+  uniqueId,
   useEditorKeys, useHistory, useMenuDismiss,
 } from "./edit";
 import type { History, LaneSpecs, PickEntry } from "./edit";
@@ -493,7 +494,7 @@ function ParamValue({ name, def, value, onChange, engine }: {
     return <ColorValue label={name} value={value} onChange={onChange} params={[]} />;
   }
   if (def.type === "look") {
-    const looks = engine.state?.looks.map((l) => l.name) ?? [];
+    const looks = offeredLooks(engine.state?.looks).map((l) => l.name);
     return (
       <>
         <input list="d-looks" value={typeof value === "string" ? value : ""} aria-label={name}
@@ -921,7 +922,7 @@ function ArgField({ spec, value, params, onChange, engine }: {
       </div>
     );
   } else if (spec.kind === "look") {
-    const looks = engine.state?.looks.map((l) => l.name) ?? [];
+    const looks = offeredLooks(engine.state?.looks).map((l) => l.name);
     field = (
       <>
         <input list="d-looks" value={typeof value === "string" ? value : ""} aria-label={spec.name}

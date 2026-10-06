@@ -12,7 +12,8 @@ import type {
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
-  Editor, ParamLanes, PickMenu, clipOps, copyRange, cutRange, parsePointId, parseWaveId,
+  Editor, ParamLanes, PickMenu, clipOps, copyRange, cutRange, offeredLooks, parsePointId,
+  parseWaveId,
   rememberBack, setClipBoard, snapDown, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
   useHistory, useMenuDismiss,
 } from "./edit";
@@ -135,8 +136,7 @@ function TrackAddMenu({ row, at, x, y, routines, palettes, library, state, onPic
   } else {
     const scene = row.target === "scene";
     empty = "No routines yet: make one with + New in Studio.";
-    const looks = (state?.looks ?? []).filter((l) => !l.retired && !l.step_of
-      && (scene || l.slot === row.target));
+    const looks = offeredLooks(state?.looks).filter((l) => scene || l.slot === row.target);
     entries = [
       ...[...routines].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).map((r) => ({
         key: `r:${r.id}`, text: `${r.name ?? ""} ${r.id} ${r.folder ?? ""}`, group: "Routines",
@@ -678,7 +678,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         guide.open ? "min(400px, 34vw)" : ""].filter(Boolean).join(" ") }}>
         {panels.browse && (
           <Browser routines={routines} palettes={Object.keys(doc.palettes ?? {})} library={library}
-                   looks={engine.state?.looks ?? []}
+                   looks={offeredLooks(engine.state?.looks)}
                    presets={(engine.state?.presets ?? []).map((p) => p.name)}
                    onPlace={(what) => place(what, beat)} />
         )}

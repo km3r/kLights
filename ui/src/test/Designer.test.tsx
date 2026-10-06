@@ -207,6 +207,32 @@ describe("designer model", () => {
     expect(scene.find((i) => i.at === 64)!.bind).toBeUndefined();
   });
 
+  it("drafts the set's visuals onto a visuals lane, so the timeline does not silence them", () => {
+    // A new timeline: a visuals lane, a cue a phrase, each as the set picks it.
+    const fresh = newTimeline(trackDoc as never);
+    expect(draftFromTemplate(fresh, trackDoc as never, clubDoc as never)).toBeNull();
+    const vis = fresh.rows.filter((r) => r.type === "external" && r.output === "visuals");
+    expect(vis).toHaveLength(1);
+    expect(vis[0]!.items!.map((i) => [i.at, i.scene])).toEqual([
+      [0, "wash"], [64, "bars"], [128, "particles"], [160, "tunnel"], [224, "wash"],
+      [256, "particles"], [288, "tunnel"], [352, "wash"]]);
+    expect(vis[0]!.items![3]).toMatchObject({ len: 64, params: { color: "@primary", speed: 2 } });
+    // The example timeline already has one: its cues are replaced, as the
+    // scene lane's are, rather than a second lane fighting it.
+    const drawn = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    expect(draftFromTemplate(drawn, trackDoc as never, clubDoc as never)).toBeNull();
+    const screens = drawn.rows.filter((r) => r.type === "external" && r.output === "visuals");
+    expect(screens.map((r) => r.id)).toEqual(["screen"]);
+    expect(screens[0]!.items!.map((i) => i.scene)).toEqual(vis[0]!.items!.map((i) => i.scene));
+    // A set without visuals leaves the visuals lane alone.
+    const plain = structuredClone(clubDoc) as unknown as TemplateSetDoc;
+    for (const pick of Object.values(plain.phrases)) delete pick.visuals;
+    const kept = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    draftFromTemplate(kept, trackDoc as never, plain as never);
+    expect(kept.rows.find((r) => r.id === "screen")).toEqual(
+      (timelineDoc as unknown as TimelineDoc).rows.find((r) => r.id === "screen"));
+  });
+
   it("drafts a track with a grid and no phrases from the set's bar cycle", () => {
     const track = { ...structuredClone(trackDoc), phrases: { items: [] } } as never;
     const doc = newTimeline(track);
@@ -881,6 +907,10 @@ describe("designer", () => {
     await user.clear(within(browser).getByLabelText("search looks"));
     await user.click(within(browser).getByRole("button", { name: "peak" }));
     expect(within(scene).getByLabelText("peak at bar 1.1")).toBeInTheDocument();
+    // a look retired for something better, or one step of a chase, is not offered
+    expect(within(browser).queryByRole("button", { name: "Lazy Circle" })).toBeNull();
+    expect(within(browser).queryByRole("button", { name: "Ball Spiral Step 1" })).toBeNull();
+    expect(within(browser).getByRole("button", { name: "Ball Spiral" })).toBeInTheDocument();
   });
 
   it("says which fixtures a clip's roles play on, and binds them for that clip", async () => {
@@ -1798,7 +1828,8 @@ describe("template sets", () => {
     const roles = within(page).getByRole("group", { name: "Chorus roles" });
     await user.selectOptions(within(roles).getByLabelText("pins plays on"), "Pinspot #1");
     expect(within(roles).getByText("1 fixture")).toHaveAttribute("title", "Pinspot #1");
-    expect(within(page).getByRole("button", { name: "Chorus settings" })).toHaveTextContent("1 set");
+    // the binding, and the visuals the pick already had
+    expect(within(page).getByRole("button", { name: "Chorus settings" })).toHaveTextContent("2 set");
     await user.click(within(page).getByRole("button", { name: "Save" }));
     let saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as SetSaved;
     expect(saved.doc.phrases.Chorus).toMatchObject({ routine: "fan-drop",
@@ -1810,6 +1841,36 @@ describe("template sets", () => {
     saved = reply(socket, "template_save", true, { rev: "r:c3" }) as unknown as SetSaved;
     expect(saved.doc.phrases.Chorus).toEqual({ routine: "idle-orbit", palette: "Hot",
                                                visuals: clubDoc.phrases.Chorus.visuals });
+  });
+
+  it("edits what the built-in visuals show for a pick, or takes them off", async () => {
+    const { user, socket, page } = await sets();
+    await user.click(within(page).getByRole("button", { name: "Chorus settings" }));
+    let vis = within(page).getByRole("group", { name: "Chorus visuals" });
+    expect(within(within(vis).getByRole("group", { name: "visuals scene" }))
+      .getByRole("button", { name: "tunnel" })).toHaveClass("on");
+    expect(within(vis).getByLabelText("visuals speed")).toHaveValue(2);
+    fireEvent.change(within(vis).getByLabelText("visuals speed"), { target: { value: "4" } });
+    await user.click(within(within(vis).getByRole("group", { name: "visuals scene" }))
+      .getByRole("button", { name: "bars" }));
+    // the Down's visuals off, then a fresh one on the bar cycle's second step
+    await user.click(within(page).getByRole("button", { name: "Down settings" }));
+    await user.click(within(page).getByRole("button", { name: "no visuals for Down" }));
+    vis = within(page).getByRole("group", { name: "Down visuals" });
+    expect(vis).toHaveTextContent(/none/);
+    await user.click(within(page).getByRole("button", { name: "step 2 settings" }));
+    await user.click(within(within(page).getByRole("group", { name: "step 2 visuals" }))
+      .getByRole("button", { name: "+ visuals" }));
+    // a pick whose routine is missing from routines/ keeps its visuals in reach
+    await user.click(within(page).getByRole("button", { name: "Verse settings" }));
+    expect(within(page).getByRole("group", { name: "Verse visuals" })).toBeInTheDocument();
+
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c4" }) as unknown as SetSaved;
+    expect(saved.doc.phrases.Chorus!.visuals).toEqual({ scene: "bars", params: { color: "@primary" } });
+    expect(saved.doc.phrases.Down).not.toHaveProperty("visuals");
+    expect(saved.doc.bars!.cycle[1]).toEqual({ routine: "fan-drop", palette: "Hot",
+                                               visuals: { scene: "wash", params: { color: "@primary" } } });
   });
 
   it("adds an exact label, starting from its family's pick", async () => {
@@ -1894,6 +1955,23 @@ describe("template sets", () => {
     expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
                                       name: "Late Night!",
                                       phrases: { "*": { routine: "fan-drop" } } });
+  });
+
+  it("will not start a blank set with no routine to pick", async () => {
+    const served = fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (
+      new URL(url, "http://engine").pathname === "/api/routines"
+        ? { ok: true, status: 200, json: async () => ({ routines: [] }) }
+        : served(url))));
+    const user = userEvent.setup();
+    await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await user.click(await within(page).findByRole("button", { name: "New set…" }));
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /Blank/ }));
+    expect(within(dialog).getByRole("radio", { name: /Blank/ }))
+      .toHaveTextContent(/make a routine first/);
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
   });
 });
 

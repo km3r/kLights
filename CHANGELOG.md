@@ -53,7 +53,20 @@ the commit messages keep those labels.
   a draft from the set carries it onto the clips. A set made from a timeline
   keeps the clips' bindings. Two picks that differ only in their bindings are
   now two programs: before, the engine played one for both.
-- Template sets: changing a pick's routine no longer drops the pick's visuals.
+- Template sets: **a pick's visuals can be edited** under its settings: the
+  scene the built-in visuals show while it plays, and that scene's settings,
+  or none. Before, only a hand edit to the file could change them, and changing
+  the pick's routine silently dropped them. A pick whose routine is missing
+  from `routines/` keeps its settings in reach.
+- **Drafting from a set brings its visuals**: each pick's visuals become a cue
+  on the timeline's visuals lane, the way the palettes fill the palette lane.
+  Live, a timeline with a visuals lane of its own silences the set's, so a
+  draft that left them behind went dark on the projector.
+- A blank template set is not offered when the show has no routines: the
+  engine refuses a set with no pick, so it could never be saved. Adding an
+  exact label or a bar cycle no longer writes a pick with no routine.
+- Studio's look pickers (New from a look, a block's or parameter's look, a look
+  clip) leave out retired looks and single chase steps, as the console does.
 
 ### Added — Studio's + New: one way in to making anything
 

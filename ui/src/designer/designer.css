@@ -489,6 +489,7 @@ a.s-use:hover b { color: var(--accent); }
   grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 8px 10px;
   border-radius: 8px; background: var(--bg); border: 1px solid #1e2430;
 }
+.s-pick-visuals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; }
 .s-steps { grid-template-columns: 22px minmax(120px, 1.4fr) minmax(80px, 0.8fr) auto minmax(100px, 1fr) auto; }
 .s-step-tools { display: inline-flex; gap: 2px; }
 .s-palette-row { display: flex; align-items: center; gap: 6px; }

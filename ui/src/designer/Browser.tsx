@@ -38,7 +38,8 @@ export function Browser({ routines, palettes, library, looks, presets, onPlace }
   /** This track's own palette names. */
   palettes: string[];
   library: PaletteSummary[];
-  /** This rig's looks and presets: a timeline that uses them is this rig's own. */
+  /** This rig's looks (as a picker offers them) and presets: a timeline that
+   *  uses them is this rig's own. */
   looks: LookInfo[];
   presets: string[];
   onPlace: (what: Placeable) => void;
@@ -52,7 +53,7 @@ export function Browser({ routines, palettes, library, looks, presets, onPlace }
   const folders = [...new Set(shown.map((r) => r.folder ?? ""))]
     .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
   const fromLibrary = library.filter((p) => !palettes.includes(p.name) && matches(p.name));
-  const shownLooks = looks.filter((l) => !l.retired && !l.step_of && matches(`${l.name} ${l.slot}`));
+  const shownLooks = looks.filter((l) => matches(`${l.name} ${l.slot}`));
 
   return (
     <aside className="d-browser" aria-label="browser">

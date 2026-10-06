@@ -3,7 +3,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { HelpHeading } from "../components";
-import type { EngineState, FixtureState, Reply } from "../types";
+import type { EngineState, FixtureState, LookInfo, Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
@@ -948,6 +948,12 @@ export function Reach({ state, tag, optional }: {
     {optional ? "none here (optional)" : "no fixtures on this rig"}</span>;
 }
 
+/** The looks a picker offers: none retired for something better, and no
+ *  single step of a chase -- the console files those under their chase. */
+export function offeredLooks(looks: LookInfo[] | undefined): LookInfo[] {
+  return (looks ?? []).filter((l) => !l.retired && !l.step_of);
+}
+
 /** Where a fixture's tags are set: the console's Setup tab. */
 export function EditTags() {
   return <a className="small d-link" href="#setup"
@@ -1800,7 +1806,7 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
         <p>Fills the scene lane with one routine per rekordbox phrase. It looks
           for the exact label (Verse 2), then the family (Verse), then{" "}
           <code>*</code>. If the set has palettes, it fills the palette lane
-          too.</p>
+          too, and if its picks have visuals, the visuals lane.</p>
         <p>It replaces what's there, but it's only a starting point. Undo puts the
           lanes back.</p>
       </>}>Draft from template</HelpHeading>
@@ -1990,7 +1996,7 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
   });
   const routine = it.kind === "routine" ? routines.find((r) => r.id === it.routine) : undefined;
   const rigBound = it.kind === "look" || it.kind === "snapshot" || !!routine?.rig;
-  const looks = engine.state?.looks.map((l) => l.name) ?? [];
+  const looks = offeredLooks(engine.state?.looks).map((l) => l.name);
   const groups = engine.state?.groups ?? [];
   const palettes = Object.keys(history.doc?.palettes ?? {});
 

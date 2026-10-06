@@ -463,7 +463,10 @@ function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: numbe
 /**
  * Draft from template: a template set laid onto a timeline's scene lane, one
  * routine per rekordbox phrase -- the exact label (Verse 2), then the family
- * (Verse), then `*` -- and its palettes onto the palette lane. A track with a
+ * (Verse), then `*` -- its palettes onto the palette lane, and its picks'
+ * visuals onto the visuals lane: live, a timeline with a visuals lane of its
+ * own silences the set's, so a draft that left them behind would go dark on
+ * the projector. A track with a
  * grid but no phrases gets the set's bar cycle instead, the way the engine
  * plays it live. Changes `d` in place (inside an undoable edit, or on a new
  * document); returns why it could not, or null.
@@ -508,6 +511,16 @@ export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
     if (ts.palette && !d.palette) d.palette = ts.palette;
     palLane.items = [];
   }
+  let visLane: Row | null = null;
+  if (spans.some(([, , pick]) => pick?.visuals)) {
+    visLane = d.rows.find((x) => x.type === "external" && x.points == null
+      && (x.output === "visuals" || x.output === "vj")) ?? null;
+    if (!visLane) {
+      visLane = { id: uniqueId(d, "visuals"), type: "external", output: "visuals", items: [] };
+      d.rows.push(visLane);
+    }
+    visLane.items = [];
+  }
   // The set's change between phrases, as each clip's own fade in: the first
   // clip comes in from nothing with it, and the rest crossfade on it.
   const fade = ts.transition?.fade_beats ?? 0;
@@ -517,6 +530,11 @@ export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
     if (pick.palette && palLane) {
       (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
                                     palette: pick.palette, at: start, len: end - start });
+    }
+    if (pick.visuals && visLane) {
+      (visLane.items ??= []).push({ id: uniqueId(d, `vis-${start}`), at: start, len: end - start,
+                                    scene: pick.visuals.scene,
+                                    params: structuredClone(pick.visuals.params ?? {}) });
     }
   }
   return null;
