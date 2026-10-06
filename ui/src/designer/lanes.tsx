@@ -1,8 +1,13 @@
-import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, PHRASE_HUE, curveValue, laneValue, phraseFamily } from "./model";
+import { useEffect, useRef, useState } from "react";
+import {
+  BEATS_PER_BAR, PHRASE_HUE, VISUAL_SCENES, barBeat, curveValue, laneValue, phraseFamily,
+} from "./model";
 import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
-import { Editor, defaultWave, laneTitle, snapDown, useLaneSpec, waveId } from "./edit";
-import type { Edits, Placeable } from "./edit";
+import {
+  Editor, PickMenu, defaultWave, gapStart, laneTitle, newVisuals, useLaneSpec, useMenuDismiss,
+  waveId,
+} from "./edit";
+import type { Edits, PickEntry, Placeable } from "./edit";
 
 /**
  * The designer's lanes and bands, shared by the track designer and the routine
@@ -198,7 +203,7 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
 /** A new cue on an OSC or MIDI lane, before its author says what it sends. */
 function newCue(output: string): Partial<Item> {
   if (output === "midi") return { note: 60, velocity: 100 };
-  if (output === "visuals" || output === "vj") return { scene: "wash", params: { color: "@primary" } };
+  if (output === "visuals" || output === "vj") return newVisuals();
   return { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
 }
 
@@ -208,7 +213,9 @@ const OUTPUT_LABEL: Record<string, string> = {
 
 /** An OSC or MIDI lane (milestone 3): cues as the track plays -- or, with
  *  points, a curve sent to one OSC address or one MIDI controller. A cue goes
- *  in with "+ cue" at the playhead, or a click on the lane's empty space. */
+ *  in with "+ cue" at the playhead, or from the menu a click on the lane's
+ *  empty space opens (a visuals lane's lists its scenes) -- a menu, so a click
+ *  meant only to let go of a selection adds nothing. */
 function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history, beat, addable }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
@@ -224,17 +231,28 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
   });
   const midi = row.output === "midi";
   /** A new cue at a beat, selected so its inspector opens. */
-  const addCue = (at: number) => {
+  const addCue = (at: number, cue: Partial<Item> = newCue(row.output ?? "")) => {
     if (!history.doc) return;
     // Named first: the edit itself runs later, inside React's update.
     const id = Editor.uniqueId(history.doc, "cue");
     history.apply((d) => {
       const r = d.rows.find((q) => q.id === row.id);
       if (!r) return;
-      r.items = [...(r.items ?? []), { id, at, len: 16, ...newCue(row.output ?? "") }];
+      r.items = [...(r.items ?? []), { id, at, len: 16, ...cue }];
     });
     onSelect(id);
   };
+  // The menu a click on the empty lane opens: where, and the beat it starts on.
+  const [adding, setAdding] = useState<{ at: number; x: number; y: number } | null>(null);
+  useMenuDismiss(!!adding, () => setAdding(null));
+  const add = (cue?: Partial<Item>) => () => {
+    if (adding) addCue(adding.at, cue);
+    setAdding(null);
+  };
+  const visuals = row.output === "visuals" || row.output === "vj";
+  const entries: PickEntry[] = visuals
+    ? VISUAL_SCENES.map((s) => ({ key: s, label: s, add: add(newVisuals(s)) }))
+    : [{ key: "cue", label: midi ? "A MIDI note" : "An OSC cue", add: add() }];
   return (
     <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
       <div className="d-head">
@@ -264,9 +282,14 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
                           selected={selected} onSelect={onSelect} />
         : <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                           onSelect={onSelect} history={history} noun="a cue"
-                          onAdd={addable ? (at) => addCue(at == null
-                            ? Math.max(0, history.snapBeat(beat)) : snapDown(history, at))
-                            : undefined} />}
+                          onAdd={addable ? (at, cx, cy) => setAdding({
+                            at: at == null ? Math.max(0, history.snapBeat(beat))
+                              : gapStart(history, row.items ?? [], at),
+                            x: cx, y: cy }) : undefined} />}
+      {adding && (
+        <PickMenu label={`add to ${row.id}`} x={adding.x} y={adding.y} entries={entries}
+                  empty="Nothing goes on this lane."
+                  head={`Add a cue at bar ${barBeat(adding.at)}`} />)}
     </div>
   );
 }

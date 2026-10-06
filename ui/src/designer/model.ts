@@ -345,6 +345,19 @@ export function phraseMatch(a: [number, number, string][], b: [number, number, s
   return n;
 }
 
+/** JSON with every object's keys in order, so two values that are the same
+ *  compare the same however their keys were written. A key holding nothing
+ *  is left out, as JSON.stringify leaves it out. */
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
 /**
  * A template set from a track's timeline: for each phrase family, what its
  * scene lane plays most over that family's phrases (routine, variation,
@@ -383,7 +396,8 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
     if (best.params && Object.keys(best.params).length) pick.params = { ...best.params };
     if (best.bind && Object.keys(best.bind).length) pick.bind = { ...best.bind };
     if (pal && tl.palettes?.[pal]) pick.palette = pal;
-    const key = JSON.stringify(pick);
+    // Counted as written however its parameters' or bindings' keys are ordered.
+    const key = canonicalJson(pick);
     add(phraseFamily(label), key, cover);
     add("*", key, cover);
   }

@@ -31,15 +31,17 @@ the commit messages keep those labels.
     and copies of the library's, and a hits lane offers hits. Before, the
     browser's click only reached the first lane of each kind, and any other
     lane needed a drag.
-  - On an OSC, MIDI or visuals cue lane, the click adds a cue there.
-  - What is added lands at the beat clicked and is selected, so its settings
-    open below. A long menu has a search box, and Enter takes the first match.
+  - On an OSC or MIDI cue lane, the menu adds a cue; on a visuals lane, it
+    lists the scenes.
+  - What is added starts on the grid line at or before the click, never inside
+    the item before the gap, and is selected so its settings open below. A long menu has a search box, and Enter takes the first match.
     Enter on a focused lane opens the menu at the playhead. An empty lane says
     what a click adds.
 - **Looks and snapshots can be placed on a track**: a Looks tab in the browser,
   and the lane menus. The inspector already edited them, but nothing in Studio
   could make one. A look clip can also be held to some of its fixtures
-  (**Only on**).
+  (**Only on**), and a hit's **Who** offers every tag and fixture, as a role
+  does.
 - **Plays on**: a routine clip on a track, and a template set's pick (under its
   settings), show which fixtures each role reaches and can bind a role to
   another tag or to one fixture by name for that use (`bind`). The engine
@@ -51,7 +53,8 @@ the commit messages keep those labels.
   (despacio's "movers" and "corner movers") are all offered.
 - Template sets: a pick's `bind` is now declared in the format and schema, and
   a draft from the set carries it onto the clips. A set made from a timeline
-  keeps the clips' bindings. Two picks that differ only in their bindings are
+  keeps the clips' bindings, and counts two clips as one pick however their
+  parameters' or bindings' keys happen to be ordered. Two picks that differ only in their bindings are
   now two programs: before, the engine played one for both.
 - Template sets: **a pick's visuals can be edited** under its settings: the
   scene the built-in visuals show while it plays, and that scene's settings,

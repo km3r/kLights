@@ -11,8 +11,8 @@ import {
   templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, paramSpec, pasteBoard,
-  routineLaneSpecs, splitAt, timelineLaneSpecs,
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, gapStart, paramSpec, pasteBoard,
+  routineLaneSpecs, snapDown, splitAt, timelineLaneSpecs,
 } from "../designer/edit";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
@@ -194,6 +194,40 @@ describe("designer model", () => {
     expect(items).toHaveLength(8);
     expect(items.every((i) => i.fade === 2)).toBe(true);      // club's transition.fade_beats
     expect(doc.grid_rev).toBe("g:834af7");
+  });
+
+  it("starts a click's addition in the gap clicked, on the grid", () => {
+    const bars = { snap: "bar" as const, snapBeat: (b: number) => Math.round(b / 4) * 4 };
+    // past a bar line's middle still means that bar...
+    expect(snapDown(bars, 7)).toBe(4);
+    // ...but not inside the block before the gap: its end is where the gap starts
+    expect(gapStart(bars, [{ id: "a", at: 0, len: 6 }] as never, 7)).toBe(6);
+    expect(gapStart(bars, [{ id: "a", at: 0, len: 2 }] as never, 7)).toBe(4);
+    // phrases: back to the line before the click, however far; none, the start
+    const lines = [32, 96];
+    const phrases = { snap: "phrase" as const,
+                      snapBeat: (b: number) => lines.reduce((best, p) => (
+                        Math.abs(p - b) < Math.abs(best - b) ? p : best)) };
+    expect(snapDown(phrases, 90)).toBe(32);
+    expect(snapDown(phrases, 10)).toBe(0);
+  });
+
+  it("counts two clips that bind the same roles as the same pick, however written", () => {
+    // Two Verses play fan-drop bound alike (48 beats each), a third plays
+    // idle-orbit (80): together the fan-drops win -- unless the order the
+    // bindings were written in split them into two picks of 48.
+    const track = { ...structuredClone(trackDoc),
+                    phrases: { items: [[0, 48, "Verse"], [48, 96, "Verse"], [96, 176, "Verse"]] } };
+    const tl = { kind: "klights.timeline", version: 1, track: "synth-128", rows: [
+      { id: "scene", type: "clips", target: "scene", items: [
+        { id: "a", kind: "routine", routine: "fan-drop", at: 0, len: 48,
+          bind: { pins: "pinspots", movers: "corner movers" } },
+        { id: "b", kind: "routine", routine: "fan-drop", at: 48, len: 48,
+          bind: { movers: "corner movers", pins: "pinspots" } },
+        { id: "c", kind: "routine", routine: "idle-orbit", at: 96, len: 80 }] }] };
+    const set = templateFromTimeline("mine", "Mine", track as never, tl as never)!;
+    expect(set.phrases.Verse).toEqual({ routine: "fan-drop",
+                                        bind: { pins: "pinspots", movers: "corner movers" } });
   });
 
   it("drafts a pick's role bindings onto its clips", () => {
@@ -871,12 +905,23 @@ describe("designer", () => {
       .getByRole("menuitem", { name: /strobe/ }));
     expect(within(hits).getByLabelText("strobe at bar 5.1")).toBeInTheDocument();
 
-    // An OSC cue lane adds a cue where it is clicked, no menu needed.
+    // A cue lane has a menu too, so a click meant only to let go of a
+    // selection adds nothing: an OSC lane offers a cue, a visuals lane its scenes.
     await user.selectOptions(within(lanes).getByLabelText("add lane"), "osc");
     const osc = within(lanes).getByLabelText("lane osc");
     expect(within(osc).getByText(/Empty -- click to add a cue/)).toBeInTheDocument();
     fireEvent.click(osc, { clientX: 6 * 6, clientY: 20 });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(osc).queryByRole("button")).toBeNull();
+    fireEvent.click(osc, { clientX: 6 * 6, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to osc" }))
+      .getByRole("menuitem", { name: "An OSC cue" }));
     expect(within(inspector).getByText(/item on osc/)).toBeInTheDocument();
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "visuals");
+    fireEvent.click(within(lanes).getByLabelText("lane visuals"), { clientX: 6 * 8, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to visuals" }))
+      .getByRole("menuitem", { name: "tunnel" }));
 
     await user.click(screen.getByRole("button", { name: "Save" }));
     const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
@@ -891,6 +936,8 @@ describe("designer", () => {
       expect.objectContaining({ kind: "palette", palette: "Cool", at: 8 }));
     expect(row("hits").items).toContainEqual(expect.objectContaining({ hit: "strobe", at: 16 }));
     expect(row("osc").items).toEqual([expect.objectContaining({ at: 4, len: 16 })]);
+    expect(row("visuals").items).toEqual([expect.objectContaining(
+      { at: 8, scene: "tunnel", params: { color: "@primary" } })]);
   });
 
   it("places this rig's looks and snapshots from the browser", async () => {
@@ -947,6 +994,12 @@ describe("designer", () => {
       Command & { doc: TimelineDoc };
     expect(chorus().routine).toBe("idle-orbit");
     expect(chorus().bind).toBeUndefined();
+
+    // a hit can target any tag, as a role can -- or one fixture
+    fireEvent.pointerDown(within(lanes).getByLabelText("flash at bar 41.1").querySelector("path")!);
+    const who = within(inspector).getByLabelText("hit role");
+    expect(within(who).getByRole("option", { name: "movers" })).toBeInTheDocument();
+    expect(within(who).getByRole("option", { name: "Pinspot #2" })).toBeInTheDocument();
 
     // a look clip can be held to some of its fixtures
     fireEvent.pointerDown(within(lanes).getByLabelText("Lazy Circle at bar 89.1").querySelector("rect")!);

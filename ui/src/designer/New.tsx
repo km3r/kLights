@@ -143,7 +143,8 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   // A copy is filed with its original, unless a folder is typed.
   const folder = folderTyped
     ?? (start === "copy" ? routines.find((r) => r.id === copyRoutine)?.folder ?? "" : "");
-  const looks = offeredLooks(engine.state?.looks);
+  const allLooks = engine.state?.looks;
+  const looks = useMemo(() => offeredLooks(allLooks), [allLooks]);
   const [look, setLook] = useState(looks[0]?.name ?? "");
   // A rig has a couple of hundred looks: listed by the slot they play on.
   const lookSlots = useMemo(() => {

@@ -838,6 +838,36 @@ export function snapDown(history: Pick<Edits, "snap" | "snapBeat">, beat: number
   return 0;
 }
 
+/** Where something added by a click on a lane's empty space starts: the grid
+ *  line at or before the click -- but not inside the item before it, whose
+ *  end is where the gap that was clicked begins. */
+export function gapStart(history: Pick<Edits, "snap" | "snapBeat">, items: Item[],
+                         beat: number): number {
+  const before = Math.max(0, ...items.map((i) => i.at + i.len).filter((end) => end <= beat));
+  return Math.max(snapDown(history, beat), before);
+}
+
+/** The hits, as every place that adds one offers them. */
+export const HITS = [
+  { hit: "flash", label: "Flash", text: "a burst, decaying" },
+  { hit: "strobe", label: "Strobe", text: "for a bar" },
+  { hit: "blackout", label: "Blackout", text: "a beat of dark" },
+] as const;
+export type HitKind = (typeof HITS)[number]["hit"];
+
+/** A new hit's length and envelope: a flash decays over two beats, a strobe
+ *  runs a bar, a blackout is one beat. */
+export function newHit(hit: HitKind): Pick<Item, "hit" | "len" | "envelope"> {
+  return { hit, len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
+           ...(hit === "flash" ? { envelope: "decay" as const } : {}) };
+}
+
+/** What the built-in visuals show when a scene is first picked: a video
+ *  loops, anything else takes the palette's primary. */
+export function newVisuals(scene: string = "wash"): { scene: string; params: Record<string, unknown> } {
+  return { scene, params: scene === "video" ? { loop: true } : { color: "@primary" } };
+}
+
 /** A menu that closes on a press anywhere outside it (`.d-ctx`), or Escape. */
 export function useMenuDismiss(open: boolean, close: () => void): void {
   const closeRef = useRef(close);
@@ -1822,16 +1852,14 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
 /** Record pads: tap along while the track plays, and each tap lands as an
  *  item at the snapped playhead. */
 function RecordPads({ history, beat }: { history: History; beat: number }) {
-  const add = (hit: "flash" | "strobe" | "blackout") => history.apply((d) => {
+  const add = (hit: HitKind) => history.apply((d) => {
     let lane = d.rows.find((r) => r.type === "hits");
     if (!lane) {
       lane = { id: uniqueId(d, "hits"), type: "hits", items: [] };
       d.rows.push(lane);
     }
     const at = Math.max(0, Math.round(beat));
-    (lane.items ??= []).push({ id: uniqueId(d, `${hit}-${at}`), hit, at,
-                               len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
-                               ...(hit === "flash" ? { envelope: "decay" as const } : {}) });
+    (lane.items ??= []).push({ id: uniqueId(d, `${hit}-${at}`), at, ...newHit(hit) });
   });
   const nextScene = () => history.apply((d) => {
     const lane = d.rows.find((r) => r.type === "clips" && r.target === "scene");
@@ -1997,7 +2025,9 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
   const routine = it.kind === "routine" ? routines.find((r) => r.id === it.routine) : undefined;
   const rigBound = it.kind === "look" || it.kind === "snapshot" || !!routine?.rig;
   const looks = offeredLooks(engine.state?.looks).map((l) => l.name);
-  const groups = engine.state?.groups ?? [];
+  // A hit's "role" is read as a role's tag is: any tag, or one fixture's name.
+  const hitTargets = [...new Set([...rigTags(engine.state),
+                                  ...(engine.state?.fixtures ?? []).map((f) => f.name)])];
   const palettes = Object.keys(history.doc?.palettes ?? {});
 
   return (
@@ -2129,7 +2159,9 @@ function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect 
               <select value={it.role ?? ""} aria-label="hit role"
                       onChange={(e) => set({ role: e.target.value || undefined })}>
                 <option value="">everything</option>
-                {groups.map((g) => <option key={g} value={g}>{g}</option>)}
+                {it.role && !hitTargets.includes(it.role) && (
+                  <option value={it.role}>{it.role} (not on this rig)</option>)}
+                {hitTargets.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </label>
             {it.hit === "flash" && (
@@ -2217,8 +2249,7 @@ function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => 
       <div className="d-chips" role="group" aria-label="visuals scene">
         {VISUAL_SCENES.map((s) => (
           <button key={s} className={scene === s ? "on" : ""}
-                  onClick={() => set({ scene: s,
-                                       params: s === "video" ? { loop: true } : { color: "@primary" } })}>
+                  onClick={() => set(newVisuals(s))}>
             {s}</button>))}
       </div>
       {Object.entries(rules).map(([name, rule]) => {

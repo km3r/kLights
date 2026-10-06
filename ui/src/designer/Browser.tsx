@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PLACE_MIME } from "./edit";
+import { HITS, PLACE_MIME } from "./edit";
 import type { Placeable } from "./edit";
 import { normalizeName } from "./model";
 import type { PaletteSummary, RoutineSummary } from "./model";
@@ -20,11 +20,6 @@ import type { LookInfo } from "../types";
 type Tab = "routines" | "palettes" | "hits" | "looks";
 const TABS: Tab[] = ["routines", "palettes", "hits", "looks"];
 const SLOT_ORDER = ["movement", "color", "level"] as const;
-const HITS = [
-  { hit: "flash", label: "Flash", text: "a burst, decaying" },
-  { hit: "strobe", label: "Strobe", text: "for a bar" },
-  { hit: "blackout", label: "Blackout", text: "a beat of dark" },
-] as const;
 
 function drag(what: Placeable) {
   return (e: React.DragEvent) => {

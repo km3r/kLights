@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, useHistory } from "./edit";
+import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, newVisuals, useHistory } from "./edit";
 import {
   EXACT_LABELS, ID_RE, NEW_COLOURS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
@@ -100,8 +100,7 @@ function PickVisuals({ label, visuals, onChange }: {
     return (
       <div className="s-pick-visuals" role="group" aria-label={`${label} visuals`}>
         <span className="small muted">Visuals: none -- the built-in visuals show nothing for it.</span>
-        <button className="small" onClick={() => onChange({ scene: "wash", params: { color: "@primary" } })}>
-          + visuals</button>
+        <button className="small" onClick={() => onChange(newVisuals())}>+ visuals</button>
       </div>
     );
   }

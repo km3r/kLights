@@ -8,13 +8,13 @@ import {
   itemName, whoDrives,
 } from "./model";
 import type {
-  Item, PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
+  PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
-  Editor, ParamLanes, PickMenu, clipOps, copyRange, cutRange, offeredLooks, parsePointId,
-  parseWaveId,
-  rememberBack, setClipBoard, snapDown, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
+  Editor, HITS, ParamLanes, PickMenu, clipOps, copyRange, cutRange, gapStart, newHit, offeredLooks,
+  parsePointId, parseWaveId,
+  rememberBack, setClipBoard, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
   useHistory, useMenuDismiss,
 } from "./edit";
 import type { PickEntry, Placeable, RowsDoc } from "./edit";
@@ -92,12 +92,6 @@ function copyNote(from: TrackDoc, to: TrackDoc): string {
 }
 
 // -- a lane's menu ---------------------------------------------------------------
-
-const HITS = [
-  { hit: "flash", text: "a burst, decaying" },
-  { hit: "strobe", text: "for a bar" },
-  { hit: "blackout", text: "a beat of dark" },
-] as const;
 
 /**
  * What a track's lane can hold, offered where its empty space was clicked --
@@ -449,9 +443,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       ?? (() => { const r = make(); if (target === "scene") d.rows.unshift(r); else d.rows.push(r); return r; })();
   /** Place what the browser or a lane's menu offers: at a beat, on a lane if
    *  it was dropped there or the lane was clicked, else on the lane it
-   *  belongs on. */
-  const place = (what: Placeable, at: number, rowId?: string) => {
-    const start = Math.max(0, history.snapBeat(at));
+   *  belongs on. A lane's menu has placed its beat already (`snapped`), and
+   *  says so in its heading: snapping again could move it. */
+  const place = (what: Placeable, at: number, rowId?: string, snapped = false) => {
+    const start = Math.max(0, snapped ? at : history.snapBeat(at));
     const onto = rowId ? doc.rows.find((r) => r.id === rowId) : undefined;
     // Until the phrase ends, if the playhead is in one; else four bars.
     const phrase = (track.phrases?.items ?? []).find(([s, e]) => s <= start && start < e);
@@ -525,10 +520,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
           d.rows.push(lane);
         }
         const id = uniqueId(d, `${what.hit}-${start}`);
-        const item: Item = { id, hit: what.hit, at: start,
-                             len: what.hit === "strobe" ? 4 : what.hit === "flash" ? 2 : 1 };
-        if (what.hit === "flash") item.envelope = "decay";
-        (lane.items ??= []).push(item);
+        (lane.items ??= []).push({ id, at: start, ...newHit(what.hit) });
         return id;
       });
     }
@@ -793,10 +785,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       {adding && addRow && (
         <TrackAddMenu row={addRow} x={adding.x} y={adding.y}
                       at={adding.at == null ? Math.max(0, history.snapBeat(beat))
-                        : snapDown(history, adding.at)}
+                        : gapStart(history, addRow.items ?? [], adding.at)}
                       routines={routines} palettes={Object.keys(doc.palettes ?? {})}
                       library={library} state={engine.state}
-                      onPick={(what, at) => { place(what, at, addRow.id); setAdding(null); }} />
+                      onPick={(what, at) => { place(what, at, addRow.id, true); setAdding(null); }} />
       )}
     </div>
     </ParamLanes.Provider>

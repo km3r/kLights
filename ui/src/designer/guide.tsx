@@ -52,7 +52,7 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Click an empty spot on any lane to choose what goes there: routines
             and this rig's looks on a scene, movement, colour or level lane (and
             presets, as snapshots, on a scene lane), palettes on the palette
-            lane, hits on a hits lane. On a cue lane, the click adds a cue.</>,
+            lane, hits on a hits lane, a cue on a cue lane.</>,
           <>Or click a routine in the <b>browser</b> on the left to place it at
             the playhead on the scene lane, or drag it onto the lane and beat you
             want. Its tabs hold palettes, hits and looks too.</>,

@@ -7,9 +7,9 @@ import {
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
 import {
-  AutomationMenu, EditTags, Editor, FADES, ParamLanes, PickMenu, ROLES, Reach, backHash,
-  externalRow, offeredLooks, parsePointId, parseWaveId, rigTags, routineLaneSpecs, snapDown,
-  uniqueId,
+  AutomationMenu, EditTags, Editor, FADES, HITS, ParamLanes, PickMenu, ROLES, Reach, backHash,
+  externalRow, gapStart, newHit, offeredLooks, parsePointId, parseWaveId, rigTags,
+  routineLaneSpecs, uniqueId,
   useEditorKeys, useHistory, useMenuDismiss,
 } from "./edit";
 import type { History, LaneSpecs, PickEntry } from "./edit";
@@ -242,18 +242,6 @@ function usesRig(doc: Doc): boolean {
  *  playhead) and the point on the screen to open the menu at. */
 interface Adding { row: string; at: number | null; x: number; y: number }
 
-const HITS = [
-  { hit: "flash", text: "a burst, decaying" },
-  { hit: "strobe", text: "for a bar" },
-  { hit: "blackout", text: "a beat of dark" },
-] as const;
-
-/** A hit's starting length and envelope, as the track's browser places them. */
-function newHit(hit: (typeof HITS)[number]["hit"]): Pick<Item, "hit" | "len" | "envelope"> {
-  return { hit, len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
-           ...(hit === "flash" ? { envelope: "decay" as const } : {}) };
-}
-
 /**
  * What a lane can hold, offered where its empty space was clicked: a clips
  * lane's blocks (its slot's, then the rig's own), a hits lane's hits. The one
@@ -267,7 +255,8 @@ function AddMenu({ history, doc, engine, adding, playhead, onAdded }: PanelProps
   const row = doc.rows.find((r) => r.id === adding.row);
   if (!row) return null;
   const length = doc.bars * BEATS_PER_BAR;
-  const at = adding.at == null ? history.snapBeat(playhead) : snapDown(history, adding.at);
+  const at = adding.at == null ? history.snapBeat(playhead)
+    : gapStart(history, row.items ?? [], adding.at);
   const start = Math.max(0, Math.min(length - 1, at));
   const next = Math.min(length, ...(row.items ?? []).map((i) => i.at).filter((b) => b > start));
   const until = Math.max(1, next - start);
