@@ -1,0 +1,793 @@
+{
+ "blocks": {
+  "offset": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "bearing",
+     "label": "Round",
+     "kind": "number",
+     "default": 0.0,
+     "min": -270.0,
+     "max": 270.0,
+     "step": 1.0,
+     "unit": "°",
+     "reach": "bearing",
+     "help": "How far round from the ball, in the room's own sense of round."
+    },
+    {
+     "name": "elevation",
+     "label": "Up",
+     "kind": "number",
+     "default": 0.0,
+     "min": -135.0,
+     "max": 135.0,
+     "step": 1.0,
+     "unit": "°",
+     "reach": "elevation",
+     "help": "How far up from the ball. Past 90 goes over the top, which is how a head on a short bearing range reaches behind it."
+    }
+   ]
+  },
+  "fan_sweep": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "width",
+     "label": "Fan",
+     "kind": "number",
+     "default": 40.0,
+     "min": 0.0,
+     "max": 180.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "How wide the heads are fanned across the room."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 4.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "sweep",
+     "label": "Sweep",
+     "kind": "number",
+     "default": null,
+     "min": 0.0,
+     "max": 180.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "How far the fan swings; half the width when left out."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    },
+    {
+     "name": "rate",
+     "label": "Rate",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.25,
+     "max": 8.0,
+     "step": 0.25,
+     "unit": "×",
+     "help": "How many swings per cycle."
+    }
+   ]
+  },
+  "orbit": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "radius",
+     "label": "Radius",
+     "kind": "number",
+     "default": 20.0,
+     "min": 0.0,
+     "max": 90.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "How far out from the aim point it travels."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 8.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "elongation",
+     "label": "Flatten",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.2,
+     "max": 6.0,
+     "step": 0.1,
+     "unit": "×",
+     "help": "Squashes elevation against bearing. Above 1 is a wide flat oval; a corner rig has far more bearing than elevation."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 1.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "pendulum": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "width",
+     "label": "Swing",
+     "kind": "number",
+     "default": 30.0,
+     "min": 0.0,
+     "max": 90.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "How far it travels either side of centre."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 4.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "vertical",
+     "label": "Vertical",
+     "kind": "bool",
+     "default": false,
+     "help": "Up and down instead of across the room."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "figure8": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "width",
+     "label": "Width",
+     "kind": "number",
+     "default": 25.0,
+     "min": 0.0,
+     "max": 90.0,
+     "step": 1.0,
+     "unit": "°"
+    },
+    {
+     "name": "height",
+     "label": "Height",
+     "kind": "number",
+     "default": 10.0,
+     "min": 0.0,
+     "max": 60.0,
+     "step": 1.0,
+     "unit": "°"
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 8.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "spiral": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "radius",
+     "label": "Radius",
+     "kind": "number",
+     "default": 20.0,
+     "min": 0.0,
+     "max": 90.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "How far out it reaches by the end of the cycle."
+    },
+    {
+     "name": "turns",
+     "label": "Turns",
+     "kind": "number",
+     "default": 2.0,
+     "min": 0.25,
+     "max": 8.0,
+     "step": 0.25,
+     "help": "How many times round on the way out."
+    },
+    {
+     "name": "elongation",
+     "label": "Flatten",
+     "kind": "number",
+     "default": 1.5,
+     "min": 0.2,
+     "max": 6.0,
+     "step": 0.1,
+     "unit": "×"
+    },
+    {
+     "name": "direction",
+     "label": "Direction",
+     "kind": "choice",
+     "default": "out",
+     "choices": [
+      "out",
+      "in"
+     ],
+     "help": "Wind out from the aim point, or converge onto it."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 16.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "scatter": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "radius",
+     "label": "Reach",
+     "kind": "number",
+     "default": 25.0,
+     "min": 0.0,
+     "max": 90.0,
+     "step": 1.0,
+     "unit": "°",
+     "help": "The widest a head will wander from its aim."
+    },
+    {
+     "name": "stations",
+     "label": "Stops",
+     "kind": "integer",
+     "default": 4,
+     "min": 2,
+     "max": 16,
+     "help": "How many places each head visits per cycle. Fewer is more deliberate; more is restless."
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "integer",
+     "default": 1,
+     "min": 0,
+     "max": 9999,
+     "help": "A different set of directions. The same number always gives the same ones -- on the rig and in previz."
+    },
+    {
+     "name": "easing",
+     "label": "Easing",
+     "kind": "choice",
+     "default": "ease_in_out",
+     "choices": [
+      "linear",
+      "ease_in_out",
+      "ease_out"
+     ]
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 4.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "aim_points": {
+   "slot": "movement",
+   "params": [
+    {
+     "name": "points",
+     "label": "Points",
+     "kind": "points",
+     "default": [
+      [
+       0.5,
+       0.5,
+       0.0
+      ]
+     ],
+     "help": "Room fractions, 0..1 on each axis, so it works in any room."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 8.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "easing",
+     "label": "Easing",
+     "kind": "choice",
+     "default": "ease_in_out",
+     "choices": [
+      "linear",
+      "ease_in_out",
+      "ease_out"
+     ]
+    }
+   ]
+  },
+  "solid": {
+   "slot": "color",
+   "params": [
+    {
+     "name": "color",
+     "label": "Colour",
+     "kind": "color",
+     "default": "@primary"
+    }
+   ]
+  },
+  "color_chase": {
+   "slot": "color",
+   "params": [
+    {
+     "name": "colors",
+     "label": "Colours",
+     "kind": "colors",
+     "default": [
+      "@primary",
+      "@secondary"
+     ]
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 2.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    },
+    {
+     "name": "fade",
+     "label": "Fade",
+     "kind": "number",
+     "default": 0.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "How much of each step blends into the next; 0 cuts."
+    }
+   ]
+  },
+  "hue_cycle": {
+   "slot": "color",
+   "params": [
+    {
+     "name": "hue",
+     "label": "From",
+     "kind": "number",
+     "default": 0.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.01,
+     "help": "Where on the wheel it starts. 0 is red, 0.33 green, 0.66 blue."
+    },
+    {
+     "name": "span",
+     "label": "Span",
+     "kind": "number",
+     "default": 1.0,
+     "min": -2.0,
+     "max": 2.0,
+     "step": 0.05,
+     "help": "How much of the wheel one cycle covers. A small span drifts within a family; negative runs backwards."
+    },
+    {
+     "name": "saturation",
+     "label": "Saturation",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.02
+    },
+    {
+     "name": "brightness",
+     "label": "Brightness",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.02
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 16.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "duo": {
+   "slot": "color",
+   "params": [
+    {
+     "name": "color_a",
+     "label": "Colour A",
+     "kind": "color",
+     "default": "@primary"
+    },
+    {
+     "name": "color_b",
+     "label": "Colour B",
+     "kind": "color",
+     "default": "@secondary"
+    },
+    {
+     "name": "blend",
+     "label": "Swap",
+     "kind": "number",
+     "default": 0.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.02,
+     "help": "How far the two trade places over the cycle. 0 holds them where they are."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 8.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    }
+   ]
+  },
+  "chase": {
+   "slot": "level",
+   "params": [
+    {
+     "name": "order",
+     "label": "Order",
+     "kind": "choice",
+     "default": "index",
+     "choices": [
+      "x",
+      "-x",
+      "y",
+      "-y",
+      "z",
+      "-z",
+      "index"
+     ],
+     "help": "Along the room's x, y or z by where the fixtures hang, or patch order."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "width",
+     "label": "Width",
+     "kind": "number",
+     "default": 0.5,
+     "min": 0.05,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "The bump's size as a fraction of the cycle."
+    }
+   ]
+  },
+  "pulse": {
+   "slot": "level",
+   "params": [
+    {
+     "name": "depth",
+     "label": "Depth",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "1 goes to black between pulses; 0.3 just breathes."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "breathe": {
+   "slot": "level",
+   "params": [
+    {
+     "name": "depth",
+     "label": "Depth",
+     "kind": "number",
+     "default": 0.4,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "How far down it dips. 1 reaches black."
+    },
+    {
+     "name": "bars",
+     "label": "Cycle",
+     "kind": "number",
+     "default": 8.0,
+     "min": 0.25,
+     "max": 64.0,
+     "step": 0.25,
+     "unit": " bars",
+     "help": "How long one time round takes, in bars. Musical, so it is right at any tempo."
+    },
+    {
+     "name": "spread",
+     "label": "Spread",
+     "kind": "number",
+     "default": 0.0,
+     "min": -1.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Phase offset across the fixtures, in cycles. 0 moves them together; 1 spaces them evenly round one cycle."
+    }
+   ]
+  },
+  "dim": {
+   "slot": "level",
+   "params": [
+    {
+     "name": "level",
+     "label": "Level",
+     "kind": "number",
+     "default": 1.0,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.05
+    }
+   ]
+  },
+  "strobe": {
+   "slot": "level",
+   "params": [
+    {
+     "name": "level",
+     "label": "Level",
+     "kind": "number",
+     "default": 0.5,
+     "min": 0.0,
+     "max": 1.0,
+     "step": 0.05,
+     "help": "Where in the fixture's slow-to-fast band. The strobe policy still caps it, after everything."
+    }
+   ]
+  },
+  "look": {
+   "slot": null,
+   "params": [
+    {
+     "name": "look",
+     "label": "Look",
+     "kind": "look",
+     "default": null,
+     "help": "A look from THIS rig's library."
+    }
+   ]
+  },
+  "snapshot": {
+   "slot": null,
+   "params": [
+    {
+     "name": "preset",
+     "label": "Preset",
+     "kind": "preset",
+     "default": null,
+     "help": "A preset from THIS event."
+    }
+   ]
+  }
+ },
+ "macros": [
+  {
+   "name": "size",
+   "label": "Size",
+   "kind": "number",
+   "default": 1.0,
+   "min": 0.0,
+   "max": 3.0,
+   "step": 0.05,
+   "unit": "×",
+   "help": "How far the route travels. 0 parks every head on the mirror ball."
+  },
+  {
+   "name": "spread",
+   "label": "Spread",
+   "kind": "number",
+   "default": 0.0,
+   "min": -1.0,
+   "max": 1.0,
+   "step": 0.02,
+   "help": "Lags each head along its own route. 0 is unison, 1 spreads them evenly around one cycle."
+  },
+  {
+   "name": "bearing",
+   "label": "Centre —",
+   "kind": "number",
+   "default": 0.0,
+   "min": -180.0,
+   "max": 180.0,
+   "step": 1.0,
+   "unit": "° round",
+   "reach": "bearing",
+   "help": "Swings the whole look around the room."
+  },
+  {
+   "name": "elev",
+   "label": "Centre |",
+   "kind": "number",
+   "default": 0.0,
+   "min": -90.0,
+   "max": 90.0,
+   "step": 1.0,
+   "unit": "° up/down",
+   "reach": "elevation",
+   "help": "Drops or lifts the whole look. The safety taper still runs after this, so aiming down does not bypass it."
+  }
+ ],
+ "modulator_shapes": [
+  "sine",
+  "triangle",
+  "ramp",
+  "saw",
+  "square",
+  "hold",
+  "energy"
+ ],
+ "wave_shapes": [
+  "sine",
+  "triangle",
+  "ramp",
+  "saw",
+  "square",
+  "hold"
+ ]
+}

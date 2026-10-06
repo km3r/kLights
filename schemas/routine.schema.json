@@ -58,7 +58,8 @@
             "enum": [
               "clips",
               "hits",
-              "automation"
+              "automation",
+              "external"
             ]
           }
         },
@@ -114,14 +115,21 @@
                     "block": {
                       "type": "string",
                       "enum": [
+                        "offset",
                         "fan_sweep",
                         "orbit",
                         "pendulum",
+                        "figure8",
+                        "spiral",
+                        "scatter",
                         "aim_points",
                         "solid",
                         "color_chase",
+                        "hue_cycle",
+                        "duo",
                         "chase",
                         "pulse",
+                        "breathe",
                         "dim",
                         "strobe",
                         "look",
@@ -231,6 +239,50 @@
               },
               "points": {
                 "type": "array"
+              },
+              "wave": {
+                "type": "object",
+                "description": "{\"shape\": \"sine\", \"bars\": 4, \"depth\": 0.5}",
+                "properties": {
+                  "shape": {
+                    "type": "string",
+                    "enum": [
+                      "sine",
+                      "triangle",
+                      "ramp",
+                      "saw",
+                      "square",
+                      "hold"
+                    ]
+                  },
+                  "bars": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 256,
+                    "description": "one cycle, in bars -- musical, so right at any tempo"
+                  },
+                  "depth": {
+                    "type": "number",
+                    "description": "how far above the points it swings, in the lane's own units; negative swings below. On a colour lane, 0-1: how far toward `toward`"
+                  },
+                  "phase": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "where in its cycle it starts, in cycles"
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "description": "which run of levels a hold wave picks"
+                  },
+                  "toward": {
+                    "description": "a colour lane's wave: the colour it swings toward"
+                  }
+                },
+                "required": [
+                  "shape",
+                  "bars"
+                ]
               }
             },
             "required": [
@@ -238,9 +290,196 @@
               "target",
               "points"
             ]
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "external"
+              },
+              "output": {
+                "type": "string",
+                "minLength": 1,
+                "description": "osc, midi or visuals"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "number",
+                      "minimum": -64,
+                      "maximum": 65536,
+                      "description": "beats from the track's first downbeat, not seconds"
+                    },
+                    "len": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "length in beats"
+                    },
+                    "fade": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 65536,
+                      "description": "beats to fade in over, not seconds"
+                    },
+                    "on": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "off": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "while": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "an OSC address, e.g. \"/composition/layers/1/clips/2/connect\""
+                        },
+                        "args": {
+                          "type": "array",
+                          "description": "numbers and text, or \"$beat\", \"$bar\", \"$phase\" (0-1 through the bar), \"$progress\" (0-1 through the item) or \"$value\" (the row's curve)"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "channel": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 16,
+                      "description": "a MIDI channel, 1-16"
+                    },
+                    "note": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a note number, 0-127 (60 is middle C)"
+                    },
+                    "velocity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 127,
+                      "description": "1-127; default 100"
+                    },
+                    "cc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a controller number, 0-127"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the start, 0-127; default 127"
+                    },
+                    "off_value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "the CC value at the end, if any"
+                    },
+                    "pc": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127,
+                      "description": "a program number, 0-127"
+                    },
+                    "scene": {
+                      "type": "string",
+                      "enum": [
+                        "wash",
+                        "bars",
+                        "tunnel",
+                        "particles",
+                        "strobe",
+                        "video"
+                      ]
+                    },
+                    "params": {
+                      "type": "object",
+                      "description": "the scene's parameters, e.g. {\"color\": \"@primary\"}"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "len"
+                  ]
+                }
+              },
+              "points": {
+                "type": "array",
+                "description": "[[beat, value], [beat, value, \"ease\"], ...] -- sent as $value (OSC) or as a CC, 0-1 scaled to 0-127 (MIDI)"
+              },
+              "address": {
+                "type": "string",
+                "description": "OSC: where a curve's value is sent"
+              },
+              "args": {
+                "type": "array",
+                "description": "OSC: what a curve sends; default [\"$value\"]"
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "a MIDI channel, 1-16"
+              },
+              "cc": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127,
+                "description": "MIDI: the controller a curve drives"
+              }
+            },
+            "required": [
+              "type",
+              "output"
+            ]
           }
         ]
       }
+    },
+    "folder": {
+      "type": "string",
+      "description": "where Studio files it, e.g. \"Drops\"; it changes nothing about how it plays"
     },
     "version": {
       "type": "integer",

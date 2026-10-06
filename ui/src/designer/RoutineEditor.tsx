@@ -2,17 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, DESIGNER_CHUNK, EASINGS, PARAM_TYPES,
-  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem,
+  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
+  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, itemName,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
 import {
-  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, parsePointId, uniqueId,
-  useEditorKeys, useHistory,
+  AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
+  parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
 } from "./edit";
-import type { History } from "./edit";
+import type { History, LaneSpecs } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
+import { PanelToggle, usePanels } from "./panels";
+import { clearPending, peekPending } from "./pending";
 import "./designer.css";
 
 /**
@@ -86,6 +88,9 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [selected, setSelected] = useState<string | null>(null);
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
+  const [panels, togglePanel] = usePanels();
+  // A start handed over by New: a copy, a look wrapped, a blank with settings.
+  const [pending] = useState(() => peekPending("routine", routineId));
 
   useEffect(() => {
     setSnap("beat");
@@ -95,15 +100,19 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         // Not in the folder: start it. Saved with base_rev "" -- a new file,
         // refused if one appeared meanwhile (or is there but unreadable).
         if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(newRoutine(routineId));
+        setBase(pending?.doc ?? newRoutine(routineId));
         setRev("");
+        clearPending("routine", routineId);
       });
   }, [routineId, setBase, setSnap]);
 
   const length = (doc?.bars ?? 4) * BEATS_PER_BAR;
   const loop = useLoop(length, bpm);
+  const beatRef = useRef(0);
+  beatRef.current = loop.beat;
   useEditorKeys({ history, selected, setSelected,
-                  playPause: () => loop.setPlaying(!loop.playing) });
+                  playPause: () => loop.setPlaying(!loop.playing),
+                  clip: { kind: "routine", beat: () => beatRef.current } });
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;
@@ -112,7 +121,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   if (loadError) {
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
-        <header className="d-top"><a className="d-link" href="#designer">All tracks</a></header>
+        <header className="d-top"><a className="d-link" href="#studio/routines">Studio</a></header>
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -128,13 +137,16 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const rigBound = usesRig(doc);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
+  const paramLanes = routineLaneSpecs(doc);
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href={back}
-           title={back === "#designer" ? "All tracks and routines"
-             : `Back to ${back.slice("#designer/".length)}`}>◂</a>
+           title={back === "#studio/routines" ? "Back to Studio's routines"
+             : `Back to ${back.slice("#studio/track/".length)}`}>◂</a>
         <button className={loop.playing ? "on" : ""} onClick={() => loop.setPlaying(!loop.playing)}>
           {loop.playing ? "Stop" : "Play"}</button>
         <span className="mono" aria-label="position">bar {barBeat(loop.beat)} of {doc.bars}</span>
@@ -158,10 +170,12 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="routine" ident={routineId} />
         {guide.button}
+        <PanelToggle open={panels.edit} side="right" label="side panel"
+                     onToggle={() => togglePanel("edit")} />
       </header>
       {guide.banner}
 
-      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
+      <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
         <div className="d-lanes" role="region" aria-label="lanes">
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={loop.seek} />
@@ -170,7 +184,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
                     selected={selected} onSelect={setSelected} history={history}
                     beat={loop.beat} roles={roles} />
             ))}
-            <AddLane history={history} roles={roles} />
+            <AddLane history={history} roles={roles} params={paramLanes} />
             {doc.rows.length === 0 && (
               <p className="small muted" style={{ paddingLeft: HEADER_W + 8 }}>
                 Empty. Add a block from the right, or a lane from “+ lane”.</p>)}
@@ -180,25 +194,28 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
           </div>
         </div>
 
-        <aside className="d-side">
+        {panels.edit && <aside className="d-side" aria-label="side panel">
           <Settings history={history} doc={doc} engine={engine} rigBound={rigBound} />
           <Roles history={history} doc={doc} engine={engine} />
           <Params history={history} doc={doc} engine={engine} />
           <Variations history={history} doc={doc} engine={engine} />
           <Blocks history={history} doc={doc} engine={engine} beat={loop.beat}
                   selected={selected} onAdded={setSelected} />
-        </aside>
+        </aside>}
         {guide.drawer}
       </div>
 
       {history.listView
         ? <Editor.EventList history={history} />
+        : waveRow
+          ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow
           ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                    onSelect={setSelected} />
           : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
                             onDeleted={() => setSelected(null)} />}
     </div>
+    </ParamLanes.Provider>
   );
 }
 
@@ -208,9 +225,9 @@ function usesRig(doc: Doc): boolean {
 
 // -- lanes ------------------------------------------------------------------------
 
-function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
-  const doc = history.doc!;
-  const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
+function AddLane({ history, roles, params }: {
+  history: RHistory; roles: string[]; params: LaneSpecs;
+}) {
   return (
     <div className="d-row d-add">
       <div className="d-head">
@@ -219,6 +236,10 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    // A routine can cue a VJ app too, wherever it plays: on a
+                    // track, from a template, on a pad (milestone 3).
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits" ? { id, type: "hits", items: [] }
                       : { id, type: "clips", target, role: roles[0] ?? "", items: [] });
@@ -227,16 +248,13 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
           <option value="">+ lane</option>
           {SLOTS.map((s) => <option key={s} value={s}>{LANE_NAMES[s]}</option>)}
           <option value="hits">Hits</option>
+          <option value="osc">OSC cues</option>
+          <option value="osc-curve">OSC curve</option>
+          <option value="midi">MIDI cues</option>
+          <option value="midi-curve">MIDI curve</option>
+          <option value="visuals">Visuals</option>
         </select>
-        <select aria-label="add automation" value=""
-                onChange={(e) => {
-                  const target = e.target.value;
-                  if (target) history.apply((d) => { d.rows.push(automationRow(d, target)); });
-                }}>
-          <option value="">+ automation</option>
-          {Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t)).map((t) => (
-            <option key={t} value={t}>{t}</option>))}
-        </select>
+        <AutomationMenu history={history} params={params} />
       </div>
     </div>
   );
@@ -249,6 +267,15 @@ interface PanelProps { history: RHistory; doc: Doc; engine: Engine }
 function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: boolean }) {
   const loops = doc.loop !== false;
   const event = engine.state?.event;
+  // The folders the library already has, to file this one with the others.
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    apiFetch<{ routines: { folder?: string | null }[] }>("/api/routines")
+      .then((r) => setFolders([...new Set(r.routines.map((x) => x.folder)
+        .filter((f): f is string => !!f))].sort()))
+      .catch(() => setFolders([]));
+  }, []);
+  const folder = typeof doc.folder === "string" ? doc.folder : "";
   return (
     <section>
       <h3>Routine</h3>
@@ -268,6 +295,16 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
         <label className="small">
           <input type="checkbox" checked={loops} aria-label="loops"
                  onChange={() => history.apply((d) => { d.loop = !loops; })} /> loops
+        </label>
+        <label className="small" title="Where Studio's library files it. Nothing about how it plays">
+          Folder{" "}
+          <input value={folder} list="d-folders" aria-label="folder" placeholder="unfiled"
+                 style={{ width: 110 }}
+                 onChange={(e) => {
+                   const v = e.target.value;
+                   history.apply((d) => { if (v.trim()) d.folder = v; else delete d.folder; });
+                 }} />
+          <datalist id="d-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
         </label>
       </div>
       <p className="small muted">
@@ -579,6 +616,34 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
   });
   const paramsOf = (...types: string[]) =>
     Object.entries(params).filter(([, p]) => types.includes(p.type)).map(([n]) => n);
+  const remove = () => {
+    history.apply((d) => {
+      for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== it.id);
+    });
+    onDeleted();
+  };
+
+  if (row.type === "external") {
+    return (
+      <footer className="d-inspector" aria-label="inspector">
+        <div className="d-insp-head">
+          <b>{itemName(it)}</b>
+          <span className="muted"> · {row.output} cue on {row.id}</span>
+          <span className="muted mono"> · beat {it.at} → {it.at + it.len} ({it.len} beats)</span>
+          <span className="grow" />
+          <button onClick={remove}>Delete</button>
+        </div>
+        <div className="d-insp-grid">
+          {row.output === "osc" &&
+            <Editor.OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+          {row.output === "midi" &&
+            <Editor.MidiCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+          {(row.output === "visuals" || row.output === "vj") &&
+            <Editor.VisualCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+        </div>
+      </footer>
+    );
+  }
 
   return (
     <footer className="d-inspector" aria-label="inspector">
@@ -703,7 +768,7 @@ function ArgField({ spec, value, params, onChange, engine }: {
     field = <span className="mono small">{String(value)}</span>;
   } else if (spec.kind === "number") {
     field = (
-      <input type="number" step={spec.step ?? "any"} style={{ width: 70 }}
+      <input type="number" step={spec.step ?? "any"} min={spec.min} max={spec.max} style={{ width: 70 }}
              value={typeof value === "number" ? value : ""}
              placeholder={spec.default === undefined ? "auto" : String(spec.default)}
              aria-label={spec.name}
@@ -712,8 +777,10 @@ function ArgField({ spec, value, params, onChange, engine }: {
   } else if (spec.kind === "bool") {
     field = <input type="checkbox" checked={value === true} aria-label={spec.name}
                    onChange={() => onChange(value === true ? undefined : true)} />;
-  } else if (spec.kind === "order" || spec.kind === "easing") {
-    const choices = spec.kind === "order" ? CHASE_ORDERS : EASINGS;
+  } else if (spec.kind === "choice") {
+    // Every choice argument from its declaration -- a chase's order, an
+    // easing, a spiral's direction -- rather than one hardcoded list each.
+    const choices = spec.choices ?? [];
     field = (
       <select value={typeof value === "string" ? value : String(spec.default)} aria-label={spec.name}
               onChange={(e) => onChange(e.target.value === spec.default ? undefined : e.target.value)}>

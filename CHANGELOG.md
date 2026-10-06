@@ -11,6 +11,432 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
+**F23** (VJ outputs) below. Their commits were made as F20a-e and F21a-d,
+before F20 (the standalone previz) and F21 (parametric looks) reached main;
+the commit messages keep those labels.
+
+### Added — Studio's + New: one way in to making anything
+
+- **+ New** sits in the top bar of Studio's library pages. It makes a timeline for a
+  track, a routine, a template set or a palette, each with the starts that
+  make sense for it. The keys T, R, S and P pick one while the menu is open,
+  and **Tracks from rekordbox** is there too.
+  - **A timeline** for a track that has none: a draft from a template set (the
+    show's, to begin with), a copy of another track's timeline, or empty. A
+    copy says how far the two tracks' phrases agree, since that is how far its
+    clips are on the right phrases.
+  - **A routine**: blank (bars, loops, folder), a copy of another, or **a look
+    from the console**, which puts the look on its own lane as a routine. That
+    routine is bound to this rig, because the look is.
+  - **A template set**: blank, a copy of another, or **from a track's
+    timeline**. That takes, for each phrase family, what its scene lane plays
+    most (routine, variation and parameters together), plus the palette clip
+    over it, the timeline's palettes and its most-used fade.
+  - **A palette**: three colours, a copy of a library palette, or one that
+    lives in a file, which brings its name with it.
+- A timeline, routine or set **opens in its editor unsaved**, with its start
+  applied. Nothing is written until Save, and a timeline's start can be undone.
+  A palette has no editor page, so it goes into the library at once.
+- The Routines, Template sets and Palettes pages' own New buttons open the same
+  dialog. The inline id boxes are gone: a name is typed and the id (also the
+  file name) follows it unless it is edited.
+- A file that has never been saved now says **Save**, not "Saved", even before
+  it is changed, so a copy or a draft can be saved as it stands.
+
+### Added — the timeline editor: a browser, sections, and clip actions
+
+- **A browser on the left of a track's timeline**, folding away like the other
+  panels. It has routines (filed by folder, with each one's length and the
+  slots it drives), palettes (this track's, then the library's) and hits.
+  Click one to place it at the playhead on the lane it belongs on, or drag it
+  onto a lane and beat. A library palette placed this way is copied into the
+  track first. It replaces the wall of routine buttons in the right-hand panel.
+- **A phrase is a section.** Click a phrase band to select it, then fill it
+  with a routine, copy it (every clip and hit, trimmed to the phrase), paste
+  it over another phrase, or clear it.
+- **Clip actions**: copy, cut, paste at the playhead, duplicate straight after,
+  and split at the playhead. They are on a right-click menu, on the
+  inspector's buttons, and on Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D and S. A paste
+  clears what it lands on rather than overlapping it. The routine editor
+  takes the same keys.
+- "At the playhead" says **template set / show** where nothing on the timeline
+  drives a slot: the playing template set shows through there, or the
+  operator's show where the set has nothing for the phrase.
+
+### Changed — it is always clear whose palette you are editing
+
+- In a timeline's and a template set's palette panels, each palette is tagged
+  **copy of library**, **differs from library** (with *use library's*) or
+  **only here**. The panels are called "This track's palettes" and "This
+  set's palettes", and say that a change there changes that file only.
+- The Palettes page says you are editing the library's palette. Its button is
+  **Save to the library**, a copy that differs is called **different** (not
+  older), and the update is **Give N copies the library's colours**.
+
+### Added — a palette library for the show
+
+- **`palettes/<id>.json`**, a new kind of show-folder file: one palette, with
+  the name timelines and template sets know it by, and three `#rrggbb` colours.
+  `python -m engine.showfiles init` makes the folder; `schemas/palette.schema.json`
+  is generated with the rest.
+- **A library palette is a source, not a link.** Timelines and template sets
+  keep their own copies by name, as they always did, so each file still
+  describes its whole show and the engine compiles exactly as before.
+  `/api/palettes` lists each library palette with its copies, and whether each
+  copy still has the library's colours. It also lists the palettes that live
+  only inside timelines and sets.
+- **Studio's Palettes page** edits the library: make, rename, recolour,
+  duplicate, download, delete. After a change it offers **Update N copies to
+  these colours** (`palette_sync`), which writes each file quoting the rev it
+  was read at, so a file changed meanwhile is left alone and named. A palette
+  found inside a file can be **added to the library** in one click. Deleting a
+  library palette leaves its copies where they are.
+- **A library palette's name is its own.** Copies are found by name, so the
+  engine refuses a second library palette of the same name, and Duplicate
+  picks a free one ("Hot copy 2").
+- **From the library**: the timeline editor's and the template set editor's
+  palette panels can copy a library palette in under its name.
+
+### Added — template sets and show settings in Studio
+
+- **Template sets have an editor** (`#studio/templates`). Before this, only MCP
+  or a text editor could change one. It has a tab per set and a row per
+  phrase family (Intro to Outro, then Anything else), each picking a routine,
+  variation, parameters and palette. You can add exact labels (Up 2) that
+  start from their family's pick, a bar cycle for tracks with no phrases, the
+  set's own palettes, and the fade between phrases. Undo, the engine's check
+  and Save with the rev work as in the timeline editor, and a recovery copy
+  is kept in this browser.
+- **Try it on a track**: the panel beside shows what the working copy would
+  draft on any phrased track, phrase by phrase, and drafts that track's
+  timeline from the saved set.
+- **Make it the show's set**, duplicate, rename (show.json follows), download
+  and delete. The show's set cannot be deleted. Studio says what a set does:
+  live, the playing set (F22b) lights tracks with no timeline and shows through
+  a timeline's gaps; the show's set is the one the engine starts on, and the
+  one new timelines draft from.
+- **Show settings** (`#studio/show`) edit show.json: the show's template set,
+  what happens when the decks pause (policy, idle routine, silence, fade),
+  and how Follow starts and how fast it believes a track change. Latency is
+  shown, not edited, because it belongs to the phone's slider. A save quotes
+  the file's rev, so a latency change made meanwhile is never overwritten.
+- New engine commands: `template_draft` (the format, plus what the set asks of
+  the routines), `template_save`, `template_rename`, `template_delete`,
+  `show_save`. `/api/show` carries `show_rev`; `/api/templates` lines say which
+  set is the show's, with their revs.
+- A drafted clip now gets the set's fade between phrases (`transition.fade_beats`)
+  as its fade in.
+- Fixed: a save of show.json answered with nothing. The reply named the file
+  by a subfolder that show.json does not have.
+
+### Added — Studio's routine library: folders, where used, rename, delete
+
+- **Routines are cards**, each with a strip per row showing what it drives
+  (movement, colour, level) and with which blocks, its roles, open parameters
+  and variations, and where it is used. Filter by folder, "this rig only" or
+  "unused", search by name, block, role or parameter, sort by name, use or
+  length.
+- **Where it's used**: the details panel lists every timeline that places the
+  routine (with clip counts and variations), every template set that picks it
+  (and for which phrases), and show.json's idle routine. `/api/routines` lines
+  now carry `used_by`, `lanes`, `folder` and `rev`.
+- **Duplicate, rename, move to a folder, download, delete**, from the card's
+  menu or the panel. **Rename** is a new engine command, `routine_rename`: it
+  writes the routine under its new id first, moves every reference (timelines,
+  template sets, show.json) next, and removes the old file last -- so stopped
+  anywhere, nothing names a routine that is gone. **Delete**
+  (`routine_delete`) refuses while anything still uses the routine, and says
+  where. Both quote the rev the routine was read at, and both judge what uses
+  it from the folder as it is on disk at that moment, not as last loaded: a
+  timeline saved a second ago (by MCP, another machine) is never missed.
+- **Folders** are an optional `folder` on a routine: a name, set from the
+  library or the routine editor's settings. It changes nothing about how the
+  routine plays.
+
+### Changed — the designer is now Studio, with a library to start from
+
+- **Studio** is the new name for the designer, because "design" was already the
+  console's own Design mode. It opens at `#studio`; old `#designer` links still
+  work and are rewritten. The ways in are new: a **Studio** button in the
+  console's header (Design mode only, so a phone never sees it), a Track-card
+  link that says what it will do for the playing track (open its timeline, make
+  one, or find it in rekordbox and add it), and **Open Studio** in the
+  launcher. Every link opens Studio in a tab of its own, carrying the token.
+- **A library, not a list.** Studio opens on every track in the show: what lights
+  it on the night (its own timeline; else the template set that is playing,
+  F22b; else, with no set on, the operator's show), rekordbox's
+  phrases drawn in its row, BPM and length, and what needs attention -- a grid
+  that changed since the timeline was drawn, no CDJ signature, unsaved work in
+  this browser, the track playing now. Filter, search and sort; the selected
+  track's details (waveform, checks, whether the engine can find its audio)
+  sit beside it, with **Open timeline** / **Make a timeline** and **Draft
+  from** a set.
+- **rekordbox in the sidebar.** The playlist tree is the sidebar's second half; a
+  playlist opens in the main column with which tracks are in the show already,
+  and a panel saying how much of it the show covers. **Add to the show** preps
+  the ticked tracks and starts each one in the same step: a timeline drafted
+  from a template set, an empty timeline, or just the track. Only tracks the
+  prep created are started; one ticked again is only re-prepped. The draft is the
+  editor's own and is saved like any other timeline, so the engine checks it.
+- **Make timelines for ticked** does the same for tracks already in the show.
+- **Side panels fold away**: the library's sidebar and details, and the timeline
+  and routine editors' right-hand panel, each with a button at the edge of the
+  top bar. Remembered per browser.
+- **Drafting knows the bar cycle**: a track with a grid but no phrases is
+  drafted from the set's bar cycle, the way the engine plays it live, instead
+  of refusing.
+- `/api/tracks` lines carry `phrase_items`, a `timeline` summary (rows, items,
+  the grid rev it was drawn on), `edited` and `audio_here`.
+
+### Added — tracks straight from rekordbox
+
+- **The designer browses the DJ's rekordbox collection.** The track list has a
+  **From rekordbox** panel: the playlist tree, a playlist's or folder's tracks,
+  a search over the whole collection. Tick tracks and **Add to the show** preps
+  them into the show folder; a track already there says so and opens, and one
+  rekordbox never analysed cannot be ticked. **Reload** reads rekordbox again.
+- **`prep.py db`** reads rekordbox 6/7's own database, `master.db`, so there is
+  no File → Export Collection step: `--playlist` (by path or name), `--search`,
+  `--id`, `--all`, `--list` to see the choice first. `prep.py catalogue` is the
+  collection as JSON. The database is SQLCipher-encrypted, so this route needs
+  `pip install sqlcipher3` and the key in `$RB_CIPHER_KEY` or `rekordbox_key`
+  in `klights.local.json`. Neither ever reaches the engine, which runs the
+  bridge as a child process (`engine/collection.py`).
+- **Every prepped track carries beat-link-trigger's signature**, computed from
+  the analysis at prep, on the XML route too. CDJs playing a USB stick send the
+  stick's own track ids, which mean nothing here; the signature survives an
+  export, so a track now matches exactly on its first play from any stick
+  exported from this collection, not only after being linked at a gig. With
+  this database's id (CDJs loading from rekordbox over the network) and the
+  title, artist and album (rkbx_link), one prepped track is the same song to
+  every deck. A track with no artist carries two signatures, since beat-link
+  hashes it as `[no artist]` from a stick's database but a player's metadata
+  server may send an empty name.
+- **`bridges/rekordbox/blt_check/check.py`** checks all of this with beat-link
+  8's own code (a dev tool; Java 11+): `usb E:/` says which prepped track every
+  track on a stick will match and, where only the name matches, which input
+  differs; `collection` compares prep with beat-link on every analysed track
+  (6,331 of 6,331 identical on a rekordbox 7.2.14 collection); `golden` records
+  beat-link's output as the test suite's fixture.
+- **Cues on the db route come from the database**, because a collection's
+  analysis files carry none. The same file imported into rekordbox twice is
+  one track with both ids and both rows' cues.
+- **`GET /api/rekordbox`** (token) and **`rekordbox_prep {ids}`** (configure);
+  `/api/tracks` lines now say which rekordbox rows each track is and how many
+  CDJ signatures it has.
+
+### Fixed — F22/F23 review
+
+From a review of F22 and F23 before merging (PR #13); each one has a test
+that fails without it.
+
+- **The lights never pay for the rest.** An exception anywhere in the
+  timeline, template, pad or output code used to end the output thread. Now
+  that frame shows the operator's own show, the error is counted with the
+  show errors, and the runner carries on. The other outputs (OSC, MIDI,
+  timecode, visuals) are fenced off on their own: if they fail, they skip that
+  frame and the lights still get the show. The failure is said once per
+  message, and again at most every ten seconds, even if it fails only every
+  other frame.
+- **OSC numbers past a 32-bit float** (a curve times `1e40`, a huge integer)
+  are sent as the largest float there is, rather than raising out of the frame.
+- **Template set switches.**
+  - A switch waiting for its downbeat is called off, and said, if its set
+    leaves the folder. Before, the downbeat raised a KeyError.
+  - A set whose build fails calls its switch off, rather than showing "next
+    downbeat" for ever.
+  - A rig change rebuilds a waiting set for the new rig, and a build for the
+    old rig is dropped when it lands. The same goes for the active set.
+- **The beat.**
+  - Going from the clock's beat to the track's grid counts as a jump, so cues
+    and hits never fire for the beats "crossed" between the two counts. One
+    example: rkbx_link sending the title first and `master/time` later.
+  - Re-arming Follow on a track that played on while disarmed is a jump too.
+    Before, every hit, MIDI note and OSC cue from the disarmed stretch fired
+    in one frame. The same goes for any return from frames that ran on no
+    beat.
+  - Under the `continue` pause policy, a new track no longer runs on from
+    where the previous track last played.
+- **Pre-matching:** a master switch to a deck whose show is still being built
+  waits for that build, rather than queueing the same compile again. A reload
+  that drops the build hands the wait back.
+- **Routine pads.** A pad whose routine cannot be built (it left the folder,
+  say) used to wait for its build for ever. Now it lands its looks on the
+  downbeat and says why. Saving a routine pad again without `routine` keeps
+  its routine, and `routine: null` clears it. The console sends null only when
+  "none" is chosen, and typing a preset's name shows the routine its pad has.
+- **`#visuals`.**
+  - The page keeps the screen awake, as the console does.
+  - A wash's `pulse` is a full-screen flash, so it now keeps to the same three
+    flashes a second as the strobe, pulsing every two or four beats at fast
+    tempos.
+  - Only one strobe item flashes at a time: two at different rates could have
+    added up to more than three flashes a second.
+- **klights.local.json `outputs`** is an override, so it is checked for shape
+  only. An OSC host there with show.json's port works. A bad field turns off
+  only its own output; before, the whole override was thrown away.
+- **beat-link-trigger expressions:** for a moment after a new track loads,
+  BLT's latest phrase analysis can still be the previous track's. It was
+  cached under the new track. Now the analysis held when the track changes is
+  never used for the new track, nor is any analysis while the deck's metadata
+  still names another track, and the phrases are worked out again when the
+  analysis changes. These expressions have not yet been run against hardware.
+- **MIDI sidecar:** if the driver refuses a message (a port unplugged, say),
+  only that message is lost, and the sidecar says so once per reason. Before,
+  the sidecar exited with every note still sounding. On the way out, every
+  note-off and the port close are each tried, whatever happened to the one
+  before.
+
+### Added — F23d: built-in visuals
+
+- **`#visuals`** (decided with the user: generative scenes and a video
+  player): open it full screen on the projector laptop. Scenes are wash, bars,
+  tunnel, particles and strobe, in the show's palette and on its beat, and
+  video from the show folder's new `media/` folder (looped or not, at its own
+  speed or stretched to the DJ's tempo). It runs on between snapshots at the
+  show's tempo and eases into each one, so it stays smooth. Its own chunk: a
+  phone never downloads it.
+- **What plays:** a Visuals lane in the designer (`+ lane` → Visuals: a scene
+  and its parameters per cue, a video picked from media/), the same lane in a
+  routine, or a template set's `visuals {scene, params}` on each phrase pick
+  -- so a guest's tracks get scenes too. The example folder has both.
+- **Safety:** the strobe scene obeys the strobe policy -- off when strobe is
+  off, no brighter than its ceiling, stopped after `max_seconds` -- and never
+  flashes more than three times a second.
+- `GET /api/media` lists the videos; `GET /api/media/<file>` serves one with
+  Range, with the token only, video types only, never outside media/. A video
+  a show names but the folder lacks is a warning when the folder loads.
+- The snapshot gains `visuals`. Timeline, routine and template-set schemas
+  regenerated.
+- The MIDI stage's commit message (labelled F21c) counted 164 UI tests; it was 163.
+
+### Added — F23c: MIDI, through a sidecar
+
+- **MIDI lanes** (decided with the user: through an optional sidecar). A cue
+  is a note held for its length, a CC value (and an optional value left at
+  its end), or a program change, on channel 1-16; a **MIDI curve** drives one
+  CC from a drawn 0-1 curve. Routines can carry them too. In the designer:
+  `+ lane` → MIDI cues / MIDI curve.
+- `bridges/midi/midi_out.py` owns the MIDI port, with its own pinned
+  `mido` and `python-rtmidi`; the engine sends it one JSON datagram a frame
+  over local UDP and stays stdlib-only. `--list`, `--midi NAME`, `--virtual
+  NAME`, and `--fake` (prints; needs no MIDI library). It validates every
+  datagram whole, listens on this machine only by default, and stops every
+  note it started on the way out. The engine stops its own notes on close.
+- `outputs.midi {}` in show.json or `klights.local.json`; the Track card
+  shows it.
+
+### Added — F23b: Art-Net timecode
+
+- **ArtTimeCode carries the matched track's position** (decided with the
+  user), so a VJ app with its own timeline per track follows the DJ: it jumps
+  with loops and hot cues, and stops while the deck is paused, while Follow is
+  disarmed, or when nothing matched is playing. The designer's preview sends
+  its own position. Sent when its frame changes.
+- `outputs.timecode {host, port, fps}` in show.json or `klights.local.json`:
+  `{}` sends to everyone (255.255.255.255:6454) at 30 fps; 24, 25 and 29.97
+  drop-frame too. The Track card shows the target and the time last sent.
+- `shared/tools/artnet_listener.py --timecode` prints what arrives.
+
+### Added — F23a: OSC out, for a VJ app
+
+- **OSC lanes** (decided with the user: generic OSC, mapped by you). In the
+  designer, `+ lane` → **OSC cues** adds a lane of cues; each cue sends an
+  `on` message when it starts, an optional `off` when it ends, and an
+  optional `while` as it plays (only when it changes, at most 30 a second).
+  **OSC curve** sends a drawn curve's value to one address. Arguments are
+  numbers and text, or `$beat`, `$bar`, `$phase`, `$progress` and `$value`.
+- **Routines can carry OSC lanes too**, so a template set cues the VJ app on
+  any track; each pass of a looping routine fires again. A track's timeline
+  that has its own OSC lanes owns OSC for that track.
+- Cues follow the deck like the lights: a loop or hot cue into a cue turns it
+  on, out of one turns it off; Follow gates it, and disarming turns
+  everything off.
+- Where: `outputs.osc {host, port}` in show.json, overridden per machine by
+  `klights.local.json`'s `outputs`. An IPv4 address, never a name. Printed at
+  startup; the phone's Track card shows the target, how many cues are on, and
+  any failed sends.
+- The example show folder's VJ row is now two OSC lanes (Resolume-style clip
+  triggers and an opacity curve). Timeline and routine schemas gain the
+  external row's fields; show.json gains `outputs`.
+- New suite `test_outputs` (29 suites).
+
+### Added — F22e: per-deck pre-matching
+
+- **A track's show is built before the DJ fades it in.** The beat-link-trigger
+  expressions now say what every deck has loaded (`/klights/v1/deck`, the same
+  shape as `track`). The engine matches it at once and builds its timeline on
+  the worker, so when that deck becomes the tempo master its timeline drives
+  from the very first frame instead of showing the layer below while it
+  compiles. At most eight are kept; a rig reload or folder change rebuilds them.
+- The Track card lists the other decks: what is loaded, which show it is, and
+  whether that show is ready.
+- These fields arrive as `loaded_*` and never move the transport, which follows
+  the master alone; they are checked by the same rules as the master's.
+
+### Fixed — F22e
+
+- The beat-link-trigger expressions could send a new master track's identity
+  with the previous track's metadata, if the deck reported the new track before
+  its metadata arrived -- and then never send it again. Identity is now sent
+  only once the metadata's rekordbox id is the one the deck reports.
+
+### Added — F22d: routines on preset pads
+
+- **A preset pad can play a routine** over its looks: choose one (and a
+  variation) when saving the preset on the Show tab. Pressed, the pad waits for
+  the next downbeat and then lands whole -- its looks and the routine from its
+  first beat (decided with the user). The pad shows "next downbeat" until then
+  and "playing" after. With the timeline or a template driving, it grabs every
+  lane like any preset; picking a look, another preset or a cue puts it away.
+- Needs a show folder (routines live there). presets.json gains `routine`
+  (schema regenerated).
+
+### Added — F22c: live phrases from CDJs
+
+- **Guest tracks on CDJs get phrase templates** (decided with the user): the
+  beat-link-trigger expressions read the song structure from the rekordbox
+  analysis on the DJ's own USB and send `/klights/v1/phrase` (deck, label,
+  beats into, beats left) when the phrase changes and every bar. The labels are
+  the prep tool's own table, so a guest's "Up 1" reads exactly as a prepped
+  one. Not yet run on hardware; golden bytes pin the encoding, and the fake
+  bridge's `--blt` shape now sends the same message.
+- The clock places a phrase's start exactly from "beats into"
+  (`clock.phrase_start`), where a label change alone is only a bar line -- for
+  rkbx_link too, which announces where a phrase will end.
+
+### Added — F22b: templates on stage
+
+- **The fallback chain is whole**: timeline, then template, then the operator's
+  or auto mode's show, while a DJ track plays with Follow armed (decided with
+  the user). A matched track with no timeline plays its own phrases' template;
+  a timeline's fill gaps show the template underneath; a guest's track the
+  folder does not know plays the deck's live phrase (rkbx_link's label, from
+  the bar it changed on) or, with no phrase at all, the set's bar cycle on the
+  clock.
+- **Switching set** from the phone's Track card (`template_set`, operate tier):
+  it takes over on the next downbeat, crossfading over the new set's transition
+  (decided with the user). "Off" turns templates off. The card shows which
+  phrase chose which routine, and every lane the template drives says so.
+- A folder edit of the active set waits for the next track, like any folder
+  change; the pause policies (freeze, continue, idle) apply to templates too.
+
+### Added — F22a: the template runtime (milestone 2)
+
+- **`engine/templates.py`**: what the lights do on a track nobody drew a
+  timeline for. A template set's phrase map picks a routine for each of
+  rekordbox's labels -- the exact label, then its family ("Verse 2" ->
+  "Verse"), then `*` -- and its `bars.cycle` covers tracks with no phrases,
+  one pick every `bars.every` bars. Each distinct pick compiles once into a
+  program of its own, running on its own beat from where its phrase began, so
+  a routine's phrasing lines up with the music.
+- A pick that comes round again carries on (Verse 1 into Verse 2 does not
+  restart the movement); a new pick crossfades over the set's
+  `transition.fade_beats`; a jump cuts. The runner is one stable Show, so a
+  timeline can sit on top of it and show it through its fill gaps.
+- Nothing plays it yet: F22b puts it on stage.
+
 ### Added — run a drift check, and move a fixture, from the console
 
 - **Drift check has a button.** Jog every head onto the mirror ball and press

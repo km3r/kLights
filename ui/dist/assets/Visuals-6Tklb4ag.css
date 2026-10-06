@@ -1,0 +1,1 @@
+.visuals{position:fixed;inset:0;background:#000;overflow:hidden;cursor:none}.visuals-canvas,.visuals-video{position:absolute;inset:0;width:100%;height:100%}.visuals-video{object-fit:cover}.visuals-note{position:absolute;left:16px;bottom:12px;margin:0;color:#666;font:13px system-ui,sans-serif}

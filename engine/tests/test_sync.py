@@ -691,6 +691,37 @@ check("and the golden identity bytes",
 check("and the golden tempo and bar-phase bytes",
       bridgemod.as_blt({"bpm": 126.5}) == [byname["bpm"]]
       and bridgemod.as_blt({"beat_in_bar": 2.0}) == [byname["beat"]])
+v = next(m for m in golden["messages"] if m["name"] == "phrase")["values"]
+check("and the golden phrase bytes (milestone 2)",
+      bridgemod.as_blt({"deck": str(v["deck"]), "phrase_label": v["label"],
+                        "phrase_into": v["beats_into"],
+                        "phrase_ends_in": v["beats_left"]}) == [byname["phrase"]])
+v = next(m for m in golden["messages"] if m["name"] == "deck")["values"]
+check("and the golden loaded-deck bytes (milestone 2)",
+      bridgemod.as_blt({"loaded_deck": str(v["deck"]),
+                        "loaded_rekordbox_id": v["rekordbox_id"],
+                        "loaded_signature": v["signature"],
+                        "loaded_title": v["title"], "loaded_artist": v["artist"],
+                        "loaded_album": v["album"], "loaded_duration": v["duration"]})
+      == [byname["deck"]])
+loaded = syncmod.parse(byname["deck"])
+check("a loaded deck never names the master's deck, title or position",
+      not any(k in loaded for k in ("deck", "title", "track", "track_time",
+                                    "rekordbox_id")), f"{loaded}")
+dirty = syncmod.clean({"loaded_deck": "2", "loaded_title": "Bad\x00\x07Title",
+                       "loaded_signature": "not-a-signature",
+                       "loaded_rekordbox_id": -4, "loaded_duration": float("nan")})
+check("a loaded deck's fields obey the master's rules: control characters "
+      "stripped, a bad signature, id or duration dropped",
+      dirty is not None and dirty.get("loaded_title") == "BadTitle"
+      and not any(k in dirty for k in ("loaded_signature", "loaded_rekordbox_id",
+                                       "loaded_duration")), f"{dirty}")
+check("an empty phrase label from the deck clears the phrase, nothing more",
+      syncmod.parse(osc_args("/klights/v1/phrase", 2, "", 0.0, 0.0))
+      == {"source": "blt", "deck": "2", "phrase_label": ""})
+check("a negative beats-into is refused rather than trusted",
+      "phrase_into" not in (syncmod.parse(osc_args("/klights/v1/phrase", 2, "Chorus",
+                                                   -3.0, 60.0)) or {}))
 osc_sink.stop()
 
 

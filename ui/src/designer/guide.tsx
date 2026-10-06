@@ -28,10 +28,12 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "A first pass",
         steps: [
-          <>Pick a track. Tracks are added with{" "}
-            <code>bridges/rekordbox/prep.py</code>.</>,
-          <>Under <b>Draft from template</b>, pick a set. It fills the scene
-            lane with one routine per phrase.</>,
+          <>Pick a track in the library, or add one: <b>Browse rekordbox</b> in
+            the sidebar, open a playlist, tick tracks and <b>Add to the
+            show</b>. Adding can draft each one a timeline from a template set
+            in the same step.</>,
+          <>Open its timeline. Under <b>Draft from template</b>, pick a set. It
+            fills the scene lane with one routine per phrase.</>,
           <>Press <b>Play</b> or Space. If there's no audio, open the file from
             this computer. It isn't uploaded.</>,
           <>Drag a clip to move it, or drag its right edge to resize it. Clips
@@ -47,14 +49,25 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "Adding to it",
         notes: [
-          <>Click a routine under <b>Routines</b> to add it at the
-            playhead.</>,
+          <>Click a routine in the <b>browser</b> on the left to place it at the
+            playhead, or drag it onto the lane and beat you want. Its tabs hold
+            palettes and hits too.</>,
+          <>Click a <b>phrase</b> to select it as a section: fill it with a
+            routine, copy it, paste it over another phrase, or clear it.</>,
+          <>Right-click a clip, or use the buttons beside it below, to copy, cut,
+            duplicate or split it at the playhead. Ctrl+C, Ctrl+X, Ctrl+V,
+            Ctrl+D and S do the same.</>,
           <>Arm <b>Record</b>, play, and tap <b>Flash</b>, <b>Strobe</b>,{" "}
             <b>Blackout</b> or <b>Next scene</b> in time with the music.</>,
           <><b>+ lane</b> adds a lane. <b>+ automation</b> adds a curve for
-            master, size, spread, centre or rate.</>,
+            master, size, spread, centre or rate, or for a parameter of the
+            routines on this track. A <code>$name</code> lane drives that
+            parameter on every routine that has it.</>,
           <>On a curve, click to add a point and drag to move it. Select a
             point to choose how it arrives: linear, step or ease.</>,
+          <><b>∿</b> on a curve adds a wave on top of its points: a sine,
+            triangle, ramp, saw, square or hold every few bars. Depth is how
+            far above the points it swings; negative swings below.</>,
           <><b>List</b> shows every item in order, with nudge buttons for exact
             timing.</>,
         ],
@@ -78,12 +91,18 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
         notes: [
           <>Undo and Redo cover every edit. Delete removes the selection and
             Escape deselects it.</>,
+          <>A palette in <b>This track's palettes</b> is this track's own copy:
+            changing it changes this track only. The tag beside it says whether
+            it matches the library's.</>,
           <>Unsaved work is kept in this browser, so a crashed tab doesn't lose
             it.</>,
           <>If someone else saved the file after you opened it, your save is
             refused rather than overwriting theirs.</>,
           <><b>this rig only</b> marks anything that uses this event's own
             looks or presets.</>,
+          <>The buttons at the edges of the top bar fold the side panels away,
+            to give the lanes or the library the whole width. Studio
+            remembers them on this computer.</>,
           <>Press <b>?</b> to open or close this guide.</>,
         ],
       },
@@ -100,8 +119,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
       {
         title: "A first routine",
         steps: [
-          <>On the designer's front page, type an id and press{" "}
-            <b>New routine</b>. Or click <b>Open routine</b> on a clip.</>,
+          <>Press <b>+ New</b> at the top of Studio, then <b>A routine</b> (or R).
+            Start it blank, as a copy of another, or from a look on the console.
+            Or click <b>Open routine</b> on a clip.</>,
           <>Set the number of <b>Bars</b>, and whether it <b>loops</b>.</>,
           <>Click a block under <b>Blocks</b> to add it at the playhead. Its
             settings appear below.</>,
@@ -118,6 +138,13 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Add an <b>open parameter</b> and set a block's value to{" "}
             <code>$name</code>. Each clip, or a <b>variation</b>, can then
             choose the value.</>,
+          <><b>+ automation</b> also lists each parameter, so it can change
+            over the routine on its own lane. A lane overrides the clip's or
+            variation's value. Look parameters can't be automated.</>,
+          <>It lists each block's number and colour arguments too, like{" "}
+            <code>orbit.radius</code>, so one item can move without making a
+            parameter. A lane on a cycle length makes the block jump: use a{" "}
+            rate lane to change speed.</>,
           <>A colour can be a palette role, a fixed colour or a parameter. Use
             roles and the routine follows the track's palette.</>,
           <>Blocks under <b>This rig only</b> use this event's own looks or
@@ -168,14 +195,14 @@ export function useDesignerGuide(page: DesignerGuideId) {
     open: guide != null,
     button: (
       <button className={open ? "on" : ""} aria-pressed={open != null}
-              title="How the designer works (?)"
+              title="How Studio works (?)"
               onClick={() => (open ? setOpen(null) : show(page))}>
         Guide
       </button>
     ),
     banner: !seen && !open ? (
       <div className="d-banner d-info" role="note">
-        New to the designer? The guide walks you through building a show and a
+        New to Studio? The guide walks you through building a show and a
         routine.
         <button className="d-primary" onClick={() => show(page)}>Open the guide</button>
         <button onClick={dismiss}>Not now</button>

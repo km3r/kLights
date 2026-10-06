@@ -52,6 +52,7 @@ every one of those four points is a thing the engine now does differently.
 | **F18** | Docs and the soak | This file, [`engine.md`](engine.md), [`runbook.md`](runbook.md), and the 60-minute soak F2 asked for — **passed**: 148 802 frames, zero drops, and the predicted GC outlier did not appear. |
 | — | Guides and help in the app | The runbook lived in `docs/` and the console's few tooltips needed a hover a phone does not have. Now each tab has a guide behind the header's **?**, a first visit offers a tour, the cards whose labels do not explain them carry a tap-to-open **?**, and the designer has a Guide column. Built 2026-10-03. |
 | **F20** | The standalone previz | `KLightsPreviz.exe` needs no editor and no Python: it gets the room from the engine (`/api/previz/scene`), DMX from Art-Net, and models, set pieces and articulated fixture bodies from `.glb` files named in config ([`models.md`](models.md)). Its C++ decode is held to the Python one by golden vectors, exactly. The editor-Python path still works beside it. A launcher window (`kLights.pyw`) starts the engine and the app, and links into the console's Setup tab. |
+| **F21** | Parametric looks on the console, and modulation | Every block argument is declared once (`blocks.PARAMS`) and both the routine editor and the console render from it, so defaults and ranges cannot drift between them. Six new blocks (`figure8`, `spiral`, `scatter`, `breathe`, `hue_cycle`, `duo`), available to routines and console alike. On the console: a look built from one block, tuned live, saved in presets and cues, swung by modulators, stacked, and varied from a seed. The centre is bounded by what the rig's heads can actually reach, and a head at its rail says so. `audit_library.py` measures which ported looks a block covers: the nine fixed positions are superseded, exactly, by `offset` blocks under the same names; `Lazy Circle` is retired in favour of a tunable orbit. |
 
 ## Decisions worth knowing
 
@@ -98,10 +99,12 @@ Open, in rough priority order.
 - **F19, timecoded shows — in progress.** Routines driven by which track is
   playing and where in it: phrase templates for any track, hand-built timelines
   for signature tracks, a desktop designer. Milestone 1 (one track end to end:
-  prep, design, play live from either source) is built; it waits on hardware
-  captures from real decks. Milestone 2 (the template runtime, live phrase mode)
-  and 3 (VJ) are next. Design record:
-  [`design/timecoded-shows.md`](design/timecoded-shows.md).
+  prep, design, play live from either source), milestone 2 (**F22**: phrase
+  templates for tracks nobody drew, live phrases from CDJs, the set switcher,
+  routines on pads, per-deck pre-matching) and milestone 3 (**F23**: OSC,
+  Art-Net timecode, MIDI through a sidecar, built-in `#visuals`) are built. All
+  of it waits on hardware captures from real decks and a real VJ app. Design
+  record: [`design/timecoded-shows.md`](design/timecoded-shows.md).
 - **Phrase-driven cues.** An `Up` arms the next cue, the `Chorus` downbeat fires
   it, `Outro` releases to ambient. The data arrives; nothing consumes it yet.
   This is the thing the APC40 show was doing by hand, and F19's phrase templates
@@ -114,6 +117,15 @@ Open, in rough priority order.
   despacio.
 - **`auto.AudioEnergy`.** Probably never: phrase from the DJ is a better energy
   signal than anything a room mic would give.
+- **What the audit left alone, on purpose.** 1 of 18 ported paths is a block
+  (`Grand Sweep` is close at 3.4° and was kept: visible on a 60 W beam at the
+  far wall). `Diagonal A/B` and `Heads Cross A/B` are each other doubled and
+  turned, and all four are kept — on stage a cross and a diagonal read as
+  different decisions.
+- **Waveforms in routine automation.** Modulation shapes drive the console
+  live; a show folder's automation rows are still keyframes only. A `wave`
+  row would need a closed-form integral for rate targets, and the designer
+  to draw it.
 
 ### Noted next — not yet ranked
 

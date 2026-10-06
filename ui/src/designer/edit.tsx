@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore,
+} from "react";
 import { HelpHeading } from "../components";
 import type { Reply } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
+import { WAVE_SHAPES } from "../blocks";
 import {
-  BEATS_PER_BAR, barBeat, curveValue, itemName, itemSub,
+  BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue,
+  draftFromTemplate, hexColor, itemName, itemSub, laneValue, oscArgsText, parseOscArgs, uniqueId,
+  waveLevel,
 } from "./model";
-import type { Item, Point, RoutineSummary, Row, TimelineDoc, TrackDoc } from "./model";
+import type {
+  Item, OscMessage, PaletteSummary, Point, PointValue, RoutineSummary, Row, TemplateSetDoc,
+  TimelineDoc, TrackDoc, VisualRule, WaveSpec,
+} from "./model";
 
 /**
  * Editing a timeline: an undo/redo history over the whole document, and the
@@ -30,6 +38,207 @@ export const AUTOMATION_RANGES: Record<string, [number, number]> = {
   "rate.movement": [0, 8], "rate.color": [0, 8], "rate.level": [0, 8],
 };
 
+// -- what an automation lane drives -----------------------------------------------
+
+/**
+ * One automation target, as a lane draws and edits it. The macros come from
+ * AUTOMATION_RANGES; `param.<name>` from the routine that declares the
+ * parameter -- each routine has its own range, so there is no table for them.
+ *
+ * `min`/`max` are what the engine ACCEPTS: the declaration, held to it by
+ * `showfiles`, undefined where the routine left a side open. `lo`/`hi` are only
+ * what the lane draws: the declaration where there is one, else the declared
+ * range of the block argument the parameter feeds (`blocks.PARAMS`), so an
+ * open-ended radius is still drawn on a sensible scale.
+ */
+export interface LaneSpec {
+  label: string;
+  unit: string;
+  kind: "number" | "color";
+  lo: number;
+  hi: number;
+  min?: number;
+  max?: number;
+  /** A new lane's first point: the macro's neutral, the parameter's default. */
+  start: PointValue;
+  /** In a track's timeline: the routines placed on it that the lane reaches. */
+  reaches?: string[];
+}
+
+export type LaneSpecs = Record<string, LaneSpec>;
+
+/** The two target prefixes besides the macros, as `showfiles` spells them:
+ *  `param.<name>` and a routine's `arg.<item>.<argument>`. */
+export const PARAM_TARGET = "param.";
+export const ARG_TARGET = "arg.";
+
+const NEUTRAL_ONE = new Set(["master", "size", "rate.movement", "rate.color", "rate.level"]);
+
+function macroSpec(target: string): LaneSpec {
+  const [lo, hi] = AUTOMATION_RANGES[target]!;
+  const neutral = NEUTRAL_ONE.has(target) ? 1 : 0;
+  return { label: target === "master" ? "Master" : target, unit: "", kind: "number",
+           lo, hi, min: lo, max: hi, start: Math.min(hi, Math.max(lo, neutral)) };
+}
+
+/** A parameter declaration, as a routine file or the routine list carries it. */
+interface ParamLike { type: string; default?: unknown; min?: number; max?: number; unit?: string }
+
+/** A lane for one declared parameter; null for a look, which the engine cannot
+ *  automate (it is chosen once, when the routine is built). */
+export function paramSpec(name: string, def: ParamLike, argRange?: [number, number],
+                          reaches?: string[]): LaneSpec | null {
+  if (def.type === "look") return null;
+  const unit = def.unit ?? "";
+  if (def.type === "color") {
+    return { label: name, unit, kind: "color", lo: 0, hi: 1,
+             start: typeof def.default === "string" || Array.isArray(def.default)
+               ? def.default as PointValue : "@primary", reaches };
+  }
+  // A rate is held to 0-8 whether or not it says so (`_param_value_problem`).
+  const rate = def.type === "rate";
+  const min = def.min ?? (rate ? 0 : undefined);
+  const max = def.max ?? (rate ? 8 : undefined);
+  const dflt = typeof def.default === "number" ? def.default : undefined;
+  const lo = min ?? argRange?.[0] ?? Math.min(0, dflt ?? 0);
+  let hi = max ?? argRange?.[1] ?? Math.max(1, 2 * Math.abs(dflt ?? 0));
+  if (hi <= lo) hi = lo + 1;
+  return { label: name, unit, kind: "number", lo, hi, min, max,
+           start: Math.min(hi, Math.max(lo, dflt ?? lo)), reaches };
+}
+
+/** The parameters a routine can automate on its own lanes, each ranged by its
+ *  declaration and, where that is open, by the block arguments it feeds. */
+export function routineLaneSpecs(doc: { params?: Record<string, ParamLike>; rows: Row[] }): LaneSpecs {
+  const fed: Record<string, [number, number]> = {};
+  for (const row of doc.rows) {
+    for (const it of row.items ?? []) {
+      for (const [arg, value] of Object.entries(it.args ?? {})) {
+        if (typeof value !== "string" || !value.startsWith("$")) continue;
+        const spec = BLOCK_ARGS[it.block ?? ""]?.find((s) => s.name === arg);
+        if (spec?.min === undefined || spec.max === undefined) continue;
+        const name = value.slice(1);
+        const had = fed[name];
+        fed[name] = had ? [Math.min(had[0], spec.min), Math.max(had[1], spec.max)]
+          : [spec.min, spec.max];
+      }
+    }
+  }
+  const out: LaneSpecs = {};
+  for (const [name, def] of Object.entries(doc.params ?? {})) {
+    const spec = paramSpec(name, def, fed[name]);
+    if (spec) out[PARAM_TARGET + name] = spec;
+  }
+  Object.assign(out, argLaneSpecs(doc.rows));
+  return out;
+}
+
+/** The kinds of block argument a lane can move (`showfiles.LANE_ARG_KINDS`):
+ *  read per frame, with a halfway between two values. */
+const LANE_ARG_KINDS = new Set(["number", "color"]);
+
+/**
+ * `arg.<item>.<argument>`: one item's argument, moved without declaring a
+ * parameter. Offered for each number and colour argument of each block item,
+ * except one already fed by a `$param` -- that parameter's lane is the way to
+ * move it. Ranged by the block's own declaration; an absolute angle's range is
+ * only the fallback for a rig the editor does not know, so it is drawn but not
+ * enforced (the engine only warns past it).
+ */
+function argLaneSpecs(rows: Row[]): LaneSpecs {
+  const out: LaneSpecs = {};
+  for (const row of rows) {
+    if (row.type !== "clips") continue;
+    for (const it of row.items ?? []) {
+      for (const spec of BLOCK_ARGS[it.block ?? ""] ?? []) {
+        if (!LANE_ARG_KINDS.has(spec.kind)) continue;
+        const literal = it.args?.[spec.name];
+        if (typeof literal === "string" && literal.startsWith("$")) continue;
+        const label = `${it.id}.${spec.name}`;
+        const unit = spec.unit?.trim() ?? "";
+        if (spec.kind === "color") {
+          out[ARG_TARGET + label] = { label, unit, kind: "color", lo: 0, hi: 1,
+                                  start: (literal ?? spec.default ?? "@primary") as PointValue };
+          continue;
+        }
+        const lo = spec.min ?? 0;
+        const hi = spec.max !== undefined && spec.max > lo ? spec.max : lo + 1;
+        const value = typeof literal === "number" ? literal
+          : typeof spec.default === "number" ? spec.default : lo;
+        out[ARG_TARGET + label] = {
+          label, unit, kind: "number", lo, hi,
+          min: spec.reach ? undefined : spec.min, max: spec.reach ? undefined : spec.max,
+          start: value };
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The parameters a TRACK's timeline can automate: those of the routines placed
+ * on it, by name. A timeline's `param.radius` drives `$radius` on every routine
+ * clip that has one, so one lane per name -- held to the narrowest of their
+ * ranges, since the engine checks each point against every one of them.
+ */
+export function timelineLaneSpecs(doc: { rows: Row[] },
+                                  routines: { id: string; params: Record<string, ParamLike> }[]): LaneSpecs {
+  const placed = new Set(doc.rows.flatMap((r) => (r.items ?? [])
+    .filter((i) => i.kind === "routine" && typeof i.routine === "string")
+    .map((i) => i.routine as string)));
+  const byName: Record<string, { def: ParamLike; from: string[] }> = {};
+  for (const r of [...routines].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!placed.has(r.id)) continue;
+    for (const [name, def] of Object.entries(r.params ?? {})) {
+      const had = byName[name];
+      if (!had) { byName[name] = { def: { ...def }, from: [r.id] }; continue; }
+      // A name that is a colour in one routine and a number in another: the
+      // first routine decides what the lane is, and the engine's check warns
+      // about the rest.
+      if (had.def.type === "color" ? def.type !== "color" : def.type === "color") continue;
+      had.from.push(r.id);
+      if (def.min !== undefined) had.def.min = Math.max(had.def.min ?? def.min, def.min);
+      if (def.max !== undefined) had.def.max = Math.min(had.def.max ?? def.max, def.max);
+      had.def.unit ??= def.unit;
+    }
+  }
+  const out: LaneSpecs = {};
+  for (const [name, { def, from }] of Object.entries(byName)) {
+    const spec = paramSpec(name, def, undefined, from);
+    if (spec) out[PARAM_TARGET + name] = spec;
+  }
+  return out;
+}
+
+/** The parameter lanes the page being edited offers, keyed by target. */
+export const ParamLanes = createContext<LaneSpecs>({});
+
+/** How to draw a lane, whatever it targets -- including a `param.<name>` no
+ *  routine declares any more, drawn from its own points so it can still be
+ *  seen, fixed, and removed. */
+export function laneSpec(target: string, params: LaneSpecs, points: Point[] = []): LaneSpec {
+  if (target in AUTOMATION_RANGES) return macroSpec(target);
+  const known = params[target];
+  if (known) return known;
+  const nums = points.map((p) => p[1]).filter((v): v is number => typeof v === "number");
+  const colour = points.length > 0 && nums.length === 0;
+  const lo = Math.min(0, ...nums);
+  const hi = Math.max(lo + 1, ...nums);
+  return { label: target.startsWith(PARAM_TARGET) ? target.slice(PARAM_TARGET.length) : target, unit: "",
+           kind: colour ? "color" : "number", lo, hi, start: colour ? "@primary" : lo };
+}
+
+/** Another output's curve (an OSC or MIDI lane): sent as 0-1 -- MIDI scales it
+ *  to 0-127, and `showfiles` refuses a MIDI point outside it. */
+const EXTERNAL_CURVE: LaneSpec = { label: "curve", unit: "", kind: "number", lo: 0, hi: 1,
+                                   min: 0, max: 1, start: 0 };
+
+export function useLaneSpec(row: Row): LaneSpec {
+  const params = useContext(ParamLanes);
+  if (row.type === "external") return EXTERNAL_CURVE;
+  return laneSpec(row.target ?? "", params, row.points ?? []);
+}
+
 export const FADES = [0, 1, 2, 4, 8, 16];
 export const ROLES = ["primary", "secondary", "accent"] as const;
 
@@ -45,7 +254,9 @@ interface HistoryState<D> {
   saved: D | null;
 }
 
-export function useHistory<D extends RowsDoc = TimelineDoc>() {
+// Any document: a timeline and a routine are rows, a template set is not, and
+// undo needs nothing of either.
+export function useHistory<D extends object = TimelineDoc>() {
   const [h, setH] = useState<HistoryState<D>>({ past: [], doc: null, future: [], saved: null });
   const [snap, setSnap] = useState<Snap>("bar");
   const [phrases, setPhrases] = useState<number[]>([]);
@@ -102,31 +313,30 @@ export function useHistory<D extends RowsDoc = TimelineDoc>() {
   };
 }
 
-export type History<D extends RowsDoc = TimelineDoc> = ReturnType<typeof useHistory<D>>;
+export type History<D extends object = TimelineDoc> = ReturnType<typeof useHistory<D>>;
 
 /** What the lanes need of a history -- the same for a timeline and a routine. */
 export interface Edits {
+  /** The document as it is now -- to name a new item before adding it. */
+  readonly doc: RowsDoc | null;
   apply(change: (draft: RowsDoc) => void): void;
   snap: Snap;
   snapBeat(beat: number): number;
 }
 
-export function uniqueId(doc: RowsDoc, stem: string): string {
-  const taken = new Set<string>();
-  for (const r of doc.rows) {
-    taken.add(r.id);
-    for (const i of r.items ?? []) taken.add(i.id);
-  }
-  const base = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
-  let id = base;
-  let n = 2;
-  while (taken.has(id)) id = `${base}-${n++}`;
-  return id;
-}
+export { uniqueId };
 
 // -- going between pages ----------------------------------------------------------
 
 const BACK_KEY = "klights.designer.back";
+
+/** Where this browser keeps the working copy of an unsaved document. Studio's
+ *  library reads it too, to flag a track with unsaved work. */
+export type DocKind = "timeline" | "routine" | "template";
+
+export function draftKey(kind: DocKind, ident: string): string {
+  return kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.${kind}.${ident}`;
+}
 
 /** Remember this page, so the routine editor's back link returns to it. */
 export function rememberBack(): void {
@@ -134,13 +344,13 @@ export function rememberBack(): void {
 }
 
 /** Where the routine editor's back link goes: the track it was opened from,
- *  else the list of everything. */
+ *  else Studio's routines. */
 export function backHash(): string {
   try {
     const h = sessionStorage.getItem(BACK_KEY);
-    if (h && /^#designer\/(?!routine\/)[a-z0-9][a-z0-9_-]*$/.test(h)) return h;
+    if (h && /^#studio\/track\/[a-z0-9][a-z0-9_-]*$/.test(h)) return h;
   } catch { /* fine */ }
-  return "#designer";
+  return "#studio/routines";
 }
 
 // -- keys ----------------------------------------------------------------------
@@ -166,12 +376,36 @@ export function useKeys(handler: (e: KeyboardEvent) => void): void {
 
 /** The designer's plain keys, the same in both editors: Space plays and
  *  stops, Delete (or Backspace) removes what is selected, Escape lets go of it. */
-export function useEditorKeys({ history, selected, setSelected, playPause }: {
+export function useEditorKeys({ history, selected, setSelected, playPause, clip }: {
   history: Edits; selected: string | null; setSelected: (id: string | null) => void;
   playPause: () => void;
+  /** Copy, cut, paste, duplicate (Ctrl/Cmd C X V D) and split at the
+   *  playhead (S): what kind of document this is, and where the playhead is. */
+  clip?: { kind: ClipKind; beat: () => number };
 }): void {
   useKeys((e) => {
-    if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (typing(e) || e.altKey) return;
+    const item = selected && !parsePointId(selected) ? selected : null;
+    if (clip && (e.metaKey || e.ctrlKey)) {
+      const k = e.key.toLowerCase();
+      const at = () => Math.max(0, history.snapBeat(clip.beat()));
+      if (k === "c" && item) { e.preventDefault(); clipOps.copy(history, item, clip.kind); }
+      else if (k === "x" && item) { e.preventDefault(); clipOps.cut(history, item, clip.kind); setSelected(null); }
+      else if (k === "v" && clipBoard()?.kind === clip.kind) {
+        e.preventDefault();
+        setSelected(clipOps.paste(history, clip.kind, at()));
+      } else if (k === "d" && item) {
+        e.preventDefault();
+        setSelected(clipOps.duplicate(history, item, clip.kind) ?? item);
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) return;
+    if (clip && item && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      clipOps.split(history, item, history.snapBeat(clip.beat()));
+      return;
+    }
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (e.key === " " && tag !== "BUTTON" && tag !== "A") {
       e.preventDefault();
@@ -189,6 +423,12 @@ export function useEditorKeys({ history, selected, setSelected, playPause }: {
 
 /** Remove an item, or an automation point, by its selection id. */
 export function removeSelected(d: RowsDoc, id: string): void {
+  const waved = parseWaveId(id);
+  if (waved) {
+    const r = rowOf(d, waved);
+    if (r) delete r.wave;
+    return;
+  }
   const pt = parsePointId(id);
   if (pt) {
     const r = rowOf(d, pt.row);
@@ -197,6 +437,204 @@ export function removeSelected(d: RowsDoc, id: string): void {
   }
   for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== id);
 }
+
+// -- the clipboard ------------------------------------------------------------------
+
+export type ClipKind = "timeline" | "routine";
+
+/** Clips copied from a document: each with the row it came from, at a beat
+ *  counted from the start of what was copied, and how long that stretch is.
+ *  Kept for the page, so a copy from one track pastes into the next -- but
+ *  only into the same kind of document: a timeline's clips are not a
+ *  routine's rows. */
+export interface ClipBoard {
+  kind: ClipKind;
+  span: number;
+  clips: { row: Pick<Row, "id" | "type" | "target" | "role" | "gap">; item: Item }[];
+}
+
+let board: ClipBoard | null = null;
+const boardListeners = new Set<() => void>();
+export function clipBoard(): ClipBoard | null { return board; }
+export function setClipBoard(next: ClipBoard | null): void {
+  board = next;
+  boardListeners.forEach((l) => l());
+}
+function subscribeBoard(listener: () => void): () => void {
+  boardListeners.add(listener);
+  return () => { boardListeners.delete(listener); };
+}
+/** The clipboard, for a button that can only paste when it holds something. */
+export function useClipBoard(): ClipBoard | null {
+  return useSyncExternalStore(subscribeBoard, clipBoard);
+}
+
+const CLIP_ROWS = new Set(["clips", "hits"]);
+function rowKey(row: Row): ClipBoard["clips"][number]["row"] {
+  const key: ClipBoard["clips"][number]["row"] = { id: row.id, type: row.type };
+  if (row.target !== undefined) key.target = row.target;
+  if (row.role !== undefined) key.role = row.role;
+  if (row.gap !== undefined) key.gap = row.gap;
+  return key;
+}
+
+/** Take [start, end) out of a row: an item inside it goes, one across an
+ *  edge is trimmed to the outside, and one across both is split in two. */
+export function cutRange(d: RowsDoc, row: Row, start: number, end: number): void {
+  if (!row.items || end <= start) return;
+  const out: Item[] = [];
+  for (const it of row.items) {
+    const a = it.at;
+    const b = it.at + it.len;
+    if (b <= start || a >= end) { out.push(it); continue; }
+    if (a < start) {
+      const head: Item = { ...it, len: start - a };
+      if ((head.fade ?? 0) > head.len) head.fade = head.len;
+      out.push(head);
+    }
+    if (b > end) {
+      // What carries on after the cut starts there, with no fade in of its own.
+      const tail: Item = { ...structuredClone(it), id: a < start ? uniqueId(d, it.id) : it.id,
+                           at: end, len: b - end };
+      delete tail.fade;
+      out.push(tail);
+    }
+  }
+  row.items = out;
+}
+
+/** What overlaps [start, end) on the clip and hit rows, trimmed to it. */
+export function copyRange(doc: RowsDoc, start: number, end: number, kind: ClipKind): ClipBoard {
+  const clips: ClipBoard["clips"] = [];
+  for (const row of doc.rows) {
+    if (!CLIP_ROWS.has(row.type)) continue;
+    for (const it of row.items ?? []) {
+      const a = Math.max(it.at, start);
+      const b = Math.min(it.at + it.len, end);
+      if (b <= a) continue;
+      const item: Item = { ...structuredClone(it), at: a - start, len: b - a };
+      if (it.at < start) delete item.fade;
+      else if ((item.fade ?? 0) > item.len) item.fade = item.len;
+      clips.push({ row: rowKey(row), item });
+    }
+  }
+  return { kind, span: end - start, clips };
+}
+
+export function copyItem(doc: RowsDoc, id: string, kind: ClipKind): ClipBoard | null {
+  for (const row of doc.rows) {
+    const it = (row.items ?? []).find((i) => i.id === id);
+    if (it) return { kind, span: it.len, clips: [{ row: rowKey(row), item: { ...structuredClone(it), at: 0 } }] };
+  }
+  return null;
+}
+
+/** Paste at a beat: each clip onto the row it came from, else a row of the
+ *  same kind, else a new one -- over what is there, which the stretch pasted
+ *  clears first. Returns the new items' ids. */
+export function pasteBoard(d: RowsDoc, b: ClipBoard, at: number): string[] {
+  const rows = new Map<string, Row>();
+  for (const { row: key } of b.clips) {
+    if (rows.has(key.id)) continue;
+    let row = d.rows.find((r) => r.id === key.id && r.type === key.type && r.target === key.target)
+      ?? d.rows.find((r) => r.type === key.type && r.target === key.target
+                     && (key.role === undefined || r.role === key.role));
+    if (!row) {
+      row = { ...key, id: uniqueId(d, key.target ?? key.type), items: [] };
+      d.rows.push(row);
+    }
+    cutRange(d, row, at, at + b.span);
+    rows.set(key.id, row);
+  }
+  const ids: string[] = [];
+  for (const { row: key, item } of b.clips) {
+    const id = uniqueId(d, item.id);
+    (rows.get(key.id)!.items ??= []).push({ ...structuredClone(item), id, at: at + item.at });
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Split an item at a beat inside it. Returns the second half's id. */
+export function splitAt(d: RowsDoc, id: string, beat: number): string | null {
+  for (const row of d.rows) {
+    const it = (row.items ?? []).find((i) => i.id === id);
+    if (!it) continue;
+    if (!(it.at < beat && beat < it.at + it.len)) return null;
+    const tail: Item = { ...structuredClone(it), id: uniqueId(d, it.id), at: beat,
+                         len: it.at + it.len - beat };
+    delete tail.fade;
+    it.len = beat - it.at;
+    if ((it.fade ?? 0) > it.len) it.fade = it.len;
+    row.items!.push(tail);
+    return tail.id;
+  }
+  return null;
+}
+
+/** The clip operations as one undoable edit each, for the keys, the clip's
+ *  menu and the inspector alike. Each answers with what should be selected:
+ *  a paste's first new clip, a duplicate, a split's second half. Ids are
+ *  worked out on a copy first -- an edit is applied when React renders, too
+ *  late to read them back from it -- and `uniqueId` gives the same answer on
+ *  the same document. */
+export const clipOps = {
+  copy(h: Edits, id: string, kind: ClipKind): boolean {
+    const b = h.doc ? copyItem(h.doc, id, kind) : null;
+    if (b) setClipBoard(b);
+    return b != null;
+  },
+  cut(h: Edits, id: string, kind: ClipKind): void {
+    if (clipOps.copy(h, id, kind)) h.apply((d) => removeSelected(d, id));
+  },
+  paste(h: Edits, kind: ClipKind, at: number): string | null {
+    const b = clipBoard();
+    if (!b || b.kind !== kind || !h.doc) return null;
+    const ids = pasteBoard(structuredClone(h.doc), b, at);
+    h.apply((d) => { pasteBoard(d, b, at); });
+    return ids[0] ?? null;
+  },
+  duplicate(h: Edits, id: string, kind: ClipKind): string | null {
+    if (!h.doc) return null;
+    const b = copyItem(h.doc, id, kind);
+    const it = itemOf(h.doc, id);
+    if (!b || !it) return null;
+    const at = it.at + it.len;
+    const ids = pasteBoard(structuredClone(h.doc), b, at);
+    h.apply((d) => { pasteBoard(d, b, at); });
+    return ids[0] ?? null;
+  },
+  split(h: Edits, id: string, beat: number): string | null {
+    if (!h.doc) return null;
+    const tail = splitAt(structuredClone(h.doc), id, beat);
+    if (tail) h.apply((d) => { splitAt(d, id, beat); });
+    return tail;
+  },
+  /** Whether a beat falls inside an item, so it can be split there. */
+  inside(doc: RowsDoc | null, id: string, beat: number): boolean {
+    const it = doc ? itemOf(doc, id) : undefined;
+    return !!it && it.at < beat && beat < it.at + it.len;
+  },
+};
+
+/** The kind of thing a browser or a drop places, as dragged between them. */
+export const PLACE_MIME = "application/x-klights-place";
+
+/** What was dropped, if it is something this page can place: a drag can come
+ *  from another window, so its data is read, not trusted. */
+function placeable(raw: string): Placeable | null {
+  try {
+    const v = JSON.parse(raw) as Partial<Placeable> | null;
+    if (v?.kind === "routine" && typeof v.id === "string") return v as Placeable;
+    if (v?.kind === "palette" && typeof v.name === "string") return v as Placeable;
+    if (v?.kind === "hit" && ["flash", "strobe", "blackout"].includes(v.hit as string)) return v as Placeable;
+  } catch { /* not ours */ }
+  return null;
+}
+export type Placeable =
+  | { kind: "routine"; id: string }
+  | { kind: "palette"; name: string; colours?: Record<"primary" | "secondary" | "accent", string> }
+  | { kind: "hit"; hit: "flash" | "strobe" | "blackout" };
 
 function rowOf(doc: RowsDoc, id: string): Row | undefined {
   return doc.rows.find((r) => r.id === id);
@@ -215,18 +653,20 @@ function itemOf(doc: RowsDoc, id: string): Item | undefined {
 interface DraftCheck { errors: string[]; warnings: string[]; problems: string[] }
 interface Kept<D> { doc: D; rev: string; at: number }
 
-function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident }: {
+function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }: {
   history: History<D>; rev: string; setRev: (r: string) => void; engine: Engine;
   /** What is being edited, and which one: the commands and the recovery copy
    *  follow from it. */
-  kind: "timeline" | "routine"; ident: string;
+  kind: DocKind; ident: string;
 }) {
   const { doc } = history;
   const [check, setCheck] = useState<DraftCheck | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showProblems, setShowProblems] = useState(false);
-  const key = kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.routine.${ident}`;
+  const key = draftKey(kind, ident);
+  // The lanes' tools mean nothing to a document without lanes.
+  const lanes = kind !== "template";
   // `request` is stable; `engine` is a new object on every snapshot, and a
   // debounce keyed on it would be reset ten times a second and never fire.
   const { request } = engine;
@@ -260,8 +700,8 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     }
     if (!connected) return;
     const timer = setTimeout(async () => {
-      const reply = await request(kind === "timeline"
-        ? { type: "timeline_draft", doc } : { type: "routine_draft", doc });
+      const reply = await request(kind === "timeline" ? { type: "timeline_draft", doc }
+        : kind === "routine" ? { type: "routine_draft", doc } : { type: "template_draft", doc });
       if (reply.ok && reply.data) setCheck(reply.data as DraftCheck);
     }, 500);
     return () => clearTimeout(timer);
@@ -271,12 +711,15 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
   // is the field's own; Save is the page's wherever the cursor is, and the
   // browser's "save this page" never is.
   const errorCount = check?.errors.length ?? 0;
+  // A file not written yet is unsaved as it stands: a start from New -- a
+  // copy, a look, a draft -- is worth saving before anything is changed.
+  const unsaved = !!doc && (history.dirty || rev === "");
   useKeys((e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "s") {
       e.preventDefault();
-      if (history.dirty && !saving && errorCount === 0) void save();
+      if (unsaved && !saving && errorCount === 0) void save();
       return;
     }
     if (typing(e)) return;
@@ -290,7 +733,8 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     if (!copy) return;
     // One undoable edit: Undo goes back to the file as saved.
     history.apply((d) => {
-      for (const k of Object.keys(d)) delete d[k];
+      const bag = d as Record<string, unknown>;
+      for (const k of Object.keys(bag)) delete bag[k];
       Object.assign(d, structuredClone(copy));
     });
   };
@@ -303,9 +747,10 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     if (!doc) return;
     setSaving(true);
     setSaveError(null);
-    const reply: Reply = await engine.request(kind === "timeline"
-      ? { type: "timeline_save", doc, base_rev: rev }
-      : { type: "routine_save", doc, base_rev: rev });
+    const reply: Reply = await engine.request(
+      kind === "timeline" ? { type: "timeline_save", doc, base_rev: rev }
+        : kind === "routine" ? { type: "routine_save", doc, base_rev: rev }
+          : { type: "template_save", doc, base_rev: rev });
     setSaving(false);
     if (reply.ok) {
       setRev((reply.data as { rev: string }).rev);
@@ -320,27 +765,27 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
   const problems = (check?.problems.length ?? 0) + (check?.warnings.length ?? 0);
   return (
     <span className="d-tools">
-      <label className="small muted">Snap{" "}
+      {lanes && <label className="small muted">Snap{" "}
         <select value={history.snap} aria-label="snap"
                 onChange={(e) => history.setSnap(e.target.value as Snap)}>
           <option value="beat">beat</option>
           <option value="bar">bar</option>
           <option value="phrase">phrase</option>
         </select>
-      </label>
+      </label>}
       <button onClick={history.undo} disabled={!history.canUndo}>Undo</button>
       <button onClick={history.redo} disabled={!history.canRedo}>Redo</button>
-      <button className={history.listView ? "on" : ""}
-              onClick={() => history.setListView(!history.listView)}>List</button>
+      {lanes && <button className={history.listView ? "on" : ""}
+              onClick={() => history.setListView(!history.listView)}>List</button>}
       <button className={check && errors ? "d-bad" : problems ? "d-warn" : ""}
               onClick={() => setShowProblems(!showProblems)}
               title="What the engine thinks of this draft">
         {!check ? "checking…" : errors ? `${errors} error(s)`
           : problems ? `${problems} note(s)` : "valid"}
       </button>
-      <button onClick={() => void save()} disabled={!history.dirty || saving || errors > 0}
-              className={history.dirty ? "d-primary" : ""}>
-        {saving ? "Saving…" : history.dirty ? "Save" : "Saved"}
+      <button onClick={() => void save()} disabled={!unsaved || saving || errors > 0}
+              className={unsaved ? "d-primary" : ""}>
+        {saving ? "Saving…" : unsaved ? "Save" : "Saved"}
       </button>
       {saveError && <span className="d-error small" role="alert">{saveError}</span>}
       {kept && (
@@ -376,10 +821,20 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
 
 const LANE_H = 40;
 
-function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
+function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem }: {
   row: Row; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void; history: Edits;
+  /** A clip's menu, asked for with the other mouse button. */
+  onMenu?: (id: string, clientX: number, clientY: number) => void;
+  /** Something dragged from the browser, let go at a beat on this lane. */
+  onDropItem?: (what: Placeable, beat: number) => void;
 }) {
+  const menu = (e: React.MouseEvent, id: string) => {
+    if (!onMenu) return;
+    e.preventDefault();
+    onSelect(id);
+    onMenu(id, e.clientX, e.clientY);
+  };
   // A drag is shown live from local state and committed as ONE edit on release.
   const [drag, setDrag] = useState<{ id: string; mode: "move" | "resize";
                                      start: number; at: number; len: number;
@@ -423,6 +878,16 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target === e.currentTarget) onSelect(null);
+         }}
+         onDragOver={(e) => {
+           if (onDropItem && e.dataTransfer.types.includes(PLACE_MIME)) e.preventDefault();
+         }}
+         onDrop={(e) => {
+           const what = placeable(e.dataTransfer.getData(PLACE_MIME));
+           if (!onDropItem || !what) return;
+           e.preventDefault();
+           const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+           onDropItem(what, Math.max(0, (e.clientX - r.left) / zoom));
          }}>
       {items.map((it) => {
         const live = drag?.id === it.id ? drag : null;
@@ -434,6 +899,7 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
           return (
             <g key={it.id} className={`d-hit d-hit-${it.hit}${sel ? " sel" : ""}`}
                onPointerDown={(e) => begin(e, it, "move")} role="button"
+               onContextMenu={(e) => menu(e, it.id)}
                aria-label={`${it.hit} at bar ${barBeat(at)}`}>
               <rect x={cx} y={LANE_H / 2 - 3} width={Math.max(2, x(len) - x(0))} height={6}
                     rx={3} className="d-hit-span" />
@@ -445,7 +911,8 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history }: {
         const fadeW = Math.min(w, x(it.fade ?? 0) - x(0));
         return (
           <g key={it.id} className={`d-clip d-clip-${it.kind ?? "block"}${sel ? " sel" : ""}`}
-             role="button" aria-label={`${itemName(it)} at bar ${barBeat(at)}`}>
+             role="button" aria-label={`${itemName(it)} at bar ${barBeat(at)}`}
+             onContextMenu={(e) => menu(e, it.id)}>
             <rect x={x(at)} y={2} width={w} height={LANE_H - 4} rx={4}
                   onPointerDown={(e) => begin(e, it, "move")} />
             {fadeW > 0 && (
@@ -476,19 +943,143 @@ export function parsePointId(id: string | null): { row: string; beat: number } |
   return m ? { row: m[1]!, beat: Number(m[2]) } : null;
 }
 
+/** A lane's wave's selection id: a row has at most one. */
+export function waveId(rowId: string): string {
+  return `wave:${rowId}`;
+}
+
+export function parseWaveId(id: string | null): string | null {
+  return id?.startsWith("wave:") ? id.slice(5) : null;
+}
+
+/**
+ * A new wave for a lane, sized to stay in range: a number lane's swings a
+ * quarter of its drawn range, upward if its points leave more room above
+ * than below, else downward -- and no further than that room, so the engine
+ * accepts it as drawn. A colour lane's swings all the way to the accent.
+ */
+export function defaultWave(row: Row, spec: LaneSpec): WaveSpec {
+  if (spec.kind === "color") return { shape: "sine", bars: 4, toward: "@accent", depth: 1 };
+  const nums = (row.points ?? []).map((p) => p[1]).filter((v): v is number => typeof v === "number");
+  const top = Math.max(spec.lo, ...nums);
+  const bottom = Math.min(spec.hi, ...nums);
+  const up = (spec.max ?? spec.hi) - top;
+  const down = bottom - (spec.min ?? spec.lo);
+  const quarter = (spec.hi - spec.lo) / 4;
+  const depth = up >= down ? Math.min(up, quarter) : -Math.min(down, quarter);
+  return { shape: "sine", bars: 4, depth: Math.round(depth * 100) / 100 };
+}
+
 const CURVES = ["linear", "step", "ease"] as const;
+
+/** A colour value as CSS, or null for one only the show can resolve -- a
+ *  palette role, a colour look -- which the lane names instead of painting. */
+export function cssColour(v: unknown): string | null {
+  if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === "number")) {
+    return `rgb(${v.map((c) => Math.round(Math.max(0, Math.min(1, c as number)) * 255)).join(",")})`;
+  }
+  return null;
+}
+
+/** The point whose value a lane is leaving at a beat: the last at or before
+ *  it, or the first, which holds before it. */
+function pointBefore(points: Point[], beat: number): Point | undefined {
+  let held = points[0];
+  for (const p of points) if (p[0] <= beat) held = p;
+  return held;
+}
+
+/**
+ * A colour parameter's lane: a band of what it is at each beat. A colour is
+ * not a height, so there is no curve -- each segment is painted from the point
+ * it leaves to the point it arrives at (a step holds, then jumps), and a value
+ * only the show can resolve, like "@primary", is written rather than painted.
+ */
+function ColourBand({ points, x, width, id }: {
+  points: Point[]; x: (b: number) => number; width: number; id: string;
+}) {
+  if (!points.length) return null;
+  const top = 8;
+  const h = LANE_H - 16;
+  const spans: { x0: number; x1: number; a: PointValue; b: PointValue; step: boolean }[] = [];
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  if (x(first[0]) > 0) spans.push({ x0: 0, x1: x(first[0]), a: first[1], b: first[1], step: true });
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    spans.push({ x0: x(a[0]), x1: x(b[0]), a: a[1], b: b[1], step: b[2] === "step" });
+  }
+  spans.push({ x0: x(last[0]), x1: width, a: last[1], b: last[1], step: true });
+  return (
+    <g pointerEvents="none">
+      {spans.map((s, i) => {
+        const ca = cssColour(s.a);
+        const cb = cssColour(s.b);
+        const w = Math.max(0, s.x1 - s.x0);
+        if (!ca || (!s.step && !cb)) {
+          return (
+            <g key={i}>
+              <rect x={s.x0} y={top} width={w} height={h} className="d-band-named" />
+              {w > 40 && <text x={s.x0 + 8} y={top + h / 2 + 4} className="d-label">
+                {String(s.a)}{!s.step && s.b !== s.a ? ` → ${String(s.b)}` : ""}</text>}
+            </g>
+          );
+        }
+        if (s.step || ca === cb) {
+          return <rect key={i} x={s.x0} y={top} width={w} height={h} fill={ca} opacity={0.85} />;
+        }
+        const gid = `band-${id}-${i}`;
+        return (
+          <g key={i}>
+            <defs>
+              <linearGradient id={gid}>
+                <stop offset="0" stopColor={ca} /><stop offset="1" stopColor={cb!} />
+              </linearGradient>
+            </defs>
+            <rect x={s.x0} y={top} width={w} height={h} fill={`url(#${gid})`} opacity={0.85} />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** A colour lane's wave: the colour it swings toward, laid over the band as
+ *  strongly as the wave pulls at each beat. One it cannot paint (a palette
+ *  role) is drawn in the band's own named-colour grey. */
+function ColourWave({ wave, x, width }: { wave: WaveSpec; x: (b: number) => number; width: number }) {
+  const perBeat = x(1) - x(0);
+  const end = width / perBeat;
+  const step = Math.max(end / 2000, Math.min(0.5, (wave.bars * BEATS_PER_BAR) / 16));
+  const fill = cssColour(wave.toward);
+  const strips: React.ReactNode[] = [];
+  for (let b = 0, i = 0; b < end; b += step, i++) {
+    const pull = Math.max(0, Math.min(1, waveLevel(wave, b + step / 2)));
+    if (pull > 0.02) {
+      strips.push(<rect key={i} x={x(b)} y={8} width={step * perBeat + 0.5} height={LANE_H - 16}
+                        fill={fill ?? undefined} className={fill ? undefined : "d-band-named"}
+                        opacity={fill ? pull * 0.85 : pull * 0.4} />);
+    }
+  }
+  return <g pointerEvents="none" aria-label="wave">{strips}</g>;
+}
 
 /**
  * An automation lane. Click empty space to add a point there; click a point to
  * select it (the inspector edits its value and the curve that arrives at it);
  * drag a point to move it -- across to another beat, up and down to another
- * value -- as one edit when it is let go.
+ * value -- as one edit when it is let go. A colour lane's points move only
+ * across: up and down means nothing for a colour, which the inspector picks.
  */
 function AutoSvg({ row, x, width, history, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number; history: Edits;
   selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
-  const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
+  const spec = useLaneSpec(row);
+  const { lo, hi } = spec;
+  const colour = spec.kind === "color";
   const points = row.points ?? [];
   const perBeat = x(1) - x(0);
   const y = (v: number) => LANE_H - 3 - ((v - lo) / (hi - lo)) * (LANE_H - 6);
@@ -502,7 +1093,17 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
       : p)).sort((a, b) => a[0] - b[0])
     : points;
   const samples: string[] = [];
-  if (shown.length) {
+  if (shown.length && row.wave && !colour) {
+    // A wave never settles, so the whole lane is sampled, finely enough to
+    // show its shape and no more finely than a few thousand points.
+    const end = width / perBeat;
+    const step = Math.max(end / 4000, Math.min(0.5, (row.wave.bars * BEATS_PER_BAR) / 24));
+    const waved = { ...row, points: shown };
+    for (let b = 0; b <= end; b += step) {
+      const v = laneValue(waved, b);
+      if (v != null) samples.push(`${x(b)},${y(Math.max(lo, Math.min(hi, v)))}`);
+    }
+  } else if (shown.length) {
     const first = shown[0]![0];
     const last = shown[shown.length - 1]![0];
     const lead = curveValue(shown, first);
@@ -549,14 +1150,18 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 
   return (
     <svg width={width} height={LANE_H} className="d-lane d-auto-svg"
-         aria-label={`automation ${row.target}`}
+         aria-label={`automation ${row.target ?? row.id}`}
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
            if (e.target !== e.currentTarget) return;
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
            const beat = history.snapBeat((e.clientX - r.left) / perBeat);
            const frac = 1 - (e.clientY - r.top - 3) / (LANE_H - 6);
-           const value = Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
+           // A colour lane's new point starts as the colour it lands on, so
+           // adding one changes nothing until the inspector picks another.
+           const value: PointValue = colour
+             ? pointBefore(points, beat)?.[1] ?? spec.start
+             : Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
            history.apply((d) => {
              const target = rowOf(d, row.id);
              if (!target) return;
@@ -567,13 +1172,18 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
            });
            onSelect?.(pointId(row.id, beat));
          }}>
-      <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />
+      {colour
+        ? <ColourBand points={shown} x={x} width={width} id={row.id} />
+        : <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />}
+      {colour && row.wave && <ColourWave wave={row.wave} x={x} width={width} />}
       {shown.map((p, i) => {
         const id = pointId(row.id, drag && p[0] === drag.beat + drag.dBeat ? drag.beat : p[0]);
         return (
           <circle key={i} cx={x(p[0])} cy={typeof p[1] === "number" ? y(p[1]) : LANE_H / 2}
                   r={selected === id ? 6 : 4}
-                  className={`d-point${selected === id ? " sel" : ""}`} role="button"
+                  style={colour ? { fill: cssColour(p[1]) ?? undefined } : undefined}
+                  className={`d-point${colour ? " d-point-colour" : ""}${selected === id ? " sel" : ""}`}
+                  role="button"
                   aria-label={`point at bar ${barBeat(p[0])}: ${String(p[1])}`}
                   onPointerDown={(e) => begin(e, p)}
                   onClick={(e) => e.stopPropagation()} />
@@ -588,9 +1198,13 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 function PointInspector({ row, beat, history, onSelect }: {
   row: Row; beat: number; history: Edits; onSelect: (id: string | null) => void;
 }) {
+  const spec = useLaneSpec(row);
   const pt = row.points?.find((p) => p[0] === beat);
   if (!pt) return null;
-  const [lo, hi] = AUTOMATION_RANGES[row.target ?? ""] ?? [0, 1];
+  // What the engine accepts, not what the lane draws: a parameter left open
+  // on one side takes any value on that side.
+  const { min, max } = spec;
+  const step = (spec.hi - spec.lo) / 100;
   const curve = (pt[2] as string | undefined) ?? "linear";
   const set = (to: Point) => {
     history.apply((d) => {
@@ -601,12 +1215,13 @@ function PointInspector({ row, beat, history, onSelect }: {
     });
     onSelect(pointId(row.id, to[0]));
   };
-  const withCurve = (b: number, v: number | string, c: string): Point =>
+  const withCurve = (b: number, v: PointValue, c: string): Point =>
     (c === "linear" ? [b, v] : [b, v, c]);
+  const role = typeof pt[1] === "string" && pt[1].startsWith("@") ? pt[1].slice(1) : null;
   return (
     <footer className="d-inspector" aria-label="inspector">
       <div className="d-insp-head">
-        <b>{row.target === "master" ? "Master" : row.target}</b>
+        <b>{laneTitle(row.target ?? "", spec)}</b>
         <span className="muted"> · automation point on {row.id} · bar {barBeat(beat)}</span>
         <span className="grow" />
         <button onClick={() => {
@@ -625,15 +1240,29 @@ function PointInspector({ row, beat, history, onSelect }: {
                    set(withCurve(Number(e.target.value), pt[1], curve));
                  }} />
         </label>
-        {typeof pt[1] === "number" ? (
+        {spec.kind === "color" ? (
+          <div>
+            <span className="small muted">Colour{" "}
+              <span className="mono">{Array.isArray(pt[1]) ? `[${pt[1].join(", ")}]` : String(pt[1])}</span></span>
+            <div className="d-chips" role="group" aria-label="point colour">
+              {ROLES.map((r) => (
+                <button key={r} className={role === r ? "on" : ""}
+                        onClick={() => set(withCurve(beat, `@${r}`, curve))}>{r}</button>))}
+              <input type="color" aria-label="point direct colour"
+                     value={typeof pt[1] === "string" && pt[1].startsWith("#") ? pt[1] : "#ffffff"}
+                     onChange={(e) => set(withCurve(beat, e.target.value, curve))} />
+            </div>
+          </div>
+        ) : typeof pt[1] === "number" ? (
           <label className="small">Value{" "}
-            <input type="number" min={lo} max={hi} step={(hi - lo) / 100} value={pt[1]}
+            <input type="number" min={min} max={max} step={step} value={pt[1]}
                    aria-label="point value" style={{ width: 70 }}
                    onChange={(e) => {
                      const v = Number(e.target.value);
-                     if (e.target.value !== "" && v >= lo && v <= hi) set(withCurve(beat, v, curve));
+                     if (e.target.value !== "" && (min === undefined || v >= min)
+                         && (max === undefined || v <= max)) set(withCurve(beat, v, curve));
                    }} />
-            <span className="muted"> {lo} to {hi}</span>
+            <span className="muted"> {min ?? "any"} to {max ?? "any"}{spec.unit ? ` ${spec.unit}` : ""}</span>
           </label>
         ) : (
           <label className="small">Value{" "}
@@ -652,6 +1281,104 @@ function PointInspector({ row, beat, history, onSelect }: {
                       onClick={() => set(withCurve(beat, pt[1], c))}>{c}</button>))}
           </div>
         </div>
+      </div>
+    </footer>
+  );
+}
+
+/**
+ * A lane's wave: its shape, its cycle in bars, how far it swings, where in its
+ * cycle it starts. It rides on the points -- they are where the lane rests,
+ * the wave lifts it by up to `depth` (lowers it, negative) -- so the swing is
+ * checked against the lane's range at every point, as the engine checks it.
+ */
+function WaveInspector({ row, history, onSelect }: {
+  row: Row; history: Edits; onSelect: (id: string | null) => void;
+}) {
+  const spec = useLaneSpec(row);
+  const wave = row.wave;
+  if (!wave) return null;
+  const set = (patch: Partial<WaveSpec>) => history.apply((d) => {
+    const r = rowOf(d, row.id);
+    if (!r?.wave) return;
+    const next: WaveSpec = { ...r.wave, ...patch };
+    for (const k of Object.keys(next) as (keyof WaveSpec)[]) {
+      if (next[k] === undefined) delete next[k];
+    }
+    r.wave = next;
+  });
+  const num = (label: string, key: "bars" | "depth" | "phase" | "seed", step: number,
+               lo?: number, hi?: number) => (
+    <label className="small">{label}{" "}
+      <input type="number" step={step} min={lo} max={hi} value={wave[key] ?? ""}
+             aria-label={`wave ${key}`} style={{ width: 64 }}
+             onChange={(e) => {
+               if (e.target.value === "") return;
+               const v = Number(e.target.value);
+               if ((lo === undefined || v >= lo) && (hi === undefined || v <= hi)) set({ [key]: v });
+             }} />
+    </label>
+  );
+  // Where the swing would go past what the lane accepts: said here, before the
+  // engine refuses the draft, with the point that does it.
+  let over: string | null = null;
+  if (spec.kind === "number" && typeof wave.depth === "number") {
+    for (const p of row.points ?? []) {
+      if (typeof p[1] !== "number") continue;
+      const reach = p[1] + wave.depth;
+      if ((spec.max !== undefined && reach > spec.max) || (spec.min !== undefined && reach < spec.min)) {
+        over = `At bar ${barBeat(p[0])} it reaches ${Math.round(reach * 100) / 100}, `
+          + `outside ${spec.min ?? "any"} to ${spec.max ?? "any"}.`;
+        break;
+      }
+    }
+  }
+  const towardRole = typeof wave.toward === "string" && wave.toward.startsWith("@")
+    ? wave.toward.slice(1) : null;
+  return (
+    <footer className="d-inspector" aria-label="inspector">
+      <div className="d-insp-head">
+        <b>{laneTitle(row.target ?? "", spec)}</b>
+        <span className="muted"> · wave on {row.id}</span>
+        <span className="grow" />
+        <button onClick={() => {
+          history.apply((d) => { const r = rowOf(d, row.id); if (r) delete r.wave; });
+          onSelect(null);
+        }}>Remove wave</button>
+      </div>
+      <div className="d-insp-grid">
+        <div>
+          <span className="small muted">Shape</span>
+          <div className="d-chips" role="group" aria-label="wave shape">
+            {WAVE_SHAPES.map((s) => (
+              <button key={s} className={wave.shape === s ? "on" : ""}
+                      onClick={() => set({ shape: s })}>{s}</button>))}
+          </div>
+        </div>
+        {num("Cycle (bars)", "bars", 0.25, 0.25, 256)}
+        {spec.kind === "color" ? (
+          <div>
+            <span className="small muted">Toward</span>
+            <div className="d-chips" role="group" aria-label="wave toward">
+              {ROLES.map((r) => (
+                <button key={r} className={towardRole === r ? "on" : ""}
+                        onClick={() => set({ toward: `@${r}` })}>{r}</button>))}
+              <input type="color" aria-label="wave toward direct colour"
+                     value={typeof wave.toward === "string" && wave.toward.startsWith("#")
+                       ? wave.toward : "#ffffff"}
+                     onChange={(e) => set({ toward: e.target.value })} />
+            </div>
+            {num("How far (0-1)", "depth", 0.05, 0, 1)}
+          </div>
+        ) : (
+          <div>
+            {num(`Depth${spec.unit ? ` (${spec.unit})` : ""}`, "depth", (spec.hi - spec.lo) / 100)}
+            <div className="small muted">Above the points; negative swings below.</div>
+          </div>
+        )}
+        {num("Starts at (cycles)", "phase", 0.05, 0, 1)}
+        {wave.shape === "hold" && num("Seed", "seed", 1)}
+        {over && <div className="small d-error" role="alert">{over}</div>}
       </div>
     </footer>
   );
@@ -695,21 +1422,93 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 
 const NEW_LANES: [string, string][] = [
   ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
-  ["palette", "Palette"], ["hits", "Hits"],
+  ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
+  ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"], ["visuals", "Visuals"],
 ];
 
-/** A new automation lane for `target`, starting at its neutral value. */
-export function automationRow(d: RowsDoc, target: string): Row {
-  const [lo, hi] = AUTOMATION_RANGES[target] ?? [0, 1];
-  const neutral = target === "master" || target === "size" || target.startsWith("rate.") ? 1 : 0;
-  return { id: uniqueId(d, target), type: "automation", target,
-           points: [[0, Math.min(hi, Math.max(lo, neutral))]] };
+/** A new lane for another output (milestone 3), or undefined for a lights lane. */
+export function externalRow(d: RowsDoc, kind: string): Row | undefined {
+  if (kind === "osc") return { id: uniqueId(d, "osc"), type: "external", output: "osc", items: [] };
+  if (kind === "osc-curve") {
+    return { id: uniqueId(d, "osc-curve"), type: "external", output: "osc",
+             address: "/composition/layers/1/video/opacity", args: ["$value"],
+             points: [[0, 1]] };
+  }
+  if (kind === "midi") return { id: uniqueId(d, "midi"), type: "external", output: "midi", items: [] };
+  if (kind === "visuals") {
+    return { id: uniqueId(d, "visuals"), type: "external", output: "visuals", items: [] };
+  }
+  if (kind === "midi-curve") {
+    return { id: uniqueId(d, "midi-curve"), type: "external", output: "midi",
+             channel: 1, cc: 1, points: [[0, 0]] };
+  }
+  return undefined;
 }
 
-function AddLane({ history }: { history: History }) {
+/** A lane's name as its head, its menu entry and the inspector show it: a
+ *  parameter as `$name` with its unit, the way a block argument refers to it. */
+export function laneTitle(target: string, spec: LaneSpec): string {
+  const unit = spec.unit ? ` (${spec.unit})` : "";
+  if (target.startsWith(PARAM_TARGET)) return `$${spec.label}${unit}`;
+  if (target.startsWith(ARG_TARGET)) return `${spec.label}${unit}`;
+  return spec.label;
+}
+
+/** A new automation lane for `target`, starting where it already is: a macro
+ *  at its neutral value, a parameter at its default -- so adding the lane
+ *  changes nothing until a point is drawn. */
+export function automationRow(d: RowsDoc, target: string, params: LaneSpecs = {}): Row {
+  return { id: uniqueId(d, target), type: "automation", target,
+           points: [[0, laneSpec(target, params).start]] };
+}
+
+/**
+ * "+ automation": a lane for each macro and each open parameter not already
+ * automated here. Parameters are listed by name and unit, and in a track's
+ * timeline with the routines on it that have them, since one lane drives the
+ * parameter on all of them.
+ */
+export function AutomationMenu({ history, params }: {
+  history: Edits & { doc: RowsDoc | null }; params: LaneSpecs;
+}) {
   const doc = history.doc;
   if (!doc) return null;
   const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
+  const macros = Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t));
+  const free = Object.entries(params).filter(([t]) => !automated.has(t));
+  const open = free.filter(([t]) => t.startsWith(PARAM_TARGET))
+    .sort(([a], [b]) => a.localeCompare(b));
+  const args = free.filter(([t]) => t.startsWith(ARG_TARGET));
+  return (
+    <select aria-label="add automation" value=""
+            onChange={(e) => {
+              const target = e.target.value;
+              if (target) history.apply((d) => { d.rows.push(automationRow(d, target, params)); });
+            }}>
+      <option value="">+ automation</option>
+      <optgroup label="Macros">
+        {macros.map((t) => <option key={t} value={t}>{t}</option>)}
+      </optgroup>
+      {open.length > 0 && (
+        <optgroup label="Parameters">
+          {open.map(([t, spec]) => (
+            <option key={t} value={t}>
+              {laneTitle(t, spec)}{spec.reaches ? ` · ${spec.reaches.join(", ")}` : ""}</option>))}
+        </optgroup>
+      )}
+      {args.length > 0 && (
+        <optgroup label="Block arguments">
+          {args.map(([t, spec]) => <option key={t} value={t}>{laneTitle(t, spec)}</option>)}
+        </optgroup>
+      )}
+    </select>
+  );
+}
+
+function AddLane({ history }: { history: History }) {
+  const params = useContext(ParamLanes);
+  const doc = history.doc;
+  if (!doc) return null;
   return (
     <div className="d-row d-add">
       <div className="d-head">
@@ -718,6 +1517,8 @@ function AddLane({ history }: { history: History }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits"
                       ? { id, type: "hits", items: [] }
@@ -728,16 +1529,7 @@ function AddLane({ history }: { history: History }) {
           <option value="">+ lane</option>
           {NEW_LANES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select aria-label="add automation" value=""
-                onChange={(e) => {
-                  const target = e.target.value;
-                  if (!target) return;
-                  history.apply((d) => { d.rows.push(automationRow(d, target)); });
-                }}>
-          <option value="">+ automation</option>
-          {Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t)).map((t) => (
-            <option key={t} value={t}>{t}</option>))}
-        </select>
+        <AutomationMenu history={history} params={params} />
       </div>
     </div>
   );
@@ -750,30 +1542,11 @@ function Shelf({ history, routines, beat, track }: {
 }) {
   const doc = history.doc;
   if (!doc) return null;
-  const scene = doc.rows.find((r) => r.type === "clips" && r.target === "scene");
-  const place = (r: RoutineSummary) => history.apply((d) => {
-    let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
-    if (!lane) {
-      lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill", items: [] };
-      d.rows.unshift(lane);
-    }
-    const at = Math.max(0, history.snapBeat(beat));
-    (lane.items ??= []).push({ id: uniqueId(d, r.id), kind: "routine", routine: r.id,
-                               at, len: r.bars * BEATS_PER_BAR });
-  });
+  // The routines to place are in the browser, on the left; this keeps what
+  // works on the whole track.
+  void routines;
   return (
     <section>
-      <h3>Routines</h3>
-      <p className="small muted">Click to place at the playhead on the scene lane.</p>
-      <div className="d-shelf">
-        {routines.map((r) => (
-          <button key={r.id} onClick={() => place(r)}
-                  title={`${r.bars} bars${r.loop ? ", loops" : ""}${r.rig ? ", this rig only" : ""}`}>
-            {r.name ?? r.id}{r.rig && <span className="d-badge">rig</span>}
-          </button>
-        ))}
-      </div>
-      {!scene && <p className="small muted">No scene lane yet -- placing one adds it.</p>}
       <Templates history={history} track={track ?? null} />
       <RecordPads history={history} beat={beat} />
       <Palettes history={history} />
@@ -790,49 +1563,17 @@ function Templates({ history, track }: { history: History; track: TrackDoc | nul
     apiFetch<{ templates: { id: string; name?: string }[] }>("/api/templates")
       .then((r) => setSets(r.templates)).catch(() => setSets([]));
   }, []);
-  const phrases = track?.phrases?.items ?? [];
   if (!sets.length) return null;
   const draft = async (id: string) => {
     setError(null);
     try {
-      const { doc: ts } = await apiFetch<{ doc: {
-        phrases: Record<string, { routine: string; variation?: string;
-                                  params?: Record<string, unknown>; palette?: string }>;
-        palettes?: Record<string, Record<string, unknown>>; palette?: string } }>(
-        `/api/templates/${id}`);
-      if (!phrases.length) { setError("this track has no phrases to draft from"); return; }
-      history.apply((d) => {
-        let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
-        if (!lane) {
-          lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill",
-                   items: [] };
-          d.rows.unshift(lane);
-        }
-        lane.items = [];
-        const palLane = ts.palettes ? (d.rows.find((x) => x.target === "palette")
-          ?? (() => { const r: Row = { id: uniqueId(d, "palette"), type: "clips",
-                                       target: "palette", gap: "exclusive", items: [] };
-                      d.rows.push(r); return r; })()) : null;
-        if (ts.palettes) {
-          d.palettes = { ...(d.palettes ?? {}), ...(ts.palettes as TimelineDoc["palettes"]) };
-          if (ts.palette && !d.palette) d.palette = ts.palette;
-          if (palLane) palLane.items = [];
-        }
-        for (const [start, end, label] of phrases) {
-          const family = label.replace(/\s*\d+$/, "");
-          const pick = ts.phrases[label] ?? ts.phrases[family] ?? ts.phrases["*"];
-          if (!pick) continue;
-          const item: Item = { id: uniqueId(d, `${family}-${start}`), kind: "routine",
-                               routine: pick.routine, at: start, len: end - start };
-          if (pick.variation) item.variation = pick.variation;
-          if (pick.params) item.params = { ...pick.params };
-          lane.items.push(item);
-          if (pick.palette && palLane) {
-            (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
-                                          palette: pick.palette, at: start, len: end - start });
-          }
-        }
-      });
+      const { doc: ts } = await apiFetch<{ doc: TemplateSetDoc }>(`/api/templates/${id}`);
+      if (!track) return;
+      // Checked on a copy first: an edit that only says "no phrases" would
+      // still be a step on the undo stack.
+      const problem = draftFromTemplate(structuredClone(history.doc!), track, ts);
+      if (problem) { setError(problem); return; }
+      history.apply((d) => { draftFromTemplate(d, track, ts); });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -903,8 +1644,41 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
   );
 }
 
+/** Where a document's palette came from, said beside it: a copy of the
+ *  library's (and whether it still matches), or one that lives only here.
+ *  Editing it here never changes the library -- this says so, in place. */
+export function PaletteOrigin({ library, name, colours, here, onUseLibrary }: {
+  library: PaletteSummary[]; name: string; colours: Record<string, unknown>;
+  /** "track" or "set": whose copy this is. */
+  here: string;
+  onUseLibrary: (colours: { primary: string; secondary: string; accent: string }) => void;
+}) {
+  const lib = library.find((p) => p.name === name);
+  if (!lib) {
+    return <span className="d-origin" title={`Made in this ${here}: no library palette is called ${name}`}>
+      only here</span>;
+  }
+  const same = ROLES.every((r) => hexColor(colours[r]) != null
+    && hexColor(colours[r]) === hexColor(lib[r]));
+  const tip = `A copy of the library's ${name}. Changing it here changes this ${here} only; `
+    + "the library's is changed on Studio's Palettes page.";
+  return same ? <span className="d-origin lib" title={tip}>copy of library</span> : (
+    <span className="d-origin differs" title={tip}>differs from library
+      <button className="small" aria-label={`use the library's colours for ${name}`}
+              onClick={() => onUseLibrary({ primary: lib.primary, secondary: lib.secondary,
+                                            accent: lib.accent })}>use library's</button>
+    </span>
+  );
+}
+
 function Palettes({ history }: { history: History }) {
   const doc = history.doc;
+  // The show's library, to copy a palette in from.
+  const [library, setLibrary] = useState<PaletteSummary[]>([]);
+  useEffect(() => {
+    apiFetch<{ palettes: PaletteSummary[] }>("/api/palettes")
+      .then((r) => setLibrary(r.palettes)).catch(() => setLibrary([]));
+  }, []);
   if (!doc) return null;
   const palettes = doc.palettes ?? {};
   const hex = (v: unknown) => (typeof v === "string" && v.startsWith("#") ? v : "#ffffff");
@@ -916,7 +1690,12 @@ function Palettes({ history }: { history: History }) {
           the palette.</p>
         <p>The selected palette plays wherever the palette lane is empty. A
           palette clip switches it for its length.</p>
-      </>}>Palettes</HelpHeading>
+        <p>These are this track's own copies. Changing a colour here changes
+          this track only; the library's palettes are on Studio's Palettes
+          page, which can bring copies up to date.</p>
+      </>}>This track's palettes</HelpHeading>
+      <p className="small muted">Changing a colour here changes this track only.{" "}
+        <a className="d-link" href="#studio/palettes">The library</a></p>
       {Object.entries(palettes).map(([name, pal]) => (
         <div key={name} className="d-palette">
           <label className="small">
@@ -924,6 +1703,9 @@ function Palettes({ history }: { history: History }) {
                    onChange={() => history.apply((d) => { d.palette = name; })} />
             {name}
           </label>
+          <PaletteOrigin library={library} name={name} colours={pal as Record<string, unknown>}
+                         here="track"
+                         onUseLibrary={(c) => history.apply((d) => { d.palettes![name] = c; })} />
           {ROLES.map((role) => (
             <input key={role} type="color" aria-label={`${name} ${role}`} value={hex(pal[role])}
                    onChange={(e) => {
@@ -933,21 +1715,48 @@ function Palettes({ history }: { history: History }) {
           ))}
         </div>
       ))}
+      <FromLibrary library={library} has={Object.keys(palettes)}
+                   onPick={(name, colours) => history.apply((d) => {
+                     d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                     if (!d.palette) d.palette = name;
+                   })} />
       <button className="small" onClick={() => history.apply((d) => {
         const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
         d.palettes = { ...(d.palettes ?? {}),
-                       [name]: { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" } };
+                       [name]: { ...NEW_COLOURS } };
         if (!d.palette) d.palette = name;
       })}>+ palette</button>
     </div>
   );
 }
 
+/** A select of library palettes, for an editor that keeps its own copies: the
+ *  picked one is copied in under its library name. */
+export function FromLibrary({ library, has, onPick }: {
+  library: PaletteSummary[]; has: string[];
+  onPick: (name: string, colours: { primary: string; secondary: string; accent: string }) => void;
+}) {
+  const offer = library.filter((p) => !has.includes(p.name));
+  if (!library.length) return null;
+  return (
+    <select value="" aria-label="add a palette from the library" disabled={!offer.length}
+            onChange={(e) => {
+              const p = library.find((x) => x.id === e.target.value);
+              if (p) onPick(p.name, { primary: p.primary, secondary: p.secondary, accent: p.accent });
+            }}>
+      <option value="">{offer.length ? "+ From the library…" : "Every library palette is here"}</option>
+      {offer.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
+  );
+}
+
 // -- the inspector ----------------------------------------------------------------
 
-function Inspector({ history, item, routines, engine, onDeleted }: {
+function Inspector({ history, item, routines, engine, onDeleted, beat, onSelect }: {
   history: History; item: { row: Row; item: Item } | null; routines: RoutineSummary[];
   engine: Engine; onDeleted: () => void;
+  /** The playhead, for Split, and how to select what an operation made. */
+  beat?: number; onSelect?: (id: string | null) => void;
 }) {
   if (history.listView) return <EventList history={history} />;
   if (!item) {
@@ -978,6 +1787,18 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         <span className="muted mono"> · bar {barBeat(it.at)} → {barBeat(it.at + it.len)}
           {" "}({it.len} beats)</span>
         <span className="grow" />
+        <span className="d-clip-tools" role="group" aria-label="clip">
+          <button title="Ctrl+C" onClick={() => clipOps.copy(history, it.id, "timeline")}>Copy</button>
+          <button title="Ctrl+X" onClick={() => { clipOps.cut(history, it.id, "timeline"); onDeleted(); }}>
+            Cut</button>
+          <button title="Ctrl+D: a copy straight after it"
+                  onClick={() => onSelect?.(clipOps.duplicate(history, it.id, "timeline"))}>
+            Duplicate</button>
+          <button title="S: in two, at the playhead"
+                  disabled={beat == null || !clipOps.inside(history.doc, it.id, history.snapBeat(beat))}
+                  onClick={() => onSelect?.(clipOps.split(history, it.id, history.snapBeat(beat ?? 0)))}>
+            Split</button>
+        </span>
         <button onClick={() => {
           history.apply((d) => {
             for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== it.id);
@@ -986,7 +1807,16 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         }}>Delete</button>
       </div>
       <div className="d-insp-grid">
-        {!it.hit && (
+        {row.type === "external" && row.output === "osc" && (
+          <OscCue item={it} set={set} />
+        )}
+        {row.type === "external" && row.output === "midi" && (
+          <MidiCue item={it} set={set} />
+        )}
+        {row.type === "external" && (row.output === "visuals" || row.output === "vj") && (
+          <VisualCue item={it} set={set} />
+        )}
+        {!it.hit && row.type !== "external" && (
           <div>
             <span className="small muted">Fade in</span>
             <div className="d-chips">
@@ -1026,7 +1856,7 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
                      }} />
             ))}
             {routine && (
-              <a className="small d-link" href={`#designer/routine/${routine.id}`}
+              <a className="small d-link" href={`#studio/routine/${routine.id}`}
                  onClick={() => rememberBack()}>
                 Open routine · {routine.bars} bars{routine.loop ? ", loops" : ""}</a>)}
           </>
@@ -1081,6 +1911,187 @@ function Inspector({ history, item, routines, engine, onDeleted }: {
         )}
       </div>
     </footer>
+  );
+}
+
+const OSC_WHEN: Record<"on" | "while" | "off", string> = {
+  on: "When it starts", while: "While it plays (on change, 30/s at most)",
+  off: "When it ends",
+};
+
+/** An OSC cue's three messages, for the track and routine inspectors. */
+function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  return (
+    <>
+      {(["on", "while", "off"] as const).map((k) => (
+        <OscField key={`${item.id}-${k}`} which={k} message={item[k]}
+                  onChange={(m) => set({ [k]: m })} />))}
+    </>
+  );
+}
+
+const ROLE_COLORS = ["@primary", "@secondary", "@accent"];
+
+/** A visuals cue: its scene, and that scene's parameters. A video's file is
+ *  picked from the show folder's media/. */
+function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const [media, setMedia] = useState<string[] | null>(null);
+  const scene = item.scene ?? "wash";
+  useEffect(() => {
+    if (scene !== "video") return;
+    let live = true;
+    apiFetch<{ media: { file: string }[] }>("/api/media")
+      .then((r) => { if (live) setMedia(r.media.map((m) => m.file)); })
+      .catch(() => { if (live) setMedia([]); });
+    return () => { live = false; };
+  }, [scene]);
+  const params = item.params ?? {};
+  const setParam = (name: string, value: unknown) => {
+    const next = { ...params };
+    if (value === undefined || value === "") delete next[name]; else next[name] = value;
+    set({ params: next });
+  };
+  const rules: Record<string, VisualRule> = { ...(VISUAL_PARAMS[scene] ?? {}), opacity: [0, 1] };
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="visuals scene">
+        {VISUAL_SCENES.map((s) => (
+          <button key={s} className={scene === s ? "on" : ""}
+                  onClick={() => set({ scene: s,
+                                       params: s === "video" ? { loop: true } : { color: "@primary" } })}>
+            {s}</button>))}
+      </div>
+      {Object.entries(rules).map(([name, rule]) => {
+        const value = params[name];
+        const label = `visuals ${name}`;
+        if (rule === "color") {
+          const role = typeof value === "string" && value.startsWith("@") ? value : "";
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={role || (typeof value === "string" ? "hex" : "")}
+                      onChange={(e) => setParam(name, e.target.value === "hex"
+                        ? "#ffffff" : e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {ROLE_COLORS.map((r) => <option key={r} value={r}>{r}</option>)}
+                <option value="hex">a colour…</option>
+              </select>
+              {typeof value === "string" && value.startsWith("#") && (
+                <input type="color" aria-label={`${label} colour`} value={value}
+                       onChange={(e) => setParam(name, e.target.value)} />)}
+            </label>
+          );
+        }
+        if (rule === "file") {
+          const files = media ?? [];
+          return (
+            <label key={name} className="small">file{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">{media == null ? "…" : files.length ? "(pick one)" : "(media/ is empty)"}</option>
+                {typeof value === "string" && value && !files.includes(value) && (
+                  <option value={value}>{value} (not in media/)</option>)}
+                {files.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+          );
+        }
+        if (rule === "bool") {
+          return (
+            <label key={name} className="small">
+              <input type="checkbox" aria-label={label} checked={value !== false}
+                     onChange={(e) => setParam(name, e.target.checked)} /> {name}
+            </label>
+          );
+        }
+        if (typeof rule[0] === "string") {
+          return (
+            <label key={name} className="small">{name}{" "}
+              <select aria-label={label} value={typeof value === "string" ? value : ""}
+                      onChange={(e) => setParam(name, e.target.value || undefined)}>
+                <option value="">(default)</option>
+                {(rule as string[]).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          );
+        }
+        const [lo, hi] = rule as [number, number];
+        return (
+          <label key={name} className="small">{name}{" "}
+            <input type="number" className="d-num" min={lo} max={hi} step={hi <= 1 ? 0.05 : 1}
+                   aria-label={label} placeholder="default"
+                   value={typeof value === "number" ? value : ""}
+                   onChange={(e) => setParam(name, e.target.value === ""
+                     ? undefined : Number(e.target.value))} />
+          </label>
+        );
+      })}
+    </>
+  );
+}
+
+const MIDI_KINDS = { note: "Note", cc: "CC", pc: "Program" } as const;
+
+/** A MIDI cue: a note held for its length, a CC (and the value it leaves
+ *  behind), or a program change -- on a channel. */
+function MidiCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => void }) {
+  const kind = item.note != null ? "note" : item.cc != null ? "cc" : "pc";
+  const num = (label: string, field: keyof Item, value: number | undefined,
+               lo: number, hi: number, optional = false) => (
+    <label className="small">{label}{" "}
+      <input type="number" className="d-num" min={lo} max={hi} aria-label={`midi ${field}`}
+             value={value ?? ""} placeholder={optional ? "none" : undefined}
+             onChange={(e) => set({ [field]: e.target.value === "" && optional
+               ? undefined : Number(e.target.value) })} />
+    </label>
+  );
+  return (
+    <>
+      <div className="d-chips" role="group" aria-label="midi kind">
+        {(Object.keys(MIDI_KINDS) as (keyof typeof MIDI_KINDS)[]).map((k) => (
+          <button key={k} className={kind === k ? "on" : ""}
+                  onClick={() => set({
+                    note: k === "note" ? 60 : undefined, velocity: k === "note" ? 100 : undefined,
+                    cc: k === "cc" ? 1 : undefined, value: k === "cc" ? 127 : undefined,
+                    off_value: undefined, pc: k === "pc" ? 0 : undefined })}>
+            {MIDI_KINDS[k]}</button>))}
+      </div>
+      {num("Channel", "channel", item.channel ?? 1, 1, 16)}
+      {kind === "note" && <>{num("Note", "note", item.note, 0, 127)}
+        {num("Velocity", "velocity", item.velocity ?? 100, 1, 127)}</>}
+      {kind === "cc" && <>{num("CC", "cc", item.cc, 0, 127)}
+        {num("Value", "value", item.value ?? 127, 0, 127)}
+        {num("Then", "off_value", item.off_value, 0, 127, true)}</>}
+      {kind === "pc" && num("Program", "pc", item.pc, 0, 127)}
+    </>
+  );
+}
+
+/** One OSC message of a cue: its address and arguments, or none. */
+function OscField({ which, message, onChange }: {
+  which: "on" | "while" | "off"; message?: OscMessage;
+  onChange: (m: OscMessage | undefined) => void;
+}) {
+  if (!message) {
+    return (
+      <div>
+        <span className="small muted">{OSC_WHEN[which]}</span>
+        <div><button className="small" onClick={() => onChange({ address: "/", args: [] })}>
+          + {which} message</button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="d-osc">
+      <span className="small muted">{OSC_WHEN[which]}</span>
+      <input className="mono" aria-label={`${which} address`} value={message.address}
+             onChange={(e) => onChange({ ...message, address: e.target.value })} />
+      <input className="mono" aria-label={`${which} args`}
+             defaultValue={oscArgsText(message.args)}
+             placeholder="1, $bar, $progress"
+             onBlur={(e) => onChange({ ...message, args: parseOscArgs(e.target.value) })} />
+      <button className="small" aria-label={`remove ${which} message`}
+              onClick={() => onChange(undefined)}>×</button>
+    </div>
   );
 }
 
@@ -1168,5 +2179,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector,
+  PointInspector, WaveInspector, uniqueId, OscCue, MidiCue, VisualCue,
 };

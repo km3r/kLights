@@ -276,6 +276,33 @@ check("movement phase tracks its own rate, not musical position",
 print(f"  status: {director.status()}")
 
 
+# -- a hook that raises costs its frame's program, never the output thread ----
+print("\na choose_show that raises: the operator's show, counted, frames go on")
+calls = {"n": 0}
+
+
+def flaky_choose(show):
+    calls["n"] += 1
+    if calls["n"] % 2:
+        raise RuntimeError("deliberate timeline bug")
+    return show
+
+
+hooked = Runner(ctx=statemod.EvalContext(rig=rig, venue=rig.venue),
+                show=setlist.current().make((1, 1, 1)),
+                clock=clockmod.MasterClock(bpm=140.0, now=0.0), director=director,
+                choose_show=flaky_choose)
+hstats = hooked.run(seconds=0.5)
+check("frames kept flowing through a hook that raises every other frame",
+      hstats.frames > 10 and calls["n"] >= hstats.frames - 1,
+      f"{hstats.frames} frames, {calls['n']} calls")
+check("each one counted with the show errors, and the traceback kept",
+      hstats.eval_errors >= hstats.frames // 2 - 1
+      and "deliberate timeline bug" in (hooked.last_error or ""),
+      f"{hstats.eval_errors} errors")
+check("not as dropped frames", hstats.drops == 0, f"{hstats.drops}")
+
+
 # -- a shut gate re-baselines, it does not bank up a crossing ----------------
 print("\nreleasing a hold lands on the next boundary, not the next frame")
 

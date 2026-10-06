@@ -36,6 +36,10 @@
             "type": "object",
             "description": "per-slot chase rates, e.g. {\"color\": 0.5, \"movement\": 2}"
           },
+          "params": {
+            "type": "object",
+            "description": "per-routine parameter values, by look name, e.g. {\"Ball Orbit\": {\"radius_deg\": 24}}"
+          },
           "bank": {
             "type": "integer",
             "minimum": 1,
@@ -52,6 +56,25 @@
             "items": {
               "type": "string"
             }
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "the id of a file in the show folder's routines/"
+              },
+              "variation": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "id"
+            ]
           }
         },
         "required": [

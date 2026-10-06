@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import { BLOCK_PARAMS } from "../blocks";
 import type { EngineState } from "../types";
 import {
   currentSocket, despacioState, installMockSocket, stateWith,
@@ -238,6 +239,83 @@ describe("presets", () => {
     await user.type(screen.getByLabelText("preset name"), "drop");
     await user.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+  });
+
+  it("saves a pad with a routine, and shows it waiting for the downbeat, then playing", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      // A show folder is what makes routines available.
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      await user.selectOptions(pick, "fan-drop");
+      await user.selectOptions(screen.getByLabelText("pad routine variation"), "wide");
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop",
+                                      routine: { id: "fan-drop", variation: "wide" } });
+      const withPad = (waiting: boolean) => stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+        s.pad = { name: "drop", routine: "fan-drop", waiting };
+      });
+      act(() => socket.push(withPad(true)));
+      const tile = screen.getAllByRole("button", { name: /^drop/ })[0]!;
+      expect(tile).toHaveTextContent("↻ fan-drop · next downbeat");
+      expect(tile).toHaveClass("pending");
+      act(() => socket.push(withPad(false)));
+      expect(screen.getAllByRole("button", { name: /^drop/ })[0]!)
+        .toHaveTextContent("↻ fan-drop · playing");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("re-recording a routine pad keeps its routine unless 'none' is chosen", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ routines: [
+        { id: "fan-drop", name: "Fan sweep (drop)", variations: ["tight", "wide"] }] }),
+    })));
+    try {
+      const socket = mount();
+      act(() => socket.push(stateWith((s) => {
+        s.program = { armed: false, engaged: false, mode: "fallback", reason: "disarmed",
+                      beat: null, bar: null, lanes: {}, grabbed: [], policy: "idle",
+                      problems: 0, first_problem: null, latency_ms: {} };
+        s.presets = [...s.presets, { name: "drop", movement: {}, color: {}, level: {},
+                                     bank: 1, cell: 7, tags: [],
+                                     routine: { id: "fan-drop", variation: "wide" } }];
+      })));
+      const pick = await screen.findByLabelText("pad routine");
+      // Its name shows the routine its pad has: what a save keeps.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      expect(pick).toHaveValue("fan-drop");
+      expect(screen.getByLabelText("pad routine variation")).toHaveValue("wide");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop" });
+      // Choosing "none" says so, rather than saying nothing.
+      await user.type(screen.getByLabelText("preset name"), "drop");
+      await user.selectOptions(pick, "");
+      await user.click(screen.getByRole("button", { name: /^Save$/ }));
+      expect(socket.last()).toEqual({ type: "preset_save", name: "drop", routine: null });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("will not save an unnamed preset", () => {
@@ -1089,11 +1167,124 @@ describe("follow dj (track card)", () => {
     expect(socket.last()).toEqual({ type: "follow", armed: true });
   });
 
-  it("links the matched track to the designer", () => {
+  it("says what the template plays, and switches set on the next downbeat", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(program((p) => {
+      Object.assign(p, {
+        armed: true, engaged: true, mode: "template", reason: null, beat: 162, bar: 41,
+        lanes: { movement: "template", color: "template", level: "template" },
+        set: "club", pending: null,
+        sets: [{ id: "club", name: "Club" }, { id: "chill", name: "Chill" }],
+        template: { set: "club", label: "Chorus", routine: "fan-drop", start: 160,
+                    fading: false },
+      });
+    })));
+    expect(screen.getByText(/Template driving/)).toBeInTheDocument();
+    expect(screen.getByLabelText("template now")).toHaveTextContent("Chorus → fan-drop");
+    expect(screen.getAllByText("template").length).toBe(3);
+    const sets = screen.getByRole("group", { name: "template set" });
+    expect(within(sets).getByRole("button", { name: "Club" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await user.click(within(sets).getByRole("button", { name: "Chill" }));
+    expect(socket.last()).toEqual({ type: "template_set", id: "chill" });
+    act(() => socket.push(program((p) => {
+      Object.assign(p, { armed: true, engaged: true, mode: "template", set: "club",
+                         pending: "off", sets: [{ id: "club", name: "Club" }] });
+    })));
+    expect(within(screen.getByRole("group", { name: "template set" }))
+      .getByRole("button", { name: /Off · next downbeat/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Off/ }));
+    expect(socket.last()).toEqual({ type: "template_set", id: null });
+  });
+
+  it("lists what the other decks have loaded, and whether their shows are built", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.track = { state: "playing", title: "Guest Tune", artist: null, album: null,
+                  duration: 200, source: "blt", deck: "1", time: 10, rate: 1, age: 0.02,
+                  track_seq: 2, jump_seq: 0, on_air: true, match: null, grid_warning: null,
+                  decks: [
+                    { deck: "2", title: "synthetic 128", track_id: "synth-128",
+                      has_timeline: true, ready: true },
+                    { deck: "3", title: "Night Drive", track_id: "night-drive",
+                      has_timeline: true, ready: false },
+                    { deck: "4", title: "Someone Else's", track_id: null,
+                      has_timeline: false, ready: false },
+                  ] };
+    })));
+    const decks = screen.getByLabelText("other decks");
+    expect(decks).toHaveTextContent("Deck 2: synthetic 128 · synth-128, show ready");
+    expect(decks).toHaveTextContent("Deck 3: Night Drive · night-drive, building its show");
+    expect(decks).toHaveTextContent("Deck 4: Someone Else's · not in the show folder");
+  });
+
+  it("says where the VJ app's cues go, and when they are failing", () => {
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: true, engaged: true, mode: "timeline", reason: null, beat: 160, bar: 41,
+        lanes: {}, grabbed: [], policy: "idle", problems: 0, first_problem: null,
+        latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: { target: "192.168.1.20:7000", sent: 120, errors: 3,
+                           last_error: "network is unreachable", on: 2 },
+                    timecode: { target: "255.255.255.255:6454", fps: 30, sent: 900,
+                                errors: 0, last_error: null, now: "00:01:15:21" },
+                    midi: { target: "127.0.0.1:9123", sent: 40, errors: 0,
+                            last_error: null, on: 1 },
+                    problems: [] };
+    })));
+    const line = screen.getByLabelText("outputs");
+    expect(line).toHaveTextContent("Timecode → 255.255.255.255:6454 · 00:01:15:21 (30 fps)");
+    expect(line).toHaveTextContent("MIDI → sidecar 127.0.0.1:9123 · 1 on");
+    expect(line).toHaveTextContent("OSC → 192.168.1.20:7000 · 2 on");
+    expect(line).toHaveTextContent("3 failed (network is unreachable)");
+    act(() => socket.push(stateWith((s) => {
+      s.program = {
+        armed: false, engaged: false, mode: "fallback", reason: "disarmed", beat: null,
+        bar: null, lanes: {}, grabbed: [], policy: "idle", problems: 0,
+        first_problem: null, latency_ms: { blt: 0 },
+      };
+      s.outputs = { osc: null,
+                    timecode: { target: "255.255.255.255:6454", fps: 25, sent: 900,
+                                errors: 0, last_error: null, now: null },
+                    problems: ["outputs.osc: 'vj.local' is not an IPv4 address; OSC is off"] };
+    })));
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("OSC is off");
+    expect(screen.getByLabelText("outputs")).toHaveTextContent("· silent (25 fps)");
+  });
+
+  it("says nothing about other decks when none have anything loaded", () => {
     const socket = mount();
     act(() => socket.push(program()));
-    expect(screen.getByRole("link", { name: "Open this track in the designer" }))
-      .toHaveAttribute("href", "#designer/synth-128");
+    expect(screen.queryByLabelText("other decks")).toBeNull();
+  });
+
+  it("links the playing track into Studio: its timeline, a timeline to make, or rekordbox", () => {
+    const socket = mount();
+    act(() => socket.push(program()));
+    const open = screen.getByRole("link", { name: "Open it in Studio" });
+    expect(open).toHaveAttribute("href", "/#studio/track/synth-128");
+    // Studio's own tab, reused by every link into it.
+    expect(open).toHaveAttribute("target", "klights-studio");
+    act(() => socket.push(stateWith((s) => {
+      Object.assign(s, program());
+      s.track!.match!.has_timeline = false;
+    })));
+    expect(screen.getByRole("link", { name: "Make a timeline for it in Studio" }))
+      .toHaveAttribute("href", "/#studio/track/synth-128");
+    act(() => socket.push(stateWith((s) => {
+      Object.assign(s, program());
+      s.track!.match = { track_id: null, via: "none", candidates: [], stale: false };
+    })));
+    expect(screen.getByRole("link", { name: "Add it to the show in Studio" }))
+      .toHaveAttribute("href", "/#studio/rekordbox?find=synthetic%20128");
   });
 
   it("shows who has each lane, and grabs and releases them", async () => {
@@ -1144,10 +1335,10 @@ describe("designer preview banner", () => {
       s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
                     draft: true, playing: true, ready: true };
     })));
-    expect(screen.getByText(/DESIGNER \(laptop\) is driving the rig/))
+    expect(screen.getByText(/STUDIO \(laptop\) is driving the rig/))
       .toBeInTheDocument();
     expect(screen.getByText(/unsaved draft/)).toBeInTheDocument();
-    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    const banner = screen.getByText(/STUDIO \(laptop\)/).closest(".banner")!;
     await user.click(within(banner as HTMLElement).getByRole("button",
                                                            { name: "Release" }));
     expect(socket.last()).toEqual({ type: "preview_release" });
@@ -1161,8 +1352,21 @@ describe("designer preview banner", () => {
       s.preview = { client: "c4", name: "laptop", track_id: "synth-128",
                     draft: false, playing: true, ready: true };
     })));
-    const banner = screen.getByText(/DESIGNER \(laptop\)/).closest(".banner")!;
+    const banner = screen.getByText(/STUDIO \(laptop\)/).closest(".banner")!;
     expect(within(banner as HTMLElement).queryByRole("button", { name: "Release" })).toBeNull();
+  });
+});
+
+describe("the way into Studio", () => {
+  it("is a button in the header on a desk, and gone in Perform", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("klights.mode", "design");
+    mount();
+    const studio = screen.getByRole("link", { name: "Studio ↗" });
+    expect(studio).toHaveAttribute("href", "/#studio");
+    expect(studio).toHaveAttribute("target", "klights-studio");
+    await user.click(screen.getByRole("button", { name: "Design" }));
+    expect(screen.queryByRole("link", { name: "Studio ↗" })).toBeNull();
   });
 });
 
@@ -1531,6 +1735,404 @@ describe("slot rate", () => {
   });
 });
 
+describe("parametric routines", () => {
+  /** Select a routine into a slot, as the engine would report it back. */
+  const loaded = (name: string, slot: "movement" | "color" | "level",
+                  group = "corner movers") =>
+    stateWith((s) => { s.selection[slot] = { [group]: name }; });
+
+  it("renders a control per parameter from what the engine declared", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Ball Orbit", "movement")));
+    await goTo(user, /Move/);
+    // Nothing in the UI knows what an orbit is. These three controls exist
+    // because engine/blocks.py declared them.
+    expect(screen.getByLabelText("Radius")).toBeTruthy();
+    expect(screen.getByLabelText("Flatten")).toBeTruthy();
+    expect(screen.getByLabelText("Cycle")).toBeTruthy();
+  });
+
+  it("takes the slider's range from the engine, not from a literal here",
+     async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Ball Orbit", "movement")));
+    await goTo(user, /Move/);
+    const radius = screen.getByLabelText("Radius") as HTMLInputElement;
+    // The range a parameter has used to be written out in the engine's clamp,
+    // in a config Spec and again in the slider's arguments, with nothing
+    // keeping them in step. It now comes from the engine's own declaration,
+    // generated into blocks.generated.json.
+    const spec = BLOCK_PARAMS.orbit!.find((p) => p.name === "radius")!;
+    expect(radius.min).toBe(String(spec.min));
+    expect(radius.max).toBe(String(spec.max));
+    expect(radius.step).toBe(String(spec.step));
+  });
+
+  it("sends only the parameter that moved", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Ball Orbit", "movement")));
+    await goTo(user, /Move/);
+    fireEvent.change(screen.getByLabelText("Radius"), { target: { value: "25" } });
+    // Sparse on purpose: sending the whole resolved set would bake every other
+    // parameter's current value into the override and detach the routine from
+    // what parametric_looks.json authored.
+    expect(socket.last()).toEqual({
+      type: "look_params", name: "Ball Orbit", values: { radius: 25 } });
+  });
+
+  it("shows the dialled-in value over the authored one", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+      s.look_params = { "Ball Orbit": { radius: 42 } };
+    })));
+    await goTo(user, /Move/);
+    expect((screen.getByLabelText("Radius") as HTMLInputElement).value)
+      .toBe("42");
+  });
+
+  it("only offers Reset once something has been dialled in", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Ball Orbit", "movement")));
+    await goTo(user, /Move/);
+    const card = () =>
+      screen.getByText(/Tweak · Ball Orbit/).closest(".card")! as HTMLElement;
+    expect(within(card()).getByRole("button", { name: /reset Ball Orbit/i }))
+      .toHaveProperty("disabled", true);
+
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+      s.look_params = { "Ball Orbit": { radius: 42 } };
+    })));
+    const reset = within(card()).getByRole("button", { name: /reset Ball Orbit/i });
+    expect(reset).toHaveProperty("disabled", false);
+    await user.click(reset);
+    expect(socket.last()).toEqual({
+      type: "look_params", name: "Ball Orbit", reset: true });
+  });
+
+  it("shows no Tweak card for a ported look, rather than an empty one",
+     async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Ball Wave", "movement")));
+    await goTo(user, /Move/);
+    // A stored table of DMX has nothing to turn. On the Move tab that is most
+    // of the library, and a permanently-empty card is furniture.
+    expect(screen.queryByText(/^Tweak/)).toBeNull();
+  });
+
+  it("marks which looks in the picker can be tuned", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Move/);
+    const orbit = screen.getByRole("button", { name: /Ball Orbit/ });
+    expect(within(orbit).getByText("tune")).toBeTruthy();
+    const ported = screen.getByRole("button", { name: /^Ball Wave/ });
+    expect(within(ported).queryByText("tune")).toBeNull();
+  });
+
+  it("renders a choice parameter as pills, not a slider", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(loaded("Wind Out", "movement")));
+    await goTo(user, /Move/);
+    const direction = screen.getByRole("group", { name: "Direction" });
+    await user.click(within(direction).getByRole("button", { name: "in" }));
+    expect(socket.last()).toEqual({
+      type: "look_params", name: "Wind Out",
+      values: { direction: "in" } });
+  });
+});
+
+describe("modulation", () => {
+  const withRoutine = () => stateWith((s) => {
+    s.selection.movement = { "corner movers": "Ball Orbit" };
+  });
+
+  it("offers the loaded routine's numbers and the shape macros", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(withRoutine()));
+    await goTo(user, /Move/);
+    const group = screen.getByRole("group", { name: "parameter to modulate" });
+    expect(within(group).getByRole("button", { name: "Ball Orbit · Radius" }))
+      .toBeTruthy();
+    expect(within(group).getByRole("button", { name: "Shape · Size" }))
+      .toBeTruthy();
+    // Only numbers: there is no halfway between two choices, and the engine
+    // refuses a choice target rather than rounding it.
+    expect(within(group).queryByRole("button", { name: /Axis/ })).toBeNull();
+  });
+
+  it("binds a parameter to a waveform in two taps", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(withRoutine()));
+    await goTo(user, /Move/);
+    await user.click(screen.getByRole("button", { name: "Ball Orbit · Radius" }));
+    await user.click(within(screen.getByRole("group", { name: "waveform" }))
+      .getByRole("button", { name: "sine" }));
+    // No range sent: with none given the engine sweeps the target's whole
+    // declared range, which is what makes binding one a single decision.
+    expect(socket.last()).toEqual({
+      type: "modulate", look: "Ball Orbit", param: "radius",
+      shape: "sine", bars: 16 });
+  });
+
+  it("lists what is running and stops one", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+      s.modulators = [{ param: "radius", look: "Ball Orbit", shape: "sine",
+                        bars: 16, low: 0, high: 60, phase: 0 }];
+    })));
+    await goTo(user, /Move/);
+    expect(screen.getByText(/sine · 16b · 0–60/)).toBeTruthy();
+    await user.click(screen.getByRole("button",
+      { name: "stop modulating Ball Orbit · Radius" }));
+    expect(socket.last()).toEqual({
+      type: "modulate_clear", look: "Ball Orbit", param: "radius" });
+  });
+
+  it("only enables Stop all when something is actually running", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(withRoutine()));
+    await goTo(user, /Move/);
+    const stopAll = () =>
+      screen.getByRole("button", { name: "stop all modulation" });
+    expect(stopAll()).toHaveProperty("disabled", true);
+
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+      s.modulators = [{ param: "size", shape: "triangle", bars: 8,
+                        low: 0.5, high: 2, phase: 0 }];
+    })));
+    expect(stopAll()).toHaveProperty("disabled", false);
+    await user.click(stopAll());
+    expect(socket.last()).toEqual({ type: "modulate_clear", all: true });
+  });
+
+  it("shows no modulation card where nothing can be modulated", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    // The Bright tab with a ported level look loaded: no routine parameters,
+    // and the shape macros belong to Move.
+    act(() => socket.push(stateWith((s) => {
+      s.selection.level = { "corner movers": "Dim Chase" };
+    })));
+    await goTo(user, /Bright/);
+    expect(screen.queryByText("Modulation")).toBeNull();
+  });
+});
+
+describe("stacked routines and variation", () => {
+  it("stacks another route and lists what is on top", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Move/);
+    const stackCard = () => screen.getByRole("button",
+      { name: "clear stacked routines" }).closest(".card")! as HTMLElement;
+    await user.click(screen.getByRole("button", { name: /Stack another route/ }));
+    // Scoped: the Route picker above lists every movement look too, so an
+    // unscoped query for a look name matches twice.
+    await user.click(within(stackCard())
+      .getByRole("button", { name: /^Ball Orbit/ }));
+    expect(socket.last()).toEqual({ type: "movement_add", name: "Ball Orbit" });
+
+    act(() => socket.push(stateWith((s) => {
+      s.movement_extra = ["Ball Orbit"];
+    })));
+    expect(screen.getByText(/\+ 1 on top/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "unstack Ball Orbit" }));
+    expect(socket.last()).toEqual({
+      type: "movement_remove", name: "Ball Orbit" });
+  });
+
+  it("does not offer the base route as something to stack on itself",
+     async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+    })));
+    await goTo(user, /Move/);
+    await user.click(screen.getByRole("button", { name: /Stack another route/ }));
+    const stack = screen.getByText(/on top|Just the one route/)
+      .closest(".card")! as HTMLElement;
+    // Stacking a look on itself just doubles its excursion, which is what Size
+    // is for — the engine refuses it, so the UI should not offer it.
+    expect(within(stack).queryByRole("button", { name: /^Ball Orbit/ }))
+      .toBeNull();
+  });
+
+  it("stops offering more once the cap is reached", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.movement_extra = ["Nod", "Drift", "Restless"];
+      s.movement_stack_max = 3;
+    })));
+    await goTo(user, /Move/);
+    expect(screen.queryByRole("button", { name: /Stack another route/ }))
+      .toBeNull();
+    expect(screen.getByText(/3 is the limit/)).toBeTruthy();
+  });
+
+  it("offers Vary on a routine, and it is not the same button as Reset",
+     async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+    })));
+    await goTo(user, /Move/);
+    // Vary is always available; Reset only once something is dialled in. They
+    // sit next to each other, so the distinction has to be visible.
+    expect(screen.getByRole("button", { name: "reset Ball Orbit" }))
+      .toHaveProperty("disabled", true);
+    const vary = screen.getByRole("button", { name: "vary Ball Orbit" });
+    expect(vary).toHaveProperty("disabled", false);
+    await user.click(vary);
+    expect(socket.last()).toEqual({
+      type: "vary", name: "Ball Orbit", amount: 0.35 });
+  });
+});
+
+describe("the rig's reach", () => {
+  it("spans the centre slider over where the heads can actually go", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.reach = { bearing: [-77, 199], elevation: [-275, 452] };
+    })));
+    await goTo(user, /Move/);
+    // Not the fixed +-180 it used to be: on this rig that offered a hundred
+    // degrees no head could reach and refused eighteen every head could.
+    const bearing = screen.getByLabelText("Centre —") as HTMLInputElement;
+    expect([bearing.min, bearing.max]).toEqual(["-77", "199"]);
+    const elev = screen.getByLabelText("Centre |") as HTMLInputElement;
+    expect([elev.min, elev.max]).toEqual(["-275", "452"]);
+  });
+
+  it("falls back to the declared range on a rig with no moving heads", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => { s.reach = {}; })));
+    await goTo(user, /Move/);
+    const bearing = screen.getByLabelText("Centre —") as HTMLInputElement;
+    expect([bearing.min, bearing.max]).toEqual(["-180", "180"]);
+  });
+
+  it("says when a head has stopped at the end of its travel", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.fixtures.find((f) => f.name === "Moving Head #3")!.at_limit = ["bearing"];
+    })));
+    await goTo(user, /Move/);
+    // Under the Shape card, in either mode: the operator turning the centre is
+    // the one who needs to know.
+    expect(screen.getByText(/Moving Head #3 is at the end of its travel/))
+      .toBeTruthy();
+  });
+
+  it("does not warn when every head is where it was sent", async () => {
+    const user = userEvent.setup();
+    mount();
+    await goTo(user, /Move/);
+    expect(screen.queryByText(/at the end of/)).toBeNull();
+  });
+
+  it("turns a position button into an offset whose range is the rig's", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Heads - Floor" };
+      s.reach = { bearing: [-77, 199], elevation: [-275, 452] };
+    })));
+    await goTo(user, /Move/);
+    // The ported button, superseded in place by an `offset` block: same name,
+    // same place in the picker, but now it can be turned.
+    const up = screen.getByLabelText("Up") as HTMLInputElement;
+    expect(Number(up.value)).toBeCloseTo(-25, 0);
+    expect([up.min, up.max]).toEqual(["-275", "452"]);
+  });
+});
+
+describe("retired looks", () => {
+  // A ported PATH, not a pose: "path" is first in the Move tab's KIND_ORDER and
+  // so is the group the picker opens by default. Retiring a pose would leave it
+  // inside a collapsed group, and "the tile is absent" would pass whether or not
+  // retirement did anything.
+  // ...and not the one that is currently loaded, which stays visible on purpose
+  // (see the third test). The fixture has a movement look held, so without this
+  // the obvious pick is exactly the one retirement must not hide.
+  const withRetired = () => stateWith((s) => {
+    const up = new Set(Object.values(s.selection.movement ?? {}));
+    const target = s.looks.find(
+      (l) => l.slot === "movement" && l.kind === "path"
+             && !l.block && !l.retired && !l.step_of && !up.has(l.name))!;
+    target.retired = true;
+    target.replaced_by = "Ball Orbit";
+  });
+  // Found by the marker this test set, not as "the retired one": the real
+  // library retires looks of its own now (Lazy Circle), so the first retired
+  // look in the state is not necessarily the one under test.
+  const hiddenIn = (state: EngineState) =>
+    state.looks.find((l) => l.replaced_by === "Ball Orbit")!.name;
+  const retiredOnMove = (state: EngineState) =>
+    state.looks.filter((l) => l.slot === "movement" && l.retired).length;
+
+  it("hides a retired look and says how many are hidden", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    const state = withRetired();
+    const hidden = hiddenIn(state);
+    act(() => socket.push(state));
+    await goTo(user, /Move/);
+    // Hidden, never deleted: looks.json is generated and its round-trip proof
+    // needs every entry present. The list must not quietly shrink either.
+    expect(screen.queryByRole("button", { name: new RegExp(`^${hidden}`) }))
+      .toBeNull();
+    expect(screen.getByRole("button",
+      { name: new RegExp(`Show ${retiredOnMove(state)} retired`) })).toBeTruthy();
+  });
+
+  it("brings it back, pointing at what replaced it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    const state = withRetired();
+    const hidden = hiddenIn(state);
+    act(() => socket.push(state));
+    await goTo(user, /Move/);
+    await user.click(screen.getByRole("button", { name: /Show \d+ retired/ }));
+    const tile = screen.getByRole("button", { name: new RegExp(`^${hidden}`) });
+    expect(within(tile).getByText(/retired — use Ball Orbit/)).toBeTruthy();
+  });
+
+  it("still shows a retired look that is actually loaded", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    const state = withRetired();
+    const hidden = hiddenIn(state);
+    state.selection.movement = { "corner movers": hidden };
+    act(() => socket.push(state));
+    await goTo(user, /Move/);
+    // Hiding what is on stage would leave the picker claiming nothing is
+    // selected while the rig plainly disagrees.
+    expect(screen.getByRole("button", { name: new RegExp(`^${hidden}`) }))
+      .toBeTruthy();
+  });
+});
+
 describe("shape macros", () => {
   const openMove = async (user: ReturnType<typeof userEvent.setup>) =>
     goTo(user, /Move/);
@@ -1682,7 +2284,7 @@ describe("controls that had handlers but no sender", () => {
     const user = userEvent.setup();
     const socket = mount();
     await goTo(user, /Bright/);
-    const button = screen.getByRole("button", { name: /^Movers$/ });
+    const button = screen.getByRole("button", { name: "flash Movers" });
     // A click fires on release, and a bump that lands when you let go is not a
     // bump — so this has to be pointer down/up.
     await user.pointer({ keys: "[MouseLeft>]", target: button });
@@ -1696,7 +2298,7 @@ describe("controls that had handlers but no sender", () => {
     const user = userEvent.setup();
     const socket = mount();
     await goTo(user, /Bright/);
-    const button = screen.getByRole("button", { name: /^All$/ });
+    const button = screen.getByRole("button", { name: "flash all" });
     await user.pointer({ keys: "[MouseLeft>]", target: button });
     // A thumb sliding off never sends a normal release, and a flash stuck on is
     // a group stuck at full.
@@ -1787,6 +2389,37 @@ describe("guides", () => {
     await user.click(screen.getByRole("button", { name: "Back to Move" }));
     expect(screen.getByRole("slider", { name: "Size" })).toBeInTheDocument();
     expect(location.hash).toBe("#move");
+  });
+
+  it("names only controls the Move tab really has", async () => {
+    // A guide that points at a card or button that is not there strands the
+    // person reading it -- the one failure a guide must not have. These are the
+    // controls the parametric looks added; each named in the guide must exist
+    // on the tab once a tunable route is up.
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.selection.movement = { "corner movers": "Ball Orbit" };
+    })));
+    await goTo(user, /Move/);
+    expect(screen.getByText("Tweak · Ball Orbit")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "vary Ball Orbit" })).toBeTruthy();
+    expect(screen.getByText("Modulation")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "stop all modulation" })).toBeTruthy();
+    expect(screen.getByText("Layers")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /retired/ })).toBeTruthy();
+    // Scoped to the Route picker: the Modulation card's target buttons start
+    // with the look's name too ("Ball Orbit · Radius").
+    const route = screen.getByText("Route").closest(".card")! as HTMLElement;
+    expect(within(within(route).getByRole("button", { name: /^Ball Orbit/ }))
+      .getByText("tune")).toBeTruthy();
+
+    await user.click(guideButton());
+    const guide = document.body.textContent ?? "";
+    for (const named of ["tune", "Tweak", "Vary", "Modulation", "Stop all",
+                         "Layers", "retired"]) {
+      expect(guide, named).toContain(named);
+    }
   });
 
   it("has a guide for every tab, and opens that tab from it", async () => {

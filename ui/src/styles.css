@@ -65,6 +65,15 @@ button {
   transition: background 0.12s, border-color 0.12s;
 }
 button:active { background: var(--tap); }
+/* A link that is drawn as a button: it goes somewhere (Studio, in a tab of its
+   own) rather than doing something here. */
+a.button {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 0.7rem 0.9rem; min-height: 44px;
+  color: var(--text); text-decoration: none; white-space: nowrap;
+}
+a.button:active { background: var(--tap); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button.on { border-color: var(--accent); background: rgba(90, 169, 255, 0.16); }
 button.danger { border-color: var(--bad); color: #ffd9d6; }
@@ -329,6 +338,23 @@ input[type="range"]::-moz-range-thumb {
 }
 .chip.taper { border-color: var(--warn); color: var(--warn); }
 .chip.jog { border-color: var(--bad); color: var(--bad); }
+/* At the end of its own travel: a condition worth knowing, like a taper, not
+   an emergency like a jog. */
+.chip.limit { border-color: var(--warn); color: var(--warn); }
+/* A routine, not a stored table -- it has knobs. Accent rather than warn: this
+   is a capability, not a condition, and the other two chips both mean
+   "something is happening to this fixture that you should know about". */
+.chip.tunable {
+  border-color: var(--accent); color: var(--accent);
+  margin-left: 0.35rem; vertical-align: middle;
+}
+
+/* One parameter, rendered from what the engine declared. Spaced rather than
+   packed because these stack -- an orbit has three, a scatter five -- and a run
+   of unseparated sliders on a phone is impossible to aim a thumb at. */
+.param { margin-bottom: 0.7rem; }
+.param:last-child { margin-bottom: 0; }
+.param .swatch { flex: 0 0 auto; }
 
 .bar { height: 6px; border-radius: 3px; background: var(--panel); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--accent); }
@@ -380,6 +406,8 @@ label.field input, label.field select {
   padding-bottom: 2px; min-width: 0;
 }
 .pills::-webkit-scrollbar { display: none; }
+/* A choice made, landing on the next downbeat. */
+.pills button.pending, .tiles button.pending { border-style: dashed; border-color: var(--accent); }
 .pills button {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -473,3 +501,5 @@ button { max-width: 100%; overflow-wrap: anywhere; }
   overflow-wrap: normal;
   white-space: nowrap;
 }
+
+.warn-text { color: var(--warn); }

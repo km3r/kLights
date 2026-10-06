@@ -6,8 +6,8 @@ This is the core every output shares. It knows rows, items, curves and hits; it
 does not know what a mover is. The lights compiler (F19h) asks it "what is on
 the movement channel at beat 161.5" and turns the answer into layers; a VJ
 adapter (milestone 3) will ask the same question of its own rows. So it imports
-nothing from the lights -- nothing from the engine at all -- and a test holds
-it to that.
+nothing from the lights -- nothing from the engine but `waves.py`, which is
+standard-library-only itself -- and a test holds both to that.
 
 **Positions are beats** on the track's grid (`tracktime.py` turns audio
 seconds into them). Every query is a pure function of the beat, so whatever the
@@ -47,11 +47,23 @@ curve]`. The curve named on a point shapes the segment ARRIVING at it:
 phase: computing it from the beat rather than accumulating it per frame is what
 makes a loop land on the same phase every pass.
 
+A row may also carry a `wave` (`waves.Wave`): a musical shape added on top of
+its points -- `depth` times a sine, a triangle, a ramp... over `bars` -- so a
+lane can breathe without a point per bar. Its integral is exact too, which is
+why the shapes live in `waves.py` with their areas, and why that module is as
+standard-library-only as this one.
+
 **Hits** (flash, strobe, blackout) are windows: on from `at` for `len` beats.
 Jump into the middle of one and it shows from there; jump over one and it never
 fires. A hit shorter than a frame would fall between two frames, so in forward
 play one that STARTED since the last frame is reported once even if it has
 already ended -- never after a jump, which did not play through it.
+
+**External rows** (milestone 3) belong to other outputs -- OSC, MIDI, the
+built-in visuals. Their items are windows exactly like hits, and a row may
+carry a curve too; what an item says is that output's business
+(`outputs.py`). So a VJ cue a loop jumps into is on, and one a hot cue jumps
+over never fires.
 
 Pure: no I/O, no clock, no threads. Build on the worker; query anywhere.
 """
@@ -62,6 +74,8 @@ import bisect
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Union
+
+from .waves import Wave
 
 CURVES = ("linear", "step", "ease")
 FILL = "fill"
@@ -284,15 +298,18 @@ def _shape_area(curve: str, x: float) -> float:
 
 @dataclass(frozen=True)
 class Curve:
-    """Automation: values at beats, shaped between them. Values are numbers,
-    or anything else (a colour) for `segment` alone."""
+    """Automation: values at beats, shaped between them, plus an optional wave
+    on top (`waves.Wave`). Values are numbers, or anything else (a colour) for
+    `segment` and `pull` alone."""
     beats: tuple[float, ...]
     values: tuple[Any, ...]
     shapes: tuple[str, ...]          # shapes[i] shapes the segment INTO point i
     areas: Optional[tuple[float, ...]]   # integral up to each point; numeric only
+    wave: Optional[Wave] = None
 
     @classmethod
-    def from_points(cls, points: Sequence, where: str = "curve") -> "Curve":
+    def from_points(cls, points: Sequence, where: str = "curve",
+                    wave: Optional[Wave] = None) -> "Curve":
         if not points:
             raise TimelineError(f"{where} has no points")
         beats, values, shapes = [], [], []
@@ -322,7 +339,7 @@ class Curve:
                 a, b = values[i - 1], values[i]
                 acc.append(acc[-1] + w * (a + (b - a) * _shape_area(shapes[i], 1.0)))
             areas = tuple(acc)
-        return cls(tuple(beats), tuple(values), tuple(shapes), areas)
+        return cls(tuple(beats), tuple(values), tuple(shapes), areas, wave)
 
     @property
     def numeric(self) -> bool:
@@ -344,23 +361,33 @@ class Curve:
         if not self.numeric:
             raise TimelineError("value() needs a numeric curve; use segment()")
         a, b, t = self.segment(beat)
-        return a + (b - a) * t
+        base = a + (b - a) * t
+        return base if self.wave is None else base + self.wave.level(beat)
+
+    def pull(self, beat: float) -> Optional[tuple[Any, float]]:
+        """A colour curve's wave at `beat`: (the colour it swings toward, how
+        far, 0..1), or None without one. The caller blends, as for `segment`."""
+        if self.wave is None or self.numeric:
+            return None
+        return self.wave.toward, max(0.0, min(1.0, self.wave.level(beat)))
 
     def integral(self, beat: float) -> float:
-        """The area under the curve from its first point to `beat` (negative
-        before it). Exact."""
+        """The area under the curve to `beat`, from a fixed origin -- only
+        differences of it mean anything. Exact, wave included (`waves.area`)."""
         if self.areas is None:
             raise TimelineError("only a numeric curve has an integral")
+        wave = self.wave.integral(beat) if self.wave is not None else 0.0
         beats, values = self.beats, self.values
         if beat <= beats[0]:
-            return values[0] * (beat - beats[0])
+            return values[0] * (beat - beats[0]) + wave
         if beat >= beats[-1]:
-            return self.areas[-1] + values[-1] * (beat - beats[-1])
+            return self.areas[-1] + values[-1] * (beat - beats[-1]) + wave
         i = bisect.bisect_right(beats, beat)
         w = beats[i] - beats[i - 1]
         x = (beat - beats[i - 1]) / w
         a, b = values[i - 1], values[i]
-        return self.areas[i - 1] + w * (a * x + (b - a) * _shape_area(self.shapes[i], x))
+        return (self.areas[i - 1] + w * (a * x + (b - a) * _shape_area(self.shapes[i], x))
+                + wave)
 
 
 # -- hits ---------------------------------------------------------------------
@@ -415,7 +442,61 @@ class HitRow:
                 if i.end <= beat]
 
 
+# -- other outputs ------------------------------------------------------------
+
+class ExternalRow:
+    """A row for an output other than the lights -- OSC, MIDI, visuals
+    (milestone 3). Its items are windows, like hits: on from `at` for `len`
+    beats, whatever the deck did to get there. It may also carry a curve
+    (`points`), sent as a value. What an item SAYS -- an OSC address, a note,
+    a scene -- is the output's business; `data` is the whole row, read-only."""
+
+    def __init__(self, row_id: str, output: str, data: Mapping,
+                 items: Sequence[Item], curve: Optional[Curve]):
+        self.id = row_id
+        self.output = output
+        self.data = MappingProxyType(dict(data))
+        self.windows = HitRow(row_id, items)
+        self.curve = curve
+
+    @property
+    def items(self) -> tuple[Item, ...]:
+        return self.windows.items
+
+
+@dataclass(frozen=True)
+class ExternalFrame:
+    """One external row at one beat: the items on (and, in forward play, any
+    too short to have been on for a whole frame), and its curve's value."""
+    row: ExternalRow
+    items: tuple[Hit, ...]
+    value: Optional[float]
+
+    def public(self) -> dict:
+        out: dict = {"row": self.row.id, "output": self.row.output,
+                     "items": [{"item": h.item.id, "progress": round(h.progress, 3),
+                                **({"crossed": True} if h.crossed else {})}
+                               for h in self.items]}
+        if self.value is not None:
+            out["value"] = round(self.value, 4)
+        return out
+
+
 # -- the whole thing ----------------------------------------------------------
+
+def _external_row(row: Mapping) -> ExternalRow:
+    rid = row.get("id") or "external"
+    where = f"row {rid!r}"
+    output = row.get("output")
+    if not isinstance(output, str) or not output:
+        raise TimelineError(f"{where} names no output")
+    items = [Item.from_dict(i, where) for i in row.get("items") or ()]
+    points = row.get("points")
+    curve = Curve.from_points(points, where) if points else None
+    if curve is not None and not curve.numeric:
+        raise TimelineError(f"{where}: an external curve's values must be numbers")
+    return ExternalRow(rid, output, row, items, curve)
+
 
 def _own_target(row: Mapping) -> tuple[str, ...]:
     return (row["target"],)
@@ -426,7 +507,8 @@ class Frame:
     """Everything a timeline says at one beat."""
     beat: float
     channels: Mapping[str, Channel]
-    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers
+    automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers,
+                                     # with (toward, pull) after it when a wave swings it
     hits: tuple[Hit, ...]
 
 
@@ -441,6 +523,7 @@ class Timeline:
         self.hit_rows = tuple(hit_rows)
         self.curves = MappingProxyType(dict(curves))
         self.external = tuple(MappingProxyType(dict(r)) for r in external)
+        self.external_rows = tuple(_external_row(r) for r in self.external)
         self.meta = MappingProxyType(dict(meta or {}))
         order: list[str] = []
         by_channel: dict[str, list[ClipRow]] = {}
@@ -487,10 +570,17 @@ class Timeline:
                 target = row.get("target")
                 if not isinstance(target, str) or not target:
                     raise TimelineError(f"{where} automates nothing")
-                curve = Curve.from_points(row.get("points") or (), where)
+                wave = None
+                if row.get("wave") is not None:
+                    try:
+                        wave = Wave.from_spec(row["wave"], f"{where} wave")
+                    except ValueError as exc:
+                        raise TimelineError(str(exc)) from None
+                curve = Curve.from_points(row.get("points") or (), where, wave)
                 curves.setdefault(target, (rid, curve))  # the higher row wins
             elif kind == "external":
-                external.append(row)            # another output's; kept as is
+                _external_row(row)              # refuse what cannot be built
+                external.append(row)            # and keep it whole
             else:
                 raise TimelineError(f"{where} has unknown type {kind!r}")
         return cls(clip_rows, hit_rows, curves, external, meta)
@@ -550,12 +640,17 @@ class Timeline:
         return Channel(tuple(layers), rest=True)
 
     def automation(self, target: str, beat: float) -> Any:
-        """The value of an automated target, None if nothing automates it."""
+        """The value of an automated target, None if nothing automates it: a
+        number, or for a colour (from, to, t) -- and, when a wave swings it,
+        (toward, pull) after those, so an explanation shows the whole value."""
         entry = self.curves.get(target)
         if entry is None:
             return None
         curve = entry[1]
-        return curve.value(beat) if curve.numeric else curve.segment(beat)
+        if curve.numeric:
+            return curve.value(beat)
+        pull = curve.pull(beat)
+        return curve.segment(beat) + (pull if pull is not None else ())
 
     def hits(self, beat: float, prev: Optional[float] = None,
              jumped: bool = False) -> tuple[Hit, ...]:
@@ -566,6 +661,20 @@ class Timeline:
             out.extend(row.active(beat))
             if prev is not None and not jumped and prev < beat:
                 out.extend(row.crossed(prev, beat))
+        return tuple(out)
+
+    def external_at(self, beat: float, prev: Optional[float] = None,
+                    jumped: bool = False) -> tuple[ExternalFrame, ...]:
+        """Every external row at `beat`: its items on, by window -- so a jump
+        lands inside one exactly as continuous play would -- plus, in forward
+        play since `prev`, the ones too short for any frame to have seen."""
+        out: list[ExternalFrame] = []
+        for row in self.external_rows:
+            items = row.windows.active(beat)
+            if prev is not None and not jumped and prev < beat:
+                items.extend(row.windows.crossed(prev, beat))
+            value = row.curve.value(beat) if row.curve is not None else None
+            out.append(ExternalFrame(row, tuple(items), value))
         return tuple(out)
 
     def at(self, beat: float, prev: Optional[float] = None,
@@ -589,6 +698,12 @@ class Timeline:
         for _, curve in self.curves.values():
             lo.append(curve.beats[0])
             hi.append(curve.beats[-1])
+        for row in self.external_rows:
+            lo.extend(i.at for i in row.items)
+            hi.extend(i.end for i in row.items)
+            if row.curve is not None:
+                lo.append(row.curve.beats[0])
+                hi.append(row.curve.beats[-1])
         return (min(lo), max(hi)) if lo else None
 
     def explain(self, beat: float) -> dict:
@@ -602,7 +717,12 @@ class Timeline:
                 auto[target] = {"from": a, "to": b, "t": round(t, 3)}
             else:
                 auto[target] = round(value, 4)
-        return {"beat": beat,
-                "channels": {ch: c.public() for ch, c in frame.channels.items()},
-                "automation": auto,
-                "hits": [h.public() for h in frame.hits]}
+        out = {"beat": beat,
+               "channels": {ch: c.public() for ch, c in frame.channels.items()},
+               "automation": auto,
+               "hits": [h.public() for h in frame.hits]}
+        external = [e.public() for e in self.external_at(beat)
+                    if e.items or e.value is not None]
+        if external:
+            out["external"] = external
+        return out

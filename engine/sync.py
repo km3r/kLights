@@ -70,11 +70,16 @@ from typing import Any, Callable, Optional
 # select pre-authored content -- which is why Follow DJ starts disarmed and why
 # every one of them is range-checked here, not trusted.
 CLOCK_FIELDS = ("bpm", "beat", "beat_in_bar", "phrase_measured", "phrase_label",
-                "phrase_ends_in", "source", "deck", "track")
+                "phrase_ends_in", "phrase_into", "source", "deck", "track")
 TRACK_FIELDS = ("track_time", "title", "artist", "album", "duration",
                 "bpm_original", "pitch", "playing", "on_air", "master",
                 "rekordbox_id", "signature", "beat_number")
-FIELDS = CLOCK_FIELDS + TRACK_FIELDS
+# What another deck has LOADED (milestone 2): the same identity, prefixed, so
+# it can never be mistaken for the tempo master's -- the transport follows the
+# master alone, and these only let the engine build a show in advance.
+LOADED_FIELDS = tuple(f"loaded_{k}" for k in (
+    "deck", "title", "artist", "album", "duration", "rekordbox_id", "signature"))
+FIELDS = CLOCK_FIELDS + TRACK_FIELDS + LOADED_FIELDS
 
 _FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
            "beat_in_bar": (0.0, 64.0), "phrase_ends_in": (None, None),
@@ -82,7 +87,10 @@ _FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
            # cue set before the first sample. Four hours is longer than any
            # track a DJ will play.
            "track_time": (-60.0, 14400.0), "duration": (0.0, 14400.0),
-           "bpm_original": (20.0, 400.0), "pitch": (0.0, 4.0)}
+           "bpm_original": (20.0, 400.0), "pitch": (0.0, 4.0),
+           # Beats since the current phrase began, as the deck's own analysis
+           # says (milestone 2): where a template starts its routine.
+           "phrase_into": (0.0, 4096.0)}
 _FLAGS = ("phrase_measured", "playing", "on_air", "master")
 _INTS = {"rekordbox_id": (0, 2 ** 32 - 1), "beat_number": (0, 200000)}
 _NAMES = ("title", "artist", "album")       # longer, and cleaned harder
@@ -143,11 +151,19 @@ KLIGHTS_V1 = {
     "pos": "nnnnnnn",
     # deck, rekordbox_id, signature, title, artist, album, duration_s
     "track": "nnssssn",
+    # deck, rekordbox_id, signature, title, artist, album, duration_s -- what
+    # ANY deck has loaded, sent when it changes (milestone 2: pre-matching)
+    "deck": "nnssssn",
+    # deck, label, beats_into, beats_left -- the tempo master's phrase from
+    # the rekordbox analysis on the DJ's USB (milestone 2). An empty label
+    # says the deck has no phrase analysis.
+    "phrase": "nsnn",
 }
 
 
-def parse_osc(data: bytes) -> Optional[dict]:
-    """One OSC message as a flat dict, or None if it is not one we understand.
+def decode_osc(data: bytes) -> Optional[tuple[str, list]]:
+    """One OSC message as (address, args), or None if it is not one we
+    understand.
 
     Deliberately partial. OSC is a big spec and this needs four scalar types off
     a single message -- bundles, blobs, arrays and timetags are things
@@ -186,7 +202,16 @@ def parse_osc(data: bytes) -> Optional[dict]:
                 return None                        # a type we do not model
     except (ValueError, struct.error, UnicodeDecodeError):
         return None
+    return address, args
 
+
+def parse_osc(data: bytes) -> Optional[dict]:
+    """One OSC message as a flat dict of sync fields, or None if it is not one
+    we understand."""
+    decoded = decode_osc(data)
+    if decoded is None:
+        return None
+    address, args = decoded
     parts = [p for p in address.lower().strip("/").split("/") if p]
     if parts[:2] == ["klights", "v1"]:
         return klights_fields(parts[2:], args)
@@ -209,6 +234,22 @@ def klights_fields(parts: list[str], args: list) -> Optional[dict]:
         # datagram must never be able to do that.
         if number and not math.isfinite(arg):
             return None
+    if parts[0] == "deck":
+        deck, rekordbox_id, signature, title, artist, album, duration = args
+        out = {"source": "blt", "loaded_deck": str(int(deck)),
+               "loaded_rekordbox_id": rekordbox_id, "loaded_title": title,
+               "loaded_artist": artist, "loaded_album": album}
+        if signature:
+            out["loaded_signature"] = signature
+        if duration > 0:
+            out["loaded_duration"] = duration
+        return out
+    if parts[0] == "phrase":
+        deck, label, into, left = args
+        out = {"source": "blt", "deck": str(int(deck)), "phrase_label": label}
+        if label:
+            out.update(phrase_measured=True, phrase_into=into, phrase_ends_in=left)
+        return out
     if parts[0] == "pos":
         deck, playing, time_s, pitch, beat_number, master, on_air = args
         return {"source": "blt", "deck": str(int(deck)), "playing": playing != 0,
@@ -338,12 +379,14 @@ def clean(raw: dict) -> Optional[dict]:
         if key not in raw or raw[key] is None:
             continue
         value = raw[key]
+        # A loaded deck's fields obey the same rules as the master's.
+        rule = key[len("loaded_"):] if key.startswith("loaded_") else key
         try:
-            if key in _FLOATS:
+            if rule in _FLOATS:
                 if isinstance(value, bool):
                     continue
                 number = float(value)
-                lo, hi = _FLOATS[key]
+                lo, hi = _FLOATS[rule]
                 if number != number or number in (float("inf"), float("-inf")):
                     continue                       # NaN and infinity: never
                 if lo is not None and number < lo:
@@ -353,20 +396,20 @@ def clean(raw: dict) -> Optional[dict]:
                                        else number > hi):
                     continue
                 out[key] = number
-            elif key in _FLAGS:
+            elif rule in _FLAGS:
                 out[key] = _flag(value)
-            elif key in _INTS:
+            elif rule in _INTS:
                 if isinstance(value, bool) or float(value) != int(float(value)):
                     continue
                 number = int(float(value))
-                lo, hi = _INTS[key]
+                lo, hi = _INTS[rule]
                 if lo <= number <= hi:
                     out[key] = number
-            elif key == "signature":
+            elif rule == "signature":
                 sig = str(value).strip().lower()
                 if _SIGNATURE_RE.match(sig):
                     out[key] = sig
-            elif key in _NAMES:
+            elif rule in _NAMES:
                 out[key] = _name(value)
             else:
                 out[key] = str(value)[:64]

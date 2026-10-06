@@ -44,6 +44,7 @@ calling thread. The engine calls them from its worker, never the output thread.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -51,11 +52,13 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
+from . import blocks as blocksmod
 from . import config as configmod
 from . import timeline as timelinemod
 from . import tracktime
+from . import waves
 
 REPO = Path(__file__).resolve().parent.parent
 LOCAL_CONFIG = REPO / "klights.local.json"
@@ -66,11 +69,11 @@ N = configmod.Number
 
 # Every kind has its own format version. See config.validate: a timeline change
 # must not force a version bump on every venue.json in every checkout.
-KINDS = ("show", "track", "timeline", "routine", "template_set", "waveform")
+KINDS = ("show", "track", "timeline", "routine", "template_set", "waveform", "palette")
 FORMAT_VERSION = {k: 1 for k in KINDS}
 
 SUBDIR = {"track": "tracks", "timeline": "timelines", "routine": "routines",
-          "template_set": "templates", "waveform": "waveforms"}
+          "template_set": "templates", "waveform": "waveforms", "palette": "palettes"}
 
 # File names are ids. Lower case, so two machines with different
 # case-sensitivity cannot disagree about whether "Fan-Drop" and "fan-drop" are
@@ -102,10 +105,21 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
     target = row["target"]
     return SLOTS if target == "scene" else (target,)
 
-# Continuous values a timeline can automate, and their ranges. The macro
-# ranges are the ones `ShowController._cmd_macro` clamps to, and rate is
+# Continuous values a timeline can automate, and their ranges. Size and spread
+# are the ranges `ShowController._cmd_macro` clamps to, and rate is
 # SlotPhases' 0-8 -- a curve that asks for more would be clamped at run time,
 # so it is refused at authoring time instead.
+#
+# The CENTRE ranges are the portable fallback (`params.CENTER_*`), not the
+# run-time clamp. At run time the centre is bounded by the playing rig's reach
+# (`server.rig_reach`), which on a real rig is often wider on one side and
+# narrower on the other. A show folder does not know which rig will play it, so
+# it is authored against the range every rig can be expected to understand.
+#
+# Besides these, `param.<name>` drives a routine's open parameter. It has no
+# range here because each routine declares its own: a routine's lane is held to
+# its declaration (`_check_points`), a timeline's to the declarations of the
+# routines it places (`param_lane_problems`).
 AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
     "master": (0.0, 1.0),
     "size": (0.0, 3.0),
@@ -121,8 +135,9 @@ AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
 # implements exactly these; a test holds the two lists together. `look` and
 # `snapshot` are the rig-bound adapters -- a routine using either must name its
 # rig, which is what "this rig only" means.
-BLOCK_NAMES = ("fan_sweep", "orbit", "pendulum", "aim_points", "solid",
-               "color_chase", "chase", "pulse", "dim", "strobe",
+BLOCK_NAMES = ("offset", "fan_sweep", "orbit", "pendulum", "figure8", "spiral",
+               "scatter", "aim_points", "solid", "color_chase", "hue_cycle", "duo",
+               "chase", "pulse", "breathe", "dim", "strobe",
                "look", "snapshot")
 RIG_BOUND_BLOCKS = ("look", "snapshot")
 
@@ -162,6 +177,32 @@ SHOW = {
                      fix="disarmed: the DJ feed shows but drives nothing until "
                          "someone arms it"),
         "min_track_change_s": S(N, min=0, max=60),
+    }),
+    # Where the other outputs go (milestone 3). klights.local.json's own
+    # "outputs" overrides this per machine -- the VJ laptop's address is the
+    # venue's business, not the show's.
+    "outputs": S(dict, of={
+        "osc": S(dict, of={
+            "host": S(str, non_empty=True, fix="the VJ machine, e.g. 127.0.0.1"),
+            "port": S(int, required=True, min=1, max=65535,
+                      fix="the port the VJ app listens on (Resolume: 7000)"),
+        }),
+        # The MIDI sidecar (bridges/midi/), which owns the MIDI port. {} is
+        # the default: the sidecar on this machine at its default port.
+        "midi": S(dict, of={
+            "host": S(str, non_empty=True, fix="default 127.0.0.1, this machine"),
+            "port": S(int, min=1, max=65535,
+                      fix="the sidecar's --port; default 9123"),
+        }),
+        # Art-Net ArtTimeCode: the matched track's position, for a VJ app
+        # with its own per-track timeline. {} turns it on with the defaults.
+        "timecode": S(dict, of={
+            "host": S(str, non_empty=True,
+                      fix="where to send it; default 255.255.255.255, everyone"),
+            "port": S(int, min=1, max=65535, fix="default 6454, Art-Net's"),
+            "fps": S(N, choices=(24, 25, 29.97, 30),
+                     fix="24 film, 25 EBU, 29.97 drop-frame, 30 SMPTE (default)"),
+        }),
     }),
 }
 
@@ -239,9 +280,91 @@ _HIT = S(dict, of={
 
 _ROW_COMMON = {"id": S(str, required=True, non_empty=True), "label": S(str)}
 
-# `external` rows belong to outputs other than the lights -- VJ, in milestone 3.
-# They are carried and preserved, never evaluated here, so a timeline written by
-# a newer designer with a video lane still loads and saves on this engine.
+# `external` rows belong to outputs other than the lights (milestone 3): OSC to
+# a VJ app or anything else, MIDI through the sidecar, the built-in visuals.
+# Items are windows like hits; a row may also carry a curve (`points`). An
+# output this engine does not know is a warning, not an error, and the row is
+# kept untouched -- a timeline from a newer designer still loads and saves.
+OUTPUTS = ("osc", "midi", "visuals")
+OUTPUT_ALIASES = {"vj": "visuals"}      # the name milestone 1's example used
+# What an OSC argument may say instead of a literal, filled in as it is sent.
+ARG_TOKENS = ("$beat", "$bar", "$phase", "$progress", "$value")
+
+_OSC_MESSAGE = S(dict, of={
+    "address": S(str, required=True, non_empty=True,
+                 fix='an OSC address, e.g. "/composition/layers/1/clips/2/connect"'),
+    "args": S(list, fix='numbers and text, or "$beat", "$bar", "$phase" (0-1 '
+                        'through the bar), "$progress" (0-1 through the item) '
+                        'or "$value" (the row\'s curve)'),
+})
+
+# The built-in visuals (milestone 3): what a #visuals page can draw, and the
+# parameters each scene reads. "color" is @primary, @secondary, @accent or
+# #rrggbb; "file" is a video in the show folder's media/; a pair is a range.
+VISUAL_SCENES = ("wash", "bars", "tunnel", "particles", "strobe", "video")
+_COMMON_VISUAL = {"opacity": (0, 1)}
+VISUAL_PARAMS: dict[str, dict[str, Any]] = {
+    "wash": {"color": "color", "pulse": (0, 1)},
+    "bars": {"color": "color", "count": (1, 64), "speed": (0, 8)},
+    "tunnel": {"color": "color", "speed": (0, 8), "depth": (2, 40)},
+    "particles": {"color": "color", "count": (1, 2000), "burst": (0, 1)},
+    "strobe": {"color": "color", "rate": (0.25, 16)},
+    "video": {"file": "file", "loop": "bool", "rate": ("beat", "normal"),
+              "bpm": (20, 400)},
+}
+MEDIA_DIR = "media"
+MEDIA_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+VIDEO_EXTENSIONS = (".mp4", ".m4v", ".webm", ".mov")
+
+_MIDI_7BIT = dict(min=0, max=127)
+_MIDI_CHANNEL = S(int, min=1, max=16, fix="a MIDI channel, 1-16")
+
+_EXTERNAL_ITEM = S(dict, of={
+    **_ITEM,
+    "on": _OSC_MESSAGE,          # OSC: sent when the item comes on
+    "off": _OSC_MESSAGE,         # ... when it goes off
+    "while": _OSC_MESSAGE,       # ... while it is on, when it changes, <= 30 Hz
+    # MIDI (through the sidecar): one of a note, a CC or a program change.
+    "channel": _MIDI_CHANNEL,
+    "note": S(int, **_MIDI_7BIT, fix="a note number, 0-127 (60 is middle C)"),
+    "velocity": S(int, min=1, max=127, fix="1-127; default 100"),
+    "cc": S(int, **_MIDI_7BIT, fix="a controller number, 0-127"),
+    "value": S(int, **_MIDI_7BIT, fix="the CC value at the start, 0-127; "
+                                      "default 127"),
+    "off_value": S(int, **_MIDI_7BIT, fix="the CC value at the end, if any"),
+    "pc": S(int, **_MIDI_7BIT, fix="a program number, 0-127"),
+    # Visuals: a scene and its parameters.
+    "scene": S(str, choices=VISUAL_SCENES),
+    "params": S(dict, fix="the scene's parameters, e.g. {\"color\": \"@primary\"}"),
+})
+
+_EXTERNAL_ROW = {
+    "output": S(str, required=True, non_empty=True,
+                fix="osc, midi or visuals"),
+    "items": S(list, each=_EXTERNAL_ITEM),
+    "points": S(list, fix='[[beat, value], [beat, value, "ease"], ...] -- sent '
+                          'as $value (OSC) or as a CC, 0-1 scaled to 0-127 (MIDI)'),
+    "address": S(str, fix="OSC: where a curve's value is sent"),
+    "args": S(list, fix='OSC: what a curve sends; default ["$value"]'),
+    "channel": _MIDI_CHANNEL,
+    "cc": S(int, **_MIDI_7BIT, fix="MIDI: the controller a curve drives"),
+}
+
+# A musical shape added on top of an automation row's points (`waves.Wave`).
+# What `depth` and `toward` must be depends on the lane -- a number or a colour
+# -- so that is checked in meaning, by `_check_wave`.
+_WAVE = S(dict, of={
+    "shape": S(str, required=True, choices=waves.SHAPES),
+    "bars": S(N, required=True, min=0.25, max=256,
+              fix="one cycle, in bars -- musical, so right at any tempo"),
+    "depth": S(N, fix="how far above the points it swings, in the lane's own "
+                      "units; negative swings below. On a colour lane, 0-1: "
+                      "how far toward `toward`"),
+    "phase": S(N, min=0, max=1, fix="where in its cycle it starts, in cycles"),
+    "seed": S(int, fix="which run of levels a hold wave picks"),
+    "toward": S(fix="a colour lane's wave: the colour it swings toward"),
+}, fix='{"shape": "sine", "bars": 4, "depth": 0.5}')
+
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "clips": {"target": S(str, required=True, choices=CLIP_TARGETS),
               "gap": S(str, choices=("fill", "exclusive"),
@@ -253,8 +376,9 @@ _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "hits": {"items": S(list, required=True, each=_HIT)},
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True,
-                               fix='[[beat, value], [beat, value, "ease"], ...]')},
-    "external": {"output": S(str, required=True, non_empty=True)},
+                               fix='[[beat, value], [beat, value, "ease"], ...]'),
+                   "wave": _WAVE},
+    "external": _EXTERNAL_ROW,
 }))
 
 _PALETTES = S(dict, fix='{"Cool": {"primary": "#3b82f6", "secondary": ..., '
@@ -284,7 +408,8 @@ _ROUTINE_ROW = S(dict, of=_ROW_COMMON, variants=("type", {
               "items": S(list, required=True, each=_BLOCK_ITEM)},
     "hits": {"items": S(list, required=True, each=_HIT)},
     "automation": {"target": S(str, required=True, non_empty=True),
-                   "points": S(list, required=True)},
+                   "points": S(list, required=True), "wave": _WAVE},
+    "external": _EXTERNAL_ROW,
 }))
 
 ROUTINE = {
@@ -301,6 +426,8 @@ ROUTINE = {
     "params": S(dict),
     "variations": S(dict),
     "rows": S(list, required=True, each=_ROUTINE_ROW),
+    "folder": S(str, fix='where Studio files it, e.g. "Drops"; it changes '
+                         'nothing about how it plays'),
 }
 
 # One open parameter of a routine. `default` is checked against `type` in
@@ -311,7 +438,11 @@ _PARAM = S(dict, of={"type": S(str, required=True, choices=PARAM_TYPES,
 
 _PICK = S(dict, of={"routine": S(str, required=True, non_empty=True),
                     "variation": S(str), "params": S(dict),
-                    "palette": S(str)})
+                    "palette": S(str),
+                    # what the built-in visuals show for this pick (milestone 3)
+                    "visuals": S(dict, of={
+                        "scene": S(str, required=True, choices=VISUAL_SCENES),
+                        "params": S(dict)})})
 
 TEMPLATE_SET = {
     "kind": _kind("template_set"),
@@ -338,9 +469,26 @@ WAVEFORM = {
                           "data": S(str, required=True)}),
 }
 
+# The show's palette library: one palette a file, `palettes/<id>.json`.
+#
+# A library palette is a SOURCE, not a link. Timelines and template sets keep
+# their own copies, by name, exactly as before -- so each still describes its
+# whole show, the compiler reads only the file it compiles, and nothing
+# recolours a track behind anyone's back. Studio shows every copy of a library
+# palette and updates them on request (`sync_palette`).
+PALETTE = {
+    "kind": _kind("palette"),
+    "id": S(str, required=True, non_empty=True, fix=ID_FIX),
+    "name": S(str, required=True, non_empty=True,
+              fix='the name timelines and template sets know it by, e.g. "Hot"'),
+    "primary": S(str, required=True, fix="#rrggbb"),
+    "secondary": S(str, required=True, fix="#rrggbb"),
+    "accent": S(str, required=True, fix="#rrggbb"),
+}
+
 SCHEMAS: dict[str, dict[str, S]] = {
     "show": SHOW, "track": TRACK, "timeline": TIMELINE, "routine": ROUTINE,
-    "template_set": TEMPLATE_SET, "waveform": WAVEFORM,
+    "template_set": TEMPLATE_SET, "waveform": WAVEFORM, "palette": PALETTE,
 }
 
 
@@ -471,17 +619,293 @@ def _check_items(row: dict, result: Result, where: str) -> None:
                 f"earlier one wins until it ends")
 
 
+def output_name(row: dict) -> str:
+    """An external row's output, aliases resolved."""
+    output = row.get("output") or ""
+    return OUTPUT_ALIASES.get(output, output)
+
+
+def _check_external(row: dict, result: Result, where: str) -> None:
+    """An external row: its items' windows, its curve, and -- for an output
+    this engine plays -- what each item says."""
+    output = output_name(row)
+    items = row.get("items") or []
+    points = row.get("points")
+    # Windows and a curve every output shares -- the timeline core builds them
+    # whatever the output, so they must be sound even for one not played here.
+    _check_items(row, result, where)
+    if points is not None:
+        _check_curve(points, result, where)
+    if output not in OUTPUTS:
+        result.warnings.append(f"{where}: this engine does not play output "
+                               f"{row['output']!r} (only {', '.join(OUTPUTS)}); "
+                               f"the row is kept as it is")
+        return
+    if not items and not points:
+        result.warnings.append(f"{where} has no items and no points, so it "
+                               f"sends nothing")
+    if output == "osc":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            if not any(item.get(k) for k in ("on", "off", "while")):
+                result.errors.append(f"{at} says nothing: give it an on, off or "
+                                     f"while message")
+            for key in ("on", "off", "while"):
+                if item.get(key):
+                    _check_osc(item[key], result, f"{at} {key}")
+        if points is not None:
+            if not row.get("address"):
+                result.errors.append(f"{where} has points but no address to "
+                                     f"send their value to")
+            else:
+                _check_osc({"address": row["address"],
+                            "args": row.get("args", ["$value"])}, result, where)
+    elif output == "visuals":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            if not item.get("scene"):
+                result.errors.append(f"{at} needs a scene: "
+                                     + ", ".join(VISUAL_SCENES))
+                continue
+            _check_visual(item["scene"], item.get("params") or {}, result, at)
+        if points is not None:
+            result.warnings.append(f"{where}: a visuals row plays its items; its "
+                                   f"points are not used")
+    elif output == "midi":
+        for item in items:
+            at = f"{where} item {item['id']!r}"
+            kinds = [k for k in ("note", "cc", "pc") if item.get(k) is not None]
+            if len(kinds) != 1:
+                result.errors.append(
+                    f"{at} must be exactly one of a note, a cc or a pc"
+                    + (f", not {' and '.join(kinds)}" if kinds else ""))
+            stray = [k for k, kind in (("velocity", "note"), ("value", "cc"),
+                                       ("off_value", "cc")) if k in item
+                     and kind not in kinds]
+            if stray:
+                result.warnings.append(f"{at}: {', '.join(stray)} means nothing "
+                                       f"without a {kinds[0] if kinds else 'note or cc'}")
+        if points is not None:
+            if row.get("cc") is None:
+                result.errors.append(f"{where} has points but no cc for them to "
+                                     f"drive")
+            for i, point in enumerate(points):
+                if (isinstance(point, list) and len(point) >= 2 and _num(point[1])
+                        and not 0 <= point[1] <= 1):
+                    result.errors.append(f"{where} point {i}: a MIDI curve runs "
+                                         f"0-1 (sent as 0-127), got {point[1]}")
+
+
+def _check_visual(scene: str, params: dict, result: Result, where: str) -> None:
+    """A visuals scene's parameters: known ones in range, and a video's file
+    a plain name with a video extension."""
+    known = {**_COMMON_VISUAL, **VISUAL_PARAMS.get(scene, {})}
+    for name, value in params.items():
+        rule = known.get(name)
+        at = f"{where} param {name}"
+        if rule is None:
+            result.warnings.append(f"{at}: the {scene} scene does not use it "
+                                   f"(it reads {', '.join(sorted(known))})")
+        elif rule == "color":
+            if not (isinstance(value, str) and value[:1] in ("@", "#")):
+                result.errors.append(f"{at}: {value!r} -- a visuals colour is "
+                                     f"@primary, @secondary, @accent or #rrggbb")
+            elif color_problem(value):
+                result.errors.append(f"{at}: {color_problem(value)}")
+        elif rule == "file":
+            if not (isinstance(value, str) and MEDIA_NAME_RE.match(value)
+                    and value.lower().endswith(VIDEO_EXTENSIONS)):
+                result.errors.append(
+                    f"{at}: {value!r} must be a file name in media/ -- letters, "
+                    f"digits, . _ -, no folders -- ending "
+                    + ", ".join(VIDEO_EXTENSIONS))
+        elif rule == "bool":
+            if not isinstance(value, bool):
+                result.errors.append(f"{at} must be true or false, got {value!r}")
+        elif isinstance(rule, tuple) and all(isinstance(r, str) for r in rule):
+            if value not in rule:
+                result.errors.append(f"{at} must be one of {', '.join(rule)}, "
+                                     f"got {value!r}")
+        elif not _num(value) or not rule[0] <= value <= rule[1]:
+            result.errors.append(f"{at} must be a number from {rule[0]} to "
+                                 f"{rule[1]}, got {value!r}")
+    if scene == "video" and not params.get("file"):
+        result.errors.append(f"{where}: a video scene needs a file")
+
+
+def _check_osc(message: dict, result: Result, where: str) -> None:
+    address = message.get("address") or ""
+    if not address.startswith("/") or any(c in address for c in " #*,?[]{}"):
+        result.errors.append(f"{where}: {address!r} is not an OSC address -- it "
+                             f"starts with / and has no spaces or # * , ? [ ] {{ }}")
+    for n, arg in enumerate(message.get("args") or []):
+        if isinstance(arg, str) and arg.startswith("$") and arg not in ARG_TOKENS:
+            result.errors.append(f"{where} arg {n}: {arg!r} is not one of "
+                                 + ", ".join(ARG_TOKENS))
+        elif isinstance(arg, bool) or not isinstance(arg, (int, float, str)):
+            result.errors.append(f"{where} arg {n}: {arg!r} -- OSC arguments here "
+                                 f"are numbers or text")
+
+
+def _check_curve(points: list, result: Result, where: str) -> None:
+    prev = None
+    for i, point in enumerate(points):
+        at = f"{where} point {i}"
+        if (not isinstance(point, list) or len(point) not in (2, 3)
+                or not _num(point[0]) or not _num(point[1])):
+            result.errors.append(f"{at} must be [beat, value] or [beat, value, "
+                                 f"curve] with numbers, got {point!r}")
+            continue
+        if len(point) == 3 and point[2] not in CURVES:
+            result.errors.append(f"{at} curve {point[2]!r} must be one of "
+                                 + ", ".join(CURVES))
+        if prev is not None and point[0] <= prev:
+            result.errors.append(f"{at} is not after the point before it")
+        prev = point[0]
+
+PARAM_PREFIX = "param."
+
+
+def param_name(target: Any) -> Optional[str]:
+    """The parameter a `param.<name>` automation target drives, or None."""
+    if (isinstance(target, str) and target.startswith(PARAM_PREFIX)
+            and len(target) > len(PARAM_PREFIX)):
+        return target[len(PARAM_PREFIX):]
+    return None
+
+
+# A look parameter names a library entry, and `blocks._look` reads it once,
+# when the routine is bound to a rig -- not per frame, the way a number or a
+# colour is read. A lane for one would draw a curve and change nothing, so it
+# is refused rather than accepted and ignored. Switching looks over time is two
+# items on a lane.
+LOOK_NOT_AUTOMATABLE = ("is a look, which is chosen once when the routine is "
+                        "built, not per frame, so a lane cannot change it; put "
+                        "two items on the lane to switch looks")
+
+
+ARG_PREFIX = blocksmod.ARG_PREFIX
+
+# The kinds of block argument a lane can move. Each is read per frame (inside
+# the block's layer, through `Env`), and each has a halfway between two values;
+# a choice, a switch or a list of points has neither.
+LANE_ARG_KINDS = ("number", "integer", "color")
+
+
+def arg_target(target: Any) -> Optional[tuple[str, str]]:
+    """(item id, argument) for an `arg.<item>.<arg>` target, or None. Split at
+    the LAST dot: an argument's name is an identifier, an item's id is free
+    text and may hold dots of its own."""
+    if not isinstance(target, str) or not target.startswith(ARG_PREFIX):
+        return None
+    item, sep, arg = target[len(ARG_PREFIX):].rpartition(".")
+    return (item, arg) if sep and item and arg else None
+
+
+def arg_declaration(item_id: str, arg: str, rows: Iterable[Mapping]
+                    ) -> tuple[Optional[str], Optional[dict], Any]:
+    """What a routine's `arg.<item>.<arg>` lane drives: (why it cannot, None,
+    None), or (None, a declaration its values are held to, the block's `Param`).
+
+    The declaration is the one `blocks.PARAMS` makes for the argument, put in
+    the shape a routine param has, so a lane on `orbit.radius` and a lane on a
+    `$radius` that feeds it are held to their ranges by the same code."""
+    item = next((i for r in rows if r.get("type") == "clips"
+                 for i in r.get("items") or [] if i.get("id") == item_id), None)
+    if item is None:
+        return f"there is no item {item_id!r} in this routine", None, None
+    block = item.get("block")
+    if block in RIG_BOUND_BLOCKS:
+        return (f"item {item_id!r} is a {block}, which plays a stored look and "
+                f"has no arguments a lane can move"), None, None
+    declared = blocksmod.PARAMS.get(block, ())
+    spec = next((p for p in declared if p.name == arg), None)
+    if spec is None:
+        return (f"{block} has no argument {arg!r}; one of "
+                + ", ".join(p.name for p in declared)), None, None
+    if spec.kind not in LANE_ARG_KINDS:
+        return (f"{block}'s {arg} is a {spec.kind}, which a lane cannot move: "
+                f"there is no halfway between two of them"), None, None
+    literal = (item.get("args") or {}).get(arg)
+    if isinstance(literal, str) and literal.startswith("$"):
+        return (f"item {item_id!r} takes its {arg} from {literal}; automate "
+                f"param.{literal[1:]} instead, or give it a value"), None, None
+    if spec.kind == "color":
+        return None, {"type": "color"}, spec
+    return None, {"type": "number", "min": spec.min, "max": spec.max}, spec
+
+
 def _check_points(row: dict, result: Result, where: str,
-                  allow_params: bool) -> None:
+                  params: Optional[Mapping],
+                  rows: Optional[list] = None) -> None:
+    """One automation row. In a routine, `params` is its declarations and
+    `rows` its rows (for `arg.` lanes); in a timeline both are None -- its
+    `param.<name>` lanes reach routines in OTHER files and are checked against
+    them by `param_lane_problems`, where both halves are in hand."""
     target = row["target"]
     rng = AUTOMATION_RANGES.get(target)
-    is_param = target.startswith("param.") and len(target) > len("param.")
-    if rng is None and not (allow_params and is_param):
-        allowed = ", ".join(AUTOMATION_RANGES) + (
-            ", param.<name>" if allow_params else "")
+    name = param_name(target)
+    arg = arg_target(target)
+    if rng is None and name is None and arg is None:
+        allowed = ", ".join(AUTOMATION_RANGES) + ", param.<name>" + (
+            ", arg.<item>.<argument>" if rows is not None else "")
         result.errors.append(f"{where}: {target!r} is not something that can be "
                              f"automated; one of {allowed}")
         return
+    # How a value is checked: `check(value)` says why it cannot be, under
+    # `label`; `kind` is number or colour once known; `soft` reports as a
+    # warning (an absolute angle, whose real bound is the rig's reach).
+    check: Optional[Callable[[Any], Optional[str]]] = None
+    label, kind, soft = target, None, False
+    if rng is not None:
+        lo, hi = rng
+
+        def check(v: Any) -> Optional[str]:
+            if _num(v) and lo <= v <= hi:
+                return None
+            return f"must be a number from {lo:g} to {hi:g}, got {v!r}"
+        kind = "number"
+    elif arg is not None:
+        if rows is None:
+            result.errors.append(
+                f"{where}: {target} drives one block's argument, and a "
+                f"timeline has no blocks -- automate the routine's param.<name>, "
+                f"or put this lane in the routine")
+            return
+        why, decl, spec = arg_declaration(arg[0], arg[1], rows)
+        if why:
+            result.errors.append(f"{where}: {target}: {why}")
+            return
+
+        def check(v: Any, decl: dict = decl) -> Optional[str]:
+            return _param_value_problem(decl, v)
+        label = f"{arg[0]}'s {arg[1]}"
+        kind = "colour" if decl["type"] == "color" else "number"
+        soft = spec.reach is not None
+        if spec.name == "bars":
+            # A cycle length moved under a running block re-times the cycle
+            # it is part-way through: phase is position / bars, so the heads
+            # jump. Speed belongs on rate.<slot>, which integrates.
+            result.warnings.append(
+                f"{where}: {target} changes a cycle length while it runs, which "
+                f"makes the block jump; automate rate.<slot> to change speed "
+                f"smoothly")
+    elif params is not None:
+        param = params.get(name)
+        if param is None:
+            result.errors.append(f"{where}: {target} automates ${name}, which "
+                                 f"this routine does not declare in params")
+            return
+        if isinstance(param, dict) and param.get("type") == "look":
+            result.errors.append(f"{where}: ${name} {LOOK_NOT_AUTOMATABLE}")
+            return
+        if isinstance(param, dict) and param.get("type") in PARAM_TYPES:
+            def check(v: Any, param: dict = param) -> Optional[str]:
+                return _param_value_problem(param, v)
+            kind = "colour" if param["type"] == "color" else "number"
+        label = f"${name}"
+    report = result.warnings.append if soft else result.errors.append
+    kinds: set[str] = set()
     prev = None
     for i, point in enumerate(row["points"]):
         at = f"{where} point {i}"
@@ -498,13 +922,147 @@ def _check_points(row: dict, result: Result, where: str,
             result.errors.append(f"{at} is at beat {beat:g}, not after the "
                                  f"previous point at {prev:g}")
         prev = beat
-        if rng is not None:
-            if not _num(value) or not rng[0] <= value <= rng[1]:
-                result.errors.append(f"{at} {target} must be a number from "
-                                     f"{rng[0]:g} to {rng[1]:g}, got {value!r}")
-        elif not _num(value) and color_problem(value) is not None:
+        if check is not None:
+            problem = check(value)
+            if problem:
+                report(f"{at} {label} {problem}")
+        elif _num(value):
+            kinds.add("number")
+        elif color_problem(value) is None:
+            kinds.add("colour")
+        else:
             result.errors.append(f"{at} must be a number or a colour, got "
                                  f"{value!r}")
+    # A curve from a number to a colour means nothing: `timeline.Curve` would
+    # hand the block a blend of the two, which is neither.
+    if len(kinds) > 1:
+        result.errors.append(f"{where}: {target} mixes numbers and colours; one "
+                             f"lane drives one parameter, which is one or the "
+                             f"other")
+    if row.get("wave") is not None:
+        if kind is None and len(kinds) == 1:
+            kind = next(iter(kinds))
+        _check_wave(row, kind, check, label, report, result, where)
+
+
+def _check_wave(row: dict, kind: Optional[str],
+                check: Optional[Callable[[Any], Optional[str]]], label: str,
+                report: Callable[[str], None], result: Result,
+                where: str) -> None:
+    """A row's wave, against what its lane is. The swing is checked at every
+    point: between points a lane's resting value stays between theirs, so if
+    each point plus `depth` is in range, the whole swing is -- exactly, not
+    sampled, which is what lets a rate lane's wave keep its phase without a
+    clamp breaking `Curve.integral`."""
+    wave = row["wave"]
+    at = f"{where} wave"
+    toward = wave.get("toward")
+    depth = wave.get("depth")
+    if kind == "colour":
+        if toward is None:
+            result.errors.append(f"{at} on a colour lane needs toward: the "
+                                 f"colour it swings to")
+        else:
+            problem = color_problem(toward)
+            if problem:
+                result.errors.append(f"{at} toward: {problem}")
+        if depth is not None and not 0.0 <= depth <= 1.0:
+            result.errors.append(f"{at} depth on a colour lane is how far toward "
+                                 f"{toward!r} it goes, 0 to 1, got {depth!r}")
+        return
+    if toward is not None:
+        result.errors.append(f"{at} has a toward colour, but this lane is a "
+                             f"number: it swings by depth")
+    if depth is None:
+        result.errors.append(f"{at} needs a depth: how far above its points it "
+                             f"swings (negative for below)")
+        return
+    if check is None:
+        return                       # a timeline's param lane: see below
+    for i, point in enumerate(row["points"]):
+        if not isinstance(point, list) or len(point) < 2 or not _num(point[1]):
+            continue
+        top = point[1] + depth
+        problem = check(top)
+        if problem:
+            report(f"{at}: at point {i} it reaches {top:g}, and {label} "
+                   f"{problem}")
+            return
+
+
+def param_lane_problems(timeline: Mapping,
+                        routines: Mapping[str, Mapping]) -> list[str]:
+    """A timeline's `param.<name>` lanes against the routines it places: each
+    point checked against every one of them that declares the parameter, as
+    that routine declares it -- its range, colour or number, look or not.
+
+    WARNINGS, although the same value in the routine's own lane is an error.
+    The two halves are separate files in a folder that syncs one file at a
+    time -- the routine may be mid-edit, its new range not yet arrived -- and
+    refusing the timeline over it would make one file's save hang on another's
+    (the rule `load_folder` states for every cross-file problem). A lane that
+    reaches no routine is said too: it does nothing, which is nearly always a
+    typo or a routine since taken off the timeline."""
+    rows = timeline.get("rows") or []
+    used = sorted({item.get("routine") for row in rows
+                   if row.get("type") == "clips"
+                   for item in row.get("items") or []
+                   if item.get("kind") == "routine"
+                   and isinstance(item.get("routine"), str)})
+    out: list[str] = []
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is None:
+            continue
+        where = f"row {row.get('id')!r}"
+        decls = [(rid, ((routines.get(rid) or {}).get("params") or {}).get(name))
+                 for rid in used]
+        decls = [(rid, p) for rid, p in decls if isinstance(p, dict)]
+        if not decls:
+            out.append(f"{where}: no routine on this timeline has ${name}, so "
+                       f"its lane does nothing")
+            continue
+        for rid, param in decls:
+            if param.get("type") == "look":
+                out.append(f"{where}: ${name} in routine {rid!r} "
+                           f"{LOOK_NOT_AUTOMATABLE}")
+                continue
+            wave = row.get("wave") if isinstance(row.get("wave"), dict) else {}
+            depth = wave.get("depth")
+            for i, point in enumerate(row.get("points") or []):
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                problem = _param_value_problem(param, point[1])
+                if problem:
+                    out.append(f"{where} point {i}: routine {rid!r} ${name} "
+                               f"{problem}")
+                elif (param.get("type") != "color" and _num(depth)
+                      and _num(point[1])):
+                    # The swing, as `_check_wave` checks a routine's own lane.
+                    problem = _param_value_problem(param, point[1] + depth)
+                    if problem:
+                        out.append(f"{where} wave: at point {i} it reaches "
+                                   f"{point[1] + depth:g}, and routine {rid!r} "
+                                   f"${name} {problem}")
+            if param.get("type") == "color" and wave and wave.get("toward") is None:
+                out.append(f"{where} wave: ${name} in routine {rid!r} is a "
+                           f"colour, so the wave needs toward: the colour it "
+                           f"swings to")
+    return out
+
+
+def _automated_params(rows: list) -> dict[str, str]:
+    """A routine's own param lanes: param name -> the row automating it."""
+    out: dict[str, str] = {}
+    for row in rows:
+        if row.get("type") != "automation":
+            continue
+        name = param_name(row.get("target"))
+        if name is not None:
+            out.setdefault(name, row["id"])
+    return out
 
 
 def _check_palettes(doc: dict, result: Result) -> None:
@@ -531,7 +1089,26 @@ def _check_palettes(doc: dict, result: Result) -> None:
                              f"palettes ({', '.join(palettes) or 'none'})")
 
 
+def host_problem(host: Any) -> Optional[str]:
+    """Why an output cannot be sent to `host`, or None. An IPv4 address (or
+    "localhost") only: resolving a name could block the output thread."""
+    if host == "localhost":
+        return None
+    try:
+        if isinstance(host, str) and ipaddress.ip_address(host).version == 4:
+            return None
+    except ValueError:
+        pass
+    return (f"{host!r} is not an IPv4 address -- give the machine's address "
+            f"(e.g. 192.168.1.20), not its name")
+
+
 def _semantic_show(doc: dict, result: Result) -> None:
+    for name, conf in (doc.get("outputs") or {}).items():
+        if isinstance(conf, dict) and "host" in conf:
+            problem = host_problem(conf["host"])
+            if problem:
+                result.errors.append(f"outputs.{name}.host: {problem}")
     for name, src in (doc.get("sources") or {}).items():
         if not isinstance(src, dict):
             result.errors.append(f"sources.{name} must be an object")
@@ -577,9 +1154,10 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
         where = f"row {row['id']!r}"
         kind = row["type"]
         if kind == "external":
-            continue                               # another output's business
+            _check_external(row, result, where)
+            continue
         if kind == "automation":
-            _check_points(row, result, where, allow_params=True)
+            _check_points(row, result, where, None)
             continue
         _check_items(row, result, where)
         if kind == "hits":
@@ -625,6 +1203,13 @@ def _semantic_routine(doc: dict, result: Result) -> None:
     usable: dict = {}
     for name, p in params.items():
         where = f"param {name!r}"
+        if name.startswith(ARG_PREFIX):
+            # The engine plays an `arg.<item>.<arg>` lane as a hidden
+            # parameter of that very name (`routines.instantiate`), so a
+            # declared one would be shadowed by it.
+            result.errors.append(f"{where}: names starting {ARG_PREFIX!r} are "
+                                 f"kept for argument lanes; rename it")
+            continue
         if not isinstance(p, dict) or p.get("type") not in PARAM_TYPES:
             result.errors.append(f"{where} needs a type: "
                                  + ", ".join(PARAM_TYPES))
@@ -656,12 +1241,26 @@ def _semantic_routine(doc: dict, result: Result) -> None:
     rows = doc["rows"]
     _unique_ids(rows, result, "routine")
     _shadowed_automation(rows, result)
+    # The routine's own lane is the parameter's value wherever the routine is,
+    # so a fixed value for it -- from a variation here, or a use site
+    # (`_check_use`) -- is never heard. Legal, and worth saying.
+    automated = _automated_params(rows)
+    for vname, values in (doc.get("variations") or {}).items():
+        for pname in (values if isinstance(values, dict) else {}):
+            if pname in automated:
+                result.warnings.append(
+                    f"variation {vname!r} sets {pname!r}, which row "
+                    f"{automated[pname]!r} automates; the lane wins, so the "
+                    f"variation's value is never heard")
     length = doc["bars"] * tracktime.BEATS_PER_BAR
     rig_bound = False
     for row in rows:
         where = f"row {row['id']!r}"
         if row["type"] == "automation":
-            _check_points(row, result, where, allow_params=False)
+            _check_points(row, result, where, params, rows)
+            continue
+        if row["type"] == "external":
+            _check_external(row, result, where)
             continue
         _check_items(row, result, where)
         role = row.get("role")
@@ -683,6 +1282,20 @@ def _semantic_routine(doc: dict, result: Result) -> None:
                 if ref not in params:
                     result.errors.append(f"{at} refers to ${ref}, which this "
                                          f"routine does not declare in params")
+    if doc.get("loop", True):
+        for row in rows:
+            wave = row.get("wave") if row["type"] == "automation" else None
+            bars = wave.get("bars") if isinstance(wave, dict) else None
+            # A looping routine reads its lanes in its own beats, wrapped, so
+            # its waves restart every pass. Unless a whole number of cycles
+            # fits, that restart is a jump, once per loop.
+            if _num(bars) and bars > 0 and abs(
+                    doc["bars"] / bars - round(doc["bars"] / bars)) > 1e-6:
+                result.warnings.append(
+                    f"row {row['id']!r}: its wave's {bars:g}-bar cycle does not "
+                    f"fit the routine's {doc['bars']:g} bars a whole number of "
+                    f"times, so it jumps back to the start of its cycle every "
+                    f"pass")
     if rig_bound and not doc.get("rig"):
         result.errors.append(
             "this routine uses a look or snapshot, which only exist on one rig; "
@@ -732,16 +1345,29 @@ def _semantic_template_set(doc: dict, result: Result) -> None:
         if pick.get("palette") is not None and pick["palette"] not in palettes:
             result.errors.append(f"{where}: palette {pick['palette']!r} is not "
                                  f"defined in this template set")
+        if pick.get("visuals"):
+            _check_visual(pick["visuals"]["scene"], pick["visuals"].get("params") or {},
+                          result, f"{where} visuals")
 
 
 def _semantic_waveform(doc: dict, result: Result) -> None:
     pass
 
 
+def _semantic_palette(doc: dict, result: Result) -> None:
+    if not ID_RE.match(doc["id"]):
+        result.errors.append(f"id {doc['id']!r} is not usable: {ID_FIX}")
+    for role in PALETTE_ROLES:
+        value = doc[role]
+        if not _HEX_RE.match(value):
+            result.errors.append(f"{role} {value!r} is not #rrggbb: a library "
+                                 f"palette is plain colours")
+
+
 _SEMANTIC = {"show": _semantic_show, "track": _semantic_track,
              "timeline": _semantic_timeline, "routine": _semantic_routine,
              "template_set": _semantic_template_set,
-             "waveform": _semantic_waveform}
+             "waveform": _semantic_waveform, "palette": _semantic_palette}
 
 
 # -- a whole folder -----------------------------------------------------------
@@ -759,6 +1385,7 @@ class Folder:
     timelines: dict[str, dict] = field(default_factory=dict)   # by track id
     routines: dict[str, dict] = field(default_factory=dict)
     templates: dict[str, dict] = field(default_factory=dict)
+    palettes: dict[str, dict] = field(default_factory=dict)     # the library
     waveforms: set[str] = field(default_factory=set)            # ids only
     revs: dict[str, str] = field(default_factory=dict)          # rel path -> rev
     errors: list[str] = field(default_factory=list)
@@ -879,7 +1506,8 @@ def load_folder(root: Path, previous: Optional[Folder] = None) -> Folder:
             _kept(folder, "show.json", before["show.json"][1], result)
 
     targets = {"track": folder.tracks, "timeline": folder.timelines,
-               "routine": folder.routines, "template_set": folder.templates}
+               "routine": folder.routines, "template_set": folder.templates,
+               "palette": folder.palettes}
     for kind, sub in SUBDIR.items():
         directory = root / sub
         if not directory.is_dir():
@@ -919,7 +1547,8 @@ def _by_rel(folder: Folder) -> dict[str, tuple[dict, str]]:
         out["show.json"] = (folder.show, folder.revs["show.json"])
     for kind, docs in (("track", folder.tracks), ("timeline", folder.timelines),
                        ("routine", folder.routines),
-                       ("template_set", folder.templates)):
+                       ("template_set", folder.templates),
+                       ("palette", folder.palettes)):
         for ident, doc in docs.items():
             rel = f"{SUBDIR[kind]}/{ident}.json"
             if rel in folder.revs:
@@ -952,6 +1581,8 @@ def _cross_check(folder: Folder) -> None:
         end_beat = grid.beat_at(duration) if duration else None
         for row in tl["rows"]:
             for item in row.get("items") or []:
+                _check_media(folder, f"timelines/{track_id}.json item "
+                                     f"{item['id']!r}", item)
                 if end_beat is not None and item["at"] >= end_beat:
                     warn(f"timelines/{track_id}.json item {item['id']!r} starts "
                          f"at beat {item['at']:g}, after the track ends "
@@ -959,11 +1590,18 @@ def _cross_check(folder: Folder) -> None:
                 if item.get("kind") == "routine":
                     _check_use(folder, f"timelines/{track_id}.json item "
                                        f"{item['id']!r}", item)
+        for problem in param_lane_problems(tl, folder.routines):
+            warn(f"timelines/{track_id}.json {problem}")
     for set_id, ts in folder.templates.items():
         picks = list(ts["phrases"].values()) + list(
             (ts.get("bars") or {}).get("cycle") or [])
         for pick in picks:
             _check_use(folder, f"templates/{set_id}.json", pick)
+            _check_media(folder, f"templates/{set_id}.json", pick.get("visuals") or {})
+    for rid, routine in folder.routines.items():
+        for row in routine["rows"]:
+            for item in row.get("items") or []:
+                _check_media(folder, f"routines/{rid}.json item {item['id']!r}", item)
     if folder.show:
         ts = folder.show.get("template_set")
         if ts and ts not in folder.templates:
@@ -973,6 +1611,17 @@ def _cross_check(folder: Folder) -> None:
         if idle and idle not in folder.routines:
             warn(f"show.json names idle routine {idle!r}, which is not in "
                  f"routines/")
+
+
+def _check_media(folder: Folder, where: str, item: dict) -> None:
+    """A video scene's file: that it is in media/."""
+    if item.get("scene") != "video":
+        return
+    name = (item.get("params") or {}).get("file")
+    if isinstance(name, str) and MEDIA_NAME_RE.match(name) \
+            and not (folder.root / MEDIA_DIR / name).is_file():
+        folder.warnings.append(f"{where} plays media/{name}, which is not in the "
+                               f"show folder")
 
 
 def _check_use(folder: Folder, where: str, use: dict) -> None:
@@ -988,11 +1637,17 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
         folder.warnings.append(f"{where}: routine {use['routine']!r} has no "
                                f"variation {variation!r}")
     params = routine.get("params") or {}
+    automated = _automated_params(routine["rows"])
     for name, value in (use.get("params") or {}).items():
         if name not in params:
             folder.warnings.append(f"{where} sets {name!r}, which routine "
                                    f"{use['routine']!r} does not have")
             continue
+        if name in automated:
+            folder.warnings.append(
+                f"{where} sets {name!r}, which routine {use['routine']!r} "
+                f"automates on its own lane {automated[name]!r}; the lane wins, "
+                f"so this value is never heard")
         problem = _param_value_problem(params[name], value)
         if problem:
             folder.warnings.append(f"{where} {name}: {problem}")
@@ -1003,6 +1658,297 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
 
 
 # -- writing ------------------------------------------------------------------
+
+# -- where a routine is used, and renaming one everywhere ---------------------
+
+def routine_usage(folder: "Folder") -> dict[str, dict]:
+    """Every place each routine is used, by routine id: the timelines that
+    place it (with how many clips, and which variations), the template sets
+    that pick it (and for which phrases), and show.json's idle routine.
+    A routine with no entry is used nowhere."""
+    out: dict[str, dict] = {}
+
+    def entry(rid: str) -> dict:
+        return out.setdefault(rid, {"timelines": [], "templates": [], "show": []})
+
+    for track_id, tl in sorted(folder.timelines.items()):
+        found: dict[str, dict] = {}
+        for row in tl.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                rid = item.get("routine") if item.get("kind") == "routine" else None
+                if not isinstance(rid, str):
+                    continue
+                use = found.setdefault(rid, {"clips": 0, "variations": set()})
+                use["clips"] += 1
+                if isinstance(item.get("variation"), str):
+                    use["variations"].add(item["variation"])
+        title = ((folder.tracks.get(track_id) or {}).get("identity") or {}).get("title")
+        for rid, use in found.items():
+            entry(rid)["timelines"].append({"track": track_id, "title": title,
+                                            "clips": use["clips"],
+                                            "variations": sorted(use["variations"])})
+    for set_id, ts in sorted(folder.templates.items()):
+        where: dict[str, list[str]] = {}
+        for label, pick in (ts.get("phrases") or {}).items():
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(
+                    "anything else" if label == "*" else label)
+        for i, pick in enumerate((ts.get("bars") or {}).get("cycle") or ()):
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(f"bar cycle step {i + 1}")
+        for rid, labels in where.items():
+            entry(rid)["templates"].append({"id": set_id, "name": ts.get("name"),
+                                            "where": labels})
+    idle = ((folder.show or {}).get("pause") or {}).get("idle_routine")
+    if isinstance(idle, str) and idle:
+        entry(idle)["show"].append("the idle routine, when the decks pause")
+    return out
+
+
+def routine_uses(folder: "Folder", rid: str) -> list[str]:
+    """Where a routine is used, as the files that name it, in words."""
+    use = routine_usage(folder).get(rid)
+    if use is None:
+        return []
+    return ([f"timelines/{t['track']}.json ({t['clips']} clip{'s' if t['clips'] != 1 else ''})"
+             for t in use["timelines"]]
+            + [f"templates/{t['id']}.json ({', '.join(t['where'])})" for t in use["templates"]]
+            + (["show.json (idle routine)"] if use["show"] else []))
+
+
+def _renamed(doc: dict, kind: str, old: str, new: str) -> Optional[dict]:
+    """A copy of `doc` with routine `old` called `new` wherever it is named,
+    or None if it never names it."""
+    copy = json.loads(json.dumps(doc))
+    hits = 0
+    if kind == "timeline":
+        for row in copy.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                if item.get("kind") == "routine" and item.get("routine") == old:
+                    item["routine"] = new
+                    hits += 1
+    elif kind == "template_set":
+        picks = list((copy.get("phrases") or {}).values()) + list(
+            (copy.get("bars") or {}).get("cycle") or ())
+        for pick in picks:
+            if isinstance(pick, dict) and pick.get("routine") == old:
+                pick["routine"] = new
+                hits += 1
+    elif kind == "show":
+        pause = copy.get("pause") or {}
+        if pause.get("idle_routine") == old:
+            pause["idle_routine"] = new
+            hits += 1
+    return copy if hits else None
+
+
+def rename_routine(root: Path, folder: "Folder", old: str, new: str,
+                   base_rev: str) -> list[str]:
+    """Rename a routine, and every reference to it: the timelines that place
+    it, the template sets that pick it, show.json's idle routine. Returns the
+    files written, the new routine's first.
+
+    A folder of files has no transaction, so the order is what keeps it whole
+    at every step: the routine is written under its new name FIRST, then each
+    reference is moved over, and the old file goes LAST. Stopped anywhere --
+    a file someone else changed meanwhile, a disk error -- every reference
+    still names a routine that exists, and the error says what was done.
+    Each write quotes the rev the folder was read at, so nothing changed since
+    is overwritten."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.routines.get(old)
+    if doc is None:
+        raise ValueError(f"no routine {old!r}")
+    if new in folder.routines:
+        raise ValueError(f"there is already a routine {new!r}")
+    old_path = path_for(root, "routine", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    if renamed.get("name") in (None, "", old):
+        renamed["name"] = new
+    write_doc(path_for(root, "routine", new), renamed, "routine", "")
+    written = [f"{SUBDIR['routine']}/{new}.json"]
+    try:
+        for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
+            for ident, ref in sorted(docs.items()):
+                changed = _renamed(ref, kind, old, new)
+                if changed is None:
+                    continue
+                rel = f"{SUBDIR[kind]}/{ident}.json"
+                write_doc(path_for(root, kind, ident), changed, kind,
+                          folder.revs.get(rel, ""))
+                written.append(rel)
+        if folder.show is not None:
+            changed = _renamed(folder.show, "show", old, new)
+            if changed is not None:
+                write_doc(path_for(root, "show", ""), changed, "show",
+                          folder.revs.get("show.json", ""))
+                written.append("show.json")
+    except (ValueError, OSError, configmod.ConfigError) as exc:
+        raise ValueError(f"renamed as far as {', '.join(written)}, then stopped: {exc}. "
+                         f"{old!r} is still there, so nothing names a routine "
+                         f"that is gone; finish by hand or rename again") from exc
+    old_path.unlink()
+    return written
+
+
+# -- the palette library and its copies ---------------------------------------
+
+def hex_color(value: Any) -> Optional[str]:
+    """A palette colour as lower-case #rrggbb, for comparing copies: a hex
+    string as it is, an [r, g, b] of 0..1 converted. None if neither."""
+    if isinstance(value, str) and _HEX_RE.match(value):
+        return value.lower()
+    if (isinstance(value, list) and len(value) == 3
+            and all(_num(v) and 0.0 <= v <= 1.0 for v in value)):
+        return "#%02x%02x%02x" % tuple(round(v * 255) for v in value)
+    return None
+
+
+def _same_colours(a: Mapping, b: Mapping) -> bool:
+    return all(hex_color(a.get(r)) == hex_color(b.get(r)) and hex_color(a.get(r))
+               for r in PALETTE_ROLES)
+
+
+def palette_places(folder: "Folder") -> dict[str, list[dict]]:
+    """Every palette a timeline or template set carries, by name: where, and
+    its colours there. A library palette's copies are the entries under its
+    name; anything else is a palette that lives only in those files."""
+    out: dict[str, list[dict]] = {}
+    for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
+        for ident, doc in sorted(docs.items()):
+            for name, pal in (doc.get("palettes") or {}).items():
+                if not isinstance(pal, Mapping):
+                    continue
+                title = None
+                if kind == "timeline":
+                    title = ((folder.tracks.get(ident) or {}).get("identity") or {}).get("title")
+                else:
+                    title = doc.get("name")
+                out.setdefault(name, []).append({
+                    "file": f"{SUBDIR[kind]}/{ident}.json", "kind": kind, "id": ident,
+                    "title": title,
+                    "colours": {r: hex_color(pal.get(r)) for r in PALETTE_ROLES}})
+    return out
+
+
+def palette_copies(folder: "Folder", pid: str) -> list[dict]:
+    """A library palette's copies: each file that carries a palette of its
+    name, and whether that copy's colours are the library's."""
+    lib = folder.palettes.get(pid)
+    if lib is None:
+        return []
+    return [{**place, "same": _same_colours(place["colours"], lib)}
+            for place in palette_places(folder).get(lib["name"], [])]
+
+
+def sync_palette(root: Path, folder: "Folder", pid: str, files: Iterable[str]) -> list[str]:
+    """Give the named copies the library palette's colours. Each file is
+    written quoting the rev the folder was read at, so a file changed since is
+    refused rather than overwritten; what was written before that is said."""
+    lib = folder.palettes.get(pid)
+    if lib is None:
+        raise ValueError(f"no library palette {pid!r}")
+    name = lib["name"]
+    colours = {r: lib[r] for r in PALETTE_ROLES}
+    by_rel = {f"{SUBDIR['timeline']}/{i}.json": ("timeline", i, d)
+              for i, d in folder.timelines.items()}
+    by_rel.update({f"{SUBDIR['template_set']}/{i}.json": ("template_set", i, d)
+                   for i, d in folder.templates.items()})
+    written: list[str] = []
+    for rel in files:
+        if rel not in by_rel:
+            raise ValueError(f"{rel} is not a timeline or template set in this folder")
+        kind, ident, doc = by_rel[rel]
+        if name not in (doc.get("palettes") or {}):
+            raise ValueError(f"{rel} has no palette {name!r} to update")
+        changed = json.loads(json.dumps(doc))
+        changed["palettes"][name] = dict(colours)
+        try:
+            write_doc(path_for(root, kind, ident), changed, kind, folder.revs.get(rel, ""))
+        except (ValueError, OSError, configmod.ConfigError) as exc:
+            done = f" after {', '.join(written)}" if written else ""
+            raise ValueError(f"stopped at {rel}{done}: {exc}") from exc
+        written.append(rel)
+    return written
+
+
+def template_set_problems(folder: "Folder", doc: dict) -> list[str]:
+    """What a template set asks of the folder's routines that they do not
+    have: a routine that is not there, a variation or a parameter it lacks.
+    The same check the folder load makes, for a set not saved yet."""
+    probe = Folder(root=folder.root, routines=folder.routines)
+    ident = doc.get("id") or "draft"
+    for label, pick in (doc.get("phrases") or {}).items():
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json phrase {label!r}", pick)
+    for i, pick in enumerate((doc.get("bars") or {}).get("cycle") or ()):
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json bar cycle step {i + 1}", pick)
+    return probe.warnings
+
+
+def template_set_uses(folder: "Folder", tid: str) -> list[str]:
+    """What names a template set: only show.json, as the show's set."""
+    return (["show.json (the show's template set)"]
+            if (folder.show or {}).get("template_set") == tid else [])
+
+
+def rename_template_set(root: Path, folder: "Folder", old: str, new: str,
+                        base_rev: str) -> list[str]:
+    """Rename a template set, and show.json with it if it is the show's set.
+    The same order as a routine rename: new file, reference, old file last."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.templates.get(old)
+    if doc is None:
+        raise ValueError(f"no template set {old!r}")
+    if new in folder.templates:
+        raise ValueError(f"there is already a template set {new!r}")
+    old_path = path_for(root, "template_set", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    write_doc(path_for(root, "template_set", new), renamed, "template_set", "")
+    written = [f"{SUBDIR['template_set']}/{new}.json"]
+    if (folder.show or {}).get("template_set") == old:
+        show = json.loads(json.dumps(folder.show))
+        show["template_set"] = new
+        try:
+            write_doc(path_for(root, "show", ""), show, "show",
+                      folder.revs.get("show.json", ""))
+        except (ValueError, OSError, configmod.ConfigError) as exc:
+            raise ValueError(f"wrote {written[0]}, then show.json could not be "
+                             f"changed: {exc}. {old!r} is still there") from exc
+        written.append("show.json")
+    old_path.unlink()
+    return written
+
+
+def delete_doc(path: Path, base_rev: str) -> None:
+    """Remove one document, refused if it changed since `base_rev` -- the
+    same rule as a save, for the same reason."""
+    current = doc_rev(path)
+    if current is None:
+        raise ValueError(f"{path.name} is not there")
+    if current != base_rev:
+        raise StaleEdit(f"{path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload it, "
+                        f"and delete it then if you still mean to")
+    path.unlink()
+
 
 class StaleEdit(ValueError):
     """The file changed after the editor read it -- a sync from another machine,

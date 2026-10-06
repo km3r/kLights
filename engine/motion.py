@@ -35,6 +35,7 @@ import math
 from typing import Callable, Optional, Sequence
 
 from . import geometry as geo
+from . import waves
 
 # A movement function: (phase 0..1) -> (d_bearing, d_elevation) in degrees.
 #
@@ -333,3 +334,12 @@ def as_move(offset_fn: Offset, bars: Optional[float] = None,
         # director attached the runner keeps the two identical.
         return offset_fn(phase(ctx.motion_bar, bars, spread))
     return offset_for
+
+
+# ------------------------------------------------------------------ hashing --
+
+# `sampled` (a stable pseudo-random -1..1 per key) moved to `waves`, below
+# everything, when a show-folder lane's `hold` wave needed it inside
+# `timeline.py`, which imports only the standard library. Re-exported here
+# because a block (`scatter`) reads it as `motion.sampled`.
+sampled = waves.sampled

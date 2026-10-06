@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../useEngine";
 import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type {
-  Command, EngineState, LaneSource, Preset, Slot, TrackMatch,
+  Command, DeckLoaded, EngineState, LaneSource, OutputsState, Preset, Slot, TrackMatch,
+  TrackState,
 } from "../types";
+import { groupLabel } from "../groups";
+import { STUDIO_TARGET, studioHref } from "../studioRoute";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -63,11 +67,6 @@ function Panic({ state, send }: { state: EngineState; send: (c: Command) => void
   );
 }
 
-const GROUP_LABELS: Record<string, string> = {
-  "corner movers": "Movers", movers: "Movers", pinspots: "Pinspots",
-  pars: "Pars", bars: "Bars",
-};
-const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
 
 /**
  * What is currently loaded, and where to go to change it.
@@ -167,6 +166,22 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
   const [editing, setEditing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  // Routines a pad can carry (milestone 2) -- only with a show folder.
+  const [routines, setRoutines] = useState<{ id: string; name?: string;
+                                             variations: string[] }[]>([]);
+  const [routine, setRoutine] = useState("");
+  const [variation, setVariation] = useState("");
+  // Whether the operator chose the routine here. Untouched, a save leaves the
+  // pad's routine as it is (re-recording a routine pad's looks keeps it);
+  // "none" chosen sends null, which makes it a pad of looks again.
+  const [routineTouched, setRoutineTouched] = useState(false);
+  const showFolder = state.program != null;
+  useEffect(() => {
+    if (!showFolder) return;
+    apiFetch<{ routines: { id: string; name?: string; variations: string[] }[] }>(
+      "/api/routines").then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
+  }, [showFolder]);
+  const chosen = routines.find((r) => r.id === routine);
 
   // Edit is Design-only, so leaving Design has to put the card back in a state
   // that makes sense — otherwise a half-finished move survives into Perform
@@ -184,11 +199,26 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
     const trimmed = name.trim();
     if (!trimmed) return;
     const where = cell ?? target;
+    const pad = !routineTouched ? {}
+      : { routine: routine ? { id: routine, ...(variation ? { variation } : {}) } : null };
     send(where == null
-      ? { type: "preset_save", name: trimmed }
-      : { type: "preset_save", name: trimmed, bank, cell: where });
+      ? { type: "preset_save", name: trimmed, ...pad }
+      : { type: "preset_save", name: trimmed, bank, cell: where, ...pad });
     setName("");
     setTarget(null);
+    setRoutine("");
+    setVariation("");
+    setRoutineTouched(false);
+  };
+
+  // Typing an existing preset's name shows the routine its pad has, so what
+  // is on screen is what a save keeps.
+  const named = (value: string) => {
+    setName(value);
+    if (routineTouched) return;
+    const same = state.presets.find((p) => p.name === value.trim());
+    setRoutine(same?.routine?.id ?? "");
+    setVariation(same?.routine?.variation ?? "");
   };
 
   const tapped = (p: Preset | undefined, cell: number) => {
@@ -266,16 +296,19 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
             const p = at(cell);
             const isTarget = target === cell;
             const isPicked = picked != null && p?.name === picked;
+            const pad = p && state.pad?.name === p.name ? state.pad : null;
             return (
               <button key={cell}
-                      className={isPicked ? "on" : isTarget ? "on" : p ? "" : "ghost"}
+                      className={isPicked || isTarget || (pad && !pad.waiting) ? "on"
+                        : pad ? "pending" : p ? "" : "ghost"}
                       aria-label={p ? undefined : `empty pad ${bank}.${cell + 1}`}
                       onClick={() => tapped(p, cell)}>
                 {p ? (
                   <>
                     {p.name}
                     <div className="small muted">
-                      {slotCount(p)} slot(s)
+                      {p.routine ? `↻ ${p.routine.id}` : `${slotCount(p)} slot(s)`}
+                      {pad && (pad.waiting ? " · next downbeat" : " · playing")}
                       {p.tags.length > 0 && ` · ${p.tags.join(" ")}`}
                     </div>
                   </>
@@ -300,7 +333,7 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
         <input className="field" value={name} aria-label="preset name"
                placeholder={target == null
                  ? "name this picture…" : `name it — goes to ${bank}.${target + 1}`}
-               onChange={(e) => setName(e.target.value)}
+               onChange={(e) => named(e.target.value)}
                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
                style={{
                  flex: "1 1 10rem", minWidth: 0, padding: "0.55rem", minHeight: 44,
@@ -309,6 +342,26 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
                }} />
         <button onClick={() => save()} disabled={!name.trim()}>Save</button>
       </div>
+      {routines.length > 0 && (
+        <div className="row tight" style={{ marginTop: "0.4rem", flexWrap: "wrap" }}>
+          <label className="small muted">With a routine{" "}
+            <select value={routine} aria-label="pad routine"
+                    onChange={(e) => {
+                      setRoutine(e.target.value); setVariation(""); setRoutineTouched(true);
+                    }}>
+              <option value="">none — the looks only</option>
+              {routines.map((r) => <option key={r.id} value={r.id}>{r.name ?? r.id}</option>)}
+            </select>
+          </label>
+          {chosen && chosen.variations.length > 0 && (
+            <select value={variation} aria-label="pad routine variation"
+                    onChange={(e) => { setVariation(e.target.value); setRoutineTouched(true); }}>
+              <option value="">default</option>
+              {chosen.variations.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+        </div>
+      )}
 
       {/* Absent until something is tagged, which keeps the cost of the feature
           at zero for anyone not using it. Tags cross banks; a bank cannot,
@@ -411,7 +464,8 @@ const LANE_NAMES: Record<Slot, string> = {
   movement: "Movement", color: "Colour", level: "Level",
 };
 const LANE_SOURCE: Record<LaneSource, string> = {
-  timeline: "timeline", operator: "operator", idle: "idle", fallback: "show",
+  timeline: "timeline", template: "template", operator: "operator", idle: "idle",
+  fallback: "show",
 };
 /** Why the timeline is not on stage, in the operator's words. */
 const NOT_DRIVING: Record<string, string> = {
@@ -421,12 +475,14 @@ const NOT_DRIVING: Record<string, string> = {
   "not in the show folder": "This track is not in the show folder — the "
     + "operator's show runs.",
   "no timeline": "Matched, but nobody has drawn this track a show yet.",
+  "no template for this phrase": "The template set has nothing for this "
+    + "phrase, and no bar cycle — the operator's show runs.",
   compiling: "Building this track's show…",
   "compile failed": "This track's show could not be built — see the notices. "
     + "The operator's show runs.",
   "no position": "Waiting for the deck's position.",
   "paused (no idle routine)": "Paused, and show.json names no idle routine.",
-  "preview: no timeline yet": "The designer is driving a track with no "
+  "preview: no timeline yet": "Studio is driving a track with no "
     + "timeline yet.",
 };
 
@@ -470,16 +526,56 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
           {track.match && <MatchLine match={track.match} />}
         </div>
       )}
+      {state.outputs && <OutputsLine outputs={state.outputs} />}
+      {(track?.decks?.length ?? 0) > 0 && (
+        <div className="small muted" aria-label="other decks">
+          {track!.decks!.map((d) => (
+            <div key={d.deck}>
+              Deck {d.deck}: {d.title ?? "?"} · {deckShow(d)}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="small" style={{ marginTop: "0.3rem" }}>
         {prog.mode === "timeline" || prog.mode === "preview"
-          ? <>{prog.mode === "preview" ? "The designer is driving" : "Timeline driving"}
+          ? <>{prog.mode === "preview" ? "Studio is driving" : "Timeline driving"}
               {prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
-          : prog.mode === "idle"
-            ? <>Paused — the idle routine is running</>
-            : <span className="muted">
-                {NOT_DRIVING[prog.reason ?? ""] ?? prog.reason}
-              </span>}
+          : prog.mode === "template"
+            ? <>Template driving{prog.bar != null && <> · bar <b>{prog.bar}</b></>}
+                {prog.reason && <span className="muted"> ({prog.reason})</span>}</>
+            : prog.mode === "idle"
+              ? <>Paused — the idle routine is running</>
+              : <span className="muted">
+                  {NOT_DRIVING[prog.reason ?? ""] ?? prog.reason}
+                </span>}
       </div>
+      {prog.template && (
+        <div className="small muted" aria-label="template now">
+          {prog.template.label === "bars" ? "bar cycle" : prog.template.label}
+          {" → "}<b>{prog.template.routine}</b>
+          {prog.template.fading && " (crossfading)"}
+        </div>
+      )}
+      {(prog.sets?.length ?? 0) > 0 && (
+        <div style={{ marginTop: "0.5rem" }}>
+        <div className="small muted">Template set</div>
+        <div className="pills" role="group" aria-label="template set">
+          {[{ id: null as string | null, name: "Off" }, ...(prog.sets ?? [])].map((s) => {
+            const active = (prog.set ?? null) === s.id;
+            const waiting = prog.pending != null
+              && (prog.pending === "off" ? s.id === null : prog.pending === s.id);
+            return (
+              <button key={s.id ?? "off"} aria-pressed={active}
+                      className={active ? "on" : waiting ? "pending" : ""}
+                      title={waiting ? "Switches on the next downbeat" : undefined}
+                      onClick={() => send({ type: "template_set", id: s.id })}>
+                {s.name}{waiting && " · next downbeat"}
+              </button>
+            );
+          })}
+        </div>
+        </div>
+      )}
       {prog.engaged && (
         <div className="lanes" style={{ marginTop: "0.4rem" }}>
           {slots.map((slot) => {
@@ -518,12 +614,25 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
                }} />
       )}
       <div className="small muted" style={{ marginTop: "0.4rem" }}>
-        <a href={track?.match?.track_id ? `#designer/${track.match.track_id}` : "#designer"}>
-          {track?.match?.track_id ? "Open this track in the designer" : "Open the designer"}</a>
-        {" "}· on a computer
+        <StudioLink track={track} />{" "}· on a computer
       </div>
     </Card>
   );
+}
+
+/** Into Studio, for whatever is playing: its timeline, a timeline to make,
+ *  or -- for a track the show folder does not have -- rekordbox, searched for
+ *  it, to add it. In Studio's own tab. */
+function StudioLink({ track }: { track: TrackState | undefined }) {
+  const matched = track?.match?.track_id ?? null;
+  const playing = track && track.state !== "no_track" ? track.title : null;
+  const [route, label] = matched
+    ? [`track/${matched}`, track?.match?.has_timeline === false
+        ? "Make a timeline for it in Studio" : "Open it in Studio"]
+    : playing && track?.match?.via !== "ambiguous"
+      ? [`rekordbox?find=${encodeURIComponent(playing)}`, "Add it to the show in Studio"]
+      : ["", "Open Studio"];
+  return <a href={studioHref(route)} target={STUDIO_TARGET}>{label}</a>;
 }
 
 /** How a track was matched, in the operator's words -- how much to trust it
@@ -533,6 +642,39 @@ const MATCH_VIA: Record<string, string> = {
   alias: "by manual link", title_artist_album: "by title, artist and album",
   title_artist: "by title and artist",
 };
+
+/** Where the show's cues for a VJ app go, and whether they are getting there. */
+function OutputsLine({ outputs }: { outputs: OutputsState }) {
+  const osc = outputs.osc;
+  const midi = outputs.midi;
+  const tc = outputs.timecode;
+  return (
+    <div className="small muted" aria-label="outputs">
+      {midi && <div>
+        MIDI → sidecar {midi.target}{midi.on > 0 && <> · <b>{midi.on}</b> on</>}
+        {midi.errors > 0 && <span className="warn-text"> · {midi.errors} failed</span>}
+      </div>}
+      {tc && <div>
+        Timecode → {tc.target} · <span className="mono">{tc.now ?? "silent"}</span>
+        {" "}({tc.fps} fps)
+        {tc.errors > 0 && <span className="warn-text"> · {tc.errors} failed</span>}
+      </div>}
+      {osc && <div>
+        OSC → {osc.target}{osc.on > 0 && <> · <b>{osc.on}</b> on</>}
+        {osc.errors > 0 && <span className="warn-text"> · {osc.errors} failed
+          {osc.last_error ? ` (${osc.last_error})` : ""}</span>}
+      </div>}
+      {outputs.problems.map((p) => <div key={p} className="warn-text">{p}</div>)}
+    </div>
+  );
+}
+
+/** What a deck's loaded track will bring when it becomes the master. */
+function deckShow(d: DeckLoaded): string {
+  if (!d.track_id) return "not in the show folder";
+  if (!d.has_timeline) return `${d.track_id}, no timeline`;
+  return d.ready ? `${d.track_id}, show ready` : `${d.track_id}, building its show`;
+}
 
 function MatchLine({ match }: { match: TrackMatch }) {
   if (match.track_id) {

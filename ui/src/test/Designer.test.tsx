@@ -1,15 +1,24 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act, cleanup, createEvent, fireEvent, render, screen, waitFor, within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
-  BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, curveValue, decodeWave,
-  whoDrives,
+  BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
+  decodeWave, draftFromTemplate, freeName, hexColor, laneValue, newTimeline, phraseMatch,
+  templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
-import { AUTOMATION_RANGES } from "../designer/edit";
+import {
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, paramSpec, pasteBoard,
+  routineLaneSpecs, splitAt, timelineLaneSpecs,
+} from "../designer/edit";
+import { WAVE_SHAPES } from "../blocks";
+import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
-import type { RoutineDoc, TimelineDoc } from "../designer/model";
+import waveVectors from "../designer/__fixtures__/wave-vectors.json";
+import type { Point, RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
 import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
@@ -70,6 +79,217 @@ describe("designer model", () => {
     expect([...PARAM_TYPES]).toEqual(blockLists.param_types);
   });
 
+  it("takes every block's defaults, steps and ranges from the engine", () => {
+    // These used to be typed here by hand and held to the engine only on
+    // argument NAMES, so a default could drift without any test noticing.
+    // Now they are derived from blocks.PARAMS; this pins a few by value so a
+    // broken derivation, not just a missing name, fails here.
+    const arg = (block: string, name: string) =>
+      BLOCK_ARGS[block]!.find((a) => a.name === name)!;
+    expect(arg("orbit", "radius")).toMatchObject(
+      { kind: "number", default: 20, min: 0, max: 90, step: 1, unit: "°" });
+    expect(arg("pendulum", "width").default).toBe(30);
+    expect(arg("chase", "order")).toMatchObject(
+      { kind: "choice", default: "index", choices: CHASE_ORDERS });
+    // No fixed default: half the width unless given. Undefined, so the field
+    // says "auto" instead of a number that is wrong once the width changes.
+    expect(arg("fan_sweep", "sweep").default).toBeUndefined();
+    // An integer is a number to a field, stepping by whole numbers.
+    expect(arg("scatter", "stations")).toMatchObject({ kind: "number", step: 1 });
+    // A unit that only repeats the name is dropped rather than shown twice.
+    expect(arg("orbit", "bars").unit).toBeUndefined();
+  });
+
+  it("ranges a parameter's lane by its declaration, then by the arguments it feeds", () => {
+    const fan = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    // declared: what the engine holds the lane to
+    expect(fan["param.width"]).toMatchObject(
+      { kind: "number", min: 0, max: 120, lo: 0, hi: 120, unit: "deg", start: 40 });
+    // a rate says nothing and is still held to 0-8, as the engine holds it
+    expect(fan["param.rate"]).toMatchObject({ min: 0, max: 8, start: 1 });
+    expect(fan["param.color"]).toMatchObject({ kind: "color", start: "@primary" });
+    // open-ended: accepted as anything, drawn on the orbit radius it feeds
+    const open = routineLaneSpecs({
+      params: { r: { type: "number", default: 10 }, which: { type: "look" } },
+      rows: [{ id: "m", type: "clips", target: "movement",
+               items: [{ id: "o", at: 0, len: 4, block: "orbit", args: { radius: "$r" } }] }],
+    });
+    expect(open["param.r"]).toMatchObject({ lo: 0, hi: 90, min: undefined, max: undefined });
+    // a look is chosen when the routine is built; no lane can change it
+    expect(open["param.which"]).toBeUndefined();
+    expect(paramSpec("which", { type: "look" })).toBeNull();
+  });
+
+  it("offers a track's timeline one lane per parameter name of the routines on it", () => {
+    const specs = timelineLaneSpecs(timelineDoc as unknown as TimelineDoc, [
+      { id: "fan-drop", params: fanDrop.params },
+      { id: "idle-orbit", params: idleOrbit.params },
+      { id: "verse-sweep", params: { width: { type: "number", min: 10, max: 90 } } },
+      { id: "not-placed", params: { gobo: { type: "number" } } },
+    ]);
+    expect(specs["param.color"]!.reaches).toEqual(["fan-drop", "idle-orbit"]);
+    // one lane drives every routine with the name, so it takes the narrowest range
+    expect(specs["param.width"]).toMatchObject(
+      { min: 10, max: 90, reaches: ["fan-drop", "verse-sweep"] });
+    expect(specs["param.radius"]!.reaches).toEqual(["idle-orbit"]);
+    expect(specs["param.gobo"]).toBeUndefined();
+  });
+
+  it("draws every wave shape exactly as the engine computes it, hold's hash included", () => {
+    expect(WAVE_SHAPES).toEqual(Object.keys(waveVectors));
+    for (const [shape, rows] of Object.entries(waveVectors)) {
+      for (const [p, seed, want] of rows as [number, number, number][]) {
+        // the fixture is rounded to 10 places, so it reads the same on every OS
+        expect(waveUnit(shape, p, seed), `${shape} at ${p} seed ${seed}`).toBeCloseTo(want, 9);
+      }
+    }
+    // a lane's value is its points plus its wave
+    const row = { id: "s", type: "automation" as const, target: "size",
+                  points: [[0, 1]] as Point[],
+                  wave: { shape: "square", bars: 1, depth: 0.5 } };
+    expect(laneValue(row, 1)).toBe(1);
+    expect(laneValue(row, 3)).toBe(1.5);
+  });
+
+  it("offers a lane per block argument, and none for one a $param already feeds", () => {
+    const specs = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    expect(specs["arg.fan.spread"]).toMatchObject(
+      { kind: "number", min: -1, max: 1, start: 0.5, label: "fan.spread" });
+    expect(specs["arg.chase.width"]).toMatchObject({ kind: "number" });
+    // width is $width: the param's own lane moves it
+    expect(specs["arg.fan.width"]).toBeUndefined();
+    // a choice has no halfway
+    expect(specs["arg.chase.order"]).toBeUndefined();
+    // an absolute angle is only drawn on its fallback range, not held to it
+    const offset = routineLaneSpecs({ rows: [{ id: "m", type: "clips", target: "movement",
+      items: [{ id: "o", at: 0, len: 4, block: "offset", args: { bearing: 10 } }] }] });
+    expect(offset["arg.o.bearing"]).toMatchObject({ lo: -270, hi: 270, min: undefined, start: 10 });
+  });
+
+  it("starts a wave that stays inside its lane's range", () => {
+    const spec = routineLaneSpecs(fanDrop as unknown as RoutineDoc)["param.width"]!;
+    const near = defaultWave({ id: "w", type: "automation", points: [[0, 110]] }, spec);
+    // 10 of room above, 110 below: it swings down, a quarter of the range
+    expect(near.depth).toBe(-30);
+    const low = defaultWave({ id: "w", type: "automation", points: [[0, 10]] }, spec);
+    expect(low.depth).toBe(30);
+  });
+
+  it("offers the blocks the console's parametric looks are built from", () => {
+    // One building-block system: a routine and a console look use the same
+    // parts, so a block added for one is available to the other.
+    expect(blocksFor("movement")).toEqual(
+      expect.arrayContaining(["figure8", "spiral", "scatter"]));
+    expect(blocksFor("color")).toEqual(expect.arrayContaining(["hue_cycle", "duo"]));
+    expect(blocksFor("level")).toEqual(expect.arrayContaining(["breathe"]));
+    expect(BLOCK_ARGS.spiral!.find((a) => a.name === "direction"))
+      .toMatchObject({ kind: "choice", choices: ["out", "in"] });
+  });
+
+  it("drafts one clip per phrase, each with the set's fade between phrases", () => {
+    const track = structuredClone(trackDoc) as never;
+    const doc = newTimeline(track);
+    expect(draftFromTemplate(doc, track, clubDoc as never)).toBeNull();
+    const items = doc.rows.find((r) => r.target === "scene")!.items!;
+    expect(items).toHaveLength(8);
+    expect(items.every((i) => i.fade === 2)).toBe(true);      // club's transition.fade_beats
+    expect(doc.grid_rev).toBe("g:834af7");
+  });
+
+  it("drafts a track with a grid and no phrases from the set's bar cycle", () => {
+    const track = { ...structuredClone(trackDoc), phrases: { items: [] } } as never;
+    const doc = newTimeline(track);
+    expect(draftFromTemplate(doc, track, clubDoc as never)).toBeNull();
+    const items = doc.rows.find((r) => r.target === "scene")!.items!;
+    // 180 s at 128 bpm is 384 beats: six 16-bar steps, verse-sweep and
+    // fan-drop in turn, as club.json's cycle says.
+    expect(items.map((i) => [i.at, i.routine])).toEqual([
+      [0, "verse-sweep"], [64, "fan-drop"], [128, "verse-sweep"], [192, "fan-drop"],
+      [256, "verse-sweep"], [320, "fan-drop"]]);
+    const noCycle = { ...structuredClone(clubDoc), bars: undefined } as never;
+    expect(draftFromTemplate(newTimeline(track), track, noCycle))
+      .toBe("this track has no phrases to draft from");
+  });
+
+  it("makes a set from a timeline: what each phrase family's scene lane plays most", () => {
+    const set = templateFromTimeline("mine", "Mine", trackDoc as never, timelineDoc as never)!;
+    // The Intro is a snapshot, not a routine, so it says nothing. The two
+    // Choruses tie (wide and tight, 16 bars each): the first one wins.
+    expect(set.phrases).toEqual({
+      Verse: { routine: "verse-sweep", params: { color: "@secondary" } },
+      Up: { routine: "build-rise" },
+      Chorus: { routine: "fan-drop", variation: "wide", params: { color: "@primary" },
+                palette: "Hot" },
+      Down: { routine: "idle-orbit", params: { color: "@secondary" } },
+      Outro: { routine: "idle-orbit" },
+      "*": { routine: "verse-sweep", params: { color: "@secondary" } },
+    });
+    expect(Object.keys(set.palettes ?? {})).toEqual(["Cool", "Hot"]);
+    expect(set.palette).toBe("Cool");
+    expect(set.transition).toEqual({ fade_beats: 2 });      // two 2s, two 8s, one 4: the first
+    const bare = { ...structuredClone(timelineDoc), rows: [] };
+    expect(templateFromTimeline("x", "X", trackDoc as never, bare as never)).toBeNull();
+  });
+
+  it("gives a copy a name of its own, and compares colours as the engine does", () => {
+    // Copies are found by name, so a library palette's name must be its own.
+    expect(freeName(["Hot", "Hot copy"], "Hot copy")).toBe("Hot copy 2");
+    expect(freeName(["Hot"], "Hot copy")).toBe("Hot copy");
+    expect(hexColor("#FF2D6F")).toBe("#ff2d6f");
+    expect(hexColor([1, 0, 0.5])).toBe("#ff0080");             // showfiles.hex_color's floats
+    expect(hexColor("red")).toBeNull();
+    expect(hexColor([1, 2, 3])).toBeNull();
+  });
+
+  it("says how far two tracks' phrases agree", () => {
+    const a = PHRASE_ITEMS;
+    expect(phraseMatch(a, a)).toBe(8);
+    // "Verse 2" for "Verse 1" is the same family; a moved Up is where they part
+    const b = a.map(([s, e, l], i) => (i === 1 ? [s, e, "Verse 2"] : i === 2 ? [s + 4, e, l] : [s, e, l])) as
+      [number, number, string][];
+    expect(phraseMatch(a, b)).toBe(2);
+    expect(phraseMatch(a, [])).toBe(0);
+  });
+
+  it("cuts a stretch out of a lane: inside goes, an edge is trimmed, across both is split", () => {
+    const doc = { rows: [{ id: "s", type: "clips" as const, target: "scene", items: [
+      { id: "a", at: 0, len: 16, fade: 8 }, { id: "b", at: 20, len: 4 },
+      { id: "c", at: 28, len: 20 }, { id: "d", at: 60, len: 4 }] }] };
+    cutRange(doc, doc.rows[0]!, 12, 32);
+    expect(doc.rows[0]!.items.map((i) => [i.id, i.at, i.len, i.fade])).toEqual([
+      ["a", 0, 12, 8], ["c", 32, 16, undefined], ["d", 60, 4, undefined]]);
+    const across = { rows: [{ id: "s", type: "clips" as const, target: "scene",
+                              items: [{ id: "a", at: 0, len: 32 }] }] };
+    cutRange(across, across.rows[0]!, 8, 16);
+    expect(across.rows[0]!.items.map((i) => [i.id, i.at, i.len])).toEqual([["a", 0, 8], ["a-2", 16, 16]]);
+  });
+
+  it("copies a stretch trimmed to it, and pastes it over what is there", () => {
+    const doc = timelineDoc as unknown as TimelineDoc;
+    const board = copyRange(doc, 160, 224, "timeline");          // the first Chorus
+    expect(board.span).toBe(64);
+    expect(board.clips.map((c) => [c.row.id, itemNameOf(c.item), c.item.at])).toEqual([
+      ["scene", "fan-drop", 0], ["palette", "Hot", 0], ["hits", "flash", 0]]);
+    const into = structuredClone(doc);
+    const ids = pasteBoard(into, board, 0);
+    const scene = into.rows.find((r) => r.id === "scene")!.items!;
+    // Phase a, at 0..64, was under the paste: it is gone, not overlapped.
+    expect(scene.filter((i) => i.at < 64).map((i) => i.routine)).toEqual(["fan-drop"]);
+    expect(ids).toHaveLength(3);
+    expect(new Set(into.rows.flatMap((r) => (r.items ?? []).map((i) => i.id))).size)
+      .toBe(into.rows.flatMap((r) => r.items ?? []).length);   // every id still unique
+  });
+
+  it("splits a clip in two at a beat inside it, and nowhere else", () => {
+    const doc = structuredClone(timelineDoc) as unknown as TimelineDoc;
+    const id = doc.rows.find((r) => r.id === "scene")!.items!.find((i) => i.at === 160)!.id;
+    expect(splitAt(doc, id, 100)).toBeNull();
+    const tail = splitAt(doc, id, 192)!;
+    const scene = doc.rows.find((r) => r.id === "scene")!.items!;
+    expect(scene.find((i) => i.id === id)).toMatchObject({ at: 160, len: 32 });
+    expect(scene.find((i) => i.id === tail)).toMatchObject({ at: 192, len: 32, routine: "fan-drop" });
+  });
+
   it("decodes rekordbox's colour waveform", () => {
     // rrrgggbbbhhhhh-- : full red, height 31
     const v = (7 << 13) | (31 << 2);
@@ -80,34 +300,133 @@ describe("designer model", () => {
   });
 });
 
+function itemNameOf(i: { routine?: string; palette?: string; hit?: string }): string {
+  return i.routine ?? i.palette ?? i.hit ?? "";
+}
+
 // -- the designer itself ------------------------------------------------------------
 
 const TIMELINE_REV = "r:aaaaaaaaaaaa";
 const ROUTINE_REV = "r:bbbbbbbbbbbb";
 const ROUTINES = [
   { id: "fan-drop", name: "Fan sweep (drop)", bars: 8, loop: true, rig: null,
-    params: fanDrop.params, variations: ["tight", "wide"], roles: fanDrop.roles },
+    params: fanDrop.params, variations: ["tight", "wide"], roles: fanDrop.roles,
+    folder: "Drops", rev: ROUTINE_REV,
+    lanes: [{ type: "clips", target: "movement", role: "movers", blocks: ["fan_sweep"] },
+            { type: "clips", target: "level", role: "pins", blocks: ["chase", "chase"] }],
+    used_by: { timelines: [{ track: "synth-128", title: "synthetic 128", clips: 2,
+                             variations: ["wide"] }],
+               templates: [{ id: "club", name: "Club", where: ["Chorus"] }], show: [] } },
   { id: "idle-orbit", name: "Idle orbit", bars: 8, loop: true, rig: null,
-    params: idleOrbit.params, variations: [], roles: idleOrbit.roles },
+    params: idleOrbit.params, variations: [], roles: idleOrbit.roles, rev: "r:i",
+    lanes: [{ type: "clips", target: "movement", role: "movers", blocks: ["orbit"] }],
+    used_by: { timelines: [], templates: [], show: [] } },
 ];
+
+/** What `prep.py catalogue` says, cut down: a folder, a playlist in it with
+ *  rekordbox's trailing space, a smart playlist, and one track of each kind. */
+const CATALOGUE = {
+  kind: "klights.rekordbox_catalogue", db: "collection:TEST",
+  path: "C:/rekordbox/master.db", rekordbox: "7.2.14", read_at: "2026-10-03T07:39:22",
+  playlists: [
+    { id: "10", name: "Gigs", parent: null, kind: "folder", tracks: [] },
+    { id: "11", name: "Friday ", parent: "10", kind: "playlist", tracks: [101, 102] },
+    { id: "13", name: "Smart", parent: null, kind: "smart", tracks: [] },
+  ],
+  tracks: [
+    { id: 101, title: "synthetic 128", artist: "kLights", album: "", genre: "", key: "",
+      bpm: 128, duration_s: 360, local: true, analysed: true, added: "2026-01-01" },
+    { id: 102, title: "Night Drive", artist: "Kölsch", album: "Night EP", genre: "", key: "8A",
+      bpm: 124, duration_s: 400, local: true, analysed: true, added: "2026-01-02" },
+    { id: 103, title: "Raw Demo", artist: "Someone", album: "", genre: "", key: "",
+      bpm: null, duration_s: 200, local: true, analysed: false, added: "2026-01-03" },
+    { id: 104, title: "Streamed Tune", artist: "Streamer", album: "", genre: "", key: "",
+      bpm: 128, duration_s: 300, local: false, analysed: true, added: "2026-01-04" },
+  ],
+};
+let rekordbox: [number, unknown] = [200, CATALOGUE];
+
+const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
+/** The library: Hot, copied into the timeline (with older colours) and Club
+ *  (the same); Ice, in nothing yet. Cool lives only in Club. */
+const PALETTES = {
+  palettes: [
+    { id: "hot", name: "Hot", ...HOT, rev: "r:p", copies: [
+      { file: "timelines/synth-128.json", kind: "timeline", id: "synth-128",
+        title: "synthetic 128", colours: { ...HOT, primary: "#ff0000" }, same: false },
+      { file: "templates/club.json", kind: "template_set", id: "club", title: "Club",
+        colours: HOT, same: true }] },
+    { id: "ice", name: "Ice", primary: "#bae6fd", secondary: "#ffffff", accent: "#38bdf8",
+      rev: "r:i", copies: [] },
+  ],
+  found: [{ name: "Cool", places: [{ file: "templates/club.json", kind: "template_set",
+                                     id: "club", title: "Club",
+                                     colours: { primary: "#3b82f6", secondary: "#14b8a6",
+                                                accent: "#e2e8f0" } }] }],
+};
+
+const PHRASE_ITEMS = trackDoc.phrases.items as [number, number, string][];
+
+/** A prepped track read back: the example track under another name. */
+function trackAs(id: string, title: string, artist: string) {
+  return { ...structuredClone(trackDoc), id, identity: { ...trackDoc.identity, title, artist } };
+}
 
 function serve(path: string): [number, unknown] {
   if (path === "/api/tracks") {
-    return [200, { tracks: [{ id: "synth-128", title: "synthetic 128", artist: "kLights",
-                              bpm: 128, phrases: 8, has_timeline: true,
-                              has_waveform: false, has_audio: false }] }];
+    return [200, { tracks: [
+      { id: "synth-128", title: "synthetic 128", artist: "kLights",
+        bpm: 128, phrases: 8, has_timeline: true, grid_rev: "g:834af7",
+        has_waveform: false, has_audio: false, phrase_items: PHRASE_ITEMS,
+        timeline: { rows: 7, items: 13, grid_rev: "g:834af7" }, edited: 2,
+        rekordbox: [{ db: "collection:TEST", id: 101 }], signatures: 1 },
+      // From another collection: not this rekordbox's row 102, so the browser
+      // still offers it.
+      { id: "kolsch-night-drive", title: "Night Drive", artist: "Kölsch", bpm: 124,
+        phrases: 8, has_timeline: false, grid_rev: "g:834af7", has_waveform: false,
+        has_audio: true, audio_here: false, phrase_items: PHRASE_ITEMS, timeline: null,
+        edited: 1, rekordbox: [{ db: "xml:OTHER", id: 7 }], signatures: 0 },
+    ] }];
   }
+  if (path === "/api/show") {
+    return [200, { dir: "/shows", rev: "r:s", show_rev: "r:show", errors: [], warnings: [],
+                   show: { kind: "klights.show", version: 1, template_set: "club",
+                           pause: { policy: "idle", grace_s: 4, idle_routine: "idle-orbit",
+                                    fade_beats: 4 },
+                           follow: { default: "disarmed", min_track_change_s: 2 },
+                           sources: { rkbx: { latency_ms: -15 } } } }];
+  }
+  if (path === "/api/tracks/kolsch-night-drive") {
+    return [200, { doc: trackAs("kolsch-night-drive", "Night Drive", "Kölsch"), rev: "r:k" }];
+  }
+  if (path === "/api/tracks/streamer-streamed-tune") {
+    return [200, { doc: trackAs("streamer-streamed-tune", "Streamed Tune", "Streamer"), rev: "r:st" }];
+  }
+  if (path === "/api/rekordbox") return rekordbox;
   if (path === "/api/tracks/synth-128") return [200, { doc: trackDoc, rev: "r:t" }];
   if (path === "/api/timelines/synth-128") return [200, { doc: timelineDoc, rev: TIMELINE_REV }];
   if (path === "/api/routines") return [200, { routines: ROUTINES }];
   if (path === "/api/routines/fan-drop") return [200, { doc: fanDrop, rev: ROUTINE_REV }];
-  if (path === "/api/templates") return [200, { templates: [{ id: "club", name: "Club" }] }];
+  if (path === "/api/templates") {
+    return [200, { templates: [
+      { id: "club", name: "Club", phrases: 8, palettes: ["Cool", "Hot"], show: true, rev: "r:c" },
+      { id: "warmup", name: "Warmup", phrases: 8, palettes: ["Cool", "Hot"], show: false,
+        rev: "r:w" }] }];
+  }
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
+  if (path === "/api/palettes") return [200, PALETTES];
+  if (path === "/api/templates/warmup") {
+    return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
+  }
+  if (path === "/api/media") return [200, { media: [{ file: "loop-1.mp4", size: 5120 }] }];
   return [404, { error: `no ${path}` }];
 }
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
+  resetCatalogue();
+  rekordbox = [200, CATALOGUE];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -118,7 +437,7 @@ afterEach(() => {
   location.hash = "";
 });
 
-async function open(hash = "#designer/synth-128") {
+async function open(hash = "#studio/track/synth-128") {
   location.hash = hash;
   installMockSocket();
   render(<App />);
@@ -138,13 +457,7 @@ function reply(socket: MockSocket, type: string, ok: boolean, data?: unknown, er
 }
 
 describe("designer", () => {
-  it("lists the show folder's tracks", async () => {
-    await open("#designer");
-    expect(await screen.findByText("synthetic 128")).toBeInTheDocument();
-    expect(screen.getByText(/8 phrases · timeline/)).toBeInTheDocument();
-  });
-
-  it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
+  it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
     await open();
     expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
     const lanes = screen.getByRole("region", { name: "lanes" });
@@ -155,7 +468,10 @@ describe("designer", () => {
     expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("flash at bar 41.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("automation master")).toBeInTheDocument();
-    expect(within(lanes).getByText(/Output: vj/)).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("clips/3/connect at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("automation vj-opacity")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("vj-opacity address"))
+      .toHaveValue("/composition/layers/1/video/opacity");
     // Lane order is the file's: the movement lane sits above the scene lane.
     const order = screen.getAllByLabelText(/^lane /).map((el) => el.getAttribute("aria-label"));
     expect(order.slice(0, 2)).toEqual(["lane move", "lane scene"]);
@@ -263,6 +579,118 @@ describe("designer", () => {
     const scene = save.doc.rows.find((r) => r.id === "scene")!;
     expect(scene.items!.find((i) => i.id === "chorus1")!.variation).toBe("tight");
     expect(await screen.findByRole("button", { name: "Saved" })).toBeDisabled();
+  });
+
+  it("cues a VJ app over OSC: a lane, a cue, its messages, saved", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // The example's drop cue: on when it starts, a clear when it ends.
+    fireEvent.pointerDown(within(lanes).getByLabelText("clips/3/connect at bar 41.1")
+      .querySelector("rect")!);
+    let inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/3/connect");
+    expect(within(inspector).getByLabelText("off address"))
+      .toHaveValue("/composition/layers/1/clear");
+    expect(within(inspector).queryByText("Fade in")).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const address = within(inspector).getByLabelText("on address");
+    await user.clear(address);
+    await user.type(address, "/layer/2/go");
+    const args = within(inspector).getByLabelText("on args");
+    await user.clear(args);
+    await user.type(args, "1, $bar, club");
+    await user.tab();
+    await user.click(within(inspector).getByRole("button", { name: "+ off message" }));
+    const off = within(inspector).getByLabelText("off address");
+    await user.clear(off);
+    await user.type(off, "/layer/2/clear");
+    expect(within(lanes).getByLabelText(/layer\/2\/go at bar 1.1/)).toBeInTheDocument();
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:cccccccccccc" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "osc")!;
+    expect(row).toMatchObject({ type: "external", output: "osc" });
+    expect(row.items![0]).toMatchObject({
+      at: 0, len: 16, on: { address: "/layer/2/go", args: [1, "$bar", "club"] },
+      off: { address: "/layer/2/clear", args: [] },
+    });
+  });
+
+  it("plays MIDI through the sidecar: a note cue made a CC, and a CC curve", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi");
+    await user.click(await screen.findByRole("button", { name: "add a cue to midi" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(lanes).getByLabelText("note 60 at bar 1.1")).toBeInTheDocument();
+    await user.click(within(within(inspector).getByRole("group", { name: "midi kind" }))
+      .getByRole("button", { name: "CC" }));
+    const cc = within(inspector).getByLabelText("midi cc");
+    await user.clear(cc);
+    await user.type(cc, "7");
+    const then = within(inspector).getByLabelText("midi off_value");
+    await user.type(then, "0");
+    const channel = within(inspector).getByLabelText("midi channel");
+    await user.clear(channel);
+    await user.type(channel, "3");
+    expect(within(lanes).getByLabelText("cc 7 at bar 1.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi-curve");
+    expect(await screen.findByLabelText("midi-curve cc")).toHaveValue(1);
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:dddddddddddd" }) as
+      Command & { doc: TimelineDoc };
+    const sent = JSON.parse(JSON.stringify(save.doc)) as TimelineDoc;
+    const item = sent.rows.find((r) => r.id === "midi")!.items![0]!;
+    expect(item).toMatchObject({ cc: 7, value: 127, off_value: 0, channel: 3 });
+    expect(item.note).toBeUndefined();
+    expect(sent.rows.find((r) => r.id === "midi-curve")).toMatchObject({
+      type: "external", output: "midi", channel: 1, cc: 1, points: [[0, 0]] });
+  });
+
+  it("puts a scene on the projector: a visuals lane, a tunnel, a video from media/", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("tunnel at bar 41.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "visuals");
+    await user.click(await screen.findByRole("button", { name: "add a cue to visuals" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const scenes = within(inspector).getByRole("group", { name: "visuals scene" });
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+    await user.selectOptions(within(inspector).getByLabelText("visuals color"), "@accent");
+    expect(within(lanes).getByLabelText("tunnel at bar 1.1")).toBeInTheDocument();
+    await user.click(within(scenes).getByRole("button", { name: "video" }));
+    const file = await within(inspector).findByLabelText("visuals file");
+    await waitFor(() => expect(within(file).getByRole("option", { name: "loop-1.mp4" }))
+      .toBeInTheDocument());
+    await user.selectOptions(file, "loop-1.mp4");
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "visuals")!;
+    expect(row).toMatchObject({ type: "external", output: "visuals" });
+    expect(row.items![0]).toMatchObject({ scene: "tunnel", params: { color: "@primary", speed: 3 } });
   });
 
   it("refuses to save while the engine says the draft is invalid", async () => {
@@ -399,6 +827,20 @@ describe("designer", () => {
     expect(row.points).toContainEqual([36, -0.5, "ease"]);
   });
 
+  it("offers a lane for each parameter of the routines on the track, naming them", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    await waitFor(() => expect(within(menu).getByRole("option", {
+      name: "$color · fan-drop, idle-orbit" })).toBeInTheDocument());
+    expect(within(menu).getByRole("option", { name: "$radius (deg) · idle-orbit" }))
+      .toBeInTheDocument();
+    await user.selectOptions(menu, "param.radius");
+    const radius = within(lanes).getByLabelText("automation param.radius");
+    expect(within(radius).getByLabelText("point at bar 1.1: 10")).toBeInTheDocument();
+  });
+
   it("answers the editing keys: Space plays, Ctrl+S saves, Escape lets go", async () => {
     const socket = await open();
     const lanes = await screen.findByRole("region", { name: "lanes" });
@@ -442,13 +884,13 @@ describe("routine editor", () => {
     fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
     await user.click(screen.getByRole("link", { name: /Open routine/ }));
     await screen.findByLabelText("fan_sweep at bar 1.1");
-    expect(screen.getByTitle("Back to synth-128")).toHaveAttribute("href", "#designer/synth-128");
+    expect(screen.getByTitle("Back to synth-128")).toHaveAttribute("href", "#studio/track/synth-128");
   });
 
-  it("is reached from the picker, and lays a routine out as lanes on roles", async () => {
+  it("is reached from Studio's routines, and lays a routine out as lanes on roles", async () => {
     const user = userEvent.setup();
-    await open("#designer");
-    await user.click(await screen.findByRole("link", { name: "Fan sweep (drop)" }));
+    await open("#studio/routines");
+    await user.click(await screen.findByRole("link", { name: /Fan sweep \(drop\)/ }));
     const lanes = await screen.findByRole("region", { name: "lanes" });
     expect(within(lanes).getByLabelText("fan_sweep at bar 1.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("chase at bar 1.1")).toBeInTheDocument();
@@ -462,7 +904,7 @@ describe("routine editor", () => {
 
   it("edits a block's arguments -- a value or a parameter -- and saves with the rev", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     const fan = within(lanes).getByLabelText("fan_sweep at bar 1.1").querySelector("rect")!;
     fireEvent.pointerDown(fan, { clientX: 10, pointerId: 1 });
@@ -486,7 +928,7 @@ describe("routine editor", () => {
 
   it("adds blocks, roles, parameters and variations", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     await user.click(screen.getByRole("button", { name: "pulse" }));
     // on the routine's level lane, at the playhead, to the routine's end
@@ -518,14 +960,105 @@ describe("routine editor", () => {
       .toMatchObject({ at: 0, len: 32, args: { depth: "$depth" } });
   });
 
+  it("automates its own parameters on lanes, held to their declared range", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    // each open parameter, by name and unit -- and a look would not be here
+    expect(within(menu).getByRole("option", { name: "$width (deg)" })).toBeInTheDocument();
+    expect(within(menu).getByRole("option", { name: "$rate" })).toBeInTheDocument();
+    await user.selectOptions(menu, "param.width");
+    expect(within(menu).queryByRole("option", { name: "$width (deg)" })).toBeNull();
+
+    // the lane starts at the default, so adding it changes nothing
+    const width = within(lanes).getByLabelText("automation param.width");
+    expect(within(width).getByLabelText("point at bar 1.1: 40")).toBeInTheDocument();
+    expect(within(lanes).getByText("$width (deg)")).toBeInTheDocument();
+    fireEvent.click(width, { clientX: 16 * 16, clientY: 3 });   // bar 5, the top
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/0 to 120 deg/)).toBeInTheDocument();
+    // past the declared max is refused here, as the engine would refuse it
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "500" } });
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "90" } });
+
+    // a colour parameter's lane takes colours, picked in the inspector
+    await user.selectOptions(menu, "param.color");
+    const colour = within(lanes).getByLabelText("automation param.color");
+    fireEvent.click(colour, { clientX: 8 * 16, clientY: 20 });
+    expect(within(colour).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "point colour" }))
+      .getByRole("button", { name: "accent" }));
+    expect(within(colour).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:f" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "param.width"))
+      .toMatchObject({ type: "automation", points: [[0, 40], [16, 90]] });
+    expect(doc.rows.find((r) => r.target === "param.color"))
+      .toMatchObject({ points: [[0, "@primary"], [8, "@accent"]] });
+  });
+
+  it("moves one block's argument on its own lane, and puts a wave on any lane", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    expect(within(menu).getByRole("option", { name: "fan.spread" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("option", { name: /fan\.width/ })).toBeNull();
+    await user.selectOptions(menu, "arg.fan.spread");
+    const spread = within(lanes).getByLabelText("automation arg.fan.spread");
+    expect(within(spread).getByLabelText("point at bar 1.1: 0.5")).toBeInTheDocument();
+
+    // a wave on it: the lane's ∿ adds one in range and opens it
+    await user.click(within(lanes).getByRole("button", { name: /^wave on arg[.-]fan[.-]spread/ }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/wave on arg[.-]fan[.-]spread/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "wave shape" }))
+      .getByRole("button", { name: "triangle" }));
+    fireEvent.change(within(inspector).getByLabelText("wave bars"), { target: { value: "2" } });
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "0.8" } });
+    // 0.5 + 0.8 is past spread's 1: said here, before the engine refuses it
+    expect(within(inspector).getByRole("alert")).toHaveTextContent(/reaches 1.3/);
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "-0.5" } });
+    expect(within(inspector).queryByRole("alert")).toBeNull();
+
+    // and on a macro lane, then taken off again with Delete
+    await user.selectOptions(menu, "size");
+    await user.click(within(lanes).getByRole("button", { name: /^wave on size/ }));
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    expect(screen.queryByText(/wave on size/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:g" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "arg.fan.spread")).toMatchObject({
+      points: [[0, 0.5]], wave: { shape: "triangle", bars: 2, depth: -0.5 } });
+    expect(doc.rows.find((r) => r.target === "size")!.wave).toBeUndefined();
+  });
+
   it("starts a new routine and saves it as a new file", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer");
-    await user.type(await screen.findByLabelText("new routine id"), "Bad Name");
-    expect(screen.getByRole("button", { name: "New routine" })).toBeDisabled();
-    await user.clear(screen.getByLabelText("new routine id"));
-    await user.type(screen.getByLabelText("new routine id"), "my-sweep");
-    await user.click(screen.getByRole("button", { name: "New routine" }));
+    const socket = await open("#studio/routines");
+    await user.click(await screen.findByRole("button", { name: "New routine…" }));
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    const name = within(dialog).getByLabelText("name");
+    const id = within(dialog).getByLabelText("id");
+    await user.clear(name);
+    await user.type(name, "My Sweep");
+    expect(id).toHaveValue("my-sweep");                 // from the name, until it is typed
+    await user.clear(id);
+    await user.type(id, "fan-drop");
+    expect(within(dialog).getByText("already there")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
+    await user.clear(id);
+    await user.type(id, "Bad Name");
+    expect(within(dialog).getByRole("button", { name: "Open it" })).toBeDisabled();
+    await user.clear(id);
+    await user.type(id, "my-sweep");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/routine/my-sweep");
     const lanes = await screen.findByRole("region", { name: "lanes" });
     expect(screen.getByText("new")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "solid" }));
@@ -533,14 +1066,29 @@ describe("routine editor", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     const saved = reply(socket, "routine_save", true, { rev: "r:e" }) as unknown as Saved;
     expect(saved.base_rev).toBe("");
-    expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", bars: 4 });
+    expect(saved.doc).toMatchObject({ kind: "klights.routine", id: "my-sweep", name: "My Sweep",
+                                      bars: 4 });
     expect(saved.doc.rows[0]).toMatchObject({ type: "clips", target: "color", role: "movers" });
     expect(saved.doc.rows[0]!.items![0]!.args).toEqual({ color: "@primary" });
   });
 
+  it("gives a routine an OSC lane, so wherever it plays it can cue a VJ app", async () => {
+    const user = userEvent.setup();
+    await open("#designer/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/osc cue on osc/)).toBeInTheDocument();
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/1/connect");
+    await user.click(within(inspector).getByRole("button", { name: "+ while message" }));
+    expect(within(inspector).getByLabelText("while address")).toHaveValue("/");
+  });
+
   it("shows what the engine says will not work on this rig", async () => {
     const user = userEvent.setup();
-    const socket = await open("#designer/routine/fan-drop");
+    const socket = await open("#studio/routine/fan-drop");
     await screen.findByRole("region", { name: "lanes" });
     await user.clear(screen.getByLabelText("routine name"));
     await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_draft")).toBe(true),
@@ -574,7 +1122,7 @@ describe("designer guide", () => {
 
   it("opens to the routine guide from the routine editor", async () => {
     const user = userEvent.setup();
-    await open("#designer/routine/fan-drop");
+    await open("#studio/routine/fan-drop");
     await screen.findByRole("region", { name: "lanes" });
     await user.click(screen.getByRole("button", { name: "Guide" }));
     expect(within(screen.getByRole("complementary", { name: "guide" }))
@@ -600,5 +1148,1014 @@ describe("designer guide", () => {
     await screen.findByRole("region", { name: "lanes" });
     await user.click(screen.getByRole("button", { name: "Help: At the playhead" }));
     expect(screen.getByText(/Higher lanes win/)).toBeInTheDocument();
+  });
+});
+
+type TSaved = { doc: TimelineDoc; base_rev: string };
+
+describe("studio routes", () => {
+  it("rewrites the old designer's addresses to Studio's", async () => {
+    await open("#designer");
+    expect(location.hash).toBe("#studio");
+    expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+
+  it("takes an old link to a track or a routine to the same place", async () => {
+    await open("#designer/synth-128");
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
+    cleanup();
+    await open("#designer/routine/fan-drop");
+    expect(location.hash).toBe("#studio/routine/fan-drop");
+  });
+});
+
+describe("studio library", () => {
+  it("lists the show folder's tracks with what lights each on the night", async () => {
+    const socket = await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    const row = (await within(tracks).findByText("synthetic 128")).closest("tr")!;
+    expect(within(row).getByText("Timeline")).toBeInTheDocument();
+    const second = within(tracks).getByText("Night Drive").closest("tr")!;
+    // No timeline: the template set that is on plays it -- show.json's, until
+    // the engine says which (F22b).
+    expect(within(second).getByText("Template: Club")).toBeInTheDocument();
+    // No CDJ signature is something to fix before the night.
+    expect(within(second).getByRole("img", { name: /No CDJ signature/ })).toBeInTheDocument();
+    expect(within(tracks).getByText(/2 in the show folder\. 1 has a timeline; the Club template set plays the other 1/))
+      .toBeInTheDocument();
+    // The operator turns the set off: then nothing but the operator's show is left.
+    act(() => socket.push(stateWith((st) => {
+      st.program = { armed: true, engaged: false, mode: "fallback", reason: "no track", beat: null,
+                     bar: null, lanes: {}, grabbed: [], policy: "idle", problems: 0,
+                     first_problem: null, latency_ms: {}, set: null };
+    })));
+    expect(within(second).getByText("Operator's show")).toBeInTheDocument();
+    expect(within(tracks).getByText(/with no template set on, the operator's show runs/)).toBeInTheDocument();
+  });
+
+  it("filters by what a track needs, and by name", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await within(tracks).findByText("synthetic 128");
+    await user.click(within(tracks).getByRole("button", { name: /No timeline/ }));
+    expect(within(tracks).queryByText("synthetic 128")).toBeNull();
+    expect(within(tracks).getByText("Night Drive")).toBeInTheDocument();
+    await user.click(within(tracks).getByRole("button", { name: /^All/ }));
+    await user.type(within(tracks).getByLabelText("filter tracks"), "kolsch");
+    expect(within(tracks).queryByText("synthetic 128")).toBeNull();
+    expect(within(tracks).getByText("Night Drive")).toBeInTheDocument();
+  });
+
+  it("shows the selected track's details, and opens its timeline", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByRole("button", { name: /Night Drive/ }));
+    const details = screen.getByRole("complementary", { name: "details" });
+    expect(within(details).getByRole("heading", { name: "Night Drive" })).toBeInTheDocument();
+    expect(within(details).getByText(/when it plays the Club template set lights it/)).toBeInTheDocument();
+    expect(within(details).getByRole("link", { name: "Make a timeline" }))
+      .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
+    // The engine is asked whether it can find the audio; the mock has none.
+    expect(await within(details).findByText(/No audio file on this machine/)).toBeInTheDocument();
+  });
+
+  it("folds its side panels away, and remembers that", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    expect(screen.getByRole("navigation", { name: "Studio" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide the sidebar" }));
+    expect(screen.queryByRole("navigation", { name: "Studio" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Hide the details" }));
+    expect(screen.queryByRole("complementary", { name: "details" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("klights.studio.panels")!))
+      .toMatchObject({ nav: false, side: false });
+    cleanup();
+    await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    expect(screen.queryByRole("navigation", { name: "Studio" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show the sidebar" }));
+    expect(screen.getByRole("navigation", { name: "Studio" })).toBeInTheDocument();
+  });
+
+  it("folds the timeline's side panel away, so the lanes take the width", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    expect(screen.getByRole("complementary", { name: "side panel" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide the side panel" }));
+    expect(screen.queryByRole("complementary", { name: "side panel" })).toBeNull();
+    expect((document.querySelector(".d-body") as HTMLElement).style.gridTemplateColumns)
+      .not.toContain("320px");
+  });
+
+  it("drafts a track from a set when its timeline opens, as an undoable unsaved edit", async () => {
+    const user = userEvent.setup();
+    await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByRole("button", { name: /synthetic 128/ }));
+    const details = screen.getByRole("complementary", { name: "details" });
+    await user.click(within(details).getByRole("button", { name: "Redraft from" }));
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    // Club plays Idle orbit on the Intro, where the saved timeline has a
+    // snapshot: one routine per phrase, from the track's own phrases.
+    expect(within(lanes).getByLabelText("idle-orbit at bar 1.1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(lanes).queryByLabelText("idle-orbit at bar 1.1")).toBeNull();
+  });
+
+  it("makes timelines for ticked tracks that have none, drafted from a set", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio");
+    const tracks = await screen.findByRole("region", { name: "tracks" });
+    await user.click(await within(tracks).findByLabelText("tick Night Drive"));
+    await user.click(within(tracks).getByLabelText("tick synthetic 128"));
+    // synthetic 128 has a timeline already: only one is offered.
+    await user.click(within(tracks).getByRole("button", { name: "Make timelines for 1…" }));
+    const dialog = screen.getByRole("dialog", { name: "Make timelines for 1 track" });
+    await user.click(within(dialog).getByRole("button", { name: "Start 1" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(true));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:n" }) as unknown as TSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ kind: "klights.timeline", track: "kolsch-night-drive",
+                                      grid_rev: "g:834af7" });
+    const scene = saved.doc.rows.find((r) => r.target === "scene")!;
+    expect(scene.items!.map((i) => i.routine)).toEqual([
+      "idle-orbit", "verse-sweep", "build-rise", "fan-drop", "idle-orbit", "build-rise",
+      "fan-drop", "idle-orbit"]);
+    expect(await within(dialog).findByText(/drafted 8 clips from Club/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Open" }))
+      .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
+  });
+
+  it("lists routines, and goes back to the tracks", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routines");
+    const page = await screen.findByRole("region", { name: "routines" });
+    expect(await within(page).findByRole("link", { name: /Fan sweep \(drop\)/ }))
+      .toHaveAttribute("href", "#studio/routine/fan-drop");
+    expect(within(page).getByText(/\$color \$width \$rate · tight, wide/)).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: /^Tracks/ }));
+    expect(await screen.findByRole("region", { name: "tracks" })).toBeInTheDocument();
+  });
+});
+
+describe("timeline editing", () => {
+  async function timeline() {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    return { user, socket, lanes };
+  }
+  const pick = (lanes: HTMLElement, label: string) =>
+    fireEvent.pointerDown(within(lanes).getByLabelText(label).querySelector("rect")!);
+  const key = (k: string, ctrl = false) => fireEvent.keyDown(document.body, { key: k, ctrlKey: ctrl });
+
+  it("copies a clip and pastes it at the playhead, over what is there; duplicates it after", async () => {
+    const { lanes } = await timeline();
+    pick(lanes, "fan-drop at bar 41.1");
+    key("c", true);
+    key("v", true);                                       // the playhead is at bar 1
+    expect(within(lanes).getByLabelText("fan-drop at bar 1.1")).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("Phase a at bar 1.1")).toBeNull();
+    key("d", true);
+    expect(within(lanes).getByLabelText("fan-drop at bar 17.1")).toBeInTheDocument();
+    key("x", true);
+    expect(within(lanes).queryByLabelText("fan-drop at bar 17.1")).toBeNull();
+  });
+
+  it("splits a clip at the playhead with S, and from the inspector", async () => {
+    const { lanes } = await timeline();
+    const ruler = within(lanes).getByRole("slider", { name: "seek" });
+    fireEvent.click(ruler, { clientX: 6 * 168 });         // beat 168: bar 43
+    pick(lanes, "fan-drop at bar 41.1");
+    key("s");
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("fan-drop at bar 43.1")).toBeInTheDocument();
+    pick(lanes, "verse-sweep at bar 17.1");
+    // The playhead is not inside it, so there is nothing to split.
+    expect(within(screen.getByRole("contentinfo", { name: "inspector" }))
+      .getByRole("button", { name: "Split" })).toBeDisabled();
+  });
+
+  it("opens a clip's menu with the other button", async () => {
+    const { user, lanes } = await timeline();
+    fireEvent.contextMenu(within(lanes).getByLabelText("fan-drop at bar 41.1"));
+    const menu = screen.getByRole("menu", { name: "fan-drop actions" });
+    expect(within(menu).getByRole("menuitem", { name: /Open the routine/ }))
+      .toHaveAttribute("href", "#studio/routine/fan-drop");
+    await user.click(within(menu).getByRole("menuitem", { name: /Duplicate after it/ }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(lanes).getByLabelText("fan-drop at bar 57.1")).toBeInTheDocument();
+  });
+
+  it("picks a phrase as a section to fill, copy, paste and clear", async () => {
+    const { user, lanes } = await timeline();
+    await user.click(within(lanes).getByRole("button", { name: "select Chorus, bars 41 to 56" }));
+    const bar = screen.getByRole("toolbar", { name: "section" });
+    expect(bar).toHaveTextContent("Chorus");
+    await user.selectOptions(within(bar).getByLabelText("fill the section with"), "idle-orbit");
+    expect(within(lanes).getByLabelText("idle-orbit at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("fan-drop at bar 41.1")).toBeNull();
+    await user.click(within(bar).getByRole("button", { name: "Copy section" }));
+    expect(screen.getByText(/Copied Chorus: 3 clips and hits/)).toBeInTheDocument();
+    await user.click(within(lanes).getByRole("button", { name: "select Chorus, bars 73 to 88" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "section" }))
+      .getByRole("button", { name: "Paste here" }));
+    expect(within(lanes).getByLabelText("idle-orbit at bar 73.1")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("toolbar", { name: "section" }))
+      .getByRole("button", { name: "Clear" }));
+    expect(within(lanes).queryByLabelText("idle-orbit at bar 73.1")).toBeNull();
+    expect(within(lanes).queryByLabelText("flash at bar 73.1")).toBeNull();
+  });
+
+  it("places from the browser with a click, or where it is dropped", async () => {
+    const { user, lanes } = await timeline();
+    const browser = screen.getByRole("complementary", { name: "browser" });
+    await user.click(within(browser).getByRole("tab", { name: "Hits" }));
+    await user.click(within(browser).getByRole("button", { name: "Flash" }));
+    expect(within(lanes).getByLabelText("flash at bar 1.1")).toBeInTheDocument();
+    // jsdom has no DragEvent, so the pointer's x is set on the event by hand.
+    const drop = (lane: string, what: unknown, clientX: number) => {
+      const el = within(lanes).getByLabelText(lane);
+      const ev = createEvent.drop(el, {
+        dataTransfer: { types: [PLACE_MIME], getData: () => JSON.stringify(what) } });
+      Object.defineProperty(ev, "clientX", { value: clientX });
+      fireEvent(el, ev);
+    };
+    drop("lane scene", { kind: "routine", id: "idle-orbit" }, 6 * 96);
+    expect(within(lanes).getByLabelText("idle-orbit at bar 25.1")).toBeInTheDocument();
+    drop("lane palette", { kind: "routine", id: "idle-orbit" }, 6 * 96);
+    expect(screen.getByText("A routine goes on a scene, movement, colour or level lane."))
+      .toBeInTheDocument();
+    // A drag can come from another window: what is not something to place is ignored.
+    const scene = within(lanes).getByLabelText("lane scene");
+    const before = within(scene).getAllByRole("button").length;
+    for (const data of ["not json", "null", JSON.stringify({ kind: "routine" }),
+                        JSON.stringify({ kind: "hit", hit: "explode" })]) {
+      const ev = createEvent.drop(scene, { dataTransfer: { types: [PLACE_MIME], getData: () => data } });
+      Object.defineProperty(ev, "clientX", { value: 6 * 96 });
+      fireEvent(scene, ev);
+    }
+    expect(within(scene).getAllByRole("button")).toHaveLength(before);
+  });
+
+  it("copies a library palette in when the browser places it, and says whose each palette is", async () => {
+    const { user, lanes } = await timeline();
+    const browser = screen.getByRole("complementary", { name: "browser" });
+    await user.click(within(browser).getByRole("tab", { name: "Palettes" }));
+    await user.click(within(browser).getByRole("button", { name: "Ice" }));
+    expect(within(lanes).getByLabelText("Ice at bar 1.1")).toBeInTheDocument();
+    const side = screen.getByRole("complementary", { name: "side panel" });
+    expect(within(side).getByText("This track's palettes")).toBeInTheDocument();
+    const row = (name: string) => within(side).getByLabelText(`${name} primary`).closest(".d-palette")!;
+    expect(row("Ice")).toHaveTextContent("copy of library");
+    expect(row("Hot")).toHaveTextContent("copy of library");
+    expect(row("Cool")).toHaveTextContent("only here");
+    fireEvent.input(within(side).getByLabelText("Hot primary"), { target: { value: "#00ff00" } });
+    expect(row("Hot")).toHaveTextContent("differs from library");
+    await user.click(within(side).getByRole("button", { name: "use the library's colours for Hot" }));
+    expect(within(side).getByLabelText("Hot primary")).toHaveValue("#ff2d6f");
+    expect(row("Hot")).toHaveTextContent("copy of library");
+  });
+});
+
+describe("routine library", () => {
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/routines");
+    const page = await screen.findByRole("region", { name: "routines" });
+    await within(page).findByRole("article", { name: "Fan sweep (drop)" });
+    return { user, socket, page };
+  }
+  const details = () => screen.getByRole("complementary", { name: "details" });
+
+  it("files routines into folders, and says where each is used", async () => {
+    const { user, page } = await library();
+    const folders = within(page).getByRole("group", { name: "folders" });
+    await user.click(within(folders).getByRole("button", { name: /^Drops/ }));
+    expect(within(page).queryByRole("article", { name: "Idle orbit" })).toBeNull();
+    const fan = within(page).getByRole("article", { name: "Fan sweep (drop)" });
+    expect(fan).toHaveTextContent("in 1 timeline · Club");
+    await user.click(within(folders).getByRole("button", { name: /^Unused/ }));
+    expect(within(page).getByRole("article", { name: "Idle orbit" })).toHaveTextContent("Unused");
+
+    await user.click(within(folders).getByRole("button", { name: /^All/ }));
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    const used = within(details()).getByRole("region", { name: "where it is used" });
+    expect(within(used).getByRole("link", { name: /synthetic 128/ }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
+    expect(used).toHaveTextContent(/Club.*Chorus/);
+    // Nothing that is used can be deleted from here.
+    expect(within(details()).getByRole("button", { name: "Delete: used in 2 places" })).toBeDisabled();
+  });
+
+  it("renames a routine, and every file that uses it with it", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(page).getByRole("menuitem", { name: "Rename…" }));
+    const id = within(details()).getByLabelText("new id");
+    expect(id).toHaveFocus();
+    expect(details()).toHaveTextContent(/Also rewrites the 2 files that use it/);
+    await user.clear(id);
+    await user.type(id, "fan-sweep");
+    await user.click(within(details()).getByRole("button", { name: "Rename it" }));
+    const sent = reply(socket, "routine_rename", true, {
+      written: ["routines/fan-sweep.json", "timelines/synth-128.json", "templates/club.json"] });
+    expect(sent).toMatchObject({ routine: "fan-drop", to: "fan-sweep", base_rev: ROUTINE_REV });
+    expect(await screen.findByText("Renamed fan-drop to fan-sweep: 3 files written."))
+      .toBeInTheDocument();
+  });
+
+  it("says why when the engine will not rename", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("button", { name: "Rename" }));
+    await user.clear(within(details()).getByLabelText("new id"));
+    await user.type(within(details()).getByLabelText("new id"), "fan-sweep");
+    await user.click(within(details()).getByRole("button", { name: "Rename it" }));
+    reply(socket, "routine_rename", false, undefined,
+          "fan-drop.json changed since you opened it (another machine, MCP, or another tab saved it)");
+    expect(await within(details()).findByRole("alert")).toHaveTextContent("changed since");
+  });
+
+  it("duplicates a routine under a new id, leaving the original and its uses alone", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(page).getByRole("menuitem", { name: "Duplicate…" }));
+    expect(within(details()).getByLabelText("id of the copy")).toHaveValue("fan-drop-copy");
+    await user.click(within(details()).getByRole("button", { name: "Make the copy" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_save")).toBe(true));
+    const saved = reply(socket, "routine_save", true, { rev: "r:copy" }) as unknown as {
+      doc: RoutineDoc; base_rev: string };
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "fan-drop-copy", name: "Fan sweep (drop) (copy)",
+                                      bars: 8 });
+    expect(saved.doc.rows).toEqual(fanDrop.rows);
+  });
+
+  it("moves a routine to another folder with an ordinary save", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Fan sweep (drop)" }));
+    await user.click(within(details()).getByRole("button", { name: "Move to folder" }));
+    const folder = within(details()).getByLabelText("folder");
+    expect(folder).toHaveValue("Drops");
+    await user.clear(folder);
+    await user.type(folder, "Peaks");
+    await user.click(within(details()).getByRole("button", { name: "Move" }));
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "routine_save")).toBe(true));
+    const saved = reply(socket, "routine_save", true, { rev: "r:moved" }) as unknown as {
+      doc: RoutineDoc; base_rev: string };
+    expect(saved.base_rev).toBe(ROUTINE_REV);
+    expect(saved.doc).toMatchObject({ id: "fan-drop", folder: "Peaks" });
+    expect(await screen.findByText("Moved fan-drop to Peaks.")).toBeInTheDocument();
+  });
+
+  it("deletes a routine nothing uses, after asking", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("article", { name: "Idle orbit" }));
+    await user.click(within(details()).getByRole("button", { name: "Delete…" }));
+    const confirm = within(details()).getByRole("group", { name: "confirm delete" });
+    expect(confirm).toHaveTextContent("Delete routines/idle-orbit.json?");
+    await user.click(within(confirm).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "routine_delete", true, { deleted: "routines/idle-orbit.json" });
+    expect(sent).toMatchObject({ routine: "idle-orbit", base_rev: "r:i" });
+    expect(await screen.findByText("Deleted routines/idle-orbit.json.")).toBeInTheDocument();
+  });
+});
+
+describe("template sets", () => {
+  type SetSaved = { doc: TemplateSetDoc; base_rev: string };
+  async function sets(hash = "#studio/templates") {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await within(page).findByLabelText("Chorus routine");
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+
+  it("opens on the show's set, and says what a set does", async () => {
+    const { page } = await sets();
+    const tabs = within(page).getByRole("navigation", { name: "sets" });
+    expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveTextContent("show's");
+    expect(page).toHaveTextContent(/the playing set lights tracks with no timeline/);
+    expect(within(page).getByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
+    expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");
+    expect(within(aside()).getByText(/The show's set/)).toBeInTheDocument();
+  });
+
+  it("edits a pick, has the engine check it, and saves with the rev it read", async () => {
+    const { user, socket, page } = await sets();
+    await user.selectOptions(within(page).getByLabelText("Verse routine"), "idle-orbit");
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "template_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "template_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as SetSaved;
+    expect(saved.base_rev).toBe("r:c");
+    expect(saved.doc.phrases.Verse).toEqual({ routine: "idle-orbit" });
+    expect(saved.doc.phrases.Chorus).toMatchObject({ routine: "fan-drop", variation: "wide" });
+  });
+
+  it("adds an exact label, starting from its family's pick", async () => {
+    const { user, page } = await sets();
+    await user.selectOptions(within(page).getByLabelText("exact label"), "Up 2");
+    await user.click(within(page).getByRole("button", { name: "Add" }));
+    expect(within(page).getByLabelText("Up 2 routine")).toHaveValue("build-rise");
+    await user.click(within(page).getByRole("button", { name: "remove Up 2" }));
+    expect(within(page).queryByLabelText("Up 2 routine")).toBeNull();
+  });
+
+  it("shows what the working copy would draft on a track, and drafts from the saved set", async () => {
+    const { user, page } = await sets();
+    const strip = within(aside()).getByLabelText("what it would draft");
+    expect(within(strip).getAllByText("fan-drop")).toHaveLength(2);    // the two Choruses
+    await user.selectOptions(within(page).getByLabelText("Chorus routine"), "idle-orbit");
+    expect(within(strip).queryByText("fan-drop")).toBeNull();
+    // A draft reads the saved set, so it waits for the save.
+    expect(within(aside()).getByRole("button", { name: /Draft synthetic 128 from this set/ }))
+      .toBeDisabled();
+    await user.click(within(page).getByRole("button", { name: "Undo" }));
+    await user.click(within(aside()).getByRole("button", { name: /Draft synthetic 128 from this set/ }));
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+  });
+
+  it("makes another set the show's with a show.json save", async () => {
+    const { user, socket } = await sets("#studio/templates/warmup");
+    await user.click(within(aside()).getByRole("button", { name: "Make it the show's set" }));
+    const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {
+      doc: { template_set: string; pause: unknown }; base_rev: string };
+    expect(sent.base_rev).toBe("r:show");
+    expect(sent.doc.template_set).toBe("warmup");
+    expect(sent.doc.pause).toMatchObject({ idle_routine: "idle-orbit" });   // the rest kept
+    expect(await screen.findByText("Warmup is the show's template set.")).toBeInTheDocument();
+  });
+
+  it("deletes a set that is not the show's, and never the show's", async () => {
+    const { user, socket } = await sets("#studio/templates/warmup");
+    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    await user.click(within(aside()).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "template_delete", true, { deleted: "templates/warmup.json" });
+    expect(sent).toMatchObject({ template: "warmup", base_rev: "r:w" });
+    cleanup();
+    await sets();
+    expect(within(aside()).getByRole("button", { name: "Delete: it is the show's set" })).toBeDisabled();
+  });
+
+  it("renames a set right after a save, quoting the rev that save wrote", async () => {
+    const { user, socket, page } = await sets();
+    await user.type(within(page).getByLabelText("set name"), "!");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    reply(socket, "template_save", true, { rev: "r:c2" });
+    await within(page).findByRole("button", { name: "Saved" });
+    // The list still says r:c until the folder reloads; this editor knows better.
+    await user.click(within(aside()).getByRole("button", { name: "Rename" }));
+    await user.clear(within(aside()).getByLabelText("new id"));
+    await user.type(within(aside()).getByLabelText("new id"), "club-night");
+    await user.click(within(aside()).getByRole("button", { name: "Rename it" }));
+    const sent = reply(socket, "template_rename", true, { written: ["templates/club-night.json",
+                                                                   "show.json"] });
+    expect(sent).toMatchObject({ template: "club", to: "club-night", base_rev: "r:c2" });
+    await waitFor(() => expect(location.hash).toBe("#studio/templates/club-night"));
+  });
+
+  it("starts a new set and saves it as a new file", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await user.click(await within(page).findByRole("button", { name: "New set…" }));
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    expect(within(dialog).getByRole("radio", { name: /Blank/ })).toHaveAttribute("aria-checked", "true");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Late Night");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/templates/late-night");
+    expect(await within(page).findByLabelText("Anything else routine")).toHaveValue("fan-drop");
+    await user.type(within(page).getByLabelText("set name"), "!");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SetSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
+                                      name: "Late Night!",
+                                      phrases: { "*": { routine: "fan-drop" } } });
+  });
+});
+
+describe("palette library", () => {
+  type PalSaved = { doc: Record<string, string>; base_rev: string };
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/palettes");
+    const page = await screen.findByRole("region", { name: "palettes" });
+    await within(page).findByRole("button", { name: /^Hot/ });
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+
+  it("shows each palette, where its copies are, and the palettes only in files", async () => {
+    const { page } = await library();
+    const hot = within(page).getByRole("button", { name: /^Hot/ });
+    expect(hot).toHaveTextContent("1 timeline · 1 set");
+    expect(hot).toHaveTextContent("1 copy differs");
+    const copies = within(aside()).getByRole("region", { name: "copies" });
+    expect(within(copies).getByRole("link", { name: /synthetic 128.*different/ }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
+    expect(within(copies).getByRole("link", { name: /Club \(set\).*the same/ }))
+      .toHaveAttribute("href", "#studio/templates/club");
+    const found = within(page).getByRole("region", { name: "palettes only in files" });
+    expect(found).toHaveTextContent(/Cool.*Club \(set\)/);
+  });
+
+  it("gives the copies that differ the library's colours, and only those", async () => {
+    const { user, socket } = await library();
+    // It says whose palette this is: the library's, not any track's.
+    expect(within(aside()).getByText(/You are editing the library's Hot/)).toBeInTheDocument();
+    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colours" }));
+    const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
+    expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
+    expect(await screen.findByText("Gave 1 copy of Hot the library's colours.")).toBeInTheDocument();
+  });
+
+  it("saves an edit with the rev it read, and copies wait for the save", async () => {
+    const { user, socket } = await library();
+    const hex = within(aside()).getByLabelText("primary hex");
+    await user.clear(hex);
+    await user.type(hex, "#00ff00");
+    expect(within(aside()).getByRole("button", { name: /Give 1 copy/ })).toBeDisabled();
+    await user.click(within(aside()).getByRole("button", { name: "Save to the library" }));
+    const sent = reply(socket, "palette_save", true, { rev: "r:p2" }) as unknown as PalSaved;
+    expect(sent.base_rev).toBe("r:p");
+    expect(sent.doc).toMatchObject({ kind: "klights.palette", id: "hot", name: "Hot",
+                                     primary: "#00ff00", secondary: "#ff8a00" });
+  });
+
+  it("warns that renaming a palette lets go of its copies", async () => {
+    const { user } = await library();
+    await user.type(within(aside()).getByLabelText("palette name"), " Pink");
+    expect(within(aside()).getByText(/would no longer count as copies/)).toBeInTheDocument();
+  });
+
+  it("adds a palette that lives in a file to the library, and makes new ones", async () => {
+    const { user, socket, page } = await library();
+    const found = within(page).getByRole("region", { name: "palettes only in files" });
+    await user.click(within(found).getByRole("button", { name: "Add to the library" }));
+    const added = reply(socket, "palette_save", true, { rev: "r:c" }) as unknown as PalSaved;
+    expect(added.base_rev).toBe("");
+    expect(added.doc).toMatchObject({ id: "cool", name: "Cool", primary: "#3b82f6" });
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    const dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.type(within(dialog).getByLabelText("name"), "Hot");
+    expect(within(dialog).getByText("the library has a palette of that name")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Make it" })).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Neon Night");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    const made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.base_rev).toBe("");
+    expect(made.doc).toMatchObject({ id: "neon-night", name: "Neon Night", primary: "#ffffff" });
+    expect(await screen.findByText("Made Neon Night.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("makes a palette from + New as a copy, or from a file's palette", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    let dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a library palette/ }));
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "ice");
+    await user.type(within(dialog).getByLabelText("name"), "Ice 2");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    let made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.doc).toMatchObject({ id: "ice-2", name: "Ice 2", primary: "#bae6fd",
+                                     secondary: "#ffffff", accent: "#38bdf8" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(within(page).getByRole("button", { name: "New palette…" }));
+    dialog = screen.getByRole("dialog", { name: "New palette" });
+    await user.click(within(dialog).getByRole("radio", { name: /A palette that lives in a file/ }));
+    // It comes with its name, unless one was typed -- and is ready to make.
+    expect(within(dialog).getByLabelText("from the file palette")).toHaveValue("Cool");
+    expect(within(dialog).getByLabelText("name")).toHaveValue("Cool");
+    expect(within(dialog).getByRole("button", { name: "Make it" })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    made = reply(socket, "palette_save", true, { rev: "r:n" }) as unknown as PalSaved;
+    expect(made.doc).toMatchObject({ id: "cool", name: "Cool", primary: "#3b82f6" });
+  });
+
+  it("deletes a library palette, leaving its copies in their files", async () => {
+    const { user, socket } = await library();
+    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    expect(within(aside()).getByRole("group", { name: "confirm delete" }))
+      .toHaveTextContent("Its copies stay where they are");
+    await user.click(within(aside()).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "palette_delete", true, { deleted: "palettes/hot.json" });
+    expect(sent).toMatchObject({ palette: "hot", base_rev: "r:p" });
+  });
+
+  it("copies a library palette into a template set, under its name", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    const pick = await within(page).findByLabelText("add a palette from the library");
+    // Club has Hot already; Ice is the one to offer.
+    expect(within(pick).queryByRole("option", { name: "Hot" })).toBeNull();
+    await user.selectOptions(pick, "ice");
+    expect(within(page).getByLabelText("Ice primary")).toHaveValue("#bae6fd");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as {
+      doc: TemplateSetDoc };
+    expect(saved.doc.palettes!.Ice).toEqual({ primary: "#bae6fd", secondary: "#ffffff",
+                                              accent: "#38bdf8" });
+  });
+
+  it("copies a library palette into a timeline too", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    const pick = await screen.findByLabelText("add a palette from the library");
+    await user.selectOptions(pick, "ice");
+    expect(screen.getByLabelText("Ice primary")).toHaveValue("#bae6fd");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+});
+
+describe("+ New", () => {
+  type TSaved = { doc: TimelineDoc; base_rev: string };
+  type RSaved = { doc: RoutineDoc; base_rev: string };
+  type SSaved = { doc: TemplateSetDoc; base_rev: string };
+  async function menu(hash = "#studio", item?: RegExp) {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    await user.click(await screen.findByRole("button", { name: "+ New" }));
+    if (item) await user.click(within(screen.getByRole("menu", { name: "New" })).getByRole("menuitem", { name: item }));
+    return { user, socket };
+  }
+
+  it("is on every Studio page, and opens its dialog by click or by key", async () => {
+    const { user } = await menu();
+    const items = within(screen.getByRole("menu", { name: "New" })).getAllByRole("menuitem");
+    expect(items.map((i) => i.querySelector("b")?.textContent)).toEqual([
+      "A timeline for a track", "A routine", "A template set", "A palette", "Tracks from rekordbox"]);
+    expect(items[4]).toHaveAttribute("href", "#studio/rekordbox");
+    await user.keyboard("r");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "New routine" })).toBeInTheDocument();
+    expect(screen.getByLabelText("name")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Escape closes the menu too, and nothing is opened
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // and it is there on another page
+    location.hash = "#studio/palettes";
+    await screen.findByRole("region", { name: "palettes" });
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.keyboard("p");
+    expect(screen.getByRole("dialog", { name: "New palette" })).toBeInTheDocument();
+  });
+
+  it("starts a track's timeline as a draft from the show's set, unsaved", async () => {
+    const { user, socket } = await menu("#studio", /A timeline for a track/);
+    const dialog = screen.getByRole("dialog", { name: "New timeline" });
+    // Only the tracks with no timeline are offered.
+    expect(within(within(dialog).getByLabelText("track")).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["Night Drive · Kölsch"]);
+    expect(within(dialog).getByRole("radio", { name: /A draft from a template set/ }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByLabelText("template set")).toHaveValue("club");   // the show's
+    await user.click(within(dialog).getByRole("button", { name: "Open the timeline" }));
+    expect(location.hash).toBe("#studio/track/kolsch-night-drive");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("idle-orbit at bar 1.1")).toBeInTheDocument();
+    expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:n" }) as unknown as TSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc.track).toBe("kolsch-night-drive");
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+
+  it("starts a track's timeline as a copy of another's, and says how far their phrases agree", async () => {
+    const { user } = await menu("#studio", /A timeline for a track/);
+    const dialog = screen.getByRole("dialog", { name: "New timeline" });
+    await user.click(within(dialog).getByRole("radio", { name: /Another track's timeline/ }));
+    expect(within(dialog).getByLabelText("copy from")).toHaveValue("synth-128");
+    expect(dialog).toHaveTextContent("Their phrases are the same, phrase for phrase.");
+    await user.click(within(dialog).getByRole("button", { name: "Open the timeline" }));
+    expect(await screen.findByText(/Copied synthetic 128's timeline\. Its phrases are this track's/))
+      .toBeInTheDocument();
+    const lanes = screen.getByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
+  });
+
+  it("forgets a start whose page never opened", async () => {
+    // A start left over from a click a minute ago must not land on a later visit.
+    sessionStorage.setItem("klights.studio.pending", JSON.stringify(
+      { kind: "timeline", id: "synth-128", copy: "kolsch-night-drive", at: Date.now() - 120_000 }));
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan-drop at bar 41.1")).toBeInTheDocument();
+    expect(screen.queryByText(/Copied/)).toBeNull();
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+
+  it("starts a routine as a copy of another, leaving the original alone", async () => {
+    const { user, socket } = await menu("#studio/routines", /A routine/);
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a routine/ }));
+    expect(within(dialog).getByLabelText("copy of")).toHaveValue("fan-drop");
+    expect(within(dialog).queryByLabelText("bars")).toBeNull();    // a copy keeps its own
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Fan sweep (late)");
+    // Filed with its original, unless another folder is typed.
+    expect(within(dialog).getByLabelText("folder")).toHaveValue("Drops");
+    await user.clear(within(dialog).getByLabelText("folder"));
+    await user.type(within(dialog).getByLabelText("folder"), "Late");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/routine/fan-sweep-late");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("fan_sweep at bar 1.1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "routine_save", true, { rev: "r:n" }) as unknown as RSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "fan-sweep-late", name: "Fan sweep (late)", folder: "Late",
+                                      bars: fanDrop.bars });
+    expect(saved.doc.rows).toEqual(fanDrop.rows);
+  });
+
+  it("starts a routine from a look on the console, bound to this rig", async () => {
+    const { user, socket } = await menu("#studio/routines", /A routine/);
+    const dialog = screen.getByRole("dialog", { name: "New routine" });
+    await user.click(within(dialog).getByRole("radio", { name: /A look from the console/ }));
+    // A couple of hundred looks, listed by the slot they play on
+    const groups = within(dialog).getByLabelText("look").querySelectorAll("optgroup");
+    expect([...groups].map((g) => g.label)).toEqual(expect.arrayContaining(["color", "movement", "level"]));
+    await user.selectOptions(within(dialog).getByLabelText("look"), "MH Red");
+    fireEvent.change(within(dialog).getByLabelText("bars"), { target: { value: "2" } });
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Red");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("look at bar 1.1")).toBeInTheDocument();
+    // A new file is saveable as it stands: the look is the routine.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "routine_save", true, { rev: "r:n" }) as unknown as RSaved;
+    expect(saved.doc).toMatchObject({ id: "red", bars: 2, rig: "despacio",
+                                      roles: { "corner movers": { default: "corner movers" } } });
+    expect(saved.doc.rows).toEqual([{ id: "look", type: "clips", target: "color", role: "corner movers",
+      items: [{ id: "look", at: 0, len: 8, block: "look", args: { look: "MH Red" } }] }]);
+  });
+
+  it("starts a template set from a track's timeline", async () => {
+    const { user, socket } = await menu("#studio/templates", /A template set/);
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /A track's timeline/ }));
+    expect(within(dialog).getByLabelText("from the timeline of")).toHaveValue("synth-128");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Synthetic");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    expect(location.hash).toBe("#studio/templates/synthetic");
+    const page = screen.getByRole("region", { name: "template sets" });
+    expect(await within(page).findByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
+    expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");
+    expect(within(page).getByLabelText("Up routine")).toHaveValue("build-rise");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ id: "synthetic", name: "Synthetic",
+                                      transition: { fade_beats: 2 } });
+    expect(Object.keys(saved.doc.palettes ?? {})).toEqual(["Cool", "Hot"]);
+  });
+
+  it("starts a template set as a copy of another", async () => {
+    const { user, socket } = await menu("#studio/templates", /A template set/);
+    const dialog = screen.getByRole("dialog", { name: "New template set" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a set/ }));
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "warmup");
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Warmup 2");
+    await user.click(within(dialog).getByRole("button", { name: "Open it" }));
+    const page = screen.getByRole("region", { name: "template sets" });
+    expect(await within(page).findByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SSaved;
+    expect(saved.doc).toMatchObject({ id: "warmup-2", name: "Warmup 2" });
+    expect(saved.doc.phrases).toEqual(clubDoc.phrases);
+  });
+});
+
+describe("show settings", () => {
+  it("edits show.json's live settings and saves with its rev", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    expect(await within(page).findByLabelText("the show's template set")).toHaveValue("club");
+    expect(within(page).getByLabelText("idle routine")).toHaveValue("idle-orbit");
+    expect(within(page).getByRole("button", { name: "Saved" })).toBeDisabled();
+    // Latency is the phone's: shown, not edited here.
+    expect(within(page).getByText("-15 ms")).toBeInTheDocument();
+    await user.clear(within(page).getByLabelText("grace seconds"));
+    await user.type(within(page).getByLabelText("grace seconds"), "6");
+    // 65 is past the most (60): the keystroke is ignored, and the 6 stays.
+    await user.type(within(page).getByLabelText("grace seconds"), "5");
+    expect(within(page).getByLabelText("grace seconds")).toHaveValue(6);
+    await user.selectOptions(within(page).getByLabelText("follow default"), "armed");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {
+      doc: { pause: { grace_s: number; idle_routine: string }; follow: { default: string } };
+      base_rev: string };
+    expect(sent.base_rev).toBe("r:show");
+    expect(sent.doc.pause).toMatchObject({ grace_s: 6, idle_routine: "idle-orbit" });
+    expect(sent.doc.follow.default).toBe("armed");
+  });
+
+  it("offers a way back when show.json changed underneath (the phone's latency)", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    await user.selectOptions(await within(page).findByLabelText("pause policy"), "freeze");
+    expect(within(page).queryByLabelText("idle routine")).toBeNull();
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    reply(socket, "show_save", false, undefined, "show.json changed since you opened it");
+    expect(await within(page).findByRole("alert")).toHaveTextContent("changed since");
+    await user.click(within(page).getByRole("button", { name: "Take the newer one" }));
+    expect(within(page).getByLabelText("pause policy")).toHaveValue("idle");
+  });
+});
+
+describe("rekordbox collection", () => {
+  async function browse(hash = "#studio/rekordbox") {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    const sidebar = screen.getByRole("navigation", { name: "Studio" });
+    await user.click(within(sidebar).getByRole("button", { name: "Browse rekordbox" }));
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    await within(region).findByRole("table");
+    return { user, socket, region, sidebar };
+  }
+
+  it("is read only when asked: a big collection is a megabyte", async () => {
+    await open("#studio");
+    await screen.findByText("synthetic 128");
+    const asked = (vi.mocked(fetch).mock.calls as unknown as [string][])
+      .map(([url]) => new URL(url, "http://engine").pathname);
+    expect(asked).not.toContain("/api/rekordbox");
+  });
+
+  it("lists every track, and says which are in the show, unanalysed or streamed", async () => {
+    const { region, sidebar } = await browse();
+    const table = within(region).getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(5);   // header + 4
+    expect(within(table).getByRole("link", { name: "open synthetic 128" }))
+      .toHaveAttribute("href", "#studio/track/synth-128");
+    expect(within(table).getByLabelText("tick Raw Demo")).toBeDisabled();
+    expect(within(table).getByText("not analysed")).toBeInTheDocument();
+    expect(within(table).getByText("streaming")).toBeInTheDocument();
+    expect(within(sidebar).getByLabelText("smart Smart")).toHaveAttribute("aria-disabled", "true");
+    const coverage = screen.getByRole("region", { name: "coverage" });
+    expect(within(coverage).getByText("Own timeline").closest("div")).toHaveTextContent("1");
+  });
+
+  it("browses folder, then playlist, then its tracks; and searches the way the matcher compares", async () => {
+    const { user, sidebar } = await browse();
+    const tree = within(sidebar).getByRole("navigation", { name: "playlists" });
+    expect(within(tree).queryByLabelText("playlist Friday")).toBeNull();
+    await user.click(within(tree).getByLabelText("folder Gigs"));
+    await user.click(within(tree).getByLabelText("playlist Friday"));
+    expect(location.hash).toBe("#studio/rekordbox/11");
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    expect(within(region).getByRole("heading", { name: "Friday" })).toBeInTheDocument();
+    const table = within(region).getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByText("Night Drive")).toBeInTheDocument();
+    expect(within(table).queryByText("Streamed Tune")).toBeNull();
+    await user.type(within(region).getByLabelText("search rekordbox"), "kolsch night");
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getByText("Night Drive")).toBeInTheDocument();
+  });
+
+  it("adds the ticked tracks to the show and drafts each a timeline in one go", async () => {
+    const { user, socket, region } = await browse();
+    const add = within(region).getByRole("button", { name: /to the show/ });
+    expect(add).toBeDisabled();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByLabelText("tick Streamed Tune"));
+    await user.click(within(region).getByRole("button", { name: "Add 2 to the show" }));
+    const dialog = screen.getByRole("dialog", { name: "Add 2 tracks to the show" });
+    expect(within(dialog).getByRole("button", { name: /drafted from a template set/ }))
+      .toHaveAttribute("aria-pressed", "true");
+    await user.click(within(dialog).getByRole("button", { name: "Add 2 to the show" }));
+    const sent = reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] },
+                { status: "created", track_id: "streamer-streamed-tune", rekordbox_ids: [104],
+                  title: "Streamed Tune", artist: "Streamer", signature: false,
+                  notes: ["a streaming track: there is no file for the designer to play"] }],
+      skipped: [] }) as Command & { ids: number[] };
+    expect(sent.ids).toEqual([102, 104]);
+    // Each new track is drafted and saved as a new file, one after the other.
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(1));
+    reply(socket, "timeline_save", true, { rev: "r:1" });
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(2));
+    const second = reply(socket, "timeline_save", true, { rev: "r:2" }) as unknown as TSaved;
+    expect(second.doc.track).toBe("streamer-streamed-tune");
+    const progress = within(dialog).getByRole("list", { name: "progress" });
+    await waitFor(() => expect(within(progress).getAllByText(/drafted 8 clips from Club/)).toHaveLength(2));
+    expect(progress).toHaveTextContent(/no CDJ signature/);
+    expect(progress).toHaveTextContent(/no file for the designer to play/);
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(region).getByRole("button", { name: "Add to the show" })).toBeDisabled();
+  });
+
+  it("can just add tracks, with no timeline yet", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Just add it/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add 1 to the show" }));
+    reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "created", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] }],
+      skipped: [] });
+    expect(await within(dialog).findByText(/in the show, no timeline yet/)).toBeInTheDocument();
+    expect(socket.sent.some((c) => c.type === "timeline_save")).toBe(false);
+  });
+
+  it("keeps the ticks when the dialog is cancelled", async () => {
+    const { user, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(region).getByLabelText("tick Night Drive")).toBeChecked();
+    // Escape closes it too, and keeps them as well.
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(region).getByLabelText("tick Night Drive")).toBeChecked();
+  });
+
+  it("starts only the tracks the prep created: one ticked again is only re-prepped", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByLabelText("tick Streamed Tune"));
+    await user.click(within(region).getByRole("button", { name: "Add 2 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Add 2 to the show" }));
+    reply(socket, "rekordbox_prep", true, {
+      results: [{ status: "updated", track_id: "kolsch-night-drive", rekordbox_ids: [102],
+                  title: "Night Drive", artist: "Kölsch", signature: true, notes: [] },
+                { status: "created", track_id: "streamer-streamed-tune", rekordbox_ids: [104],
+                  title: "Streamed Tune", artist: "Streamer", signature: false, notes: [] }],
+      skipped: [] });
+    await waitFor(() => expect(socket.sent.filter((c) => c.type === "timeline_save")).toHaveLength(1));
+    const saved = reply(socket, "timeline_save", true, { rev: "r:1" }) as unknown as TSaved;
+    expect(saved.doc.track).toBe("streamer-streamed-tune");
+    expect(await within(dialog).findByText(/already in the show, so left as it was/)).toBeInTheDocument();
+  });
+
+  it("shows what the engine said when it cannot prep", async () => {
+    const { user, socket, region } = await browse();
+    await user.click(within(region).getByLabelText("tick Night Drive"));
+    await user.click(within(region).getByRole("button", { name: "Add 1 to the show" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Add 1 to the show" }));
+    reply(socket, "rekordbox_prep", false, undefined,
+          "a prep from rekordbox is already running; wait for it");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("already running");
+  });
+
+  it("says why when rekordbox cannot be read, in the bridge's words", async () => {
+    rekordbox = [503, { error: "master.db is encrypted and no key was given: set RB_CIPHER_KEY" }];
+    const user = userEvent.setup();
+    await open("#studio/rekordbox");
+    const page = await screen.findByRole("region", { name: "rekordbox collection" });
+    await user.click(within(page).getByRole("button", { name: "Browse rekordbox" }));
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("set RB_CIPHER_KEY");
+  });
+
+  it("finds a track by name when the console sends someone to add it", async () => {
+    await open("#studio/rekordbox?find=Night%20Drive");
+    const region = await screen.findByRole("region", { name: "rekordbox collection" });
+    const table = await within(region).findByRole("table");
+    expect(within(region).getByLabelText("search rekordbox")).toHaveValue("Night Drive");
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
   });
 });

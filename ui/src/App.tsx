@@ -10,6 +10,7 @@ import { MoveTab } from "./tabs/Move";
 import { BrightTab } from "./tabs/Bright";
 import { SetupTab } from "./tabs/Setup";
 import type { Command, EngineState, Tier } from "./types";
+import { STUDIO_TARGET, fromDesignerHash, studioHref, studioRoute } from "./studioRoute";
 
 // One tab per thing you can independently change, plus Show for what applies
 // across all of them and Setup for the room and the rig. Venue and Rig used to
@@ -32,34 +33,48 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// The designer (F19l), split into its own chunk: only a desk that opens
-// #designer downloads it -- a phone never does.
+// Studio (F19l, once "the designer"), split into its own chunk: only a desk
+// that opens #studio downloads it -- a phone never does.
 const Designer = lazy(() => import("./designer/Designer"));
+// The built-in visuals (milestone 3), likewise: only the projector laptop that
+// opens #visuals downloads them.
+const Visuals = lazy(() => import("./visuals/Visuals"));
 
-/** `#designer`, `#designer/<track>` or `#designer/routine/<id>`; null for
- *  the console. */
-function designerRoute(): { track: string | null; routine: string | null } | null {
-  const hash = location.hash.slice(1);
-  if (hash !== "designer" && !hash.startsWith("designer/")) return null;
-  const parts = hash.split("/");
-  if (parts[1] === "routine") return { track: null, routine: parts[2] || null };
-  return { track: parts[1] || null, routine: null };
+function visualsRoute(): boolean {
+  return location.hash === "#visuals";
+}
+
+/** Studio's route from the address, or null for the console. An old
+ *  #designer address is rewritten to Studio's in place, so Back does not
+ *  return to it. */
+function currentRoute() {
+  const old = fromDesignerHash(location.hash);
+  if (old) history.replaceState(history.state, "", old);
+  return studioRoute(location.hash);
 }
 
 export default function App() {
   const engine = useEngine();
   // Decided BEFORE the console's tab effects run: they rewrite the hash to the
-  // current tab, which would throw a fresh #designer link straight back to Show.
-  const [route, setRoute] = useState(designerRoute);
+  // current tab, which would throw a fresh #studio link straight back to Show.
+  const [route, setRoute] = useState(currentRoute);
+  const [visuals, setVisuals] = useState(visualsRoute);
   useEffect(() => {
-    const onHash = () => setRoute(designerRoute());
+    const onHash = () => { setRoute(currentRoute()); setVisuals(visualsRoute()); };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
+  if (visuals) {
+    return (
+      <Suspense fallback={null}>
+        <Visuals engine={engine} />
+      </Suspense>
+    );
+  }
   if (route) {
     return (
-      <Suspense fallback={<p className="muted" style={{ padding: 16 }}>Loading the designer…</p>}>
-        <Designer engine={engine} track={route.track} routine={route.routine} />
+      <Suspense fallback={<p className="muted" style={{ padding: 16 }}>Loading Studio…</p>}>
+        <Designer engine={engine} route={route} />
       </Suspense>
     );
   }
@@ -158,6 +173,14 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
           {/* Always one tap from the other mode, and never a lock: someone who
               needs the patch editor mid-set needs it now, not after finding a
               setting. */}
+          {/* Studio, where shows are made. A place, not a mode -- and on a desk
+              only: Perform hides it, and a phone never downloads it. Its own
+              tab, reused by every link into it. */}
+          {mode === "design" && (
+            <a className="button small" href={studioHref()} target={STUDIO_TARGET}
+               title="Make and edit shows: tracks from rekordbox, timelines, routines">
+              Studio ↗</a>
+          )}
           <button className="small"
                   title={mode === "perform"
                     ? "Showing only what drives the show. Tap for the full console."
@@ -276,7 +299,7 @@ export function Banners({ state, status, send, tier }: {
     // where a DJ playing out and the lights disagree on purpose, and the
     // operator at the front has to know whose transport the rig is on.
     banners.push(<Banner key="preview" kind="warn">
-      DESIGNER ({state.preview.name}) is driving the rig on
+      STUDIO ({state.preview.name}) is driving the rig on
       {" "}{state.preview.track_id}{state.preview.draft ? " (unsaved draft)" : ""}.
       {/* Releasing is configure-tier; a view-only phone is told, not offered
           a button that can only fail. */}

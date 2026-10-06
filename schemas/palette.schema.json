@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/klights/schemas/palette.schema.json",
+  "title": "cosmos palette",
+  "description": "One palette of the show's library: the source timelines and template sets copy by name, and Studio keeps in step.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "klights.palette"
+      ],
+      "description": "\"klights.palette\" -- it says which format the file is"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "lower-case letters, digits, '-' and '_', starting with a letter or digit, at most 64 characters. It is also the file name"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the name timelines and template sets know it by, e.g. \"Hot\""
+    },
+    "primary": {
+      "type": "string",
+      "description": "#rrggbb"
+    },
+    "secondary": {
+      "type": "string",
+      "description": "#rrggbb"
+    },
+    "accent": {
+      "type": "string",
+      "description": "#rrggbb"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Format version. Current is 1; a file with no version is treated as 1."
+    }
+  },
+  "required": [
+    "kind",
+    "id",
+    "name",
+    "primary",
+    "secondary",
+    "accent"
+  ],
+  "additionalProperties": true
+}
