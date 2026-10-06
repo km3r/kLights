@@ -74,7 +74,7 @@ try:
     check("the example loads clean", lib.folder.errors == []
           and lib.folder.warnings == [], f"{lib.folder.errors + lib.folder.warnings}")
     check("with its counts", lib.counts == {"tracks": 1, "timelines": 1,
-                                            "routines": 4, "templates": 1},
+                                            "routines": 4, "templates": 1, "palettes": 0},
           f"{lib.counts}")
     check("each track's grid built once, at load",
           set(lib.grids) == {"synth-128"}

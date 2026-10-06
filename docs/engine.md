@@ -249,7 +249,7 @@ run and embedded in the printed URL.
 |---|---|
 | **view** | watch only; every command is refused with a reason |
 | **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload` |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep` |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
@@ -464,7 +464,15 @@ are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
 streams the track's file with Range (206), needs the token, and only ever serves
 a file the track names (or the same name under this machine's `audio_roots` in
-`klights.local.json`) with an audio extension. Writes are configure-tier
+`klights.local.json`) with an audio extension. `GET /api/rekordbox` is the DJ's
+rekordbox collection -- playlists and tracks to prep from -- also behind the
+token, since it is someone's whole music library. The engine never opens
+rekordbox's database: [`collection.py`](../engine/collection.py) runs the prep
+bridge as a child process and serves its JSON unparsed, so neither `sqlcipher3`
+nor a megabyte of parsing touches the process holding the DMX clock.
+`rekordbox_prep {ids}` (configure) preps those rekordbox ids into the show
+folder, on a thread of its own, and answers with the bridge's per-track
+summary; the folder reloads after. Writes are configure-tier
 commands answered from the worker: `timeline_draft {doc}` (the format's rules,
 then a compile against this rig), `timeline_save` and `routine_save {doc,
 base_rev}` (refused if the file changed since), and `routine_draft {doc}` (the
@@ -480,13 +488,39 @@ learns from the snapshot within a tenth of a second and stops sending. Clip
 positions and lengths are capped at `showfiles.MAX_BEATS` (65536), so no
 document can ask the compiler for unbounded work.
 
-**The designer** itself is `ui/src/designer/`, a chunk of its own loaded only
-from `#designer` (`test_api` checks the console's entry script never contains
-it). `#designer` lists the tracks and routines; `#designer/<track>` is layout B
+**Studio** (once "the designer") is `ui/src/designer/`, a chunk of its own
+loaded only from `#studio` (`test_api` checks the console's entry script never
+contains it); old `#designer` addresses are rewritten to Studio's. `#studio` is
+the library -- every track with what lights it on the night and what needs
+attention, from one `/api/tracks` read whose lines carry the phrases, a line on
+the timeline and when it was edited -- with the rekordbox collection in its
+sidebar (`#studio/rekordbox[/<playlist>]`) and the routines at
+`#studio/routines`, where routines are filed into folders (an optional
+`folder` on the routine) and show where they are used (`used_by` on each
+`/api/routines` line, from `showfiles.routine_usage`); `routine_rename` renames
+one and every reference to it -- new file first, old file last -- and
+`routine_delete` refuses while anything still names it. `#studio/templates`
+edits template sets (`template_draft` / `template_save` / `template_rename` /
+`template_delete`; the show's own set cannot be deleted), and `#studio/show`
+edits show.json (`show_save`, quoting `show_rev` from `/api/show`).
+`#studio/palettes` is the show's palette library, `palettes/<id>.json`: a
+library palette is a source that timelines and sets copy by name, never a
+link, so compiling is unchanged; `palette_sync` brings chosen copies up to the
+library's colours. Adding tracks preps them (`rekordbox_prep`) and can start
+each one in the same step: a timeline drafted from a template set, an empty
+one, or none; the drafting is the timeline editor's own function, written with
+`timeline_save` and base_rev "". **+ New**, in the top bar of Studio's library
+pages, makes any of these: a timeline (drafted from a set, copied from another track's, or empty),
+a routine (blank, a copy, or a console look wrapped as one, bound to this rig),
+a template set (blank, a copy, or built from what a timeline's scene lane plays
+on each phrase family) or a palette. The first three open in their editor
+unsaved, the start handed over in sessionStorage (`pending.ts`, for a minute)
+and applied there, so nothing is written until Save; a palette has no editor
+and is written at once. `#studio/track/<id>` is layout B
 -- bar ruler, rekordbox's phrases, the waveform, then the timeline's rows (the
 higher lane wins), hits, automation and the VJ lane, with the rig's plan and
 "who drives each lane" at the playhead on the right and the selected clip
-below; `#designer/routine/<id>` edits a routine with the same lanes in loop
+below; `#studio/routine/<id>` edits a routine with the same lanes in loop
 mode, plus its roles, open parameters, variations and blocks. Its beat grid,
 block list and automation targets are copies of the engine's, held to them by
 fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale

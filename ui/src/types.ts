@@ -459,6 +459,7 @@ export interface ShowFolderState {
   timelines: number;
   routines: number;
   templates: number;
+  palettes?: number;
   errors: number;
   warnings: number;
   /** Files broken since they last loaded, running on their last good version. */
@@ -675,7 +676,29 @@ export type Command =
   | { type: "timeline_save"; doc: unknown; base_rev: string }
   | { type: "routine_draft"; doc: unknown }
   | { type: "routine_save"; doc: unknown; base_rev: string }
+  /** Rename a routine and every reference to it (timelines, template sets,
+   *  show.json). `routine`, not `id`: `id` is the request's own. */
+  | { type: "routine_rename"; routine: string; to: string; base_rev: string }
+  /** Delete a routine nothing uses; refused with where, if anything does. */
+  | { type: "routine_delete"; routine: string; base_rev: string }
+  | { type: "template_draft"; doc: unknown }
+  | { type: "template_save"; doc: unknown; base_rev: string }
+  /** Rename a template set, and show.json with it if it is the show's. */
+  | { type: "template_rename"; template: string; to: string; base_rev: string }
+  /** Delete a template set that is not the show's. */
+  | { type: "template_delete"; template: string; base_rev: string }
+  /** Write show.json, refused if it changed since `base_rev`. */
+  | { type: "show_save"; doc: unknown; base_rev: string }
+  /** A palette of the library: its own file in palettes/. */
+  | { type: "palette_save"; doc: unknown; base_rev: string }
+  /** Delete a library palette; its copies stay in their files. */
+  | { type: "palette_delete"; palette: string; base_rev: string }
+  /** Give copies of a library palette its colours: `files` as /api/palettes lists them. */
+  | { type: "palette_sync"; palette: string; files: string[] }
   | { type: "track_link"; track_id: string }
+  /** Prep tracks from the DJ's rekordbox collection into the show folder, by
+   *  rekordbox id. Answered when the bridge has finished. */
+  | { type: "rekordbox_prep"; ids: number[] }
   | { type: "preview_arm"; track_id: string; force?: boolean }
   | { type: "preview_transport"; time_s: number; playing: boolean }
   | { type: "preview_release" };

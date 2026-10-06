@@ -438,7 +438,8 @@ def wait_for_engine(port: int, timeout: float, handle: Optional[EngineHandle] = 
 
 def console_url(port: int, token: Optional[str], tab: Optional[str] = None,
                 host: str = "127.0.0.1") -> str:
-    """The web console. `tab` is a hash the console restores (e.g. "setup").
+    """The web console. `tab` is a hash the console restores (e.g. "setup"),
+    or "studio" for Studio, where shows are made.
 
     Setup is a Design-mode tab: a browser left in Perform mode opens on Show
     instead. A desktop browser starts in Design unless someone switched it.

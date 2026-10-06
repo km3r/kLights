@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, curveValue, laneValue } from "./model";
+import { BEATS_PER_BAR, PHRASE_HUE, curveValue, laneValue, phraseFamily } from "./model";
 import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
 import { Editor, defaultWave, laneTitle, useLaneSpec, waveId } from "./edit";
-import type { Edits } from "./edit";
+import type { Edits, Placeable } from "./edit";
 
 /**
  * The designer's lanes and bands, shared by the track designer and the routine
@@ -38,23 +38,36 @@ export function Ruler({ totalBeats, x, width, onSeek }: {
   );
 }
 
-const PHRASE_HUE: Record<string, string> = {
-  Intro: "#3b82f6", Verse: "#14b8a6", Up: "#f59e0b", Chorus: "#ef4444",
-  Down: "#8b5cf6", Bridge: "#ec4899", Outro: "#64748b",
-};
 
-export function Phrases({ track, x, width }: { track: TrackDoc; x: (b: number) => number; width: number }) {
+export function Phrases({ track, x, width, picked, onPick }: {
+  track: TrackDoc; x: (b: number) => number; width: number;
+  /** The phrase selected as a section, by its start beat. */
+  picked?: number | null;
+  /** Select a phrase as a section (or let go of it, picked again). */
+  onPick?: (start: number, end: number, label: string) => void;
+}) {
   const items = track.phrases?.items ?? [];
   return (
     <div className="d-row d-phrases">
       <div className="d-head">Phrases <span className="muted small">rekordbox</span></div>
       <svg width={width} height={22} aria-label="phrases">
         {items.map(([start, end, label]) => {
-          const family = label.replace(/\s*\d+$/, "");
+          const family = phraseFamily(label);
+          const on = picked === start;
           return (
-            <g key={`${start}-${label}`}>
+            <g key={`${start}-${label}`} className={`d-phrase${onPick ? " pickable" : ""}${on ? " on" : ""}`}
+               role={onPick ? "button" : undefined} tabIndex={onPick ? 0 : undefined}
+               aria-pressed={onPick ? on : undefined}
+               aria-label={onPick ? `select ${label}, bars ${barNo(start)} to ${barNo(end) - 1}` : undefined}
+               onClick={() => onPick?.(start, end, label)}
+               onKeyDown={(e) => {
+                 if (onPick && (e.key === "Enter" || e.key === " ")) {
+                   e.preventDefault();
+                   onPick(start, end, label);
+                 }
+               }}>
               <rect x={x(start)} y={2} width={Math.max(1, x(end) - x(start) - 1)} height={18}
-                    rx={3} fill={PHRASE_HUE[family] ?? "#475569"} opacity={0.55} />
+                    rx={3} fill={PHRASE_HUE[family] ?? "#475569"} opacity={on ? 0.9 : 0.55} />
               <text x={x(start) + 4} y={15} className="d-label">{label}</text>
             </g>
           );
@@ -63,6 +76,9 @@ export function Phrases({ track, x, width }: { track: TrackDoc; x: (b: number) =
     </div>
   );
 }
+
+/** The bar a beat falls in, counting from 1. */
+function barNo(beat: number): number { return Math.floor(beat / BEATS_PER_BAR) + 1; }
 
 /** Browsers refuse a canvas wider than about 32k pixels -- a long track at the
  *  closest zoom is wider than that, and would draw nothing at all. Past this,
@@ -112,10 +128,13 @@ const TARGET_LABEL: Record<string, string> = {
 };
 
 export function Lane({ row, index, x, width, zoom, selected, onSelect, history, beat,
-                      roles }: {
+                      roles, onMenu, onDropItem }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
   history: Edits; beat: number;
+  /** A clip's menu (the timeline's), and a drop from its browser. */
+  onMenu?: (id: string, clientX: number, clientY: number) => void;
+  onDropItem?: (rowId: string, what: Placeable, beat: number) => void;
   /** A routine's lane: its rows play on a ROLE rather than owning a slot of
    *  the track, so the head picks the role and there is no gap mode. */
   roles?: string[];
@@ -163,7 +182,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
         <Editor.LaneMenu row={row} index={index} history={history} />
       </div>
       <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
-                      onSelect={onSelect} history={history} />
+                      onSelect={onSelect} history={history} onMenu={onMenu}
+                      onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))} />
     </div>
   );
 }

@@ -13,6 +13,8 @@ import {
 import type { History, LaneSpecs } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
+import { PanelToggle, usePanels } from "./panels";
+import { clearPending, peekPending } from "./pending";
 import "./designer.css";
 
 /**
@@ -86,6 +88,9 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [selected, setSelected] = useState<string | null>(null);
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
+  const [panels, togglePanel] = usePanels();
+  // A start handed over by New: a copy, a look wrapped, a blank with settings.
+  const [pending] = useState(() => peekPending("routine", routineId));
 
   useEffect(() => {
     setSnap("beat");
@@ -95,15 +100,19 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         // Not in the folder: start it. Saved with base_rev "" -- a new file,
         // refused if one appeared meanwhile (or is there but unreadable).
         if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(newRoutine(routineId));
+        setBase(pending?.doc ?? newRoutine(routineId));
         setRev("");
+        clearPending("routine", routineId);
       });
   }, [routineId, setBase, setSnap]);
 
   const length = (doc?.bars ?? 4) * BEATS_PER_BAR;
   const loop = useLoop(length, bpm);
+  const beatRef = useRef(0);
+  beatRef.current = loop.beat;
   useEditorKeys({ history, selected, setSelected,
-                  playPause: () => loop.setPlaying(!loop.playing) });
+                  playPause: () => loop.setPlaying(!loop.playing),
+                  clip: { kind: "routine", beat: () => beatRef.current } });
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;
@@ -112,7 +121,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   if (loadError) {
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
-        <header className="d-top"><a className="d-link" href="#designer">All tracks</a></header>
+        <header className="d-top"><a className="d-link" href="#studio/routines">Studio</a></header>
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -136,8 +145,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href={back}
-           title={back === "#designer" ? "All tracks and routines"
-             : `Back to ${back.slice("#designer/".length)}`}>◂</a>
+           title={back === "#studio/routines" ? "Back to Studio's routines"
+             : `Back to ${back.slice("#studio/track/".length)}`}>◂</a>
         <button className={loop.playing ? "on" : ""} onClick={() => loop.setPlaying(!loop.playing)}>
           {loop.playing ? "Stop" : "Play"}</button>
         <span className="mono" aria-label="position">bar {barBeat(loop.beat)} of {doc.bars}</span>
@@ -161,10 +170,12 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="routine" ident={routineId} />
         {guide.button}
+        <PanelToggle open={panels.edit} side="right" label="side panel"
+                     onToggle={() => togglePanel("edit")} />
       </header>
       {guide.banner}
 
-      <div className={guide.open ? "d-body d-with-guide" : "d-body"}>
+      <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
         <div className="d-lanes" role="region" aria-label="lanes">
           <div className="d-scroll" style={{ width: width + HEADER_W }}>
             <Ruler totalBeats={totalBeats} x={x} width={width} onSeek={loop.seek} />
@@ -183,14 +194,14 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
           </div>
         </div>
 
-        <aside className="d-side">
+        {panels.edit && <aside className="d-side" aria-label="side panel">
           <Settings history={history} doc={doc} engine={engine} rigBound={rigBound} />
           <Roles history={history} doc={doc} engine={engine} />
           <Params history={history} doc={doc} engine={engine} />
           <Variations history={history} doc={doc} engine={engine} />
           <Blocks history={history} doc={doc} engine={engine} beat={loop.beat}
                   selected={selected} onAdded={setSelected} />
-        </aside>
+        </aside>}
         {guide.drawer}
       </div>
 
@@ -256,6 +267,15 @@ interface PanelProps { history: RHistory; doc: Doc; engine: Engine }
 function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: boolean }) {
   const loops = doc.loop !== false;
   const event = engine.state?.event;
+  // The folders the library already has, to file this one with the others.
+  const [folders, setFolders] = useState<string[]>([]);
+  useEffect(() => {
+    apiFetch<{ routines: { folder?: string | null }[] }>("/api/routines")
+      .then((r) => setFolders([...new Set(r.routines.map((x) => x.folder)
+        .filter((f): f is string => !!f))].sort()))
+      .catch(() => setFolders([]));
+  }, []);
+  const folder = typeof doc.folder === "string" ? doc.folder : "";
   return (
     <section>
       <h3>Routine</h3>
@@ -275,6 +295,16 @@ function Settings({ history, doc, engine, rigBound }: PanelProps & { rigBound: b
         <label className="small">
           <input type="checkbox" checked={loops} aria-label="loops"
                  onChange={() => history.apply((d) => { d.loop = !loops; })} /> loops
+        </label>
+        <label className="small" title="Where Studio's library files it. Nothing about how it plays">
+          Folder{" "}
+          <input value={folder} list="d-folders" aria-label="folder" placeholder="unfiled"
+                 style={{ width: 110 }}
+                 onChange={(e) => {
+                   const v = e.target.value;
+                   history.apply((d) => { if (v.trim()) d.folder = v; else delete d.folder; });
+                 }} />
+          <datalist id="d-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
         </label>
       </div>
       <p className="small muted">

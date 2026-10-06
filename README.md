@@ -177,16 +177,22 @@ drives each lane" at the playhead on the right.*
 
 ```bash
 python -m engine.showfiles init shows/              # a show folder (or use shared/show-example)
-python bridges/rekordbox/prep.py --show-dir shows/ xml rekordbox.xml --anlz-root E:/PIONEER/USBANLZ
+python bridges/rekordbox/prep.py --show-dir shows/ db --playlist Friday
 python -m engine.server --show-dir shows/ --sync-port 9000
 ```
 
 1. **Prep** reads what rekordbox already knows -- identity, beat grid, phrases,
-   cues, waveform -- from an XML export and its analysis files, into the show
-   folder ([`bridges/rekordbox/`](bridges/rekordbox/README.md)). No audio
+   cues, waveform -- from rekordbox's own database (or an XML export) and its
+   analysis files, into the show folder. Easier still: Studio's sidebar
+   browses rekordbox's playlists and adds what you tick, drafting each a
+   timeline from a template set in the same step
+   ([`bridges/rekordbox/`](bridges/rekordbox/README.md); the database route
+   needs `pip install sqlcipher3` and the key). Each track is then the same song
+   to rekordbox and to CDJs playing any stick exported from it. No audio
    analysis of our own.
-2. **Design** at the engine's URL with `#designer` on the end, on a computer (a
-   phone never downloads it). Each track is a set of lanes against its waveform
+2. **Design** in **Studio**: the **Studio** button in the console's header
+   (Design mode), the launcher's **Open Studio**, or the engine's URL with
+   `#studio` on the end -- on a computer (a phone never downloads it). Each track is a set of lanes against its waveform
    and phrases: scene, movement, colour, level and palette lanes holding
    routines, looks and presets; hits (flash, strobe, blackout); automation of
    master, size, spread, centre and rate. Draft a first pass from a template

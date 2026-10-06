@@ -4,8 +4,10 @@ import { Banner, Card, Fader, Toggle } from "../components";
 import { DesignOnly, useDesign } from "../mode";
 import type {
   Command, DeckLoaded, EngineState, LaneSource, OutputsState, Preset, Slot, TrackMatch,
+  TrackState,
 } from "../types";
 import { groupLabel } from "../groups";
+import { STUDIO_TARGET, studioHref } from "../studioRoute";
 
 /**
  * Show-level controls: what the whole rig is doing, not what any one part of it
@@ -480,7 +482,7 @@ const NOT_DRIVING: Record<string, string> = {
     + "The operator's show runs.",
   "no position": "Waiting for the deck's position.",
   "paused (no idle routine)": "Paused, and show.json names no idle routine.",
-  "preview: no timeline yet": "The designer is driving a track with no "
+  "preview: no timeline yet": "Studio is driving a track with no "
     + "timeline yet.",
 };
 
@@ -536,7 +538,7 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
       )}
       <div className="small" style={{ marginTop: "0.3rem" }}>
         {prog.mode === "timeline" || prog.mode === "preview"
-          ? <>{prog.mode === "preview" ? "The designer is driving" : "Timeline driving"}
+          ? <>{prog.mode === "preview" ? "Studio is driving" : "Timeline driving"}
               {prog.bar != null && <> · bar <b>{prog.bar}</b></>}</>
           : prog.mode === "template"
             ? <>Template driving{prog.bar != null && <> · bar <b>{prog.bar}</b></>}
@@ -612,12 +614,25 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
                }} />
       )}
       <div className="small muted" style={{ marginTop: "0.4rem" }}>
-        <a href={track?.match?.track_id ? `#designer/${track.match.track_id}` : "#designer"}>
-          {track?.match?.track_id ? "Open this track in the designer" : "Open the designer"}</a>
-        {" "}· on a computer
+        <StudioLink track={track} />{" "}· on a computer
       </div>
     </Card>
   );
+}
+
+/** Into Studio, for whatever is playing: its timeline, a timeline to make,
+ *  or -- for a track the show folder does not have -- rekordbox, searched for
+ *  it, to add it. In Studio's own tab. */
+function StudioLink({ track }: { track: TrackState | undefined }) {
+  const matched = track?.match?.track_id ?? null;
+  const playing = track && track.state !== "no_track" ? track.title : null;
+  const [route, label] = matched
+    ? [`track/${matched}`, track?.match?.has_timeline === false
+        ? "Make a timeline for it in Studio" : "Open it in Studio"]
+    : playing && track?.match?.via !== "ambiguous"
+      ? [`rekordbox?find=${encodeURIComponent(playing)}`, "Add it to the show in Studio"]
+      : ["", "Open Studio"];
+  return <a href={studioHref(route)} target={STUDIO_TARGET}>{label}</a>;
 }
 
 /** How a track was matched, in the operator's words -- how much to trust it

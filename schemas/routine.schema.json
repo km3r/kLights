@@ -477,6 +477,10 @@
         ]
       }
     },
+    "folder": {
+      "type": "string",
+      "description": "where Studio files it, e.g. \"Drops\"; it changes nothing about how it plays"
+    },
     "version": {
       "type": "integer",
       "description": "Format version. Current is 1; a file with no version is treated as 1."

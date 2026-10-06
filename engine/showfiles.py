@@ -69,11 +69,11 @@ N = configmod.Number
 
 # Every kind has its own format version. See config.validate: a timeline change
 # must not force a version bump on every venue.json in every checkout.
-KINDS = ("show", "track", "timeline", "routine", "template_set", "waveform")
+KINDS = ("show", "track", "timeline", "routine", "template_set", "waveform", "palette")
 FORMAT_VERSION = {k: 1 for k in KINDS}
 
 SUBDIR = {"track": "tracks", "timeline": "timelines", "routine": "routines",
-          "template_set": "templates", "waveform": "waveforms"}
+          "template_set": "templates", "waveform": "waveforms", "palette": "palettes"}
 
 # File names are ids. Lower case, so two machines with different
 # case-sensitivity cannot disagree about whether "Fan-Drop" and "fan-drop" are
@@ -426,6 +426,8 @@ ROUTINE = {
     "params": S(dict),
     "variations": S(dict),
     "rows": S(list, required=True, each=_ROUTINE_ROW),
+    "folder": S(str, fix='where Studio files it, e.g. "Drops"; it changes '
+                         'nothing about how it plays'),
 }
 
 # One open parameter of a routine. `default` is checked against `type` in
@@ -467,9 +469,26 @@ WAVEFORM = {
                           "data": S(str, required=True)}),
 }
 
+# The show's palette library: one palette a file, `palettes/<id>.json`.
+#
+# A library palette is a SOURCE, not a link. Timelines and template sets keep
+# their own copies, by name, exactly as before -- so each still describes its
+# whole show, the compiler reads only the file it compiles, and nothing
+# recolours a track behind anyone's back. Studio shows every copy of a library
+# palette and updates them on request (`sync_palette`).
+PALETTE = {
+    "kind": _kind("palette"),
+    "id": S(str, required=True, non_empty=True, fix=ID_FIX),
+    "name": S(str, required=True, non_empty=True,
+              fix='the name timelines and template sets know it by, e.g. "Hot"'),
+    "primary": S(str, required=True, fix="#rrggbb"),
+    "secondary": S(str, required=True, fix="#rrggbb"),
+    "accent": S(str, required=True, fix="#rrggbb"),
+}
+
 SCHEMAS: dict[str, dict[str, S]] = {
     "show": SHOW, "track": TRACK, "timeline": TIMELINE, "routine": ROUTINE,
-    "template_set": TEMPLATE_SET, "waveform": WAVEFORM,
+    "template_set": TEMPLATE_SET, "waveform": WAVEFORM, "palette": PALETTE,
 }
 
 
@@ -1335,10 +1354,20 @@ def _semantic_waveform(doc: dict, result: Result) -> None:
     pass
 
 
+def _semantic_palette(doc: dict, result: Result) -> None:
+    if not ID_RE.match(doc["id"]):
+        result.errors.append(f"id {doc['id']!r} is not usable: {ID_FIX}")
+    for role in PALETTE_ROLES:
+        value = doc[role]
+        if not _HEX_RE.match(value):
+            result.errors.append(f"{role} {value!r} is not #rrggbb: a library "
+                                 f"palette is plain colours")
+
+
 _SEMANTIC = {"show": _semantic_show, "track": _semantic_track,
              "timeline": _semantic_timeline, "routine": _semantic_routine,
              "template_set": _semantic_template_set,
-             "waveform": _semantic_waveform}
+             "waveform": _semantic_waveform, "palette": _semantic_palette}
 
 
 # -- a whole folder -----------------------------------------------------------
@@ -1356,6 +1385,7 @@ class Folder:
     timelines: dict[str, dict] = field(default_factory=dict)   # by track id
     routines: dict[str, dict] = field(default_factory=dict)
     templates: dict[str, dict] = field(default_factory=dict)
+    palettes: dict[str, dict] = field(default_factory=dict)     # the library
     waveforms: set[str] = field(default_factory=set)            # ids only
     revs: dict[str, str] = field(default_factory=dict)          # rel path -> rev
     errors: list[str] = field(default_factory=list)
@@ -1476,7 +1506,8 @@ def load_folder(root: Path, previous: Optional[Folder] = None) -> Folder:
             _kept(folder, "show.json", before["show.json"][1], result)
 
     targets = {"track": folder.tracks, "timeline": folder.timelines,
-               "routine": folder.routines, "template_set": folder.templates}
+               "routine": folder.routines, "template_set": folder.templates,
+               "palette": folder.palettes}
     for kind, sub in SUBDIR.items():
         directory = root / sub
         if not directory.is_dir():
@@ -1516,7 +1547,8 @@ def _by_rel(folder: Folder) -> dict[str, tuple[dict, str]]:
         out["show.json"] = (folder.show, folder.revs["show.json"])
     for kind, docs in (("track", folder.tracks), ("timeline", folder.timelines),
                        ("routine", folder.routines),
-                       ("template_set", folder.templates)):
+                       ("template_set", folder.templates),
+                       ("palette", folder.palettes)):
         for ident, doc in docs.items():
             rel = f"{SUBDIR[kind]}/{ident}.json"
             if rel in folder.revs:
@@ -1626,6 +1658,297 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
 
 
 # -- writing ------------------------------------------------------------------
+
+# -- where a routine is used, and renaming one everywhere ---------------------
+
+def routine_usage(folder: "Folder") -> dict[str, dict]:
+    """Every place each routine is used, by routine id: the timelines that
+    place it (with how many clips, and which variations), the template sets
+    that pick it (and for which phrases), and show.json's idle routine.
+    A routine with no entry is used nowhere."""
+    out: dict[str, dict] = {}
+
+    def entry(rid: str) -> dict:
+        return out.setdefault(rid, {"timelines": [], "templates": [], "show": []})
+
+    for track_id, tl in sorted(folder.timelines.items()):
+        found: dict[str, dict] = {}
+        for row in tl.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                rid = item.get("routine") if item.get("kind") == "routine" else None
+                if not isinstance(rid, str):
+                    continue
+                use = found.setdefault(rid, {"clips": 0, "variations": set()})
+                use["clips"] += 1
+                if isinstance(item.get("variation"), str):
+                    use["variations"].add(item["variation"])
+        title = ((folder.tracks.get(track_id) or {}).get("identity") or {}).get("title")
+        for rid, use in found.items():
+            entry(rid)["timelines"].append({"track": track_id, "title": title,
+                                            "clips": use["clips"],
+                                            "variations": sorted(use["variations"])})
+    for set_id, ts in sorted(folder.templates.items()):
+        where: dict[str, list[str]] = {}
+        for label, pick in (ts.get("phrases") or {}).items():
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(
+                    "anything else" if label == "*" else label)
+        for i, pick in enumerate((ts.get("bars") or {}).get("cycle") or ()):
+            if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+                where.setdefault(pick["routine"], []).append(f"bar cycle step {i + 1}")
+        for rid, labels in where.items():
+            entry(rid)["templates"].append({"id": set_id, "name": ts.get("name"),
+                                            "where": labels})
+    idle = ((folder.show or {}).get("pause") or {}).get("idle_routine")
+    if isinstance(idle, str) and idle:
+        entry(idle)["show"].append("the idle routine, when the decks pause")
+    return out
+
+
+def routine_uses(folder: "Folder", rid: str) -> list[str]:
+    """Where a routine is used, as the files that name it, in words."""
+    use = routine_usage(folder).get(rid)
+    if use is None:
+        return []
+    return ([f"timelines/{t['track']}.json ({t['clips']} clip{'s' if t['clips'] != 1 else ''})"
+             for t in use["timelines"]]
+            + [f"templates/{t['id']}.json ({', '.join(t['where'])})" for t in use["templates"]]
+            + (["show.json (idle routine)"] if use["show"] else []))
+
+
+def _renamed(doc: dict, kind: str, old: str, new: str) -> Optional[dict]:
+    """A copy of `doc` with routine `old` called `new` wherever it is named,
+    or None if it never names it."""
+    copy = json.loads(json.dumps(doc))
+    hits = 0
+    if kind == "timeline":
+        for row in copy.get("rows") or ():
+            for item in (row.get("items") or ()) if isinstance(row, dict) else ():
+                if item.get("kind") == "routine" and item.get("routine") == old:
+                    item["routine"] = new
+                    hits += 1
+    elif kind == "template_set":
+        picks = list((copy.get("phrases") or {}).values()) + list(
+            (copy.get("bars") or {}).get("cycle") or ())
+        for pick in picks:
+            if isinstance(pick, dict) and pick.get("routine") == old:
+                pick["routine"] = new
+                hits += 1
+    elif kind == "show":
+        pause = copy.get("pause") or {}
+        if pause.get("idle_routine") == old:
+            pause["idle_routine"] = new
+            hits += 1
+    return copy if hits else None
+
+
+def rename_routine(root: Path, folder: "Folder", old: str, new: str,
+                   base_rev: str) -> list[str]:
+    """Rename a routine, and every reference to it: the timelines that place
+    it, the template sets that pick it, show.json's idle routine. Returns the
+    files written, the new routine's first.
+
+    A folder of files has no transaction, so the order is what keeps it whole
+    at every step: the routine is written under its new name FIRST, then each
+    reference is moved over, and the old file goes LAST. Stopped anywhere --
+    a file someone else changed meanwhile, a disk error -- every reference
+    still names a routine that exists, and the error says what was done.
+    Each write quotes the rev the folder was read at, so nothing changed since
+    is overwritten."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.routines.get(old)
+    if doc is None:
+        raise ValueError(f"no routine {old!r}")
+    if new in folder.routines:
+        raise ValueError(f"there is already a routine {new!r}")
+    old_path = path_for(root, "routine", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    if renamed.get("name") in (None, "", old):
+        renamed["name"] = new
+    write_doc(path_for(root, "routine", new), renamed, "routine", "")
+    written = [f"{SUBDIR['routine']}/{new}.json"]
+    try:
+        for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
+            for ident, ref in sorted(docs.items()):
+                changed = _renamed(ref, kind, old, new)
+                if changed is None:
+                    continue
+                rel = f"{SUBDIR[kind]}/{ident}.json"
+                write_doc(path_for(root, kind, ident), changed, kind,
+                          folder.revs.get(rel, ""))
+                written.append(rel)
+        if folder.show is not None:
+            changed = _renamed(folder.show, "show", old, new)
+            if changed is not None:
+                write_doc(path_for(root, "show", ""), changed, "show",
+                          folder.revs.get("show.json", ""))
+                written.append("show.json")
+    except (ValueError, OSError, configmod.ConfigError) as exc:
+        raise ValueError(f"renamed as far as {', '.join(written)}, then stopped: {exc}. "
+                         f"{old!r} is still there, so nothing names a routine "
+                         f"that is gone; finish by hand or rename again") from exc
+    old_path.unlink()
+    return written
+
+
+# -- the palette library and its copies ---------------------------------------
+
+def hex_color(value: Any) -> Optional[str]:
+    """A palette colour as lower-case #rrggbb, for comparing copies: a hex
+    string as it is, an [r, g, b] of 0..1 converted. None if neither."""
+    if isinstance(value, str) and _HEX_RE.match(value):
+        return value.lower()
+    if (isinstance(value, list) and len(value) == 3
+            and all(_num(v) and 0.0 <= v <= 1.0 for v in value)):
+        return "#%02x%02x%02x" % tuple(round(v * 255) for v in value)
+    return None
+
+
+def _same_colours(a: Mapping, b: Mapping) -> bool:
+    return all(hex_color(a.get(r)) == hex_color(b.get(r)) and hex_color(a.get(r))
+               for r in PALETTE_ROLES)
+
+
+def palette_places(folder: "Folder") -> dict[str, list[dict]]:
+    """Every palette a timeline or template set carries, by name: where, and
+    its colours there. A library palette's copies are the entries under its
+    name; anything else is a palette that lives only in those files."""
+    out: dict[str, list[dict]] = {}
+    for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
+        for ident, doc in sorted(docs.items()):
+            for name, pal in (doc.get("palettes") or {}).items():
+                if not isinstance(pal, Mapping):
+                    continue
+                title = None
+                if kind == "timeline":
+                    title = ((folder.tracks.get(ident) or {}).get("identity") or {}).get("title")
+                else:
+                    title = doc.get("name")
+                out.setdefault(name, []).append({
+                    "file": f"{SUBDIR[kind]}/{ident}.json", "kind": kind, "id": ident,
+                    "title": title,
+                    "colours": {r: hex_color(pal.get(r)) for r in PALETTE_ROLES}})
+    return out
+
+
+def palette_copies(folder: "Folder", pid: str) -> list[dict]:
+    """A library palette's copies: each file that carries a palette of its
+    name, and whether that copy's colours are the library's."""
+    lib = folder.palettes.get(pid)
+    if lib is None:
+        return []
+    return [{**place, "same": _same_colours(place["colours"], lib)}
+            for place in palette_places(folder).get(lib["name"], [])]
+
+
+def sync_palette(root: Path, folder: "Folder", pid: str, files: Iterable[str]) -> list[str]:
+    """Give the named copies the library palette's colours. Each file is
+    written quoting the rev the folder was read at, so a file changed since is
+    refused rather than overwritten; what was written before that is said."""
+    lib = folder.palettes.get(pid)
+    if lib is None:
+        raise ValueError(f"no library palette {pid!r}")
+    name = lib["name"]
+    colours = {r: lib[r] for r in PALETTE_ROLES}
+    by_rel = {f"{SUBDIR['timeline']}/{i}.json": ("timeline", i, d)
+              for i, d in folder.timelines.items()}
+    by_rel.update({f"{SUBDIR['template_set']}/{i}.json": ("template_set", i, d)
+                   for i, d in folder.templates.items()})
+    written: list[str] = []
+    for rel in files:
+        if rel not in by_rel:
+            raise ValueError(f"{rel} is not a timeline or template set in this folder")
+        kind, ident, doc = by_rel[rel]
+        if name not in (doc.get("palettes") or {}):
+            raise ValueError(f"{rel} has no palette {name!r} to update")
+        changed = json.loads(json.dumps(doc))
+        changed["palettes"][name] = dict(colours)
+        try:
+            write_doc(path_for(root, kind, ident), changed, kind, folder.revs.get(rel, ""))
+        except (ValueError, OSError, configmod.ConfigError) as exc:
+            done = f" after {', '.join(written)}" if written else ""
+            raise ValueError(f"stopped at {rel}{done}: {exc}") from exc
+        written.append(rel)
+    return written
+
+
+def template_set_problems(folder: "Folder", doc: dict) -> list[str]:
+    """What a template set asks of the folder's routines that they do not
+    have: a routine that is not there, a variation or a parameter it lacks.
+    The same check the folder load makes, for a set not saved yet."""
+    probe = Folder(root=folder.root, routines=folder.routines)
+    ident = doc.get("id") or "draft"
+    for label, pick in (doc.get("phrases") or {}).items():
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json phrase {label!r}", pick)
+    for i, pick in enumerate((doc.get("bars") or {}).get("cycle") or ()):
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json bar cycle step {i + 1}", pick)
+    return probe.warnings
+
+
+def template_set_uses(folder: "Folder", tid: str) -> list[str]:
+    """What names a template set: only show.json, as the show's set."""
+    return (["show.json (the show's template set)"]
+            if (folder.show or {}).get("template_set") == tid else [])
+
+
+def rename_template_set(root: Path, folder: "Folder", old: str, new: str,
+                        base_rev: str) -> list[str]:
+    """Rename a template set, and show.json with it if it is the show's set.
+    The same order as a routine rename: new file, reference, old file last."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.templates.get(old)
+    if doc is None:
+        raise ValueError(f"no template set {old!r}")
+    if new in folder.templates:
+        raise ValueError(f"there is already a template set {new!r}")
+    old_path = path_for(root, "template_set", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    write_doc(path_for(root, "template_set", new), renamed, "template_set", "")
+    written = [f"{SUBDIR['template_set']}/{new}.json"]
+    if (folder.show or {}).get("template_set") == old:
+        show = json.loads(json.dumps(folder.show))
+        show["template_set"] = new
+        try:
+            write_doc(path_for(root, "show", ""), show, "show",
+                      folder.revs.get("show.json", ""))
+        except (ValueError, OSError, configmod.ConfigError) as exc:
+            raise ValueError(f"wrote {written[0]}, then show.json could not be "
+                             f"changed: {exc}. {old!r} is still there") from exc
+        written.append("show.json")
+    old_path.unlink()
+    return written
+
+
+def delete_doc(path: Path, base_rev: str) -> None:
+    """Remove one document, refused if it changed since `base_rev` -- the
+    same rule as a save, for the same reason."""
+    current = doc_rev(path)
+    if current is None:
+        raise ValueError(f"{path.name} is not there")
+    if current != base_rev:
+        raise StaleEdit(f"{path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload it, "
+                        f"and delete it then if you still mean to")
+    path.unlink()
+
 
 class StaleEdit(ValueError):
     """The file changed after the editor read it -- a sync from another machine,

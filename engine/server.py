@@ -50,6 +50,7 @@ from . import __version__
 from . import api as apimod
 from . import auto as autom
 from . import calibrate as calibmod
+from . import collection as collectionmod
 from . import config as configmod
 from . import cues as cuesmod
 from . import clock as clockmod
@@ -139,10 +140,16 @@ TIER: dict[str, str] = {
     "patch_apply": "configure",
     # the show folder: what is written there outlives the night
     "track_link": "configure", "show_reload": "configure",
-    "show_latency": "configure",
+    "show_latency": "configure", "rekordbox_prep": "configure",
     # the designer: writes the show folder, and can take the stage
     "timeline_draft": "configure", "timeline_save": "configure",
     "routine_draft": "configure", "routine_save": "configure",
+    "routine_rename": "configure", "routine_delete": "configure",
+    "template_draft": "configure", "template_save": "configure",
+    "template_rename": "configure", "template_delete": "configure",
+    "show_save": "configure",
+    "palette_save": "configure", "palette_delete": "configure",
+    "palette_sync": "configure",
     "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
@@ -419,6 +426,9 @@ class ShowController:
         self.grid_check: Optional[tracksmod.GridCheck] = None
         self._check_jump: Optional[int] = None
         self.watcher: Optional[showlibrary.Watcher] = None
+        # The DJ's rekordbox collection, read by the prep bridge in a child
+        # process -- never in this one (engine/collection.py).
+        self.collection = collectionmod.Collection()
         # Whether the timeline drives the rig this frame (F19i). Only with a
         # show folder; without one the runner never asks.
         self.player: Optional[playbackmod.TrackPlayer] = None
@@ -2454,8 +2464,11 @@ class ShowController:
                                   showfiles.doc_ident(kind, doc) or "")
         base = m["base_rev"]
 
+        # show.json is the one document at the folder's top, with no subfolder
+        rel = path.name if kind == "show" else f"{showfiles.SUBDIR[kind]}/{path.name}"
+
         def then(rev, respond):
-            respond(True, {"rev": rev, "path": f"{showfiles.SUBDIR[kind]}/{path.name}"})
+            respond(True, {"rev": rev, "path": rel})
             self.reload_library()
 
         return self._on_worker(f"saving {path.name}",
@@ -2502,6 +2515,199 @@ class ShowController:
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)
 
+    @staticmethod
+    def _on_disk(root: Path, folder: "showfiles.Folder") -> "showfiles.Folder":
+        """The folder as it is on disk NOW, for a delete or a rename to judge
+        what names what. The loaded folder can be a couple of seconds behind
+        (the watcher waits for a change to hold still), and a timeline written
+        in that time -- by MCP, another machine, a save just ahead in the
+        queue -- must not be missed: deleting or renaming a routine it names
+        would leave it naming one that is gone. Runs on the worker."""
+        return showfiles.load_folder(root, previous=folder)
+
+    def _cmd_routine_rename(self, m: dict, now: float) -> object:
+        """Rename a routine and every reference to it (showfiles.rename_routine:
+        new file first, references next, old file last). Answered with the
+        files written; the folder reloads after."""
+        library = self._need_library()
+        # `routine`, not `id`: `id` is the request's own, for its reply.
+        old, new, base = m.get("routine"), m.get("to"), m.get("base_rev")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise ValueError("routine_rename needs routine and to")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"renamed routine {old!r} to {new!r}: {len(written)} file(s)")
+            self.reload_library()
+
+        return self._on_worker(
+            f"renaming routine {old}",
+            lambda: showfiles.rename_routine(root, self._on_disk(root, folder), old, new, base),
+            then)
+
+    def _cmd_template_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved template set: the format's rules, then what it asks
+        of the routines (one that is not there, a variation or parameter it
+        lacks) -- the same checks a folder load makes, before the save."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("template_draft needs the document as doc")
+        folder = library.folder
+
+        def work():
+            result = showfiles.validate("template_set", doc)
+            problems = showfiles.template_set_problems(folder, doc) if result.ok else []
+            return {"errors": result.errors, "warnings": result.warnings,
+                    "problems": problems}
+
+        return self._on_worker("checking a template set", work,
+                               lambda value, respond: respond(True, value))
+
+    def _cmd_template_save(self, m: dict, now: float) -> object:
+        """Write a template set, refused if the file changed since `base_rev`."""
+        return self._save("template_set", m)
+
+    def _cmd_template_rename(self, m: dict, now: float) -> object:
+        """Rename a template set, and show.json with it if it is the show's."""
+        library = self._need_library()
+        old, new, base = m.get("template"), m.get("to"), m.get("base_rev")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise ValueError("template_rename needs template and to")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"renamed template set {old!r} to {new!r}")
+            self.reload_library()
+
+        return self._on_worker(f"renaming template set {old}",
+                               lambda: showfiles.rename_template_set(
+                                   root, self._on_disk(root, folder), old, new, base),
+                               then)
+
+    def _cmd_template_delete(self, m: dict, now: float) -> object:
+        """Delete a template set that is not the show's."""
+        library = self._need_library()
+        tid, base = m.get("template"), m.get("base_rev")
+        if not isinstance(tid, str):
+            raise ValueError("template_delete needs template")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def work():
+            uses = showfiles.template_set_uses(self._on_disk(root, folder), tid)
+            if uses:
+                raise ValueError(f"{tid!r} is {uses[0]}: make another set the "
+                                 f"show's first")
+            showfiles.delete_doc(showfiles.path_for(root, "template_set", tid), base)
+            return f"{showfiles.SUBDIR['template_set']}/{tid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting template set {tid}", work, then)
+
+    def _cmd_palette_save(self, m: dict, now: float) -> object:
+        """Write a library palette. Its copies in timelines and sets are not
+        touched: `palette_sync` does that, on request. Its name must be its
+        own: copies are found by name, so two library palettes of one name
+        would both claim the same copies."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if isinstance(doc, dict):
+            pid, name = doc.get("id"), doc.get("name")
+            for other_id, other in library.folder.palettes.items():
+                if other_id != pid and other.get("name") == name:
+                    raise ValueError(f"the library already has a palette called {name!r} "
+                                     f"(palettes/{other_id}.json): copies are found by "
+                                     f"name, so each needs its own")
+        return self._save("palette", m)
+
+    def _cmd_palette_delete(self, m: dict, now: float) -> object:
+        """Delete a library palette. Its copies stay where they are -- each
+        timeline and set keeps its own -- so nothing goes dark."""
+        library = self._need_library()
+        pid, base = m.get("palette"), m.get("base_rev")
+        if not isinstance(pid, str):
+            raise ValueError("palette_delete needs palette")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root = library.root
+
+        def work():
+            showfiles.delete_doc(showfiles.path_for(root, "palette", pid), base)
+            return f"{showfiles.SUBDIR['palette']}/{pid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting palette {pid}", work, then)
+
+    def _cmd_palette_sync(self, m: dict, now: float) -> object:
+        """Give copies of a library palette its colours: `files` are the
+        timelines and sets to update, as /api/palettes lists them."""
+        library = self._need_library()
+        pid, files = m.get("palette"), m.get("files")
+        if not isinstance(pid, str):
+            raise ValueError("palette_sync needs palette")
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files) \
+                or not files or len(files) > 1000:
+            raise ValueError("palette_sync needs files: the timelines and sets to update")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"palette {pid!r}: updated {len(written)} file(s)")
+            self.reload_library()
+
+        return self._on_worker(f"updating copies of palette {pid}",
+                               lambda: showfiles.sync_palette(root, folder, pid, files), then)
+
+    def _cmd_show_save(self, m: dict, now: float) -> object:
+        """Write show.json: the show's template set, the pause policy and idle
+        routine, Follow's start. Refused if it changed since `base_rev` -- the
+        phone's latency slider writes it too. Applies when the folder reloads,
+        as any change to it does."""
+        return self._save("show", m)
+
+    def _cmd_routine_delete(self, m: dict, now: float) -> object:
+        """Delete a routine nothing uses. One that a timeline, a template set
+        or show.json still names is refused with where, so a delete can never
+        leave a show playing a routine that is gone."""
+        library = self._need_library()
+        rid, base = m.get("routine"), m.get("base_rev")
+        if not isinstance(rid, str):
+            raise ValueError("routine_delete needs routine")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def work():
+            uses = showfiles.routine_uses(self._on_disk(root, folder), rid)
+            if uses:
+                raise ValueError(f"{rid!r} is still used by {'; '.join(uses)}: "
+                                 f"take it out of those first")
+            showfiles.delete_doc(showfiles.path_for(root, "routine", rid), base)
+            return f"{showfiles.SUBDIR['routine']}/{rid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting routine {rid}", work, then)
+
     def _cmd_preview_arm(self, m: dict, now: float) -> dict:
         """The designer takes the stage: its transport drives the rig through
         this track's timeline. Refused while a DJ is playing, unless forced."""
@@ -2535,7 +2741,7 @@ class ShowController:
                 lambda: programmod.compile(timeline, routines, rigging,
                                            f"timelines/{track_id}.json"),
                 done, label=f"compiling {track_id} for the designer")
-        self.note(f"DESIGNER ({name}) is driving the rig on {track_id}")
+        self.note(f"STUDIO ({name}) is driving the rig on {track_id}")
         return {"track_id": track_id}
 
     def _owned_preview(self):
@@ -2625,6 +2831,48 @@ class ShowController:
                                      showlibrary.default_added()),
             done=done, label=f"linking {title!r} to {track_id}")
         return {"queued": True, "track_id": track_id, "applies": "next_play"}
+
+    def _cmd_rekordbox_prep(self, m: dict, now: float) -> object:
+        """Prep tracks from the DJ's rekordbox collection into the show folder:
+        what the designer's collection browser picked, by rekordbox id.
+
+        The bridge does it, in a child process, on a thread of its own rather
+        than the worker: it is a wait on another process, not CPU here, and a
+        playlist's worth of tracks would otherwise hold up every compile the
+        designer asks for behind it. Answered when it finishes, with the
+        bridge's summary per track; the folder reloads after, and a track that
+        is playing keeps the load it was matched against."""
+        if self.show_dir is None:
+            raise ValueError("no show folder -- start the engine with --show-dir "
+                             "to prep tracks into one")
+        ids = collectionmod.check_ids(m.get("ids"))
+        root = self.show_dir
+        collection = self.collection
+        respond = self._deferred()
+
+        def run() -> None:
+            try:
+                outcome = (True, collection.prep(ids, root))
+            except Exception as exc:                        # noqa: BLE001
+                outcome = (False, str(exc))
+
+            def done() -> None:
+                ok, value = outcome
+                if not ok:
+                    respond(False, error=value)
+                    return
+                results = value.get("results") or []
+                fresh = sum(r.get("status") == "created" for r in results)
+                self.note(f"prepped {len(results)} track(s) from rekordbox, "
+                          f"{fresh} new" + (f"; {len(value.get('skipped') or [])} "
+                                            f"skipped" if value.get("skipped") else ""))
+                respond(True, value)
+                self.reload_library()
+            self.submit_call(done)
+
+        threading.Thread(target=run, name="klights-rekordbox-prep",
+                         daemon=True).start()
+        return DEFERRED
 
     def _cmd_show_reload(self, m: dict, now: float) -> None:
         """Read the show folder again now, rather than at the next poll."""
@@ -3806,7 +4054,8 @@ class ShowServer:
                 try:
                     resp = apimod.handle(server.controller.show_library, url.path,
                                          self.headers.get("Range"), token_ok,
-                                         server.audio_roots)
+                                         server.audio_roots,
+                                         server.controller.collection, url.query)
                 except OSError as exc:
                     resp = apimod.Response(500, json.dumps(
                         {"error": str(exc)}).encode("utf-8"))

@@ -3,6 +3,7 @@ import { Card } from "./components";
 import { CONSOLE_GUIDES } from "./guideContent";
 import type { GuideId } from "./guideContent";
 import type { Mode } from "./types";
+import { STUDIO_TARGET, studioHref } from "./studioRoute";
 
 /**
  * The console's own tutorial pages: one per tab, plus a first-run tour.
@@ -101,7 +102,7 @@ export function GuideView({ id, mode, back, onPick, onClose, onOpenTab }: {
           </button>
         )}
         {guide.id === "designer" && (
-          <a className="slot" href="#designer">Open the designer</a>
+          <a className="slot" href={studioHref()} target={STUDIO_TARGET}>Open Studio</a>
         )}
         <button onClick={onClose}>Back to {TAB_LABELS[back] ?? back}</button>
       </div>

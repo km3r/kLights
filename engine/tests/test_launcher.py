@@ -90,6 +90,8 @@ try:
     check("a token starting with '-' is passed as --token=...", "--token=-xAmdxlH" in cmd)
     check("console link", core.console_url(8765, "abc") == "http://127.0.0.1:8765/?token=abc")
     check("...to the Setup tab", core.console_url(8765, "abc", "setup").endswith("/?token=abc#setup"))
+    check("...and into Studio, with the token, so it can save",
+          core.console_url(8765, "abc", "studio").endswith("/?token=abc#studio"))
     check("...without a token", core.console_url(8765, None, host="10.0.0.9") == "http://10.0.0.9:8765/")
     check("check_artnet: off and good are fine", core.check_artnet("") == core.check_artnet("127.0.0.1") == "")
     check("check_artnet: a typo is reported", "host:port" in core.check_artnet("10.0.0.5:abc"))

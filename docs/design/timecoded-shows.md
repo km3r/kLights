@@ -152,7 +152,7 @@ bridge and no hardware:
 |---|---|
 | F19a | Seams and guards: WebSocket `sync` goes through `clean()`, a reply channel for commands, a worker thread |
 | F19b | Track time (grid, phrases) and the show-file formats, schemas and an example show |
-| F19c | Prep tool: rekordbox XML + analysis files (collection or USB stick) into the track library. Reading `export.pdb` or `master.db` directly is not built |
+| F19c | Prep tool: rekordbox XML + analysis files (collection or USB stick) into the track library. Since then: `master.db` read directly, browsed from the designer, with beat-link signatures computed at prep. Reading `export.pdb` is not built |
 | F19d | Sync fields for position and identity, the transport, fake-bridge scripts, capture |
 | F19e | beat-link-trigger expressions, rkbx_link config, golden OSC fixtures; hardware captures start |
 | F19f | Track library, matcher, aliases, grid warnings, hot reload |

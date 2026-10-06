@@ -138,6 +138,25 @@ export interface RoutineSummary {
                            max?: number; unit?: string }>;
   variations: string[];
   roles: Record<string, { default: string; optional?: boolean }>;
+  /** Where Studio files it. Nothing about how it plays. */
+  folder?: string | null;
+  /** Its rows in a line each: what each drives, with which blocks. */
+  lanes?: { type: string; target?: string | null; role?: string | null;
+            blocks: (string | null)[] }[];
+  /** Everything that names it (showfiles.routine_usage). */
+  used_by?: RoutineUsage;
+  rev?: string;
+}
+
+export interface RoutineUsage {
+  timelines: { track: string; title?: string | null; clips: number; variations: string[] }[];
+  templates: { id: string; name?: string | null; where: string[] }[];
+  show: string[];
+}
+
+/** How many places use a routine: each timeline, set and show setting once. */
+export function usageCount(u: RoutineUsage | undefined): number {
+  return u ? u.timelines.length + u.templates.length + u.show.length : 0;
 }
 
 export const PARAM_TYPES = ["color", "number", "rate", "look"] as const;
@@ -171,6 +190,7 @@ export interface TrackLine {
   id: string;
   title: string;
   artist?: string;
+  album?: string;
   duration_s?: number;
   bpm?: number;
   grid_rev?: string;
@@ -178,7 +198,371 @@ export interface TrackLine {
   has_waveform: boolean;
   has_audio: boolean;
   phrases: number;
+  /** The rekordbox rows this track is, each in its own database. */
+  rekordbox?: { db: string; id: number }[];
+  /** How many beat-link signatures it answers to: CDJs playing a USB stick. */
+  signatures?: number;
+  /** rekordbox's phrases: [start beat, end beat, label]. */
+  phrase_items?: [number, number, string][];
+  /** Its timeline in a line: how big, and the grid it was drawn on. */
+  timeline?: { rows: number; items: number; grid_rev?: string | null } | null;
+  /** When its show last changed on disk, seconds since the epoch. */
+  edited?: number | null;
+  /** A file the track names is on this machine (the named paths only). */
+  audio_here?: boolean;
   rev?: string;
+}
+
+/** `GET /api/show`: show.json and the folder's counts. */
+export interface ShowSummary {
+  dir: string;
+  rev: string;
+  /** show.json's own rev, for a save of it to quote. */
+  show_rev?: string | null;
+  show: { template_set?: string; fallback?: string;
+          pause?: { idle_routine?: string }; [key: string]: unknown } | null;
+  errors: string[];
+  warnings: string[];
+}
+
+/** One phrase family's pick in a template set. */
+export interface TemplatePick {
+  routine: string;
+  variation?: string;
+  params?: Record<string, unknown>;
+  palette?: string;
+}
+
+/** A template set: rekordbox phrase -> routine, for tracks with no timeline. */
+export interface TemplateSetDoc {
+  kind?: "klights.template_set";
+  id: string;
+  name?: string;
+  phrases: Record<string, TemplatePick>;
+  palettes?: Record<string, Record<string, unknown>>;
+  palette?: string;
+  bars?: { every: number; cycle: TemplatePick[] };
+  transition?: { fade_beats?: number };
+  [key: string]: unknown;
+}
+
+/** A palette of the show's library: `palettes/<id>.json`. */
+export interface PaletteDoc {
+  kind: "klights.palette";
+  version: 1;
+  id: string;
+  /** What timelines and sets call it: copies are found by this name. */
+  name: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  [key: string]: unknown;
+}
+
+/** A timeline or set that carries a palette of a given name, and its colours there. */
+export interface PalettePlace {
+  file: string;
+  kind: "timeline" | "template_set";
+  id: string;
+  title?: string | null;
+  colours: Partial<Record<"primary" | "secondary" | "accent", string | null>>;
+}
+
+/** A line of `GET /api/palettes`: a library palette and its copies. */
+export interface PaletteSummary {
+  id: string;
+  name: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  rev?: string;
+  copies: (PalettePlace & { same: boolean })[];
+}
+
+/** A palette that lives only inside timelines and sets: none in the library has its name. */
+export interface FoundPalette { name: string; places: PalettePlace[] }
+
+/** A line of `GET /api/templates`. */
+export interface TemplateSummary {
+  id: string;
+  name?: string | null;
+  phrases?: number;
+  palettes?: string[];
+  /** It is show.json's template set. */
+  show?: boolean;
+  rev?: string;
+}
+
+/** rekordbox's phrase families, in the order a track meets them. */
+export const PHRASE_FAMILIES = ["Intro", "Verse", "Up", "Chorus", "Down", "Bridge", "Outro"];
+
+/** The numbered labels rekordbox writes, which a set may pick for exactly. */
+export const EXACT_LABELS = [
+  ...[1, 2, 3, 4, 5, 6].map((n) => `Verse ${n}`), ...[1, 2, 3].map((n) => `Up ${n}`)];
+
+/** The pick a template set makes for a phrase label: exact, then family,
+ *  then `*` -- the engine's lookup order. */
+export function pickFor(ts: Pick<TemplateSetDoc, "phrases">, label: string): TemplatePick | undefined {
+  return ts.phrases[label] ?? ts.phrases[phraseFamily(label)] ?? ts.phrases["*"];
+}
+
+/** rekordbox's phrase colours, by family. */
+export const PHRASE_HUE: Record<string, string> = {
+  Intro: "#3b82f6", Verse: "#14b8a6", Up: "#f59e0b", Chorus: "#ef4444",
+  Down: "#8b5cf6", Bridge: "#ec4899", Outro: "#64748b",
+};
+
+/** "Verse 2" is a Verse: the label without its number. */
+export function phraseFamily(label: string): string {
+  return label.replace(/\s*\d+$/, "");
+}
+
+/** An id not yet used by any row or item of a document, from a stem. */
+export function uniqueId(doc: { rows: Row[] }, stem: string): string {
+  const taken = new Set<string>();
+  for (const r of doc.rows) {
+    taken.add(r.id);
+    for (const i of r.items ?? []) taken.add(i.id);
+  }
+  const base = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+  let id = base;
+  let n = 2;
+  while (taken.has(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+/** How many phrases, from the start, two tracks share: the same family over
+ *  the same beats. A timeline copied from one to the other is right that far. */
+export function phraseMatch(a: [number, number, string][], b: [number, number, string][]): number {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n]![0] === b[n]![0] && a[n]![1] === b[n]![1]
+         && phraseFamily(a[n]![2]) === phraseFamily(b[n]![2])) n++;
+  return n;
+}
+
+/**
+ * A template set from a track's timeline: for each phrase family, what its
+ * scene lane plays most over that family's phrases (routine, variation and
+ * parameters together), and the palette clip most over them; for anything
+ * else, what it plays most overall. The timeline's palettes come with it, and
+ * the fade its routine clips most often use becomes the set's fade. Null if
+ * the scene lane plays no routine on any phrase.
+ */
+export function templateFromTimeline(id: string, name: string, track: TrackDoc,
+                                     tl: TimelineDoc): TemplateSetDoc | null {
+  const phrases = track.phrases?.items ?? [];
+  const scene = tl.rows.find((r) => r.type === "clips" && r.target === "scene");
+  const palLane = tl.rows.find((r) => r.type === "clips" && r.target === "palette");
+  const most = (items: Item[] | undefined, s: number, e: number, ok: (i: Item) => boolean) => {
+    let best: Item | null = null;
+    let cover = 0;
+    for (const it of items ?? []) {
+      if (!ok(it)) continue;
+      const c = Math.min(e, it.at + it.len) - Math.max(s, it.at);
+      if (c > cover) { best = it; cover = c; }
+    }
+    return { best, cover };
+  };
+  const tally = new Map<string, Map<string, number>>();
+  const add = (fam: string, key: string, beats: number) => {
+    const m = tally.get(fam) ?? new Map<string, number>();
+    m.set(key, (m.get(key) ?? 0) + beats);
+    tally.set(fam, m);
+  };
+  for (const [s, e, label] of phrases) {
+    const { best, cover } = most(scene?.items, s, e, (i) => i.kind === "routine" && !!i.routine);
+    if (!best) continue;
+    const pal = most(palLane?.items, s, e, (i) => i.kind === "palette" && !!i.palette).best?.palette;
+    const pick: TemplatePick = { routine: best.routine! };
+    if (best.variation) pick.variation = best.variation;
+    if (best.params && Object.keys(best.params).length) pick.params = { ...best.params };
+    if (pal && tl.palettes?.[pal]) pick.palette = pal;
+    const key = JSON.stringify(pick);
+    add(phraseFamily(label), key, cover);
+    add("*", key, cover);
+  }
+  if (!tally.size) return null;
+  const top = (m: Map<string, number>) => [...m].sort((x, y) => y[1] - x[1])[0]![0];
+  const picks: Record<string, TemplatePick> = {};
+  for (const [fam, m] of tally) picks[fam] = JSON.parse(top(m)) as TemplatePick;
+  const doc: TemplateSetDoc = { kind: "klights.template_set", version: 1, id, name, phrases: picks };
+  if (tl.palettes && Object.keys(tl.palettes).length) {
+    doc.palettes = structuredClone(tl.palettes) as TemplateSetDoc["palettes"];
+    if (tl.palette && tl.palettes[tl.palette]) doc.palette = tl.palette;
+  }
+  const fades = new Map<number, number>();
+  for (const it of scene?.items ?? []) {
+    if (it.kind === "routine" && (it.fade ?? 0) > 0) fades.set(it.fade!, (fades.get(it.fade!) ?? 0) + 1);
+  }
+  if (fades.size) doc.transition = { fade_beats: [...fades].sort((x, y) => y[1] - x[1])[0]![0] };
+  return doc;
+}
+
+/** The engine's rule for an id, which is also the file's name (showfiles.ID_RE). */
+export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** A new palette's colours, until they are changed. */
+export const NEW_COLOURS: Readonly<Record<"primary" | "secondary" | "accent", string>> =
+  { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" };
+
+/** A palette colour as lower-case #rrggbb, compared the way the engine
+ *  compares copies (showfiles.hex_color): a hex string, or [r, g, b] of 0..1.
+ *  Null for anything else. */
+export function hexColor(v: unknown): string | null {
+  if (typeof v === "string") return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+  if (Array.isArray(v) && v.length === 3
+      && v.every((c) => typeof c === "number" && c >= 0 && c <= 1)) {
+    return `#${v.map((c: number) => Math.round(c * 255).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return null;
+}
+
+/** A name not taken by any of `names`: "Hot copy", then "Hot copy 2"... */
+export function freeName(names: Iterable<string>, stem: string): string {
+  const taken = new Set(names);
+  let name = stem;
+  for (let n = 2; taken.has(name); n++) name = `${stem} ${n}`;
+  return name;
+}
+
+/** An id not taken by any of `ids`, from a stem: "fan-drop-copy", then
+ *  "fan-drop-copy-2"... */
+export function freeId(ids: Iterable<string>, stem: string): string {
+  const taken = new Set(ids);
+  const base = stem.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 58)
+    || "item";
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+/** A new timeline for a track: one scene lane, empty, on the track's grid. */
+export function newTimeline(track: Pick<TrackDoc, "id" | "grid">): TimelineDoc {
+  const doc: TimelineDoc = { kind: "klights.timeline", version: 1, track: track.id, rows: [] };
+  if (track.grid?.rev) doc.grid_rev = track.grid.rev;
+  doc.rows.push({ id: "scene", type: "clips", target: "scene", gap: "fill", items: [] });
+  return doc;
+}
+
+function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: number,
+                 len: number, fade: number): Item {
+  const item: Item = { id: uniqueId(d, stem), kind: "routine", routine: pick.routine, at, len };
+  if (pick.variation) item.variation = pick.variation;
+  if (pick.params) item.params = { ...pick.params };
+  if (fade > 0) item.fade = Math.min(fade, len);
+  return item;
+}
+
+/**
+ * Draft from template: a template set laid onto a timeline's scene lane, one
+ * routine per rekordbox phrase -- the exact label (Verse 2), then the family
+ * (Verse), then `*` -- and its palettes onto the palette lane. A track with a
+ * grid but no phrases gets the set's bar cycle instead, the way the engine
+ * plays it live. Changes `d` in place (inside an undoable edit, or on a new
+ * document); returns why it could not, or null.
+ */
+export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
+                                  ts: TemplateSetDoc): string | null {
+  const phrases = track.phrases?.items ?? [];
+  let spans: [number, number, TemplatePick | undefined, string][] = [];
+  if (phrases.length) {
+    spans = phrases.map(([start, end, label]) => {
+      const family = phraseFamily(label);
+      return [start, end, ts.phrases[label] ?? ts.phrases[family] ?? ts.phrases["*"], family];
+    });
+  } else if (ts.bars?.cycle.length && track.grid?.segments?.length) {
+    const grid = new Grid(track.grid.segments);
+    const end = track.identity.duration_s ? grid.beatAt(track.identity.duration_s) : 0;
+    const step = ts.bars.every * BEATS_PER_BAR;
+    for (let at = 0, i = 0; at < end; at += step, i++) {
+      spans.push([at, Math.min(end, at + step), ts.bars.cycle[i % ts.bars.cycle.length],
+                  `bar-${at / BEATS_PER_BAR + 1}`]);
+    }
+  }
+  if (!spans.length) {
+    return phrases.length || !ts.bars ? "this track has no phrases to draft from"
+      : "this track has no phrases, and no grid long enough for the bar cycle";
+  }
+  let lane = d.rows.find((x) => x.type === "clips" && x.target === "scene");
+  if (!lane) {
+    lane = { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill", items: [] };
+    d.rows.unshift(lane);
+  }
+  lane.items = [];
+  let palLane: Row | null = null;
+  if (ts.palettes) {
+    palLane = d.rows.find((x) => x.target === "palette") ?? null;
+    if (!palLane) {
+      palLane = { id: uniqueId(d, "palette"), type: "clips", target: "palette",
+                  gap: "exclusive", items: [] };
+      d.rows.push(palLane);
+    }
+    d.palettes = { ...(d.palettes ?? {}), ...(ts.palettes as TimelineDoc["palettes"]) };
+    if (ts.palette && !d.palette) d.palette = ts.palette;
+    palLane.items = [];
+  }
+  // The set's change between phrases, as each clip's own fade in: the first
+  // clip comes in from nothing with it, and the rest crossfade on it.
+  const fade = ts.transition?.fade_beats ?? 0;
+  for (const [start, end, pick, stem] of spans) {
+    if (!pick) continue;
+    lane.items.push(itemFor(d, pick, `${stem}-${start}`, start, end - start, fade));
+    if (pick.palette && palLane) {
+      (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
+                                    palette: pick.palette, at: start, len: end - start });
+    }
+  }
+  return null;
+}
+
+/** `GET /api/rekordbox`: the DJ's collection, as the prep bridge read it. */
+export interface Catalogue {
+  kind: "klights.rekordbox_catalogue";
+  /** What the ids belong to, as prepped tracks record it. */
+  db: string;
+  path: string;
+  rekordbox: string | null;
+  read_at: string;
+  playlists: CataloguePlaylist[];
+  tracks: CatalogueTrack[];
+}
+
+export interface CataloguePlaylist {
+  id: string;
+  name: string;
+  parent: string | null;
+  kind: "playlist" | "folder" | "smart";
+  tracks: number[];
+}
+
+export interface CatalogueTrack {
+  id: number;
+  title: string;
+  artist: string;
+  album: string;
+  genre: string;
+  key: string;
+  bpm: number | null;
+  duration_s: number | null;
+  /** A file on the rekordbox machine; false for a streaming service's track. */
+  local: boolean;
+  analysed: boolean;
+  added: string;
+}
+
+/** The bridge's answer to `rekordbox_prep`. */
+export interface PrepSummary {
+  results: { status: string; track_id: string; rekordbox_ids: number[]; title: string;
+             artist: string; signature: boolean; notes: string[] }[];
+  skipped: { rekordbox_id: number; title: string; artist: string; reason: string }[];
+}
+
+/** A form of a name for comparing, the way engine/tracks.normalize compares:
+ *  case, accents, "&" and punctuation forgiven. */
+export function normalizeName(text: string): string {
+  return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/&/g, " and ").replace(/\b(?:featuring|feat|ft)\b\.?/g, " feat ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 // -- the grid ----------------------------------------------------------------
@@ -446,6 +830,13 @@ export function barBeat(beat: number): string {
   const bar = Math.floor(beat / BEATS_PER_BAR) + 1;
   const inBar = Math.floor(((beat % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR) + 1;
   return `${bar}.${inBar}`;
+}
+
+/** A track's length as a DJ reads it: 6:48. */
+export function mmss(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "";
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 export function clock(seconds: number): string {

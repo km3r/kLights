@@ -81,6 +81,18 @@ try:
           and line.get("id") == "synth-128" and line.get("has_timeline") is True
           and line.get("phrases") == 8 and line.get("rev", "").startswith("r:")
           and line.get("grid_rev") == "g:834af7", f"{status} {line}")
+    check("each line carries what Studio's library shows: the phrases, the "
+          "timeline in a line, when it was edited",
+          line.get("phrase_items", [None])[0] == [0, 64, "Intro"]
+          and len(line.get("phrase_items", [])) == 8
+          and line.get("timeline", {}).get("rows", 0) > 0
+          and line.get("timeline", {}).get("items", 0) > 0
+          and isinstance(line.get("edited"), float),
+          f"{line.get('phrase_items')} {line.get('timeline')} {line.get('edited')}")
+    check("audio_here only looks at the paths the track names: this one names "
+          "a path that is not on this machine, and the list does not search "
+          "audio_roots for it", line.get("audio_here") is False,
+          f"{line.get('audio_here')}")
     status, body = jget("/api/tracks/synth-128")
     check("one track, with the rev a save must quote",
           status == 200 and body["doc"]["id"] == "synth-128"
@@ -298,6 +310,194 @@ try:
     check("and an id that is not a file name is refused before anything runs",
           r["ok"] is False and "not a usable id" in r["error"], f"{r}")
 
+    # -- 3b. a routine's place in the folder: where used, rename, delete ------
+    print("\n3b. where a routine is used; renaming and deleting one")
+    status, body = jget("/api/routines")
+    idle_line = next(r for r in body["routines"] if r["id"] == "idle-orbit")
+    used = idle_line["used_by"]
+    check("the routine list says where each is used: timelines, sets, show.json",
+          [t["track"] for t in used["timelines"]] == ["synth-128"]
+          and used["timelines"][0]["clips"] >= 1
+          and [t["id"] for t in used["templates"]] == ["club"]
+          and "Intro" in used["templates"][0]["where"]
+          and used["show"] != [], f"{used}")
+    check("and what each of its rows drives, for a thumbnail",
+          any(lane["target"] == "movement" and lane["blocks"]
+              for lane in idle_line["lanes"]) and idle_line["rev"].startswith("r:"),
+          f"{idle_line['lanes']}")
+    rev = idle_line["rev"]
+    r = ask({"type": "routine_delete", "routine": "idle-orbit", "base_rev": rev, "id": 20})
+    check("a routine still in use is not deleted, and the refusal says where",
+          r["ok"] is False and "timelines/synth-128.json" in r["error"]
+          and "templates/club.json" in r["error"] and "show.json" in r["error"]
+          and (shows / "routines" / "idle-orbit.json").is_file(), f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "fan-drop",
+             "base_rev": rev, "id": 21})
+    check("a rename onto a routine that exists is refused",
+          r["ok"] is False and "already" in r["error"], f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": "r:000000000000", "id": 22})
+    check("a rename of a routine changed since it was read is refused, and "
+          "writes nothing", r["ok"] is False and "changed since" in r["error"]
+          and not (shows / "routines" / "orbit-idle.json").exists(), f"{r}")
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": rev, "id": 23}, client=viewer)
+    check("renames are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "routine_rename", "routine": "idle-orbit", "to": "orbit-idle",
+             "base_rev": rev, "id": 24})
+    tl_text = (shows / "timelines" / "synth-128.json").read_text()
+    show_doc = json.loads((shows / "show.json").read_text())
+    club = json.loads((shows / "templates" / "club.json").read_text())
+    check("a rename writes the routine under its new name and moves every "
+          "reference: the timeline, the set, show.json's idle routine",
+          r["ok"] and r["data"]["written"][0] == "routines/orbit-idle.json"
+          and {"timelines/synth-128.json", "templates/club.json", "show.json"}
+          <= set(r["data"]["written"])
+          and '"idle-orbit"' not in tl_text and '"orbit-idle"' in tl_text
+          and show_doc["pause"]["idle_routine"] == "orbit-idle"
+          and club["phrases"]["Intro"]["routine"] == "orbit-idle", f"{r}")
+    check("and the old file is gone last",
+          not (shows / "routines" / "idle-orbit.json").exists()
+          and (shows / "routines" / "orbit-idle.json").is_file())
+    check("the folder is still whole: nothing names a routine that is gone",
+          not any("not in routines/" in w for w in sc.show_library.folder.warnings),
+          f"{sc.show_library.folder.warnings}")
+    back = next(r for r in jget("/api/routines")[1]["routines"] if r["id"] == "orbit-idle")
+    r = ask({"type": "routine_rename", "routine": "orbit-idle", "to": "idle-orbit",
+             "base_rev": back["rev"], "id": 25})
+    check("and renamed back the same way", r["ok"]
+          and (shows / "routines" / "idle-orbit.json").is_file(), f"{r}")
+    spare = {**routine, "id": "spare", "name": "Spare"}
+    r = ask({"type": "routine_save", "doc": spare, "base_rev": "", "id": 26})
+    spare_rev = r["data"]["rev"] if r and r["ok"] else ""
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": "r:000000000000", "id": 27})
+    check("a delete of a routine changed since it was read is refused",
+          r["ok"] is False and "changed since" in r["error"]
+          and (shows / "routines" / "spare.json").is_file(), f"{r}")
+    # A set that picks it, written straight to disk: the engine has not
+    # reloaded since, but a delete must still see it.
+    late = shows / "templates" / "late.json"
+    late.write_text(json.dumps({"kind": "klights.template_set", "version": 1, "id": "late",
+                                "phrases": {"*": {"routine": "spare"}}}))
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": spare_rev, "id": 29})
+    check("a delete reads the folder as it is now: a use written a moment ago refuses it",
+          r["ok"] is False and "templates/late.json" in r["error"]
+          and (shows / "routines" / "spare.json").is_file(), f"{r}")
+    late.unlink()
+    r = ask({"type": "routine_delete", "routine": "spare", "base_rev": spare_rev, "id": 28})
+    check("a routine nothing uses is deleted",
+          r["ok"] and r["data"]["deleted"] == "routines/spare.json"
+          and not (shows / "routines" / "spare.json").exists(), f"{r}")
+
+    # -- 3c. template sets and show.json ---------------------------------------
+    print("\n3c. template sets, and the show's settings")
+    status, body = jget("/api/templates")
+    club_line = body["templates"][0] if status == 200 else {}
+    check("the template sets, each saying whether it is the show's set",
+          club_line.get("id") == "club" and club_line.get("show") is True
+          and club_line.get("rev", "").startswith("r:")
+          and club_line.get("phrases", 0) > 0, f"{club_line}")
+    show_rev = jget("/api/show")[1].get("show_rev")
+    check("/api/show carries show.json's own rev, for a save to quote",
+          isinstance(show_rev, str) and show_rev.startswith("r:"), f"{show_rev}")
+    club = json.loads((shows / "templates" / "club.json").read_text())
+    r = ask({"type": "template_draft", "doc": club, "id": 30})
+    check("a template set draft is checked: clean",
+          r and r["ok"] and r["data"] == {"errors": [], "warnings": [], "problems": []}, f"{r}")
+    odd = json.loads(json.dumps(club))
+    odd["phrases"]["Verse"] = {"routine": "no-such-routine"}
+    odd["phrases"]["Chorus"]["variation"] = "huge"
+    r = ask({"type": "template_draft", "doc": odd, "id": 31})
+    check("and says what it asks of the routines that they do not have",
+          r["ok"] and r["data"]["errors"] == []
+          and any("no-such-routine" in p for p in r["data"]["problems"])
+          and any("'huge'" in p for p in r["data"]["problems"]), f"{r}")
+    odd["phrases"]["Up"]["palette"] = "Nowhere"
+    r = ask({"type": "template_draft", "doc": odd, "id": 32})
+    check("a palette the set does not define is an error, not a note",
+          r["ok"] and any("Nowhere" in e for e in r["data"]["errors"]), f"{r}")
+    copy = {**club, "id": "club-2", "name": "Club 2"}
+    r = ask({"type": "template_save", "doc": copy, "base_rev": "", "id": 33})
+    check("a set is saved as a new file", r and r["ok"]
+          and (shows / "templates" / "club-2.json").is_file(), f"{r}")
+    club_rev = sc.show_library.folder.revs["templates/club.json"]
+    r = ask({"type": "template_delete", "template": "club", "base_rev": club_rev, "id": 34})
+    check("the show's own set is not deleted",
+          r["ok"] is False and "show's" in r["error"]
+          and (shows / "templates" / "club.json").is_file(), f"{r}")
+    show_doc = json.loads((shows / "show.json").read_text())
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": show_rev, "id": 35}, client=viewer)
+    check("show.json saves are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": "r:000000000000", "id": 36})
+    check("a show.json save that has not seen the latest (the phone's latency "
+          "slider writes it too) is refused", r["ok"] is False and "changed since" in r["error"],
+          f"{r}")
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": show_rev, "id": 37})
+    check("making another set the show's is a show.json save",
+          r["ok"] and json.loads((shows / "show.json").read_text())["template_set"] == "club-2",
+          f"{r}")
+    rev2 = sc.show_library.folder.revs["templates/club-2.json"]
+    r = ask({"type": "template_rename", "template": "club-2", "to": "late-night",
+             "base_rev": rev2, "id": 38})
+    check("renaming the show's set renames it in show.json too",
+          r["ok"] and r["data"]["written"] == ["templates/late-night.json", "show.json"]
+          and json.loads((shows / "show.json").read_text())["template_set"] == "late-night"
+          and not (shows / "templates" / "club-2.json").exists(), f"{r}")
+    club_rev = sc.show_library.folder.revs["templates/club.json"]
+    r = ask({"type": "template_delete", "template": "club", "base_rev": club_rev, "id": 39})
+    check("a set that is no longer the show's can be deleted",
+          r["ok"] and not (shows / "templates" / "club.json").exists(), f"{r}")
+
+    # -- 3d. the palette library -------------------------------------------------
+    print("\n3d. the palette library, and its copies")
+    status, body = jget("/api/palettes")
+    found = {f["name"]: f for f in body.get("found", [])} if status == 200 else {}
+    check("with no library yet, every palette is one that lives inside files",
+          status == 200 and body["palettes"] == [] and "Hot" in found
+          and any(p["file"] == "timelines/synth-128.json" for p in found["Hot"]["places"]),
+          f"{status} {body}")
+    hot = {"kind": "klights.palette", "version": 1, "id": "hot", "name": "Hot",
+           "primary": "#ff0000", "secondary": "#ff8800", "accent": "#ffffff"}
+    r = ask({"type": "palette_save", "doc": {**hot, "primary": "@primary"}, "base_rev": "", "id": 40})
+    check("a library palette is plain colours", r["ok"] is False and "#rrggbb" in r["error"], f"{r}")
+    r = ask({"type": "palette_save", "doc": hot, "base_rev": "", "id": 41})
+    check("a palette is saved into the library as its own file",
+          r and r["ok"] and (shows / "palettes" / "hot.json").is_file(), f"{r}")
+    status, body = jget("/api/palettes")
+    lib = body["palettes"][0] if status == 200 and body["palettes"] else {}
+    copies = {c["file"]: c for c in lib.get("copies", [])}
+    check("it lists its copies -- every timeline and set with a palette of its "
+          "name -- and whether each still has its colours",
+          lib.get("name") == "Hot" and "timelines/synth-128.json" in copies
+          and copies["timelines/synth-128.json"]["same"] is False
+          and "Hot" not in {f["name"] for f in body["found"]}, f"{lib}")
+    r = ask({"type": "palette_save", "doc": {**hot, "id": "hot-2"}, "base_rev": "", "id": 46})
+    check("a second library palette of the same name is refused: copies are found by name",
+          r["ok"] is False and "already has a palette called 'Hot'" in r["error"]
+          and not (shows / "palettes" / "hot-2.json").exists(), f"{r}")
+    r = ask({"type": "palette_sync", "palette": "hot", "files": ["timelines/nope.json"], "id": 42})
+    check("an update names only files the folder has", r["ok"] is False and "nope" in r["error"], f"{r}")
+    r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 43},
+            client=viewer)
+    check("updates are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 44})
+    tl_doc = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    check("updating the copies gives each the library's colours, and nothing else changes",
+          r["ok"] and set(r["data"]["written"]) == set(copies)
+          and tl_doc["palettes"]["Hot"] == {"primary": "#ff0000", "secondary": "#ff8800",
+                                            "accent": "#ffffff"}
+          and "Cool" in tl_doc["palettes"], f"{r}")
+    lib = jget("/api/palettes")[1]["palettes"][0]
+    check("and then every copy is the same", all(c["same"] for c in lib["copies"]), f"{lib}")
+    r = ask({"type": "palette_delete", "palette": "hot", "base_rev": lib["rev"], "id": 45})
+    check("deleting a library palette leaves its copies where they are",
+          r["ok"] and not (shows / "palettes" / "hot.json").exists()
+          and "Hot" in json.loads((shows / "timelines" / "synth-128.json").read_text())["palettes"],
+          f"{r}")
+
     # -- 4. preview ----------------------------------------------------------
     print("\n4. the designer driving the rig")
     sc.apply({"type": "sync", "source": "blt", "deck": "1",
@@ -316,7 +516,7 @@ try:
     check("forced, the designer takes the stage",
           r["ok"] and sc.player.preview is not None
           and sc.snapshot()["preview"]["name"] == "designer", f"{r}")
-    check("and every console is told", any("DESIGNER (designer) is driving"
+    check("and every console is told", any("STUDIO (designer) is driving"
                                             in n for n in sc.notices))
     r = ask({"type": "preview_transport", "time_s": 75.0, "playing": False,
              "id": 13}, client=other)
@@ -393,7 +593,7 @@ marker = b"klights-designer"
 check("the console page loads exactly one entry script", len(entries) == 1, f"{entries}")
 check("and a phone never downloads the designer: its marker is not in the entry",
       entries and marker not in (dist / entries[0]).read_bytes(), f"{entries}")
-check("it is in a chunk of its own, loaded only from #designer",
+check("it is in a chunk of its own, loaded only from #studio",
       any(marker in js.read_bytes() for js in (dist / "assets").glob("*.js")
           if js.name != Path(entries[0]).name) if entries else False)
 seen = b"klights-visuals"
