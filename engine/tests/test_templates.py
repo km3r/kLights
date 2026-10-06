@@ -107,6 +107,27 @@ check("a pick naming a missing routine is listed and left out, not raised",
 check("and a phrase that would have played it gets no cue (the lanes below show)",
       tm.cue_for_phrase(bad, "Chorus", 160) is None)
 
+# A pick's bind: which tag (or one fixture) a role plays on, as a clip's.
+bound_pick = {**CLUB["phrases"]["Verse"], "bind": {"movers": "pinspots"}}
+bound = {**CLUB, "phrases": {**CLUB["phrases"], "Up": dict(CLUB["phrases"]["Verse"]),
+                             "Verse": bound_pick}}
+check("a pick with a bind is a valid template set",
+      sf.validate("template_set", bound).errors == [],
+      f"{sf.validate('template_set', bound).errors}")
+item = tm.pick_timeline(bound, bound_pick).clip_rows[0].items[0]
+check("the pick's bind reaches the clip it plays", item.data.get("bind") == {"movers": "pinspots"},
+      f"{item.data}")
+check("two picks that differ only in their bind are two programs, not one",
+      tm.pick_key(bound_pick) != tm.pick_key(CLUB["phrases"]["Verse"]))
+compiled = tm.compile_set("bound", bound, FOLDER.routines, RIGGING)
+check("and both compile", tm.pick_key(bound_pick) in compiled.programs
+      and tm.pick_key(CLUB["phrases"]["Verse"]) in compiled.programs, f"{compiled.problems}")
+nowhere = {**CLUB, "phrases": {**CLUB["phrases"],
+                               "Verse": {**bound_pick, "bind": {"movers": "no-such-tag"}}}}
+check("a bind to a tag no fixture has is listed as a problem",
+      any("no fixtures" in p for p in
+          tm.compile_set("nowhere", nowhere, FOLDER.routines, RIGGING).problems))
+
 
 # -- 3. cues ----------------------------------------------------------------------
 print("\n3. cues from phrases and bars")

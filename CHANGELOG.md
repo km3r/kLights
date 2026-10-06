@@ -17,18 +17,43 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
-### Fixed — a routine's lanes can be filled where they are
+### Fixed — every lane can be filled where it is, and roles say what they reach
 
-- In the routine editor, **click an empty spot on a clips or hits lane** to
-  choose what goes there: that lane's blocks (its slot's, then the rig's own),
-  or flash, strobe and blackout on a hits lane. It goes on that lane, from the
-  beat clicked to the next item on the lane or the routine's end, and is
-  selected so its arguments open below. Enter on a focused lane does the same
-  at the playhead. An empty lane says so.
-- Before, the only way in was the **Blocks** shelf at the foot of the side
-  panel, which always used the first lane of a slot. A second lane of the same
-  slot, such as a colour lane for another role, could not be filled, and a
-  routine's hits lane could not be filled at all.
+- **Click an empty spot on a lane** to choose what goes there, in both editors.
+  - In the routine editor, a clips lane offers its slot's blocks, then the
+    rig's own (look, snapshot), and a hits lane offers flash, strobe and
+    blackout. Before, the Blocks shelf always used the first lane of a slot, so
+    a second colour lane for another role could not be filled, and a routine's
+    hits lane could not be filled at all.
+  - On a track, a scene, movement, colour or level lane offers routines and
+    this rig's looks (a slot's lane, the looks for that slot), and a scene lane
+    offers presets as snapshots. The palette lane offers this track's palettes
+    and copies of the library's, and a hits lane offers hits. Before, the
+    browser's click only reached the first lane of each kind, and any other
+    lane needed a drag.
+  - On an OSC, MIDI or visuals cue lane, the click adds a cue there.
+  - What is added lands at the beat clicked and is selected, so its settings
+    open below. A long menu has a search box, and Enter takes the first match.
+    Enter on a focused lane opens the menu at the playhead. An empty lane says
+    what a click adds.
+- **Looks and snapshots can be placed on a track**: a Looks tab in the browser,
+  and the lane menus. The inspector already edited them, but nothing in Studio
+  could make one. A look clip can also be held to some of its fixtures
+  (**Only on**).
+- **Plays on**: a routine clip on a track, and a template set's pick (under its
+  settings), show which fixtures each role reaches and can bind a role to
+  another tag or to one fixture by name for that use (`bind`). The engine
+  always honoured `bind`, but Studio could not show or set it. Changing a clip's
+  routine now drops its old bindings, which named the old routine's roles.
+- **Roles say what they reach**: the routine editor shows how many fixtures
+  each role's tag reaches on this rig, or "no fixtures on this rig", with a
+  link to where tags are set. Tags that the engine folds together as filters
+  (despacio's "movers" and "corner movers") are all offered.
+- Template sets: a pick's `bind` is now declared in the format and schema, and
+  a draft from the set carries it onto the clips. A set made from a timeline
+  keeps the clips' bindings. Two picks that differ only in their bindings are
+  now two programs: before, the engine played one for both.
+- Template sets: changing a pick's routine no longer drops the pick's visuals.
 
 ### Added — Studio's + New: one way in to making anything
 

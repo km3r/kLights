@@ -230,7 +230,12 @@ export interface TemplatePick {
   routine: string;
   variation?: string;
   params?: Record<string, unknown>;
+  /** Which tag (or fixture) each of the routine's roles plays on, where not
+   *  its default -- as a clip's `bind`. */
+  bind?: Record<string, string>;
   palette?: string;
+  /** What the built-in visuals show while the pick plays (milestone 3). */
+  visuals?: { scene: string; params?: Record<string, unknown> };
 }
 
 /** A template set: rekordbox phrase -> routine, for tracks with no timeline. */
@@ -342,8 +347,8 @@ export function phraseMatch(a: [number, number, string][], b: [number, number, s
 
 /**
  * A template set from a track's timeline: for each phrase family, what its
- * scene lane plays most over that family's phrases (routine, variation and
- * parameters together), and the palette clip most over them; for anything
+ * scene lane plays most over that family's phrases (routine, variation,
+ * parameters and role bindings together), and the palette clip most over them; for anything
  * else, what it plays most overall. The timeline's palettes come with it, and
  * the fade its routine clips most often use becomes the set's fade. Null if
  * the scene lane plays no routine on any phrase.
@@ -376,6 +381,7 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
     const pick: TemplatePick = { routine: best.routine! };
     if (best.variation) pick.variation = best.variation;
     if (best.params && Object.keys(best.params).length) pick.params = { ...best.params };
+    if (best.bind && Object.keys(best.bind).length) pick.bind = { ...best.bind };
     if (pal && tl.palettes?.[pal]) pick.palette = pal;
     const key = JSON.stringify(pick);
     add(phraseFamily(label), key, cover);
@@ -449,6 +455,7 @@ function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: numbe
   const item: Item = { id: uniqueId(d, stem), kind: "routine", routine: pick.routine, at, len };
   if (pick.variation) item.variation = pick.variation;
   if (pick.params) item.params = { ...pick.params };
+  if (pick.bind && Object.keys(pick.bind).length) item.bind = { ...pick.bind };
   if (fade > 0) item.fade = Math.min(fade, len);
   return item;
 }

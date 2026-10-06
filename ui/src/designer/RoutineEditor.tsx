@@ -7,10 +7,11 @@ import {
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
 import {
-  AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
-  parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
+  AutomationMenu, EditTags, Editor, FADES, ParamLanes, PickMenu, ROLES, Reach, backHash,
+  externalRow, parsePointId, parseWaveId, rigTags, routineLaneSpecs, snapDown, uniqueId,
+  useEditorKeys, useHistory, useMenuDismiss,
 } from "./edit";
-import type { History, LaneSpecs } from "./edit";
+import type { History, LaneSpecs, PickEntry } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
@@ -116,18 +117,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   useEditorKeys({ history, selected, setSelected,
                   playPause: () => loop.setPlaying(!loop.playing),
                   clip: { kind: "routine", beat: () => beatRef.current } });
-  // The menu closes on a click anywhere else, or Escape.
-  useEffect(() => {
-    if (!adding) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".d-ctx")) return;
-      setAdding(null);
-    };
-    addEventListener("mousedown", close);
-    addEventListener("keydown", close);
-    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
-  }, [adding]);
+  useMenuDismiss(!!adding, () => setAdding(null));
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;
@@ -257,14 +247,6 @@ const HITS = [
   { hit: "blackout", text: "a beat of dark" },
 ] as const;
 
-/** The grid line at or before a beat: a click adds in the cell it lands in,
- *  not at the next line when it lands past the middle of one. */
-function snapDown(history: RHistory, beat: number): number {
-  const snapped = history.snapBeat(beat);
-  return snapped <= beat ? snapped
-    : history.snapBeat(beat - (history.snap === "beat" ? 1 : BEATS_PER_BAR));
-}
-
 /** A hit's starting length and envelope, as the track's browser places them. */
 function newHit(hit: (typeof HITS)[number]["hit"]): Pick<Item, "hit" | "len" | "envelope"> {
   return { hit, len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
@@ -296,7 +278,8 @@ function AddMenu({ history, doc, engine, adding, playhead, onAdded }: PanelProps
     onAdded(id);
   };
   const blocks = row.type === "hits" ? [] : blocksFor(row.target ?? "");
-  const entries: { key: string; label: React.ReactNode; add: () => void }[] = row.type === "hits"
+  const slotName = LANE_NAMES[row.target ?? ""] ?? row.target ?? "";
+  const entries: PickEntry[] = row.type === "hits"
     ? HITS.map(({ hit, text }) => ({
         key: hit,
         label: <>{hit}<span className="k">{text}</span></>,
@@ -309,6 +292,7 @@ function AddMenu({ history, doc, engine, adding, playhead, onAdded }: PanelProps
     : [...blocks.filter((b) => !RIG_BOUND.includes(b)), ...blocks.filter((b) => RIG_BOUND.includes(b))]
         .map((block) => ({
           key: block,
+          group: RIG_BOUND.includes(block) ? "This rig only" : slotName,
           label: <>{block}{RIG_BOUND.includes(block) && <span className="d-badge">rig</span>}</>,
           add: () => {
             const id = uniqueId(doc, block);
@@ -316,17 +300,10 @@ function AddMenu({ history, doc, engine, adding, playhead, onAdded }: PanelProps
                                             engine.state?.event));
           },
         }));
-  const height = entries.length * 28 + 40;
   return (
-    <div className="d-ctx" role="menu" aria-label={`add to ${row.id}`}
-         style={{ left: Math.min(adding.x, innerWidth - 240),
-                  top: Math.max(8, Math.min(adding.y, innerHeight - height)) }}>
-      <span className="d-ctx-head small muted">
-        Add at bar {barBeat(start)}{row.role ? `, for ${row.role}` : ""}</span>
-      {entries.map((e, i) => (
-        <button key={e.key} role="menuitem" autoFocus={i === 0} onClick={e.add}>{e.label}</button>))}
-      {!entries.length && <span className="small muted">Nothing goes on this lane.</span>}
-    </div>
+    <PickMenu label={`add to ${row.id}`} x={adding.x} y={adding.y} entries={entries}
+              empty="Nothing goes on this lane."
+              head={<>Add at bar {barBeat(start)}{row.role ? `, for ${row.role}` : ""}</>} />
   );
 }
 
@@ -458,18 +435,20 @@ function NameAdder({ label, taken, onAdd }: {
 }
 
 function Roles({ history, doc, engine }: PanelProps) {
-  const tags = engine.state?.groups ?? [];
+  const tags = rigTags(engine.state);
+  const fixtures = (engine.state?.fixtures ?? []).map((f) => f.name).filter((n) => !tags.includes(n));
   const inUse = (name: string) => doc.rows.some((r) => r.role === name
     || (r.items ?? []).some((i) => i.role === name));
   const names = Object.keys(doc.roles);
   return (
     <section>
       <h3>Roles</h3>
-      <p className="small muted">Rows play on roles. Each binds to a rig tag, unless the clip
-        that uses the routine binds it to another.</p>
+      <p className="small muted">Rows play on roles. Each plays on the fixtures with its tag
+        (or one fixture, by name), unless the clip that uses the routine binds it to another.</p>
       {Object.entries(doc.roles).map(([name, spec]) => (
         <div key={name} className="d-palette">
-          <span className="mono small grow">{name}</span>
+          <span className="grow d-role-name"><span className="mono small">{name}</span>
+            <Reach state={engine.state} tag={spec.default} optional={spec.optional} /></span>
           <input list="d-tags" value={spec.default} aria-label={`${name} tag`} style={{ width: 100 }}
                  onChange={(e) => {
                    const v = e.target.value;
@@ -487,7 +466,12 @@ function Roles({ history, doc, engine }: PanelProps) {
                   onClick={() => history.apply((d) => { delete d.roles[name]; })}>×</button>
         </div>
       ))}
-      <datalist id="d-tags">{tags.map((t) => <option key={t} value={t} />)}</datalist>
+      <datalist id="d-tags">
+        {tags.map((t) => <option key={t} value={t} />)}
+        {fixtures.map((n) => <option key={n} value={n} label="one fixture" />)}
+      </datalist>
+      <p className="small muted">Which fixtures carry a tag is set on the console's Setup
+        tab. <EditTags /></p>
       <NameAdder label="+ role" taken={names}
                  onAdd={(name) => history.apply((d) => { d.roles[name] = { default: name }; })} />
     </section>

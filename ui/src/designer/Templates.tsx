@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, FromLibrary, PaletteOrigin, ROLES, useHistory } from "./edit";
+import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, useHistory } from "./edit";
 import {
   EXACT_LABELS, ID_RE, NEW_COLOURS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
@@ -136,21 +136,23 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
   });
   const setStep = (i: number, next: TemplatePick) => apply((d) => { d.bars!.cycle[i] = next; });
 
-  /** The fields of one pick: routine, variation, parameters, palette. */
+  /** The fields of one pick: routine, variation, its settings (parameters
+   *  and which fixtures its roles play on), palette. */
   const pickFields = (key: string, pick: TemplatePick | undefined,
                       onChange: (p: TemplatePick | null) => void, none: string | null) => {
     const routine = pick ? byId.get(pick.routine) : undefined;
-    const params = Object.entries(routine?.params ?? {});
-    const set = Object.keys(pick?.params ?? {}).length;
+    const set = Object.keys(pick?.params ?? {}).length + Object.keys(pick?.bind ?? {}).length;
     return (
       <>
         <select value={pick?.routine ?? ""} aria-label={`${key} routine`}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) { onChange(null); return; }
-                  // A routine's variation and parameters are its own: they do
-                  // not carry over to another. The palette does.
-                  onChange({ routine: v, ...(pick?.palette ? { palette: pick.palette } : {}) });
+                  // A routine's variation, parameters and role bindings are
+                  // its own: they do not carry over to another. The palette
+                  // and the visuals do.
+                  onChange({ routine: v, ...(pick?.palette ? { palette: pick.palette } : {}),
+                             ...(pick?.visuals ? { visuals: pick.visuals } : {}) });
                 }}>
           {none != null && <option value="">{none}</option>}
           {pick && !byId.has(pick.routine) && <option value={pick.routine}>{pick.routine} (missing)</option>}
@@ -166,10 +168,12 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             {routine.variations.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         ) : <span className="muted small">{pick ? "no variations" : ""}</span>}
-        {pick && params.length > 0 ? (
+        {pick && routine ? (
           <button className={`small${open === key ? " on" : ""}`} aria-expanded={open === key}
+                  aria-label={`${key} settings`}
+                  title="Its parameters, and which fixtures its roles play on"
                   onClick={() => setOpen(open === key ? null : key)}>
-            {set ? `${set} set` : "parameters"}</button>
+            {set ? `${set} set` : "settings"}</button>
         ) : <span />}
         {pick ? (
           <select value={pick.palette ?? ""} aria-label={`${key} palette`}
@@ -199,6 +203,11 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
                           onChange(Object.keys(params).length ? { ...rest, params } : rest);
                         }} />
         ))}
+        <RoleBinds label={key} roles={routine.roles} bind={pick.bind} state={engine.state}
+                   onChange={(bind) => {
+                     const { bind: _old, ...rest } = pick;
+                     onChange(bind ? { ...rest, bind } : rest);
+                   }} />
       </div>
     );
   };

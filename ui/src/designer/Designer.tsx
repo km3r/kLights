@@ -12,10 +12,11 @@ import type {
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
-  Editor, ParamLanes, clipOps, copyRange, cutRange, parsePointId, parseWaveId, rememberBack,
-  setClipBoard, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys, useHistory,
+  Editor, ParamLanes, PickMenu, clipOps, copyRange, cutRange, parsePointId, parseWaveId,
+  rememberBack, setClipBoard, snapDown, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
+  useHistory, useMenuDismiss,
 } from "./edit";
-import type { Placeable, RowsDoc } from "./edit";
+import type { PickEntry, Placeable, RowsDoc } from "./edit";
 import { Browser } from "./Browser";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
@@ -87,6 +88,74 @@ function copyNote(from: TrackDoc, to: TrackDoc): string {
   }
   return `Copied ${name}'s timeline. The phrases differ, so the clips sit on the same bars, `
     + `not the same phrases: check them.${tail}`;
+}
+
+// -- a lane's menu ---------------------------------------------------------------
+
+const HITS = [
+  { hit: "flash", text: "a burst, decaying" },
+  { hit: "strobe", text: "for a bar" },
+  { hit: "blackout", text: "a beat of dark" },
+] as const;
+
+/**
+ * What a track's lane can hold, offered where its empty space was clicked --
+ * the browser's click only ever reaches the first lane of a kind, and a drag
+ * needs a mouse. A scene, movement, colour or level lane takes routines and
+ * this rig's looks (on a slot's lane, the looks for that slot), a scene lane
+ * its presets as snapshots too; a palette lane takes palettes, this track's
+ * or a copy of the library's; a hits lane, hits.
+ */
+function TrackAddMenu({ row, at, x, y, routines, palettes, library, state, onPick }: {
+  row: Row; at: number; x: number; y: number;
+  routines: RoutineSummary[]; palettes: string[]; library: PaletteSummary[];
+  state: EngineState | null;
+  onPick: (what: Placeable, at: number) => void;
+}) {
+  const pick = (what: Placeable) => () => onPick(what, at);
+  let entries: PickEntry[];
+  let empty = "Nothing goes on this lane.";
+  if (row.type === "hits") {
+    entries = HITS.map(({ hit, text }) => ({
+      key: hit, label: <>{hit}<span className="k">{text}</span></>, add: pick({ kind: "hit", hit }) }));
+  } else if (row.target === "palette") {
+    empty = "No palettes yet: add one under This track's palettes, or in the library.";
+    entries = [
+      ...palettes.map((name) => ({ key: `p:${name}`, text: name, group: "This track's", label: name,
+                                   add: pick({ kind: "palette", name }) })),
+      ...library.filter((p) => !palettes.includes(p.name)).map((p) => ({
+        key: `l:${p.id}`, text: p.name, group: "From the library",
+        label: <>{p.name}<span className="d-swatch-row k" aria-hidden="true">
+          <i style={{ background: p.primary }} /><i style={{ background: p.secondary }} />
+          <i style={{ background: p.accent }} /></span></>,
+        add: pick({ kind: "palette", name: p.name,
+                    colours: { primary: p.primary, secondary: p.secondary, accent: p.accent } }),
+      })),
+    ];
+  } else {
+    const scene = row.target === "scene";
+    empty = "No routines yet: make one with + New in Studio.";
+    const looks = (state?.looks ?? []).filter((l) => !l.retired && !l.step_of
+      && (scene || l.slot === row.target));
+    entries = [
+      ...[...routines].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).map((r) => ({
+        key: `r:${r.id}`, text: `${r.name ?? ""} ${r.id} ${r.folder ?? ""}`, group: "Routines",
+        label: <>{r.name || r.id}<span className="k">{r.bars} bars</span></>,
+        add: pick({ kind: "routine", id: r.id }),
+      })),
+      ...looks.map((l) => ({
+        key: `l:${l.name}`, text: `${l.name} ${l.slot}`, group: "Looks · this rig only",
+        label: <>{l.name}{scene && <span className="k">{l.slot}</span>}</>,
+        add: pick({ kind: "look", name: l.name }),
+      })),
+      ...(scene ? (state?.presets ?? []).map((p) => ({
+        key: `s:${p.name}`, text: p.name, group: "Snapshots · this rig only", label: p.name,
+        add: pick({ kind: "snapshot", preset: p.name }),
+      })) : []),
+    ];
+  }
+  return <PickMenu label={`add to ${row.id}`} head={`Add at bar ${barBeat(at)}`} x={x} y={y}
+                   entries={entries} empty={empty} />;
 }
 
 // -- the transport ------------------------------------------------------------
@@ -170,6 +239,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [section, setSection] = useState<{ start: number; end: number; label: string } | null>(null);
   // A clip's menu, open at the pointer.
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // What a lane can hold, offered where its empty space was clicked: the
+  // beat, or null for the playhead (Enter on the lane).
+  const [adding, setAdding] = useState<{ row: string; at: number | null; x: number; y: number }
+    | null>(null);
   const board = useClipBoard();
 
   useEffect(() => {
@@ -318,17 +391,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                   playPause: () => transport.play(!transport.playing),
                   clip: { kind: "timeline", beat: () => beatRef.current } });
   // A menu closes on a click anywhere else, or Escape.
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".d-ctx")) return;
-      setMenu(null);
-    };
-    addEventListener("mousedown", close);
-    addEventListener("keydown", close);
-    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
-  }, [menu]);
+  useMenuDismiss(!!menu, () => setMenu(null));
+  useMenuDismiss(!!adding, () => setAdding(null));
 
   // While playing, keep the playhead in view: page the lanes along when it
   // reaches the right edge, so it does not run off the screen.
@@ -383,11 +447,17 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const laneFor = (d: RowsDoc, target: string, make: () => Row): Row =>
     d.rows.find((r) => r.type === "clips" && r.target === target)
       ?? (() => { const r = make(); if (target === "scene") d.rows.unshift(r); else d.rows.push(r); return r; })();
-  /** Place what the browser offers: at a beat, on a lane if it was dropped
-   *  on one, else on the lane it belongs on. */
+  /** Place what the browser or a lane's menu offers: at a beat, on a lane if
+   *  it was dropped there or the lane was clicked, else on the lane it
+   *  belongs on. */
   const place = (what: Placeable, at: number, rowId?: string) => {
     const start = Math.max(0, history.snapBeat(at));
     const onto = rowId ? doc.rows.find((r) => r.id === rowId) : undefined;
+    // Until the phrase ends, if the playhead is in one; else four bars.
+    const phrase = (track.phrases?.items ?? []).find(([s, e]) => s <= start && start < e);
+    const toPhraseEnd = phrase ? phrase[1] - start : 4 * BEATS_PER_BAR;
+    const sceneLane = (d: RowsDoc) => laneFor(d, "scene", () => (
+      { id: uniqueId(d, "scene"), type: "clips", target: "scene", gap: "fill", items: [] }));
     let made: string | null = null;
     if (what.kind === "routine") {
       const r = routines.find((x) => x.id === what.id);
@@ -397,12 +467,30 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         return;
       }
       made = edit((d) => {
-        const lane = onto ? d.rows.find((x) => x.id === onto.id)!
-          : laneFor(d, "scene", () => ({ id: uniqueId(d, "scene"), type: "clips", target: "scene",
-                                         gap: "fill", items: [] }));
+        const lane = onto ? d.rows.find((x) => x.id === onto.id)! : sceneLane(d);
         const id = uniqueId(d, r.id);
         (lane.items ??= []).push({ id, kind: "routine", routine: r.id, at: start,
                                    len: r.bars * BEATS_PER_BAR });
+        return id;
+      });
+    } else if (what.kind === "look" || what.kind === "snapshot") {
+      // This rig's own. A look plays on any lane but the palette's, for the
+      // slots that lane drives; a snapshot sets all three, so on a scene lane.
+      if (what.kind === "snapshot" && onto && !(onto.type === "clips" && onto.target === "scene")) {
+        setNotice("A snapshot sets all three slots, so it goes on a scene lane.");
+        return;
+      }
+      if (onto && !(onto.type === "clips" && onto.target !== "palette")) {
+        setNotice("A look goes on a scene, movement, colour or level lane.");
+        return;
+      }
+      made = edit((d) => {
+        const lane = onto ? d.rows.find((x) => x.id === onto.id)! : sceneLane(d);
+        const name = what.kind === "look" ? what.name : what.preset;
+        const id = uniqueId(d, name);
+        (lane.items ??= []).push(what.kind === "look"
+          ? { id, kind: "look", look: what.name, at: start, len: toPhraseEnd }
+          : { id, kind: "snapshot", preset: what.preset, at: start, len: toPhraseEnd });
         return id;
       });
     } else if (what.kind === "palette") {
@@ -410,9 +498,6 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         setNotice("A palette goes on the palette lane.");
         return;
       }
-      // Until the phrase ends, if the playhead is in one; else four bars.
-      const phrase = (track.phrases?.items ?? []).find(([s, e]) => s <= start && start < e);
-      const len = phrase ? phrase[1] - start : 4 * BEATS_PER_BAR;
       made = edit((d) => {
         const tl = d as unknown as TimelineDoc;
         if (!(tl.palettes ?? {})[what.name]) {
@@ -424,7 +509,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
           : laneFor(d, "palette", () => ({ id: uniqueId(d, "palette"), type: "clips",
                                            target: "palette", gap: "exclusive", items: [] }));
         const id = uniqueId(d, `pal-${start}`);
-        (lane.items ??= []).push({ id, kind: "palette", palette: what.name, at: start, len });
+        (lane.items ??= []).push({ id, kind: "palette", palette: what.name, at: start,
+                                   len: toPhraseEnd });
         return id;
       });
     } else {
@@ -478,6 +564,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
     });
   };
   const menuItem = menu ? findItem(doc, menu.id) : null;
+  const addRow = adding ? doc.rows.find((r) => r.id === adding.row) : undefined;
 
   return (
     <ParamLanes.Provider value={paramLanes}>
@@ -591,6 +678,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         guide.open ? "min(400px, 34vw)" : ""].filter(Boolean).join(" ") }}>
         {panels.browse && (
           <Browser routines={routines} palettes={Object.keys(doc.palettes ?? {})} library={library}
+                   looks={engine.state?.looks ?? []}
+                   presets={(engine.state?.presets ?? []).map((p) => p.name)}
                    onPlace={(what) => place(what, beat)} />
         )}
         <div className="d-lanes" role="region" aria-label="lanes" ref={lanesRef}>
@@ -605,7 +694,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                     zoom={zoom} selected={selected} onSelect={setSelected}
                     history={history} beat={beat}
                     onMenu={(id, cx, cy) => setMenu({ id, x: cx, y: cy })}
-                    onDropItem={(rowId, what, at) => place(what, at, rowId)} />
+                    onDropItem={(rowId, what, at) => place(what, at, rowId)}
+                    onAdd={(rowId, at, cx, cy) => setAdding({ row: rowId, at, x: cx, y: cy })} />
             ))}
             <Editor.AddLane history={history} />
             {section && (
@@ -699,6 +789,14 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                     setMenu(null);
                   }}>Delete<span className="k">Del</span></button>
         </div>
+      )}
+      {adding && addRow && (
+        <TrackAddMenu row={addRow} x={adding.x} y={adding.y}
+                      at={adding.at == null ? Math.max(0, history.snapBeat(beat))
+                        : snapDown(history, adding.at)}
+                      routines={routines} palettes={Object.keys(doc.palettes ?? {})}
+                      library={library} state={engine.state}
+                      onPick={(what, at) => { place(what, at, addRow.id); setAdding(null); }} />
       )}
     </div>
     </ParamLanes.Provider>

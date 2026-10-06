@@ -3,18 +3,22 @@ import { PLACE_MIME } from "./edit";
 import type { Placeable } from "./edit";
 import { normalizeName } from "./model";
 import type { PaletteSummary, RoutineSummary } from "./model";
+import type { LookInfo } from "../types";
 
 /**
  * The timeline's browser: what can go on a lane, in one column on the left --
  * routines (filed by their folders), palettes (this track's, then the
- * library's), and hits. Click one to place it at the playhead on the lane it
- * belongs on, or drag it onto the lane and the beat you want.
+ * library's), hits, and this rig's own looks and presets (as snapshots). Click
+ * one to place it at the playhead on the lane it belongs on, or drag it onto
+ * the lane and the beat you want. A click on a lane's empty space offers the
+ * same things for that lane.
  *
  * It replaces the routine buttons that sat in the right-hand panel, which grew
  * into a wall once a show had more than a dozen routines.
  */
 
-type Tab = "routines" | "palettes" | "hits";
+type Tab = "routines" | "palettes" | "hits" | "looks";
+const TABS: Tab[] = ["routines", "palettes", "hits", "looks"];
 const SLOT_ORDER = ["movement", "color", "level"] as const;
 const HITS = [
   { hit: "flash", label: "Flash", text: "a burst, decaying" },
@@ -29,11 +33,14 @@ function drag(what: Placeable) {
   };
 }
 
-export function Browser({ routines, palettes, library, onPlace }: {
+export function Browser({ routines, palettes, library, looks, presets, onPlace }: {
   routines: RoutineSummary[];
   /** This track's own palette names. */
   palettes: string[];
   library: PaletteSummary[];
+  /** This rig's looks and presets: a timeline that uses them is this rig's own. */
+  looks: LookInfo[];
+  presets: string[];
   onPlace: (what: Placeable) => void;
 }) {
   const [tab, setTab] = useState<Tab>("routines");
@@ -45,11 +52,12 @@ export function Browser({ routines, palettes, library, onPlace }: {
   const folders = [...new Set(shown.map((r) => r.folder ?? ""))]
     .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
   const fromLibrary = library.filter((p) => !palettes.includes(p.name) && matches(p.name));
+  const shownLooks = looks.filter((l) => !l.retired && !l.step_of && matches(`${l.name} ${l.slot}`));
 
   return (
     <aside className="d-browser" aria-label="browser">
       <div className="d-tabs" role="tablist" aria-label="browse">
-        {(["routines", "palettes", "hits"] as Tab[]).map((t) => (
+        {TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""}
                   onClick={() => setTab(t)}>{t[0]!.toUpperCase() + t.slice(1)}</button>
         ))}
@@ -127,6 +135,43 @@ export function Browser({ routines, palettes, library, onPlace }: {
               <span className="muted small" aria-hidden="true">{h.text}</span>
             </button>
           ))}
+        </div>
+      )}
+      {tab === "looks" && (
+        <div className="d-browse-list">
+          <span className="muted small">This rig's own: a track that uses one plays on this
+            rig only.</span>
+          {SLOT_ORDER.map((slot) => {
+            const these = shownLooks.filter((l) => l.slot === slot);
+            if (!these.length) return null;
+            return (
+              <div key={slot} role="group" aria-label={`${slot} looks`}>
+                <span className="d-browse-group">{slot === "color" ? "colour" : slot}</span>
+                {these.map((l) => (
+                  <button key={l.name} className="d-browse-item" draggable
+                          onDragStart={drag({ kind: "look", name: l.name })}
+                          onClick={() => onPlace({ kind: "look", name: l.name })}
+                          title="Click to place at the playhead on the scene lane, or drag onto a lane">
+                    <span className="d-browse-name">{l.name}</span></button>
+                ))}
+              </div>
+            );
+          })}
+          {presets.filter(matches).length > 0 && (
+            <div role="group" aria-label="snapshots">
+              <span className="d-browse-group">Snapshots</span>
+              {presets.filter(matches).map((name) => (
+                <button key={name} className="d-browse-item" draggable
+                        onDragStart={drag({ kind: "snapshot", preset: name })}
+                        onClick={() => onPlace({ kind: "snapshot", preset: name })}
+                        title="A preset, all three slots: click to place on the scene lane, or drag onto one">
+                  <span className="d-browse-name">{name}</span></button>
+              ))}
+            </div>
+          )}
+          {!shownLooks.length && !presets.filter(matches).length && (
+            <span className="muted small">{looks.length || presets.length ? "Nothing matches."
+              : "No looks or presets on this rig."}</span>)}
         </div>
       )}
       <p className="muted small">Click to place at the playhead, or drag onto a lane.</p>
