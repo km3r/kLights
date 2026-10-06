@@ -4,8 +4,9 @@ Notable changes, newest first. Versions follow [semver](https://semver.org);
 until 1.0 the config file formats may change between minor versions, and any
 break will say so here with a migration note.
 
-The `F<n>` labels are the project's own feature milestones; the summary below is
-the only record of them until a roadmap doc lands.
+The `F<n>` labels are the project's own feature milestones;
+[`docs/ROADMAP.md`](docs/ROADMAP.md) lists them in order, with why each one
+mattered.
 
 ---
 
@@ -129,6 +130,48 @@ the commit messages keep those labels.
   as its fade in.
 - Fixed: a save of show.json answered with nothing. The reply named the file
   by a subfolder that show.json does not have.
+
+### Added — automation for every parameter, and waves on any lane
+
+From PR #14. Both additions to the show-folder format are additive: old
+files load unchanged.
+
+- **A lane for each of a routine's parameters.** `param.<name>` lanes
+  (`$radius`, `$color`, ...) can be added in the routine editor and on a
+  track's timeline, beside master, size, spread, centre and rate. A
+  timeline's **+ automation** lists one lane per name, with the routines it
+  reaches. In a routine, the lane is read in the routine's own beats, so a
+  loop lands on the same value every pass.
+  - Precedence, highest first: the timeline's lane, the routine's own lane,
+    the use's `params`, the variation, the default. A variation or a use that
+    sets a parameter a lane already drives gets a warning, since the lane
+    makes it dead.
+  - Points are held to the parameter's own declaration: range, rate 0-8, or
+    colour. That is an error in a routine. On a timeline it is a warning,
+    because the declaration lives in another file, and a timeline lane is
+    checked against every placed routine that declares the name.
+  - A colour parameter's lane is drawn as a band of colour, not a curve.
+  - A look parameter cannot be automated: the look is read once, when the
+    routine is bound to the rig, so a lane would change nothing.
+- **Block-argument lanes**: `arg.<item>.<argument>` (`arg.orbit.radius`)
+  automates one block item's argument in a routine without declaring a
+  parameter. Only number, integer and colour arguments can be automated, and
+  the block's own declaration sets the range. An argument a `$param` already
+  feeds is refused, since the param's lane is how that value moves. A timeline
+  has no blocks, so there `arg.` is an error that points at `param.<name>`.
+- **A wave on any automation row**: `"wave": {"shape", "bars", "depth",
+  "phase"?, "seed"?, "toward"?}`, with shapes sine, triangle, ramp, saw,
+  square and hold. It is added on top of the lane's points (value = points +
+  depth × shape), so a lane gains a wave without its resting values moving.
+  The swing is checked exactly against the lane's range and never clamped, so
+  a rate lane's integral stays closed-form and a loop or hot cue still lands
+  on the authored frame. On a colour lane, `toward` is the colour it swings
+  to. In Studio, **∿** on a lane's head adds a wave sized to stay in range.
+  MCP's `edit_timeline` gains `set_wave`.
+- **`engine/waves.py`** holds the shapes. It is stdlib-only and shared by
+  routine automation and the console's modulators, so a console sine and a
+  routine sine are one sine. The UI's copy is held to it by a generated
+  fixture.
 
 ### Added — Studio's routine library: folders, where used, rename, delete
 

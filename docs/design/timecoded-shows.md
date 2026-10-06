@@ -1,13 +1,16 @@
 # Timecoded shows (F19)
 
 Light routines driven by **which track is playing and where in it**, authored in
-a desktop designer and played back live from the DJ's own decks. This is the
-design record: what was decided, with whom, and why. The staged build is at the
-end; the commit log carries the detail of each stage.
+a desktop designer (now **Studio**) and played back live from the DJ's own
+decks. This is the design record: what was decided, with whom, and why. The
+staged build is at the end; the commit log carries the detail of each stage.
 
-**Status:** Milestone 1 (F19a–F19l) is built and tested end to end with the
-fake bridge; it has not yet run against real decks (see "Things to verify on
-hardware" below). Milestones 2 and 3 are designed, not built.
+**Status:** All three milestones are built and tested end to end with the fake
+bridge: milestone 1 (F19a–F19l), milestone 2 (F22a–e) and milestone 3
+(F23a–d). Since then, the designer has become Studio, and automation reaches
+every routine parameter and block argument, with waves. None of it has run
+against real decks or a real VJ app yet (see "Things to verify on hardware"
+below).
 
 ---
 
@@ -78,8 +81,17 @@ arbitrary, the reason is next to it.
 | Projector pulses | A wash's `pulse` is a full-screen flash, so it keeps to the strobe's three a second, pulsing every two or four beats at fast tempos. Only one strobe item flashes at a time (settled in the PR #13 review). |
 | Timecode details | Silent while the deck is paused (a stopped clock), sent only when its frame changes; 30 fps non-drop by default, to the broadcast address on Art-Net's port. |
 | OSC addresses | An IPv4 address only, never a host name -- resolving one could stall the output thread. klights.local.json's `outputs` overrides show.json's, per machine. |
+| Parameter lanes | A routine's open parameters get automation lanes, in the routine and on a timeline (PR #14, with the user). Precedence, highest first: the timeline's lane, the routine's own lane, the use's `params`, the variation, the default. Points are held to the parameter's declaration -- an **error** in a routine, a **warning** on a timeline, since the declaration lives in another file. A look parameter cannot be automated: the look is read once, when the routine is bound to the rig. |
+| Argument lanes | `arg.<item>.<argument>` moves one block item's argument without declaring a parameter (PR #14, with the user). Routines only, since a timeline has no blocks. Only number, integer and colour arguments, ranged by `blocks.PARAMS`. An argument already fed by a `$param` is refused, so two lanes never fight over one value. |
+| Waves | Any automation row may carry a `wave`, **added on top of its points** and one-sided (PR #14, with the user). So a lane gains a wave without its resting values moving, and the whole swing is bounded exactly from the points. It is **validated, never clamped**: a clamp would break a rate lane's closed-form phase. Its time base is the lane's own beats, so a routine's waves restart every loop. |
+| Studio | The designer is **Studio**, because "Design" was already the console's mode. Every link opens it in a tab of its own, carrying the token. The console shows its button in Design mode only, so a phone never downloads it. |
+| Palette library | A library palette is a **source, not a link**. Timelines and template sets keep their own copies by name, so each file still describes its whole show and nothing recolours a track without anyone seeing it. Studio shows every copy and updates them on request (`palette_sync`). Names are unique, because copies are found by name. |
+| Renames | A folder of files has no transaction, so a rename writes the **new file first, every reference next, the old file last**. Stopped anywhere, nothing names a routine or set that is gone. A routine's delete refuses while anything still uses it, judged from the folder on disk, not the last load. |
 
 ## The designer: layout B
+
+What follows is the layout as chosen for milestone 1. "Studio, since" below
+says what has changed on top of it.
 
 Three clickable mock-ups were built on one synthetic track and compared
 ([the canvas](https://claude.ai/artifact/Gy26gURBaH5bjZWSKbkreA)):
@@ -114,6 +126,22 @@ What B is:
 
 The preview has to come from the engine. The browser does not have the
 calibration and cannot aim a beam.
+
+### Studio, since
+
+- **A library first.** Studio opens on every track in the show: what lights it
+  on the night, its phrases, and what needs attention. rekordbox's playlists
+  are in the sidebar, and adding tracks preps them and can draft each a
+  timeline in the same step. Routines, template sets, palettes and show
+  settings each have a page, and **+ New** makes any of them.
+- **The timeline editor** gained a browser on the left (routines, palettes,
+  hits), which replaced the right-hand panel's routine buttons. A phrase band
+  selects a **section** to fill, copy, paste or clear. Clips copy, cut, paste,
+  duplicate and split.
+- **+ automation** now offers the routines' parameters as well as the macros,
+  and in the routine editor, block arguments too. Each automation lane's head
+  has **∿** to add a wave.
+- The placeholder VJ lane became real: OSC, MIDI and Visuals lanes (F23).
 
 ## Architecture, in one screen
 

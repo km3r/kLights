@@ -89,6 +89,9 @@ sample-and-hold, or auto mode's energy axis used as a control voltage.
   agree after any of them drops a frame.
 - Reaches the block through `Env.automate` — the mechanism a show folder's
   automation rows already use — so nothing is rebuilt per frame.
+- The shapes live in [`waves.py`](../engine/waves.py), stdlib-only, which a
+  show folder's automation rows also use for their `wave`. A console sine and a
+  routine sine are one sine.
 
 None of it can outrank the taper: a modulator writes an argument, and
 `apply_safety` still runs after the whole stack. `test_safety.py` sections 8b
@@ -113,7 +116,9 @@ Shape card, the way a taper dim is explained rather than left to be noticed.
 The safety taper still runs after all of it.
 
 A show folder's automation is authored against the portable ±180/±90, because
-a routine does not know which rig will play it.
+a routine does not know which rig will play it. An `arg.` lane on an absolute
+angle (`arg.<item>.bearing`) is the exception: past the fallback range it is
+only a warning, since a wider rig can legitimately go there.
 
 ## Retiring ported looks
 
@@ -249,16 +254,17 @@ run and embedded in the printed URL.
 |---|---|
 | **view** | watch only; every command is refused with a reason |
 | **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep` |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep`, and Studio's writes and preview (`*_draft`, `*_save`, `*_rename`, `*_delete`, `palette_sync`, `preview_*`) |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
 
 ## Configuration
 
-Five JSON formats, each validated on load against a declared shape in
-[`config.py`](../engine/config.py), each naming a generated schema in `$schema`
-so an editor gives completion and inline errors while you hand-edit at a venue.
+Every event and venue file is JSON, validated on load against a declared shape
+in [`config.py`](../engine/config.py) (the cue list's is in
+[`cues.py`](../engine/cues.py)), and names a generated schema in `$schema` so an
+editor gives completion and inline errors while you hand-edit at a venue.
 
 | file | what it is |
 |---|---|
@@ -291,8 +297,11 @@ gitignored `klights.local.json`; with none of those it runs exactly as before.
 | `tracks/<id>.json` | one prepped track: identity, beat grid, rekordbox's phrases |
 | `timelines/<track>.json` | the hand-built show for one track, in beats on its grid |
 | `routines/<id>.json`, `templates/<id>.json` | reusable routines, and phrase → routine template sets |
+| `palettes/<id>.json` | the show's palette library: one named palette, three colours |
+| `waveforms/<track>.json` | rekordbox's waveform for a track, read on demand, never pushed |
+| `media/` | videos for the `#visuals` page |
 
-[`showfiles.py`](../engine/showfiles.py) is the one authoring API: the designer,
+[`showfiles.py`](../engine/showfiles.py) is the one authoring API: Studio,
 MCP and the prep tool all validate and write through it. Writes carry the
 revision the editor read and are refused if the file changed since — a sync
 from another machine is the normal way that happens. Sync-service conflict
@@ -328,9 +337,15 @@ lane lets the lanes below, then the template, show through its gaps; a lane that
 what was under it and, ending into a gap, fades out over the same. Automation
 curves (`linear`, `step`, `ease` -- the curve named on a point shapes the
 segment arriving at it) have an exact integral, so a rate curve gives a phase as
-a function of the beat. Hits are windows: a jump into one shows it, a jump over
-one never fires it. Everything is a pure function of the beat. `python -m
-engine.showfiles explain TRACK BEAT` prints it.
+a function of the beat. Any automation row may also carry a `wave`
+([`waves.py`](../engine/waves.py)): value = points + depth × shape(beat ÷
+(bars × 4) + phase). It is additive and one-sided, so the points stay where the
+lane rests. Every shape has an exact integral too (closed form, or a memoised
+exact sum for `hold`), and the swing is validated from the points rather than
+clamped, so a wave on a rate lane never breaks the phase. On a colour lane it
+pulls the colour `toward` another. Hits are windows: a jump into one shows it,
+a jump over one never fires it. Everything is a pure function of the beat.
+`python -m engine.showfiles explain TRACK BEAT` prints it.
 
 **What the fixtures do** is [`program.py`](../engine/program.py), the only
 place a timeline meets `state.py`. It compiles a track's timeline for one rig --
@@ -344,7 +359,20 @@ owns the track rests them instead -- movers on the venue's `rest_point` (else
 the ball), colour white, level dark. Each source runs once per slot on a scratch
 copy and only its fixtures are taken from it, so two movement sources never add
 their offsets together. A clip's phase is its own, a pure function of the beat
-through any rate curves, so a loop lands on the authored frame. `python -m
+through any rate curves, so a loop lands on the authored frame.
+
+Automation reaches a routine's parameters by name. A timeline's `param.<name>`
+row drives that parameter on every routine clip that declares it. A routine's
+own `param.<name>` and `arg.<item>.<argument>` rows are read in the routine's
+beats: wrapped by its loop, held past its end, and set where the routine is
+actually evaluated, so a routine showing through from a lower lane reads its
+own beat. Precedence, highest first: the timeline's lane, the routine's lane,
+the use's `params`, the variation, the default (`Env.param`). An `arg.` lane
+points the argument at a hidden parameter named after it (`$arg.orbit.radius`),
+so there is no second path into the blocks, and a timeline row cannot reach one
+item's argument. Ranges come from the declaration: the routine's parameter, or
+the block's `blocks.PARAMS`. They are errors in a routine and warnings on a
+timeline, whose declarations live in other files. `python -m
 engine.program --event DIR --show-dir DIR --track T --beat B` lists what will
 not work on a rig and prints every fixture at a beat.
 
@@ -416,7 +444,7 @@ show errors, as `render_once` does.
 latency applied, so it lines up with the lights -- whenever its frame
 changes, at 24, 25, 29.97 drop-frame or 30 fps (`outputs.timecode {host,
 port, fps}`, default broadcast on 6454 at 30). Silent while paused, disarmed,
-or with nothing matched; the designer's preview sends its own position.
+or with nothing matched; Studio's preview sends its own position.
 `shared/tools/artnet_listener.py --timecode` prints what arrives.
 **MIDI** (`MidiOut`) never opens a MIDI port: each frame's MIDI messages go as
 one JSON datagram (`klights.midi/1`) to the sidecar in
@@ -458,7 +486,7 @@ set's `transition.fade_beats` in parameter space, slot by slot, so a timeline
 can take the runner's Show as its fallback and show it through its fill gaps.
 A jump cuts.
 
-**The designer's side of the wire** ([`api.py`](../engine/api.py)): large reads
+**Studio's side of the wire** ([`api.py`](../engine/api.py)): large reads
 are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 `routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with
 the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
@@ -479,9 +507,9 @@ base_rev}` (refused if the file changed since), and `routine_draft {doc}` (the
 format's rules, then the routine bound to this rig as it is and in each
 variation: roles no fixture carries, blocks with nothing to aim).
 `preview_arm {track_id, force?}`
-puts the designer's transport on the rig -- refused while a DJ plays unless
+puts Studio's transport on the rig -- refused while a DJ plays unless
 forced, shown on every console, released by `preview_release` or by the
-designer's browser going away; `preview_transport {time_s, playing}` moves it,
+Studio's browser going away; `preview_transport {time_s, playing}` moves it,
 and a draft replaces what it plays until saved. A `preview_transport` that
 arrives after its preview has ended is ignored rather than reported: the page
 learns from the snapshot within a tenth of a second and stops sending. Clip
@@ -548,7 +576,7 @@ the folder may be written while a show runs.
 | movement as a path over bars | [`motion.py`](../engine/motion.py) |
 | what a knob is: range, label, units | [`params.py`](../engine/params.py) |
 | the building blocks routines and parametric looks share | [`blocks.py`](../engine/blocks.py) |
-| parameters that move on their own | [`modulate.py`](../engine/modulate.py) |
+| parameters that move on their own | [`modulate.py`](../engine/modulate.py), [`waves.py`](../engine/waves.py) |
 | self-running axes | [`auto.py`](../engine/auto.py) |
 | the ported look library | [`library.py`](../engine/library.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |
@@ -559,7 +587,12 @@ the folder may be written while a show runs.
 | the show folder, live | [`showfiles.py`](../engine/showfiles.py), [`showlibrary.py`](../engine/showlibrary.py) |
 | what a timeline says at a beat | [`timeline.py`](../engine/timeline.py) |
 | when the timeline drives, and grabs | [`playback.py`](../engine/playback.py) |
-| the designer's reads and audio | [`api.py`](../engine/api.py) |
+| phrase templates for tracks nobody drew | [`templates.py`](../engine/templates.py) |
+| OSC, timecode, MIDI and visuals | [`outputs.py`](../engine/outputs.py) |
+| Studio's reads and audio | [`api.py`](../engine/api.py) |
+| the rekordbox collection, kept out of process | [`collection.py`](../engine/collection.py) |
+| slow work off the output thread | [`worker.py`](../engine/worker.py) |
+| the show folder from an assistant | [`showtools.py`](../engine/showtools.py) |
 | what the fixtures do on a timeline | [`program.py`](../engine/program.py), [`routines.py`](../engine/routines.py), [`blocks.py`](../engine/blocks.py) |
 
 ## Tests

@@ -50,9 +50,14 @@ every one of those four points is a thing the engine now does differently.
 | **F16** | Tempo from the DJ | A `sync` seam and a UDP port speaking JSON and OSC. **No analysis is written here** — beat position and rekordbox's phrase labels are a *read*. |
 | **F17** | Previz, generic | A plan view that needs no GPU; an Unreal path that does not know the word "despacio"; optics as config. |
 | **F18** | Docs and the soak | This file, [`engine.md`](engine.md), [`runbook.md`](runbook.md), and the 60-minute soak F2 asked for — **passed**: 148 802 frames, zero drops, and the predicted GC outlier did not appear. |
-| — | Guides and help in the app | The runbook lived in `docs/` and the console's few tooltips needed a hover a phone does not have. Now each tab has a guide behind the header's **?**, a first visit offers a tour, the cards whose labels do not explain them carry a tap-to-open **?**, and the designer has a Guide column. Built 2026-10-03. |
+| — | Guides and help in the app | The runbook lived in `docs/` and the console's few tooltips needed a hover a phone does not have. Now each tab has a guide behind the header's **?**, a first visit offers a tour, the cards whose labels do not explain them carry a tap-to-open **?**, and the designer (now Studio) has a Guide column. Built 2026-10-03. |
+| **F19** | Timecoded shows, milestone 1 | The lights follow **which track is playing and where in it**, not just the tempo. A track is prepped from what rekordbox already knows, a timeline is drawn against it bar by bar in a desktop designer, and it plays live from either DJ source once Follow is armed. Routines are written against roles, not fixtures, and a lights compiler binds them to the rig. Design record: [`design/timecoded-shows.md`](design/timecoded-shows.md). |
 | **F20** | The standalone previz | `KLightsPreviz.exe` needs no editor and no Python: it gets the room from the engine (`/api/previz/scene`), DMX from Art-Net, and models, set pieces and articulated fixture bodies from `.glb` files named in config ([`models.md`](models.md)). Its C++ decode is held to the Python one by golden vectors, exactly. The editor-Python path still works beside it. A launcher window (`kLights.pyw`) starts the engine and the app, and links into the console's Setup tab. |
 | **F21** | Parametric looks on the console, and modulation | Every block argument is declared once (`blocks.PARAMS`) and both the routine editor and the console render from it, so defaults and ranges cannot drift between them. Six new blocks (`figure8`, `spiral`, `scatter`, `breathe`, `hue_cycle`, `duo`), available to routines and console alike. On the console: a look built from one block, tuned live, saved in presets and cues, swung by modulators, stacked, and varied from a seed. The centre is bounded by what the rig's heads can actually reach, and a head at its rail says so. `audit_library.py` measures which ported looks a block covers: the nine fixed positions are superseded, exactly, by `offset` blocks under the same names; `Lazy Circle` is retired in favour of a tunable orbit. |
+| **F22** | Templates for every other track (F19 milestone 2) | A template set maps rekordbox's phrase labels to routines. With it, a prepped track nobody drew, the gaps in a timeline and a guest's track the folder has never seen all get a show. Also: live phrases from CDJs, the set switcher on the phone, routines on preset pads, and per-deck pre-matching, so a master switch is on its timeline from the first frame. |
+| **F23** | VJ outputs (F19 milestone 3) | The timeline core was output-generic from the start, so each output is an adapter: generic OSC, Art-Net timecode at the DJ's position in the track, MIDI through a sidecar, and the built-in `#visuals` page for a projector. Nothing outside the lights can cost the lights a frame. |
+| — | Studio | The designer, renamed because "design" was already the console's mode. It grew from a timeline editor into where a show is made: a track library with rekordbox in its sidebar, a routine library (folders, where each is used, a rename that moves every reference), a template set editor, a palette library that keeps every copy in step, show settings, and **+ New** as one way in to making any of them. Built 2026-10-05. |
+| — | Automation for every parameter, and waves | Every routine parameter and block argument can have its own lane, and any lane can carry a musical wave on top of its points, so a swell no longer needs a keyframe per bar. The swing is checked exactly against the lane's range and never clamped, so a rate lane's phase stays closed-form and a loop still lands on the authored frame. Built 2026-10-05. |
 
 ## Decisions worth knowing
 
@@ -92,24 +97,24 @@ two things that *are* a different category — see [`SAFETY.md`](SAFETY.md).
 
 Open, in rough priority order.
 
-- **`--live` for the DJ bridge.** The seam, `--fake` and `--replay` are done and
-  tested; nothing talks to real hardware yet. Two routes, both documented in
-  [`bridges/prolink/`](../bridges/prolink/README.md): beat-link-trigger for
-  CDJs, rkbx_link for rekordbox and a DDJ.
-- **F19, timecoded shows — in progress.** Routines driven by which track is
-  playing and where in it: phrase templates for any track, hand-built timelines
-  for signature tracks, a desktop designer. Milestone 1 (one track end to end:
-  prep, design, play live from either source), milestone 2 (**F22**: phrase
-  templates for tracks nobody drew, live phrases from CDJs, the set switcher,
-  routines on pads, per-deck pre-matching) and milestone 3 (**F23**: OSC,
-  Art-Net timecode, MIDI through a sidecar, built-in `#visuals`) are built. All
-  of it waits on hardware captures from real decks and a real VJ app. Design
-  record: [`design/timecoded-shows.md`](design/timecoded-shows.md).
+- **A strobe rate limit.** The strobe policy caps how far up the band and for
+  how long, but not how fast: the fixture profiles give no Hz for their strobe
+  band, so a limit in Hz would be invented. It needs each fixture's band
+  measured. [`SAFETY.md`](SAFETY.md) calls it the highest-value safety item
+  left.
+- **Real decks, and a real VJ app.** F19, F22 and F23 are built and tested
+  against the fake bridge and golden fixtures, never against hardware. Both DJ routes ship, documented in
+  [`bridges/prolink/`](../bridges/prolink/README.md): beat-link-trigger
+  expressions for CDJs and an rkbx_link config for rekordbox and a DDJ. Each
+  talks to the engine's `--sync-port` directly, so `bridge.py --live` is not
+  built and may never need to be. What a ten-minute capture on each rig must
+  show is listed in
+  [`design/timecoded-shows.md`](design/timecoded-shows.md#things-to-verify-on-hardware).
 - **Phrase-driven cues.** An `Up` arms the next cue, the `Chorus` downbeat fires
-  it, `Outro` releases to ambient. The data arrives; nothing consumes it yet.
-  This is the thing the APC40 show was doing by hand, and F19's phrase templates
-  are how it gets built. The labels are rekordbox's own: it says Up, Chorus and
-  Down, never Build or Drop.
+  it, `Outro` releases to ambient. This is the thing the APC40 show was doing by
+  hand. Phrase labels are now consumed: a template set (F22) picks a routine
+  per phrase. The Night cue list still does not follow them. The labels are
+  rekordbox's own: it says Up, Chorus and Down, never Build or Drop.
 - **The three unmeasured taper inputs.** `beam_deg`, `ball_radius` and the crowd
   head band are estimates. `SAFETY.md` lists the measurement that retires each.
 - **A second venue.** Everything is in place — shared rooms, derived previz
@@ -122,10 +127,16 @@ Open, in rough priority order.
   far wall). `Diagonal A/B` and `Heads Cross A/B` are each other doubled and
   turned, and all four are kept — on stage a cross and a diagonal read as
   different decisions.
-- **Waveforms in routine automation.** Modulation shapes drive the console
-  live; a show folder's automation rows are still keyframes only. A `wave`
-  row would need a closed-form integral for rate targets, and the designer
-  to draw it.
+- **A wave on a timeline with rate lanes in both places.** When a timeline
+  and the routine under it both automate a rate, the warp is tabulated over
+  the clip's length. A curve with a wave never settles, so a clip over 8192
+  beats (about half an hour) would drift at its far end
+  (`program.TABLE_MAX_BEATS`).
+- **Prep from a stick alone.** Prep reads rekordbox's XML export or its own
+  `master.db`, so it needs the rekordbox that made the stick. Reading a stick's
+  `export.pdb` directly is not built
+  ([`bridges/rekordbox/`](../bridges/rekordbox/README.md#not-built)). A guest's
+  stick still gets templates from the deck's live phrase.
 
 ## Conventions
 

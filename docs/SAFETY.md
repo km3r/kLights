@@ -79,15 +79,40 @@ did or did not dim.
 ### 1. Strobe and photosensitive epilepsy
 
 **This is the genuine medical risk on this rig, and nothing in the software
-limits it.** Strobe is reachable through ported looks and through auto mode's
-energy axis, and there is no cap on rate.
+limits its rate.** Strobe is reachable through ported looks, auto mode's energy
+axis, and a show folder's strobe hits and routines, and there is no cap on how
+fast a fixture flashes.
 
 Photosensitive epilepsy is typically provoked in the 3–30 Hz range, worst around
 15–20 Hz. Unlike dazzle, this is not something an aversion response protects
 anyone from, and the person affected has no warning.
 
-Practical position until a rate limit exists (it is on the roadmap, and it is
-the highest-value safety item left):
+What the software does have is a **strobe policy**, set per venue under
+`strobe`. It runs after the whole stack, in the same unconditional position as
+the taper, so no look, auto axis, timeline or template can outrank it.
+
+- `ceiling` caps how far up each fixture's strobe band anything may drive the
+  shutter. Faster is further up the band, so this keeps away from the fast
+  end. It is **not a frequency limit**: the fixture profiles say "strobe slow
+  to fast" with no Hz at either end, so the engine does not know what rate any
+  position produces.
+- `max_seconds` caps how long a fixture may strobe continuously, then holds the
+  shutter open for `recover_seconds`. Sustained flashing is what the guidance
+  is about, and this holds whatever the rate turns out to be.
+
+The defaults change nothing. despacio is set to 75% / 8 s / 2 s, a conservative
+and explicitly unmeasured starting point. The engine prints the policy at
+startup and the Bright tab shows it, with a loud **UNLIMITED** when nothing is
+limiting it.
+
+**The projector.** The built-in `#visuals` page's strobe obeys the same policy,
+and never flashes more than **three times a second**, halving its rate to stay
+on the beat. A wash's pulse keeps to the same limit. A whole screen flashing is
+the strongest trigger there is. A VJ app cued over OSC or MIDI is limited by
+nothing here: its own settings decide.
+
+Practical position until a rate limit exists (it is on the
+[roadmap](ROADMAP.md#not-built), and it is the highest-value safety item left):
 
 - Keep sustained strobe short and infrequent.
 - Avoid the 15–20 Hz region for anything more than a hit.
