@@ -1576,6 +1576,25 @@ describe("studio library", () => {
     expect(screen.queryByLabelText("wide sets width")).toBeNull();
   });
 
+  it("opens the editors even when what was folded is stored as something else", async () => {
+    localStorage.setItem("klights.studio.folded", "null");
+    await open("#studio/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    expect(screen.getByRole("button", { name: /^Variations/, expanded: true })).toBeInTheDocument();
+  });
+
+  it("still says Record is armed, and disarms, with its section folded", async () => {
+    const user = userEvent.setup();
+    await open();
+    await screen.findByRole("region", { name: "lanes" });
+    const side = screen.getByRole("complementary", { name: "side panel" });
+    await user.click(within(side).getByRole("button", { name: "Record" }));
+    await user.click(within(side).getByRole("button", { name: /^Record pads/ }));
+    expect(within(side).queryByRole("button", { name: "Flash" })).toBeNull();
+    await user.click(within(side).getByRole("button", { name: "● Recording" }));
+    expect(within(side).getByRole("button", { name: "Record" })).toBeInTheDocument();
+  });
+
   it("folds the timeline's side panel away, so the lanes take the width", async () => {
     const user = userEvent.setup();
     await open();
@@ -1857,6 +1876,31 @@ describe("routine library", () => {
     expect(await screen.findByText("Moved fan-drop to Peaks.")).toBeInTheDocument();
   });
 
+  it("opens a card's ask once: a closed form stays closed when the details come back", async () => {
+    const { user, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    await user.click(within(page).getByRole("menuitem", { name: "Rename…" }));
+    expect(within(details()).getByLabelText("new id")).toBeInTheDocument();
+    await user.click(within(details()).getByRole("button", { name: "cancel" }));
+    expect(within(details()).queryByLabelText("new id")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Hide the details" }));
+    await user.click(screen.getByRole("button", { name: "Show the details" }));
+    expect(within(details()).getByRole("heading", { name: "Fan sweep (drop)" })).toBeInTheDocument();
+    expect(within(details()).queryByLabelText("new id")).toBeNull();
+  });
+
+  it("keeps one menu open at a time, from the mouse or the keyboard", async () => {
+    const { user, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "more for Fan sweep (drop)" }));
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    // Moving the focus to another ⋯ closes the first, before it opens.
+    act(() => within(page).getByRole("button", { name: "more for Idle orbit" }).focus());
+    expect(screen.queryByRole("menu")).toBeNull();
+    await user.keyboard("{Enter}");
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(screen.getByRole("menu", { name: "Idle orbit actions" })).toBeInTheDocument();
+  });
+
   it("deletes a routine nothing uses, after asking", async () => {
     const { user, socket, page } = await library();
     await user.click(within(page).getByRole("article", { name: "Idle orbit" }));
@@ -2115,6 +2159,19 @@ describe("palette library", () => {
     expect(sent.base_rev).toBe("r:p");
     expect(sent.doc).toMatchObject({ kind: "klights.palette", id: "hot", name: "Hot",
                                      primary: "#00ff00", secondary: "#ff8a00" });
+  });
+
+  it("is not unsaved for a colour typed in capitals that is the one saved", async () => {
+    const { user } = await library();
+    const hex = within(aside()).getByLabelText("primary hex");
+    await user.clear(hex);
+    await user.type(hex, "#FF2D6F");
+    expect(within(aside()).queryByRole("button", { name: "Save to the library" })).toBeNull();
+    expect(within(aside()).queryByText("Unsaved")).toBeNull();
+    await user.clear(hex);
+    await user.type(hex, "#FF2D60");
+    expect(within(aside()).getByRole("button", { name: "Save to the library" })).toBeEnabled();
+    expect(within(aside()).getByText("Unsaved")).toBeInTheDocument();
   });
 
   it("warns that renaming a palette lets go of its copies", async () => {

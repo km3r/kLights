@@ -38,20 +38,6 @@ export function useHelp(topic: string) {
   };
 }
 
-/** A heading with a "?" after it, for the designer's side panels -- the same
- *  explanation as a card's, under a plain heading. */
-export function HelpHeading({ topic, help, children }: {
-  topic: string; help: ReactNode; children: ReactNode;
-}) {
-  const explain = useHelp(topic);
-  return (
-    <>
-      <h3>{children}{explain.button}</h3>
-      {explain.panel(help)}
-    </>
-  );
-}
-
 export function Card({ title, right, help, children }: {
   title?: string; right?: ReactNode;
   /** An explanation behind a "?" by the title, for a card whose controls do

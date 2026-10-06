@@ -229,6 +229,7 @@ export default function Studio({ engine, route }: {
         {r ? (
           <RoutineDetail key={r.id} engine={engine} r={r} routines={lib.routines ?? []}
                          action={routineAsk.action} actionKey={routineAsk.n}
+                         onAsked={() => setRoutineAsk((ask) => ({ action: null, n: ask.n }))}
                          onSelect={setRoutineId}
                          onDone={(said) => {
                            setRoutineSaid(said);

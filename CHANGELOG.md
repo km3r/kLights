@@ -27,7 +27,11 @@ the commit messages keep those labels.
 - **File actions are in a ⋯ menu** at the panel's head, the same one as a
   routine card's: Duplicate, Rename, Move to folder, Download, Delete. The one
   picked opens as a small form under the head. An action that can't be done
-  is disabled and says why (a used routine, the show's set, an unsaved set).
+  is disabled and says why (a used routine, the show's set, an unsaved set, a
+  read-only page). Opening one menu closes any other, by mouse or keyboard.
+- **Fixed: a routine card's "Download the file" ran again** whenever the
+  details panel was shown again, and a form closed with its × reopened: the
+  card's ask is now forgotten once the panel has taken it.
 - **A track's checks are one list**: problems first, each with why it matters
   (a missing CDJ signature, a timeline drawn on an older grid), then what is
   fine on one line. Its BPM, length, phrase count and waveform are no longer

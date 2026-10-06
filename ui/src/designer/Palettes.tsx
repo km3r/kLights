@@ -4,7 +4,7 @@ import { ROLES } from "./edit";
 import { freeId, freeName } from "./model";
 import type { FoundPalette, PaletteDoc, PalettePlace, PaletteSummary } from "./model";
 import { download } from "./Routines";
-import { Badge, DetailHead, DetailSection, MoreMenu, Task } from "./detail";
+import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite } from "./detail";
 
 /**
  * The show's palette library: one file a palette in `palettes/`.
@@ -24,6 +24,14 @@ const COLOR_RE = /^#[0-9a-f]{6}$/i;
 /** As the engine's own new documents carry it, for an editor's completion. */
 const PALETTE_SCHEMA = "../schemas/palette.schema.json";
 type Colours = Pick<PaletteDoc, "primary" | "secondary" | "accent">;
+
+/** A palette as it would be saved -- name trimmed, colours in lower case -- so
+ *  "#FF0000" typed and "#ff0000" saved are the same, and a save leaves the
+ *  panel clean. */
+function savedForm(e: Colours & { name: string }): string {
+  return JSON.stringify({ name: e.name.trim(), primary: e.primary.toLowerCase(),
+                          secondary: e.secondary.toLowerCase(), accent: e.accent.toLowerCase() });
+}
 
 export function placeHref(p: PalettePlace): string {
   return p.kind === "timeline" ? `#studio/track/${p.id}` : `#studio/templates/${p.id}`;
@@ -142,34 +150,23 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
   const saved: Colours & { name: string } = { name: p.name, primary: p.primary,
                                              secondary: p.secondary, accent: p.accent };
   const [edit, setEdit] = useState(saved);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run, ask } = useWrite(engine, onDone);
   const [confirm, setConfirm] = useState(false);
-  const savedKey = JSON.stringify(saved);
+  const savedKey = savedForm(saved);
   // A newer save (this panel's, or another machine's) is taken while nothing
   // here is unsaved.
   const [base, setBase] = useState(savedKey);
   useEffect(() => {
     if (savedKey === base) return;
-    if (JSON.stringify(edit) === base) setEdit(saved);
+    if (savedForm(edit) === base || savedForm(edit) === savedKey) setEdit(saved);
     setBase(savedKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedKey]);
-  const dirty = JSON.stringify(edit) !== savedKey;
+  const dirty = savedForm(edit) !== savedKey;
   const valid = ROLES.every((r) => COLOR_RE.test(edit[r])) && !!edit.name.trim()
     && !palettes.some((x) => x.id !== p.id && x.name === edit.name.trim());
   const older = p.copies.filter((c) => !c.same);
 
-  const run = async (work: () => Promise<string>) => {
-    setBusy(true);
-    setError(null);
-    try { onDone(await work()); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
-    const reply = await engine.request(command);
-    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
-    return reply.data;
-  };
   const doc = (): PaletteDoc => ({ $schema: PALETTE_SCHEMA, kind: "klights.palette", version: 1,
                                    id: p.id, name: edit.name.trim(),
                                    primary: edit.primary.toLowerCase(),
@@ -206,15 +203,17 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
                   title={<input className="s-title-input" value={edit.name} aria-label="palette name"
                                 onChange={(e) => setEdit({ ...edit, name: e.target.value })} />}
                   meta={<span className="mono">palettes/{p.id}.json</span>}
-                  badges={dirty && <Badge tone="info">Unsaved</Badge>}
+                  badges={dirty ? <Badge tone="info">Unsaved</Badge> : undefined}
                   menu={<MoreMenu label={p.name} items={[
-                    { label: "Duplicate", disabled: busy || !canWrite, onClick: () => void duplicate() },
+                    { label: "Duplicate", disabled: busy || !canWrite,
+                      ...(canWrite ? {} : { note: "Read only" }), onClick: () => void duplicate() },
                     { label: "Download the file", onClick: () => download(`${p.id}.json`, doc()) },
                     { label: "Delete…", danger: true, onClick: () => { setError(null); setConfirm(true); } },
                   ]} />} />
 
       {confirm && (
-        <Task title={`Delete ${p.name}`} label="confirm delete" onCancel={() => setConfirm(false)}>
+        <Task title={`Delete ${p.name}`} label="confirm delete" readOnly={!canWrite}
+              onCancel={() => setConfirm(false)}>
           <span className="small">Delete palettes/{p.id}.json? Its copies stay where they are.</span>
           <div className="d-form">
             <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
@@ -247,6 +246,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
             <button className="d-primary" disabled={!valid || busy || !canWrite}
                     onClick={() => void save()}>Save to the library</button>
             <button onClick={() => setEdit(saved)}>Revert</button>
+            {!canWrite && <span className="muted small">{READ_ONLY}</span>}
           </div>
         )}
       </DetailSection>

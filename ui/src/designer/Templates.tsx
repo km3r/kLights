@@ -11,7 +11,7 @@ import type {
 } from "./model";
 import { clearPending, peekPending, putPending } from "./pending";
 import { download } from "./Routines";
-import { Badge, DetailHead, DetailSection, MoreMenu, Task } from "./detail";
+import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite } from "./detail";
 
 /**
  * Template sets: for each rekordbox phrase, which routine -- the exact label
@@ -465,30 +465,13 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   const [mode, setMode] = useState<"duplicate" | "rename" | "delete" | null>(null);
   const [dupId, setDupId] = useState(() => freeId(sets.map((s) => s.id), `${id}-copy`));
   const [toId, setToId] = useState(id);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run: write, ask } = useWrite(engine, onDone);
   useEffect(() => { if (!trackId && phrased[0]) setTrackId(phrased[0].id); }, [phrased, trackId]);
   const track = phrased.find((t) => t.id === trackId);
   const saved = rev !== "" && !dirty;
   const isShows = summary?.show ?? (show?.show?.template_set === id);
 
-  const run = async (work: () => Promise<string>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      onDone(await work());
-      setMode(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
-    const reply = await engine.request(command);
-    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
-    return reply.data;
-  };
+  const run = (work: () => Promise<string>) => write(work, () => setMode(null));
   const makeShows = () => run(async () => {
     if (!show?.show) throw new Error("this show folder has no show.json: make one in Show settings");
     await ask({ type: "show_save", doc: { ...show.show, template_set: id },
@@ -528,22 +511,24 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   return (
     <div className="s-detail" aria-label="selected set">
       <DetailHead kind="Template set" title={setName({ id, name: doc?.name ?? summary?.name })}
-                  badges={<>
+                  badges={(isShows || isNew || dirty) && <>
                     {isShows && <Badge tone="good">Show's set</Badge>}
                     {isNew ? <Badge>New</Badge> : dirty && <Badge tone="info">Unsaved</Badge>}
                   </>}
                   menu={<MoreMenu label={setName({ id, name: doc?.name ?? summary?.name })} items={[
-                    { label: "Duplicate…", disabled: !doc, onClick: openTask("duplicate") },
+                    { label: "Duplicate…", disabled: !doc,
+                      ...(doc ? {} : { note: "Still loading" }), onClick: openTask("duplicate") },
                     { label: "Rename…", onClick: openTask("rename"),
                       ...(isNew ? { disabled: true, note: "Save it first" } : {}) },
                     { label: "Download the file", disabled: !doc,
+                      ...(doc ? {} : { note: "Still loading" }),
                       onClick: () => { if (doc) download(`${id}.json`, doc); } },
                     ...(isNew ? [] : [{ label: "Delete…", danger: true, onClick: openTask("delete"),
                       ...(isShows ? { disabled: true, note: "It is the show's set" } : {}) }]),
                   ]} />} />
 
       {mode === "duplicate" && (
-        <Task title={`Duplicate ${id}`} onCancel={close}>
+        <Task title={`Duplicate ${id}`} readOnly={!canWrite} onCancel={close}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
             <input value={dupId} aria-label="id of the copy" autoFocus
                    onChange={(e) => setDupId(e.target.value.trim())} />
@@ -554,7 +539,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
         </Task>
       )}
       {mode === "rename" && (
-        <Task title={`Rename ${id}`} onCancel={close}>
+        <Task title={`Rename ${id}`} readOnly={!canWrite} onCancel={close}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
             <input value={toId} aria-label="new id" autoFocus onChange={(e) => setToId(e.target.value.trim())} />
             <button type="submit" className="d-primary" disabled={!toOk || busy || !canWrite || dirty}>
@@ -565,7 +550,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
         </Task>
       )}
       {mode === "delete" && !isShows && (
-        <Task title={`Delete ${id}`} label="confirm delete" onCancel={close}>
+        <Task title={`Delete ${id}`} label="confirm delete" readOnly={!canWrite} onCancel={close}>
           <span className="small">Delete templates/{id}.json? Studio cannot undo it.</span>
           <div className="d-form">
             <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
@@ -587,6 +572,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
                   disabled={busy || !canWrite || isNew}
                   title={isNew ? "Save it first" : undefined}>Make it the show's set</button>
         )}
+        {!isShows && !canWrite && <span className="muted small">{READ_ONLY}</span>}
       </DetailSection>
 
       <DetailSection title="Try it on a track" label="try it on a track">

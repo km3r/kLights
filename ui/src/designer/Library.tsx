@@ -30,18 +30,20 @@ export function gridMoved(t: TrackLine): boolean {
   return !!(t.timeline?.grid_rev && t.grid_rev && t.timeline.grid_rev !== t.grid_rev);
 }
 
-/** What needs attention on a track, worst first, in words. */
+/** The two problems that can make a track go wrong on the night, said the
+ *  same way in the table's "!" and the details panel's checks. */
+const GRID_MOVED = { text: "Timeline drawn on an older grid",
+                     why: "rekordbox has re-gridded the track since, so clips may sit off the beat." };
+const NO_SIGNATURE = { text: "No CDJ signature",
+                       why: "A CDJ playing it from a USB stick can only be matched by title and "
+                         + "artist. Prep it again from rekordbox to add one." };
+
+/** What needs attention on a track, worst first, in words: the table's "!"
+ *  and its Needs attention filter. The details panel's checks (trackChecks)
+ *  say these and everything else a track lacks, which is not all urgent. */
 export function attention(t: TrackLine): string[] {
-  const out: string[] = [];
-  if (gridMoved(t)) {
-    out.push("rekordbox has re-gridded this track since its timeline was drawn, so clips "
-      + "may sit off the beat.");
-  }
-  if ((t.signatures ?? 0) === 0) {
-    out.push("No CDJ signature: a CDJ playing it from a USB stick can only be matched by "
-      + "title and artist. Prep it again from rekordbox to add one.");
-  }
-  return out;
+  return [gridMoved(t) ? GRID_MOVED : null, (t.signatures ?? 0) === 0 ? NO_SIGNATURE : null]
+    .filter((c) => c != null).map((c) => `${c.text}: ${c.why}`);
 }
 
 /** What lights the track on the night, in a few words, with Follow armed: its
@@ -291,9 +293,9 @@ function audioCheck(audio: AudioCheck): Check {
   }
 }
 
-/** Everything a track needs, problems and all: the details panel's checklist,
- *  where the table's "!" says only that something is wrong. */
-export function trackChecks(t: TrackLine, audio: AudioCheck): Check[] {
+/** Everything a track needs, problems and all: the details panel's checklist.
+ *  The table's "!" flags only the urgent two (attention). */
+export function trackChecks(t: TrackLine, audio: AudioCheck, draft = false): Check[] {
   const checks: Check[] = [
     t.grid_rev ? { ok: true, text: "Beat grid" } : { ok: false, text: "No beat grid" },
     t.phrases > 0 ? { ok: true, text: "Phrases" }
@@ -301,16 +303,15 @@ export function trackChecks(t: TrackLine, audio: AudioCheck): Check[] {
           why: "A draft from a template set follows its bar cycle instead." },
     { ok: t.has_waveform, text: t.has_waveform ? "Waveform" : "No waveform" },
     audioCheck(audio),
-    (t.signatures ?? 0) > 0 ? { ok: true, text: "CDJ signature" }
-      : { ok: false, text: "No CDJ signature",
-          why: "A CDJ playing it from a USB stick can only be matched by title and artist. "
-            + "Prep it again from rekordbox to add one." },
+    (t.signatures ?? 0) > 0 ? { ok: true, text: "CDJ signature" } : { ok: false, ...NO_SIGNATURE },
   ];
   if (t.has_timeline) {
-    checks.push(gridMoved(t)
-      ? { ok: false, text: "Timeline drawn on an older grid",
-          why: "rekordbox has re-gridded the track since, so clips may sit off the beat." }
+    checks.push(gridMoved(t) ? { ok: false, ...GRID_MOVED }
       : { ok: true, text: "Timeline on the current grid" });
+  }
+  if (draft) {
+    checks.unshift({ ok: false, text: "Unsaved changes in this browser",
+                     why: "Open the timeline to restore or discard them." });
   }
   return checks;
 }
@@ -337,7 +338,8 @@ export function TrackDetail({ t, set, playing, sets, live }: {
       ? `No timeline yet: the ${playing.name ?? playing.id} template set lights it, a routine `
         + "per phrase."
       : "No timeline yet, and no template set is on: the operator's show runs.";
-  const checks = trackChecks(t, audio);
+  const draft = hasDraft(t.id);
+  const checks = trackChecks(t, audio, draft);
   const issues = checks.filter((c) => c.ok !== true);
   const passed = checks.filter((c) => c.ok === true);
   const wavePath = heights?.map((h, i) => {
@@ -345,26 +347,22 @@ export function TrackDetail({ t, set, playing, sets, live }: {
     const y = Math.max(0.5, h * 18);
     return `M${x} ${(20 - y).toFixed(1)}v${(2 * y).toFixed(1)}`;
   }).join("") ?? "";
-  const draft = hasDraft(t.id);
   const openDraft = () => {
     putPending({ kind: "timeline", id: t.id, set: draftSet });
     location.hash = `#studio/track/${t.id}`;
   };
   const facts = [t.bpm ? `${t.bpm.toFixed(t.bpm % 1 ? 2 : 0)} BPM` : "", mmss(t.duration_s)]
     .filter(Boolean).join(" · ");
+  const byline = [t.artist, t.album].filter(Boolean).join(" · ");
 
   return (
     <div className="s-detail" aria-label="selected track">
       <DetailHead kind="Track" title={t.title}
-                  badges={<>
-                    {live && <Badge tone="good">Playing now</Badge>}
-                    {draft && <span title="Unsaved changes are kept in this browser: open the timeline to restore or discard them">
-                      <Badge tone="info">Unsaved</Badge></span>}
-                  </>}
-                  meta={<>
-                    {(t.artist || t.album) && <span>{[t.artist, t.album].filter(Boolean).join(" · ")}</span>}
+                  badges={live ? <Badge tone="good">Playing now</Badge> : undefined}
+                  meta={(byline || facts) ? <>
+                    {byline && <span>{byline}</span>}
                     {facts && <span className="mono">{facts}</span>}
-                  </>} />
+                  </> : undefined} />
       <div className="s-wave">
         {heights && (
           <svg viewBox="0 0 300 40" preserveAspectRatio="none" aria-label="waveform">

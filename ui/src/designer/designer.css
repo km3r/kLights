@@ -25,7 +25,7 @@
 }
 /* A tick or a radio is its own size, on the line of the words it sits in. */
 .designer input[type="checkbox"], .designer input[type="radio"] {
-  min-height: 0; padding: 0; width: auto; margin: 0 4px 0 0; vertical-align: -2px;
+  min-height: 0; padding: 0; width: auto; margin: 0; vertical-align: -2px;
 }
 
 .designer .muted { color: var(--dim); }
@@ -143,7 +143,6 @@
 .d-shelf, .d-pads, .d-chips, .d-templates { display: flex; flex-wrap: wrap; gap: 4px; }
 .d-palette { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
 .d-palette label { flex: 1; display: flex; align-items: center; gap: 4px; }
-.d-palette input[type="radio"], .d-form input[type="checkbox"] { width: auto; margin: 0; }
 .d-templates h3, .d-palettes h3 { width: 100%; }
 .d-palette input[type="color"] { width: 28px; height: 22px; padding: 0; }
 
@@ -282,7 +281,6 @@ a.s-nav-item:hover { background: var(--panel-2); color: var(--text); }
 .designer .s-chip { border-radius: 14px; background: transparent; color: #c7cfdc; }
 .designer .s-chip.on { background: rgba(90, 169, 255, 0.16); border-color: var(--accent); color: var(--text); }
 .s-inline { display: inline-flex; align-items: center; gap: 6px; }
-.s-inline input[type="checkbox"] { width: auto; margin: 0; }
 .s-empty { display: flex; flex-direction: column; gap: 10px; padding: 24px 0; }
 .s-pad { padding: 10px 12px; margin: 0; }
 
@@ -298,7 +296,6 @@ a.s-nav-item:hover { background: var(--panel-2); color: var(--text); }
 .s-table tr.sel, .s-table tr.ticked { background: rgba(90, 169, 255, 0.09); }
 .s-tracks tbody tr { cursor: pointer; }
 .s-table .s-tick { width: 28px; }
-.s-table input[type="checkbox"] { width: auto; margin: 0; }
 .s-track { min-width: 180px; }
 .s-track b, .s-track > span, .s-link b, .s-link > span {
   display: block; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -502,9 +499,11 @@ a.s-nav-item:hover { background: var(--panel-2); color: var(--text); }
   background: transparent; color: var(--text); font-size: 12px; text-align: left; text-decoration: none;
 }
 .s-menu > a:hover, .designer .s-menu > button:hover:not(:disabled) { background: var(--line); }
-.designer .s-menu > button:disabled { color: var(--dim); background: transparent; }
-.s-menu-note { font-size: 10px; color: var(--dim); }
-.designer .s-menu > button.s-danger { color: #ff8a83; }
+.designer .s-menu > button:disabled, .designer .s-menu > button.s-danger:disabled {
+  opacity: 1; color: var(--dim); background: transparent;
+}
+.s-menu-note { font-size: 10px; color: #aab4c5; }
+.designer .s-menu > button.s-danger, .s-menu > a.s-danger { color: #ff8a83; }
 /* A list of places, each a link: its name, and a line of what is there. */
 .s-uses { display: flex; flex-direction: column; margin: 0 -8px; }
 .s-use {
@@ -560,7 +559,6 @@ a.s-use:hover b { color: var(--accent); }
 .s-palette-row { display: flex; align-items: center; gap: 6px; }
 .s-palette-row > label { flex: 1; }
 .s-palette-row input[type="color"] { width: 28px; height: 22px; padding: 0; min-height: 0; }
-.s-palette-row input[type="radio"] { width: auto; margin: 0; }
 .s-try-strip { display: flex; gap: 2px; }
 .s-try-strip > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .s-try-strip i { display: block; height: 10px; border-radius: 2px; opacity: 0.85; }

@@ -3,7 +3,7 @@ import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { ID_RE, freeId as freeIdAmong, normalizeName, usageCount } from "./model";
 import type { RoutineDoc, RoutineSummary } from "./model";
-import { Badge, DetailHead, DetailSection, MoreMenu, Task } from "./detail";
+import { Badge, DetailHead, DetailSection, MoreMenu, Task, useWrite } from "./detail";
 import type { MenuItem } from "./detail";
 
 /**
@@ -190,11 +190,16 @@ export function download(name: string, doc: unknown): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, onSelect }: {
+export function RoutineDetail({ engine, r, routines, action, actionKey, onAsked, onDone,
+                               onSelect }: {
   engine: Engine; r: RoutineSummary; routines: RoutineSummary[];
   /** What the card's menu asked for, to open on; `actionKey` changes each
    *  time it is asked, so asking twice opens it twice. */
   action: Action | null; actionKey: number;
+  /** The ask was taken: forget it, so this panel mounting again (the details
+   *  shown again, a look at another page) does not download twice or reopen
+   *  a form that was closed. */
+  onAsked: () => void;
   /** Something was written, and what: re-read the folder, and say so where
    *  it survives this panel (a rename or a delete takes it away). */
   onDone: (said: string) => void;
@@ -204,14 +209,19 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   const used = r.used_by ?? { timelines: [], templates: [], show: [] };
   const count = usageCount(used);
   const folders = [...new Set(routines.map((x) => x.folder).filter((f): f is string => !!f))].sort();
-  const [mode, setMode] = useState<Action | null>(action);
+  const [mode, setMode] = useState<Action | null>(null);
   const [dupId, setDupId] = useState(() => freeId(routines, `${r.id}-copy`));
   const [toId, setToId] = useState(r.id);
   const [folder, setFolder] = useState(r.folder ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run: write, ask } = useWrite(engine, onDone);
   const field = useRef<HTMLInputElement | null>(null);
-  useEffect(() => { setMode(action); }, [action, actionKey]);
+  useEffect(() => {
+    if (!action) return;
+    setMode(action);
+    onAsked();
+    // Only a new ask opens a form; the callback is the parent's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action, actionKey]);
   useEffect(() => { if (mode && mode !== "download" && mode !== "delete") field.current?.focus(); },
             [mode]);
   // A download needs nothing more said: do it.
@@ -223,24 +233,7 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   }, [mode, r.id]);
 
   /** One write: `work` answers with what it did, or throws why not. */
-  const run = async (work: () => Promise<string>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const said = await work();
-      setMode(null);
-      onDone(said);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
-    const reply = await engine.request(command);
-    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
-    return reply.data;
-  };
+  const run = (work: () => Promise<string>) => write(work, () => setMode(null));
 
   const duplicate = () => run(async () => {
     const { doc } = await readRoutine(r.id);
@@ -272,8 +265,6 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
   const toOk = ID_RE.test(toId) && toId !== r.id && !routines.some((x) => x.id === toId);
   const refs = used.timelines.length + used.templates.length + used.show.length;
   const close = () => { setMode(null); setError(null); };
-  const readOnly = !canWrite && <p className="muted small">Changing routines writes the show
-    folder: open Studio from the link the engine printed.</p>;
 
   return (
     <div className="s-detail" aria-label="selected routine">
@@ -287,7 +278,7 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
       <a className="s-button d-primary s-wide" href={`#studio/routine/${r.id}`}>Open the routine</a>
 
       {mode === "duplicate" && (
-        <Task title={`Duplicate ${r.id}`} onCancel={close}>
+        <Task title={`Duplicate ${r.id}`} readOnly={!canWrite} onCancel={close}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (dupOk) void duplicate(); }}>
             <input ref={field} value={dupId} aria-label="id of the copy"
                    onChange={(e) => setDupId(e.target.value.trim())} />
@@ -295,11 +286,10 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
               Make the copy</button>
           </form>
           <span className="muted small">Everything, under a new id. Nothing that uses {r.id} changes.</span>
-          {readOnly}
         </Task>
       )}
       {mode === "rename" && (
-        <Task title={`Rename ${r.id}`} onCancel={close}>
+        <Task title={`Rename ${r.id}`} readOnly={!canWrite} onCancel={close}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (toOk) void rename(); }}>
             <input ref={field} value={toId} aria-label="new id"
                    onChange={(e) => setToId(e.target.value.trim())} />
@@ -310,11 +300,10 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
             ? `Also rewrites the ${refs} file${refs === 1 ? "" : "s"} that use it, in one go.`
             : "Nothing uses it, so only its own file changes."} The id is its file name;
             its display name is set in the routine.</span>
-          {readOnly}
         </Task>
       )}
       {mode === "folder" && (
-        <Task title="Move to folder" onCancel={close}>
+        <Task title="Move to folder" readOnly={!canWrite} onCancel={close}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); void move(); }}>
             <input ref={field} value={folder} list="s-folders" aria-label="folder"
                    placeholder="none: unfiled" onChange={(e) => setFolder(e.target.value)} />
@@ -324,18 +313,16 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onDone, 
           </form>
           <span className="muted small">A folder is a name: a new one appears when a routine
             is put in it.</span>
-          {readOnly}
         </Task>
       )}
       {mode === "delete" && !count && (
-        <Task title={`Delete ${r.id}`} label="confirm delete" onCancel={close}>
+        <Task title={`Delete ${r.id}`} label="confirm delete" readOnly={!canWrite} onCancel={close}>
           <span className="small">Delete routines/{r.id}.json? Studio cannot undo it.</span>
           <div className="d-form">
             <button className="d-bad" disabled={busy || !canWrite} onClick={() => void remove()}>
               Delete it</button>
             <button onClick={close}>Keep it</button>
           </div>
-          {readOnly}
         </Task>
       )}
       {error && <p className="small d-error" role="alert">{error}</p>}

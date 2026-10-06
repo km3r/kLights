@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useHelp } from "../components";
+import type { Engine } from "./Designer";
 
 /**
  * What every right-hand panel in Studio is made of, so each reads the same way
@@ -23,35 +24,48 @@ export interface MenuItem {
   note?: string;
   danger?: boolean;
   disabled?: boolean;
-  /** A link, else `onClick`. */
+  /** A link, else `onClick`. A disabled one is drawn as a disabled item. */
   href?: string;
   onClick?: () => void;
 }
 
-/** A ⋯ button and its menu, closed by a pick, a click anywhere else, or Escape. */
+/** Why a write is refused on a page without the configure token. */
+export const READ_ONLY = "Read only: open Studio from the link the engine printed to change "
+  + "the show folder.";
+
+/** A ⋯ button and its menu, closed by a pick, Escape, or a click or focus
+ *  anywhere outside it -- so opening another menu closes this one. */
 export function MoreMenu({ label, items }: { label: string; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     if (!open) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".s-menu-wrap.open")) return;
-      setOpen(false);
+    const away = (e: Event) => {
+      if (!wrap.current?.contains(e.target as Node | null)) setOpen(false);
     };
-    addEventListener("mousedown", close);
-    addEventListener("keydown", close);
-    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
+    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    addEventListener("mousedown", away);
+    addEventListener("focusin", away);
+    addEventListener("keydown", escape);
+    return () => {
+      removeEventListener("mousedown", away);
+      removeEventListener("focusin", away);
+      removeEventListener("keydown", escape);
+    };
   }, [open]);
   return (
-    <span className={`s-menu-wrap${open ? " open" : ""}`}>
+    <span className="s-menu-wrap" ref={wrap}>
       <button className="s-icon" aria-label={`more for ${label}`} aria-haspopup="menu"
               aria-expanded={open} title="More"
               onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>⋯</button>
       {open && (
         <span className="s-menu" role="menu" aria-label={`${label} actions`}>
-          {items.map((it) => it.href ? (
-            <a key={it.label} role="menuitem" href={it.href} onClick={() => setOpen(false)}>
-              {it.label}</a>
+          {items.map((it) => it.href && !it.disabled ? (
+            <a key={it.label} role="menuitem" href={it.href}
+               className={it.danger ? "s-danger" : ""} onClick={() => setOpen(false)}>
+              <span>{it.label}</span>
+              {it.note && <span className="s-menu-note">{it.note}</span>}
+            </a>
           ) : (
             <button key={it.label} role="menuitem" disabled={it.disabled}
                     className={it.danger ? "s-danger" : ""}
@@ -112,9 +126,10 @@ export function DetailSection({ title, label, count, aside, children }: {
   );
 }
 
-/** The form a menu item opened, in a box under the head, with a way out. */
-export function Task({ title, label, onCancel, children }: {
-  title: string; label?: string; onCancel: () => void; children: ReactNode;
+/** The form a menu item opened, in a box under the head, with a way out --
+ *  and, on a page that cannot write, why its button is disabled. */
+export function Task({ title, label, readOnly, onCancel, children }: {
+  title: string; label?: string; readOnly?: boolean; onCancel: () => void; children: ReactNode;
 }) {
   return (
     <div className="s-task" role="group" aria-label={label ?? title}>
@@ -124,8 +139,39 @@ export function Task({ title, label, onCancel, children }: {
         <button className="s-icon" aria-label="cancel" title="Cancel" onClick={onCancel}>×</button>
       </div>
       {children}
+      {readOnly && <span className="muted small">{READ_ONLY}</span>}
     </div>
   );
+}
+
+/**
+ * One write from a panel at a time: `run` marks it busy, and says what it did
+ * (`onDone`) or why not (`error`). `after` runs once it worked, before
+ * `onDone` -- which may take the panel away (a rename, a delete). `ask` sends
+ * the engine a command and throws its refusal.
+ */
+export function useWrite(engine: Engine, onDone: (said: string) => void) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (work: () => Promise<string>, after?: () => void) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const said = await work();
+      after?.();
+      onDone(said);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ask = async (command: Parameters<Engine["request"]>[0]) => {
+    const reply = await engine.request(command);
+    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
+    return reply.data;
+  };
+  return { busy, error, setError, run, ask };
 }
 
 /** What the last change did, at the top of a panel. */
@@ -145,8 +191,8 @@ const FOLDED = "klights.studio.folded";
 
 function readFolded(): string[] {
   try {
-    const raw = localStorage.getItem(FOLDED);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    const raw: unknown = JSON.parse(localStorage.getItem(FOLDED) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
   } catch {
     return [];
   }
@@ -156,7 +202,8 @@ function readFolded(): string[] {
  * A section of an editor's side panel: a heading that folds it, a "?" with
  * what it does, and a count or a tool at its right. Folded per browser, by
  * `id`, because which sections a person keeps open is a habit, not a property
- * of one routine or track.
+ * of one routine or track. The tool at its right stays when it is folded:
+ * Record must still say it is armed, and still disarm.
  */
 export function SideSection({ id, title, topic, help, count, aside, children }: {
   id: string; title: ReactNode;
@@ -189,7 +236,7 @@ export function SideSection({ id, title, topic, help, count, aside, children }: 
         </h3>
         {help != null && explain.button}
         <span className="grow" />
-        {open && aside}
+        {aside}
       </header>
       {help != null && explain.panel(help)}
       {open && <div className="d-sec-body">{children}</div>}
