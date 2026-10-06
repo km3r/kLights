@@ -31,7 +31,7 @@ runs on the show laptop.*
 
 ```bash
 git clone <this repo>
-cd lights
+cd kLights
 python -m engine.server
 ```
 
@@ -53,10 +53,10 @@ lists them all.
 the same laptop: `--artnet 10.0.0.50,127.0.0.1`.
 
 Or double-click **`kLights.pyw`** (`python -m launcher` from a terminal): one
-window to pick the event, start and stop the engine, open the console or its
-Setup tab, copy the phone link, and launch or build the 3D previz. The engine
-runs as its own process, so closing the launcher does not stop a show, and
-reopening it finds the engine again.
+window to pick the event, start and stop the engine, open the console, its
+Setup tab or Studio, copy the phone link, and launch or build the 3D previz.
+The engine runs as its own process, so closing the launcher does not stop a
+show, and reopening it finds the engine again.
 
 Before a show, run everything that must be green:
 
@@ -102,10 +102,11 @@ no locking and no claiming — you can see each other instead, which is how two
 people on a desk actually works.
 
 **Perform / Design** is in the header too. Perform hides Setup and the read-only
-diagnostics, leaving only what drives the show; Design is everything. It
-defaults to Perform on a phone and Design on a laptop and is always one tap from
-the other. It is a preference about screen space, **not** a permission — access
-is what `--token` decides.
+diagnostics, leaving only what drives the show; Design is everything, including
+the **Studio** button that opens the show-making app in a tab of its own (see
+[Timecoded shows](#timecoded-shows)). It defaults to Perform on a phone and
+Design on a laptop and is always one tap from the other. It is a preference
+about screen space, **not** a permission — access is what `--token` decides.
 
 Three ideas make the rest make sense:
 
@@ -122,8 +123,8 @@ tab you are on: a short walkthrough and the things worth knowing. A first visit
 on each device offers a two-minute tour. Cards whose controls do not say what
 they do (Tempo, Auto, Track, the quick palette's long-press, the safety taper,
 calibration) have a **?** by their title that opens an explanation in place. A
-tap, not a tooltip, because a phone has no hover. The designer has its own
-**Guide**.
+tap, not a tooltip, because a phone has no hover. Studio has its own
+**Guide**, offered on a first visit.
 
 ## Running a show
 
@@ -169,11 +170,13 @@ For a signature track, the lights can follow **which track is playing and where
 in it**, not just the tempo: a show drawn bar by bar against the track, played
 back on the night from the DJ's own position.
 
-<img src="docs/images/designer.png" alt="The designer: a bar ruler, rekordbox's phrase bands and the timeline's lanes -- scene clips, a palette lane, hit diamonds and master and size automation curves -- with the rig from above and who drives each lane at the playhead on the right" width="100%">
+<img src="docs/images/studio-timeline.png" alt="Studio's timeline editor: a browser of routines on the left; a bar ruler, rekordbox's phrase bands and the waveform across the top; the timeline's lanes below -- scene clips, a palette lane, hit diamonds, master automation, a size lane with a sine wave on it, OSC and projector lanes; the rig from above and who drives each lane at the playhead on the right; the selected clip's settings and actions along the bottom" width="100%">
 
-*The designer on the example show: rekordbox's phrases across the top, the
-timeline's lanes below (the higher lane wins), the rig from above and "who
-drives each lane" at the playhead on the right.*
+*Studio's timeline editor on the example show, given a waveform and a wave on
+its size lane. rekordbox's phrases and the waveform run across the top, with
+the timeline's lanes below them (the higher lane wins). The browser is on the
+left. The rig from above and "who drives each lane" at the playhead are on the
+right, and the selected clip is along the bottom.*
 
 ```bash
 python -m engine.showfiles init shows/              # a show folder (or use shared/show-example)
@@ -192,16 +195,29 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    analysis of our own.
 2. **Design** in **Studio**: the **Studio** button in the console's header
    (Design mode), the launcher's **Open Studio**, or the engine's URL with
-   `#studio` on the end -- on a computer (a phone never downloads it). Each track is a set of lanes against its waveform
-   and phrases: scene, movement, colour, level and palette lanes holding
-   routines, looks and presets; hits (flash, strobe, blackout); automation of
-   master, size, spread, centre and rate. Draft a first pass from a template
-   set, tap hits in with the Record pads, or edit the list. **Drive the rig**
-   plays the draft you are editing on the real rig, from the page's own audio.
-   Routines -- reusable rows on roles (movers, pinspots), with open parameters
-   and variations -- have their own editor. Undo, Ctrl+S, Space and Delete work
-   as you would expect; every save quotes the version it opened, so a change made
-   elsewhere is never overwritten.
+   `#studio` on the end -- on a computer (a phone never downloads it). It opens
+   on a **library** of every track in the show: what lights it on the night,
+   its phrases, and what needs attention. A track's **timeline** is a set of
+   lanes against its waveform and phrases:
+   - scene, movement, colour, level and palette lanes, holding routines, looks
+     and presets;
+   - hits (flash, strobe, blackout);
+   - automation of master, size, spread, centre, rate and any parameter of the
+     routines on it. Any automation lane can carry a **wave** (sine, triangle,
+     ramp, saw, square, hold) on top of its points.
+
+   A browser on the left places routines, palettes and hits. A phrase is a
+   section you can fill, copy and paste, and clips copy, cut, duplicate and
+   split. Draft a first pass from a template set, tap hits in with the Record
+   pads, or edit the list. **Drive the rig** plays the draft you are editing on
+   the real rig, from the page's own audio. **+ New** makes a timeline, a
+   routine, a template set or a palette. Routines are reusable rows on roles
+   (movers, pinspots), with open parameters and variations. They have a library
+   (folders, where each is used, rename and delete) and an editor of their own,
+   where a lane can also move one block's argument. Template sets, the show's
+   palette library and show.json's settings each have a page. Undo, Ctrl+S,
+   Space and Delete work as you would expect. Every save quotes the version it
+   opened, so a change made elsewhere is never overwritten.
 3. **Play.** The engine matches the DJ's track against the folder (CDJs via
    beat-link-trigger, a DDJ via rkbx_link -- see
    [`bridges/prolink/`](bridges/prolink/README.md)). On the phone's **Track**
@@ -211,12 +227,13 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    labels (Intro, Verse, Up, Chorus, Down...) to routines, so a prepped track
    with no timeline, the gaps in a timeline, and a guest DJ's track the folder
    has never seen all get a show -- from the deck's live phrase, or a cycle
-   every N bars when there is none. Switch set live from the Track card; it
-   lands on the next downbeat. A preset pad can carry a routine too, starting on
-   the next downbeat when pressed. With CDJs, what the other decks have loaded
-   is matched and its show built while the DJ cues it, so a master switch is on
-   its timeline from the first frame.
-5. **VJ.** An OSC lane in the designer cues a VJ app (Resolume, or anything
+   every N bars when there is none. Studio edits a set phrase family by
+   phrase family, and shows what it would draft on any track. Switch set live
+   from the Track card; it lands on the next downbeat. A preset pad can carry a
+   routine too, starting on the next downbeat when pressed. With CDJs, what the
+   other decks have loaded is matched and its show built while the DJ cues it,
+   so a master switch is on its timeline from the first frame.
+5. **VJ.** An OSC lane in Studio cues a VJ app (Resolume, or anything
    that takes OSC) as the track plays -- clip triggers on, off and while
    playing, and curves -- and a routine can carry one too, so templates cue
    it on tracks nobody drew. MIDI lanes do the same for MIDI gear, through a
@@ -231,7 +248,7 @@ python -m engine.server --show-dir shows/ --sync-port 9000
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking
-the rig from the designer need the token; the audio endpoint serves only files
+the rig from Studio need the token; the audio endpoint serves only files
 a track names, and only with the token; safety and the strobe policy run after
 the timeline exactly as they run after everything else. The folder can live on
 Dropbox or a NAS and is reloaded when it changes -- but never under a track
@@ -278,8 +295,8 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 170 tests: the console against a fixture captured from a
-                 # real engine, the designer against the example show folder
+npm test         # 303 tests: the console against a fixture captured from a
+                 # real engine, Studio against the example show folder
 npm run build    # writes ui/dist/
 ```
 
@@ -291,7 +308,7 @@ nearly did.
 
 ```bash
 python -m engine.tests    # every suite, no test framework
-cd ui && npm test         # the console and the designer
+cd ui && npm test         # the console and Studio
 ```
 
 Engine suites are standalone scripts — run one directly with
@@ -309,9 +326,9 @@ library, and requires every differing channel to fall into a category that was
 ```
 engine/        the show engine — stdlib only, no dependencies
 launcher/      the desktop window that starts the engine and the previz (Tk)
-ui/            React console and designer; ui/dist is committed so a venue needs no Node
+ui/            React console, Studio and #visuals; ui/dist is committed so a venue needs no Node
 previz/        Unreal previz — an Art-Net listener, never in the show's path
-bridges/       sidecars: DJ tempo and position, and the rekordbox prep tool
+bridges/       sidecars: DJ tempo and position, the rekordbox prep tool, MIDI out
 mcp/           MCP server over stdio: the rig and the show folder, from an assistant
 events/        one directory per show: patch, calibration, looks, cues, presets
 shared/        things that outlive a show: fixtures, venues, inventory, tools
@@ -339,6 +356,7 @@ safety taper reads.
 | [`docs/SAFETY.md`](docs/SAFETY.md) | what the taper does and does not do |
 | [`docs/engine.md`](docs/engine.md) | how the engine works, for changing it |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | what was built, why, and what is not |
+| [`docs/models.md`](docs/models.md) | the standalone previz's models, set pieces and fixture bodies |
 | [`docs/pipeline.md`](docs/pipeline.md) | Art-Net architecture; the QLC+ era |
 | [`docs/design/timecoded-shows.md`](docs/design/timecoded-shows.md) | timecoded shows: decisions, formats, stages |
 | [`docs/design/`](docs/design/) | working notes and measurements |
@@ -347,7 +365,9 @@ safety taper reads.
 ## Requirements
 
 - **Python 3.10+**, stdlib only — the engine, the tools and the previz host half
-  have no pip dependencies at all.
+  have no pip dependencies at all. Two optional sidecars carry their own, behind
+  a process boundary: reading rekordbox's database needs `sqlcipher3`, and MIDI
+  out needs `bridges/midi/requirements.txt`.
 - **Node 18+**, only to rebuild the UI. Never needed at a venue.
 - **Unreal Engine 5.8**, only for the 3D previz.
 

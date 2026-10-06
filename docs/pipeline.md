@@ -62,7 +62,12 @@ Art-Net is the standard protocol for sending DMX over a regular WiFi/Ethernet ne
 with no changes — which is what makes frame-level diffing against QLC+ possible
 without writing any new tooling.
 
-**Only one sender at a time.** Two processes both emitting to 6454 means a
+The engine can also send **ArtTimeCode** (OpCode `0x9700`) on the same port:
+the DJ's position in the matched track, for a VJ app (`outputs.timecode` in a
+show folder's show.json). It is not DMX, so a node that has no use for
+timecode ignores it.
+
+**Only one DMX sender at a time.** Two processes both emitting to 6454 means a
 receiver samples whichever packet landed last, which looks like stuttering in
 previz and like a fault on the rig. In particular, never leave
 `artnet_listener.py` bound while going live in Blender — it squats on the port
@@ -235,6 +240,9 @@ python shared/tools/artnet_listener.py --watch 1,2,3,4,5
 
 # Full 512-channel grid on every change
 python shared/tools/artnet_listener.py -u 0 --changed --grid
+
+# ArtTimeCode instead of DMX: what the engine sends a VJ app
+python shared/tools/artnet_listener.py --timecode
 ```
 
 ### `shared/tools/artnet_sender.py`

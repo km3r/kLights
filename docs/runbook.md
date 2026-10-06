@@ -21,6 +21,13 @@ committed UI bundle matches its source. **Do not leave on a red preflight.** It
 takes half a minute and it exists because every one of those has broken a show
 setup at least once.
 
+If the night uses a show folder (timecoded shows, see below), check it too, on
+the show laptop once the sync service has caught up:
+
+```bash
+python -m engine.showfiles check <show folder>
+```
+
 Pack list beyond the rig itself:
 
 - the show laptop, its charger, and a **spare charger**
@@ -49,6 +56,13 @@ phones — is on one flat network.
 python -m engine.server --artnet 255.255.255.255
 ```
 
+Or double-click **`kLights.pyw`**, the launcher. Check **Art-Net to** before
+**Start engine**: it must reach the rig's node (for example
+`255.255.255.255`), not only `127.0.0.1`, which feeds a previz on this laptop
+and nothing else. Flags the launcher has no field for (`--show-dir`,
+`--sync-port`) go in **Extra flags**. The engine is its own process, so
+closing the launcher does not stop the show.
+
 Read the banner it prints. It states, every run:
 
 - the **event** and how many fixtures
@@ -58,6 +72,9 @@ Read the banner it prints. It states, every run:
 - the **timing** settings that were applied
 - **access** — the token, or `OPEN`
 - the **URL** to open, token included
+
+With a show folder it also states the **shows** it loaded, the **outputs**
+(OSC, timecode, MIDI) and that **follow** is `DISARMED`.
 
 If the taper line says disabled, or the strobe line says unlimited, decide on
 purpose whether that is what you want tonight.
@@ -111,6 +128,36 @@ guarantee.
 
 **Blackout is the one you reach for.** Panic is for when the engine itself is
 wrong.
+
+## With a show folder and a DJ
+
+When the lights follow the DJ's tracks (see the README's
+[Timecoded shows](../README.md#timecoded-shows)), start the engine with the
+folder and the sync port, then the bridge for the decks in use:
+
+```bash
+python -m engine.server --artnet 255.255.255.255 --show-dir <show folder> --sync-port 9000
+```
+
+CDJs need beat-link-trigger and a DDJ needs rkbx_link, each pointed at that
+port. See [`bridges/prolink/`](../bridges/prolink/README.md).
+
+> **Neither DJ path has run against real decks yet.** Have the console's own
+> show ready (presets and the cue list) as if Follow did not exist. That is
+> what plays whenever it is disarmed.
+
+| you want | do this |
+|---|---|
+| the tracks to drive the rig | **Follow SAFE** on the Show tab's **Track** card, to arm it. It is disarmed at every start, on purpose. |
+| to know what is driving | The Track card: the playing track, whether it matched, and per lane **timeline**, **template**, **operator** (you), **idle** or **show**. |
+| one lane back for a moment | Pick a look, preset or cue. That lane is yours until you press **Release**. **Grab** takes a lane without changing it. |
+| a different vibe for the tracks nobody drew | The **Template set** pills. The switch lands on the next downbeat. |
+| the lights earlier or later than the music | **Latency** on the Track card. It is saved to the show folder. |
+| the DJ's feed out of the picture | **Follow ARMED**, to disarm it. Your show takes over at once, as a cut. |
+
+A track that does not match, or has no timeline, gets the template set, else
+your show. Nothing needs doing mid-set. A change to the show folder, a manual
+link included, applies from that track's next play, never under it.
 
 ## When it goes wrong
 
