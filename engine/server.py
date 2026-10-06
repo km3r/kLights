@@ -142,6 +142,9 @@ TIER: dict[str, str] = {
     "timeline_draft": "configure", "timeline_save": "configure",
     "routine_draft": "configure", "routine_save": "configure",
     "routine_rename": "configure", "routine_delete": "configure",
+    "template_draft": "configure", "template_save": "configure",
+    "template_rename": "configure", "template_delete": "configure",
+    "show_save": "configure",
     "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
@@ -2198,8 +2201,11 @@ class ShowController:
                                   showfiles.doc_ident(kind, doc) or "")
         base = m["base_rev"]
 
+        # show.json is the one document at the folder's top, with no subfolder
+        rel = path.name if kind == "show" else f"{showfiles.SUBDIR[kind]}/{path.name}"
+
         def then(rev, respond):
-            respond(True, {"rev": rev, "path": f"{showfiles.SUBDIR[kind]}/{path.name}"})
+            respond(True, {"rev": rev, "path": rel})
             self.reload_library()
 
         return self._on_worker(f"saving {path.name}",
@@ -2267,6 +2273,80 @@ class ShowController:
         return self._on_worker(f"renaming routine {old}",
                                lambda: showfiles.rename_routine(root, folder, old, new, base),
                                then)
+
+    def _cmd_template_draft(self, m: dict, now: float) -> object:
+        """Check an unsaved template set: the format's rules, then what it asks
+        of the routines (one that is not there, a variation or parameter it
+        lacks) -- the same checks a folder load makes, before the save."""
+        library = self._need_library()
+        doc = m.get("doc")
+        if not isinstance(doc, dict):
+            raise ValueError("template_draft needs the document as doc")
+        folder = library.folder
+
+        def work():
+            result = showfiles.validate("template_set", doc)
+            problems = showfiles.template_set_problems(folder, doc) if result.ok else []
+            return {"errors": result.errors, "warnings": result.warnings,
+                    "problems": problems}
+
+        return self._on_worker("checking a template set", work,
+                               lambda value, respond: respond(True, value))
+
+    def _cmd_template_save(self, m: dict, now: float) -> object:
+        """Write a template set, refused if the file changed since `base_rev`."""
+        return self._save("template_set", m)
+
+    def _cmd_template_rename(self, m: dict, now: float) -> object:
+        """Rename a template set, and show.json with it if it is the show's."""
+        library = self._need_library()
+        old, new, base = m.get("template"), m.get("to"), m.get("base_rev")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise ValueError("template_rename needs template and to")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def then(written, respond):
+            respond(True, {"written": written})
+            self.note(f"renamed template set {old!r} to {new!r}")
+            self.reload_library()
+
+        return self._on_worker(f"renaming template set {old}",
+                               lambda: showfiles.rename_template_set(root, folder, old, new, base),
+                               then)
+
+    def _cmd_template_delete(self, m: dict, now: float) -> object:
+        """Delete a template set that is not the show's."""
+        library = self._need_library()
+        tid, base = m.get("template"), m.get("base_rev")
+        if not isinstance(tid, str):
+            raise ValueError("template_delete needs template")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root, folder = library.root, library.folder
+
+        def work():
+            uses = showfiles.template_set_uses(folder, tid)
+            if uses:
+                raise ValueError(f"{tid!r} is {uses[0]}: make another set the "
+                                 f"show's first")
+            showfiles.delete_doc(showfiles.path_for(root, "template_set", tid), base)
+            return f"{showfiles.SUBDIR['template_set']}/{tid}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting template set {tid}", work, then)
+
+    def _cmd_show_save(self, m: dict, now: float) -> object:
+        """Write show.json: the show's template set, the pause policy and idle
+        routine, Follow's start. Refused if it changed since `base_rev` -- the
+        phone's latency slider writes it too. Applies when the folder reloads,
+        as any change to it does."""
+        return self._save("show", m)
 
     def _cmd_routine_delete(self, m: dict, now: float) -> object:
         """Delete a routine nothing uses. One that a timeline, a template set

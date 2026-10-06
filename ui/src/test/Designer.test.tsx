@@ -5,13 +5,13 @@ import App from "../App";
 import type { Command } from "../types";
 import {
   BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave,
+  decodeWave, draftFromTemplate, newTimeline,
   whoDrives,
 } from "../designer/model";
 import { AUTOMATION_RANGES } from "../designer/edit";
 import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
-import type { RoutineDoc, TimelineDoc } from "../designer/model";
+import type { RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
 import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
@@ -104,6 +104,31 @@ describe("designer model", () => {
       .toMatchObject({ kind: "choice", choices: ["out", "in"] });
   });
 
+  it("drafts one clip per phrase, each with the set's fade between phrases", () => {
+    const track = structuredClone(trackDoc) as never;
+    const doc = newTimeline(track);
+    expect(draftFromTemplate(doc, track, clubDoc as never)).toBeNull();
+    const items = doc.rows.find((r) => r.target === "scene")!.items!;
+    expect(items).toHaveLength(8);
+    expect(items.every((i) => i.fade === 2)).toBe(true);      // club's transition.fade_beats
+    expect(doc.grid_rev).toBe("g:834af7");
+  });
+
+  it("drafts a track with a grid and no phrases from the set's bar cycle", () => {
+    const track = { ...structuredClone(trackDoc), phrases: { items: [] } } as never;
+    const doc = newTimeline(track);
+    expect(draftFromTemplate(doc, track, clubDoc as never)).toBeNull();
+    const items = doc.rows.find((r) => r.target === "scene")!.items!;
+    // 180 s at 128 bpm is 384 beats: six 16-bar steps, verse-sweep and
+    // fan-drop in turn, as club.json's cycle says.
+    expect(items.map((i) => [i.at, i.routine])).toEqual([
+      [0, "verse-sweep"], [64, "fan-drop"], [128, "verse-sweep"], [192, "fan-drop"],
+      [256, "verse-sweep"], [320, "fan-drop"]]);
+    const noCycle = { ...structuredClone(clubDoc), bars: undefined } as never;
+    expect(draftFromTemplate(newTimeline(track), track, noCycle))
+      .toBe("this track has no phrases to draft from");
+  });
+
   it("decodes rekordbox's colour waveform", () => {
     // rrrgggbbbhhhhh-- : full red, height 31
     const v = (7 << 13) | (31 << 2);
@@ -180,8 +205,12 @@ function serve(path: string): [number, unknown] {
     ] }];
   }
   if (path === "/api/show") {
-    return [200, { dir: "/shows", rev: "r:s", show: { kind: "klights.show", template_set: "club" },
-                   errors: [], warnings: [] }];
+    return [200, { dir: "/shows", rev: "r:s", show_rev: "r:show", errors: [], warnings: [],
+                   show: { kind: "klights.show", version: 1, template_set: "club",
+                           pause: { policy: "idle", grace_s: 4, idle_routine: "idle-orbit",
+                                    fade_beats: 4 },
+                           follow: { default: "disarmed", min_track_change_s: 2 },
+                           sources: { rkbx: { latency_ms: -15 } } } }];
   }
   if (path === "/api/tracks/kolsch-night-drive") {
     return [200, { doc: trackAs("kolsch-night-drive", "Night Drive", "Kölsch"), rev: "r:k" }];
@@ -194,8 +223,16 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/timelines/synth-128") return [200, { doc: timelineDoc, rev: TIMELINE_REV }];
   if (path === "/api/routines") return [200, { routines: ROUTINES }];
   if (path === "/api/routines/fan-drop") return [200, { doc: fanDrop, rev: ROUTINE_REV }];
-  if (path === "/api/templates") return [200, { templates: [{ id: "club", name: "Club" }] }];
+  if (path === "/api/templates") {
+    return [200, { templates: [
+      { id: "club", name: "Club", phrases: 8, palettes: ["Cool", "Hot"], show: true, rev: "r:c" },
+      { id: "warmup", name: "Warmup", phrases: 8, palettes: ["Cool", "Hot"], show: false,
+        rev: "r:w" }] }];
+  }
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
+  if (path === "/api/templates/warmup") {
+    return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
+  }
   return [404, { error: `no ${path}` }];
 }
 
@@ -939,6 +976,141 @@ describe("routine library", () => {
     const sent = reply(socket, "routine_delete", true, { deleted: "routines/idle-orbit.json" });
     expect(sent).toMatchObject({ routine: "idle-orbit", base_rev: "r:i" });
     expect(await screen.findByText("Deleted routines/idle-orbit.json.")).toBeInTheDocument();
+  });
+});
+
+describe("template sets", () => {
+  type SetSaved = { doc: TemplateSetDoc; base_rev: string };
+  async function sets(hash = "#studio/templates") {
+    const user = userEvent.setup();
+    const socket = await open(hash);
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await within(page).findByLabelText("Chorus routine");
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+
+  it("opens on the show's set, and says what a set does today", async () => {
+    const { page } = await sets();
+    const tabs = within(page).getByRole("navigation", { name: "sets" });
+    expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveTextContent("show's");
+    expect(page).toHaveTextContent(/do not play tracks live yet/);
+    expect(within(page).getByLabelText("Chorus routine")).toHaveValue("fan-drop");
+    expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
+    expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");
+    expect(within(aside()).getByText(/The show's set/)).toBeInTheDocument();
+  });
+
+  it("edits a pick, has the engine check it, and saves with the rev it read", async () => {
+    const { user, socket, page } = await sets();
+    await user.selectOptions(within(page).getByLabelText("Verse routine"), "idle-orbit");
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "template_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "template_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:c2" }) as unknown as SetSaved;
+    expect(saved.base_rev).toBe("r:c");
+    expect(saved.doc.phrases.Verse).toEqual({ routine: "idle-orbit" });
+    expect(saved.doc.phrases.Chorus).toMatchObject({ routine: "fan-drop", variation: "wide" });
+  });
+
+  it("adds an exact label, starting from its family's pick", async () => {
+    const { user, page } = await sets();
+    await user.selectOptions(within(page).getByLabelText("exact label"), "Up 2");
+    await user.click(within(page).getByRole("button", { name: "Add" }));
+    expect(within(page).getByLabelText("Up 2 routine")).toHaveValue("build-rise");
+    await user.click(within(page).getByRole("button", { name: "remove Up 2" }));
+    expect(within(page).queryByLabelText("Up 2 routine")).toBeNull();
+  });
+
+  it("shows what the working copy would draft on a track, and drafts from the saved set", async () => {
+    const { user, page } = await sets();
+    const strip = within(aside()).getByLabelText("what it would draft");
+    expect(within(strip).getAllByText("fan-drop")).toHaveLength(2);    // the two Choruses
+    await user.selectOptions(within(page).getByLabelText("Chorus routine"), "idle-orbit");
+    expect(within(strip).queryByText("fan-drop")).toBeNull();
+    // A draft reads the saved set, so it waits for the save.
+    expect(within(aside()).getByRole("button", { name: /Draft synthetic 128 from this set/ }))
+      .toBeDisabled();
+    await user.click(within(page).getByRole("button", { name: "Undo" }));
+    await user.click(within(aside()).getByRole("button", { name: /Draft synthetic 128 from this set/ }));
+    expect(location.hash).toBe("#studio/track/synth-128");
+    expect(await screen.findByText(/Drafted from Club\. Nothing is saved/)).toBeInTheDocument();
+  });
+
+  it("makes another set the show's with a show.json save", async () => {
+    const { user, socket } = await sets("#studio/templates/warmup");
+    await user.click(within(aside()).getByRole("button", { name: "Make it the show's set" }));
+    const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {
+      doc: { template_set: string; pause: unknown }; base_rev: string };
+    expect(sent.base_rev).toBe("r:show");
+    expect(sent.doc.template_set).toBe("warmup");
+    expect(sent.doc.pause).toMatchObject({ idle_routine: "idle-orbit" });   // the rest kept
+    expect(await screen.findByText("Warmup is the show's template set.")).toBeInTheDocument();
+  });
+
+  it("deletes a set that is not the show's, and never the show's", async () => {
+    const { user, socket } = await sets("#studio/templates/warmup");
+    await user.click(within(aside()).getByRole("button", { name: "Delete…" }));
+    await user.click(within(aside()).getByRole("button", { name: "Delete it" }));
+    const sent = reply(socket, "template_delete", true, { deleted: "templates/warmup.json" });
+    expect(sent).toMatchObject({ template: "warmup", base_rev: "r:w" });
+    cleanup();
+    await sets();
+    expect(within(aside()).getByRole("button", { name: "Delete: it is the show's set" })).toBeDisabled();
+  });
+
+  it("starts a new set and saves it as a new file", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/templates");
+    const page = await screen.findByRole("region", { name: "template sets" });
+    await user.type(await within(page).findByLabelText("new set id"), "late-night");
+    await user.click(within(page).getByRole("button", { name: "New set" }));
+    expect(location.hash).toBe("#studio/templates/late-night");
+    expect(await within(page).findByLabelText("Anything else routine")).toHaveValue("fan-drop");
+    await user.type(within(page).getByLabelText("set name"), "!");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const saved = reply(socket, "template_save", true, { rev: "r:n" }) as unknown as SetSaved;
+    expect(saved.base_rev).toBe("");
+    expect(saved.doc).toMatchObject({ kind: "klights.template_set", id: "late-night",
+                                      phrases: { "*": { routine: "fan-drop" } } });
+  });
+});
+
+describe("show settings", () => {
+  it("edits show.json's live settings and saves with its rev", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    expect(await within(page).findByLabelText("the show's template set")).toHaveValue("club");
+    expect(within(page).getByLabelText("idle routine")).toHaveValue("idle-orbit");
+    expect(within(page).getByRole("button", { name: "Saved" })).toBeDisabled();
+    // Latency is the phone's: shown, not edited here.
+    expect(within(page).getByText("-15 ms")).toBeInTheDocument();
+    await user.clear(within(page).getByLabelText("grace seconds"));
+    await user.type(within(page).getByLabelText("grace seconds"), "6");
+    await user.selectOptions(within(page).getByLabelText("follow default"), "armed");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {
+      doc: { pause: { grace_s: number; idle_routine: string }; follow: { default: string } };
+      base_rev: string };
+    expect(sent.base_rev).toBe("r:show");
+    expect(sent.doc.pause).toMatchObject({ grace_s: 6, idle_routine: "idle-orbit" });
+    expect(sent.doc.follow.default).toBe("armed");
+  });
+
+  it("offers a way back when show.json changed underneath (the phone's latency)", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    await user.selectOptions(await within(page).findByLabelText("pause policy"), "freeze");
+    expect(within(page).queryByLabelText("idle routine")).toBeNull();
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    reply(socket, "show_save", false, undefined, "show.json changed since you opened it");
+    expect(await within(page).findByRole("alert")).toHaveTextContent("changed since");
+    await user.click(within(page).getByRole("button", { name: "Take the newer one" }));
+    expect(within(page).getByLabelText("pause policy")).toHaveValue("idle");
   });
 });
 

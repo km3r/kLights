@@ -431,3 +431,62 @@ a.s-use:hover b { color: var(--accent); }
 .s-action { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .s-action .d-form { width: 100%; }
 .s-ok { color: var(--good); margin: 0; }
+
+/* Template sets: a tab per set, then the set as boxes -- its phrases as a grid
+   of picks, and beside them the bar cycle, palettes and fade. */
+.s-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
+.s-tab {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px;
+  border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0;
+  color: #aab4c5; text-decoration: none; font-size: 13px;
+}
+.s-tab:hover { color: var(--text); }
+.s-tab.on { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; }
+.s-show-badge {
+  font-size: 10px; font-weight: 700; color: #06121f; background: var(--good);
+  border-radius: 4px; padding: 0 5px;
+}
+.s-editor { display: flex; flex-direction: column; gap: 12px; }
+.s-editor-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.s-box {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+}
+.s-box > header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.s-box > header b { font-size: 13px; }
+.s-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px; }
+.s-picks {
+  display: grid; align-items: center; gap: 6px 8px;
+  grid-template-columns: 140px minmax(140px, 1.4fr) minmax(90px, 0.8fr) auto minmax(110px, 1fr) minmax(70px, 0.8fr);
+}
+.s-picks select { min-width: 0; width: 100%; }
+.s-picks-head {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim);
+}
+.s-phrase-label { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12px; }
+.s-phrase-label > i { display: block; width: 9px; height: 18px; border-radius: 3px; }
+.s-phrase-label.exact { padding-left: 14px; font-weight: 500; }
+.s-param-row {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 8px 10px;
+  border-radius: 8px; background: var(--bg); border: 1px solid #1e2430;
+}
+.s-steps { grid-template-columns: 22px minmax(120px, 1.4fr) minmax(80px, 0.8fr) auto minmax(100px, 1fr) auto; }
+.s-step-tools { display: inline-flex; gap: 2px; }
+.s-palette-row { display: flex; align-items: center; gap: 6px; }
+.s-palette-row > label { flex: 1; }
+.s-palette-row input[type="color"] { width: 28px; height: 22px; padding: 0; min-height: 0; }
+.s-palette-row input[type="radio"] { width: auto; margin: 0; }
+.s-try { display: flex; flex-direction: column; gap: 6px; }
+.s-try-strip { display: flex; gap: 2px; }
+.s-try-strip > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.s-try-strip i { display: block; height: 10px; border-radius: 2px; opacity: 0.85; }
+.s-try-strip em {
+  font-style: normal; font-size: 9px; line-height: 1.2; color: #c7cfdc; overflow: hidden;
+  writing-mode: vertical-rl; transform: rotate(180deg); max-height: 90px; white-space: nowrap;
+  text-overflow: ellipsis; align-self: center;
+}
+.s-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; max-width: 520px; }
+.s-field select { align-self: flex-start; }
+.s-latency { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; font-size: 12px; }
+.s-latency > div { display: flex; gap: 8px; }
+.s-latency dd { margin: 0; }

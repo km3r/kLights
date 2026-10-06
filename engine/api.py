@@ -110,6 +110,8 @@ def handle(library, path: str, range_header: Optional[str] = None,
 
     if what == "show":
         return _json({"dir": str(library.root), "rev": library.rev,
+                      # show.json's own rev, for a save of it to quote
+                      "show_rev": folder.revs.get("show.json"),
                       "show": folder.show, **library.counts,
                       "errors": folder.errors, "warnings": folder.warnings,
                       "failed": folder.failed})
@@ -134,8 +136,14 @@ def handle(library, path: str, range_header: Optional[str] = None,
              "rev": folder.revs.get(f"routines/{rid}.json")}
             for rid, doc in sorted(folder.routines.items())]})
     if what == "templates" and ident is None:
-        return _json({"templates": [{"id": tid, "name": doc.get("name")}
-                                    for tid, doc in sorted(folder.templates.items())]})
+        show_set = (folder.show or {}).get("template_set")
+        return _json({"templates": [
+            {"id": tid, "name": doc.get("name"),
+             "phrases": len(doc.get("phrases") or {}),
+             "palettes": sorted((doc.get("palettes") or {}).keys()),
+             "show": tid == show_set,
+             "rev": folder.revs.get(f"templates/{tid}.json")}
+            for tid, doc in sorted(folder.templates.items())]})
     if ident is None:
         return _error(404, f"/api/{what} needs an id")
 

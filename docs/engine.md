@@ -402,7 +402,10 @@ sidebar (`#studio/rekordbox[/<playlist>]`) and the routines at
 `folder` on the routine) and show where they are used (`used_by` on each
 `/api/routines` line, from `showfiles.routine_usage`); `routine_rename` renames
 one and every reference to it -- new file first, old file last -- and
-`routine_delete` refuses while anything still names it. Adding tracks preps them (`rekordbox_prep`) and can start
+`routine_delete` refuses while anything still names it. `#studio/templates`
+edits template sets (`template_draft` / `template_save` / `template_rename` /
+`template_delete`; the show's own set cannot be deleted), and `#studio/show`
+edits show.json (`show_save`, quoting `show_rev` from `/api/show`). Adding tracks preps them (`rekordbox_prep`) and can start
 each one in the same step: a timeline drafted from a template set, an empty
 one, or none; the drafting is the timeline editor's own function, written with
 `timeline_save` and base_rev "". `#studio/track/<id>` is layout B

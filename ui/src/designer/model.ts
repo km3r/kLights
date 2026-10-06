@@ -173,6 +173,8 @@ export interface TrackLine {
 export interface ShowSummary {
   dir: string;
   rev: string;
+  /** show.json's own rev, for a save of it to quote. */
+  show_rev?: string | null;
   show: { template_set?: string; fallback?: string;
           pause?: { idle_routine?: string }; [key: string]: unknown } | null;
   errors: string[];
@@ -196,7 +198,32 @@ export interface TemplateSetDoc {
   palettes?: Record<string, Record<string, unknown>>;
   palette?: string;
   bars?: { every: number; cycle: TemplatePick[] };
+  transition?: { fade_beats?: number };
   [key: string]: unknown;
+}
+
+/** A line of `GET /api/templates`. */
+export interface TemplateSummary {
+  id: string;
+  name?: string | null;
+  phrases?: number;
+  palettes?: string[];
+  /** It is show.json's template set. */
+  show?: boolean;
+  rev?: string;
+}
+
+/** rekordbox's phrase families, in the order a track meets them. */
+export const PHRASE_FAMILIES = ["Intro", "Verse", "Up", "Chorus", "Down", "Bridge", "Outro"];
+
+/** The numbered labels rekordbox writes, which a set may pick for exactly. */
+export const EXACT_LABELS = [
+  ...[1, 2, 3, 4, 5, 6].map((n) => `Verse ${n}`), ...[1, 2, 3].map((n) => `Up ${n}`)];
+
+/** The pick a template set makes for a phrase label: exact, then family,
+ *  then `*` -- the engine's lookup order. */
+export function pickFor(ts: Pick<TemplateSetDoc, "phrases">, label: string): TemplatePick | undefined {
+  return ts.phrases[label] ?? ts.phrases[phraseFamily(label)] ?? ts.phrases["*"];
 }
 
 /** rekordbox's phrase colours, by family. */
@@ -224,6 +251,17 @@ export function uniqueId(doc: { rows: Row[] }, stem: string): string {
   return id;
 }
 
+/** An id not taken by any of `ids`, from a stem: "fan-drop-copy", then
+ *  "fan-drop-copy-2"... */
+export function freeId(ids: Iterable<string>, stem: string): string {
+  const taken = new Set(ids);
+  const base = stem.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 58)
+    || "item";
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
 /** A new timeline for a track: one scene lane, empty, on the track's grid. */
 export function newTimeline(track: Pick<TrackDoc, "id" | "grid">): TimelineDoc {
   const doc: TimelineDoc = { kind: "klights.timeline", version: 1, track: track.id, rows: [] };
@@ -233,10 +271,11 @@ export function newTimeline(track: Pick<TrackDoc, "id" | "grid">): TimelineDoc {
 }
 
 function itemFor(d: { rows: Row[] }, pick: TemplatePick, stem: string, at: number,
-                 len: number): Item {
+                 len: number, fade: number): Item {
   const item: Item = { id: uniqueId(d, stem), kind: "routine", routine: pick.routine, at, len };
   if (pick.variation) item.variation = pick.variation;
   if (pick.params) item.params = { ...pick.params };
+  if (fade > 0) item.fade = Math.min(fade, len);
   return item;
 }
 
@@ -288,9 +327,12 @@ export function draftFromTemplate(d: TimelineDoc, track: TrackDoc,
     if (ts.palette && !d.palette) d.palette = ts.palette;
     palLane.items = [];
   }
+  // The set's change between phrases, as each clip's own fade in: the first
+  // clip comes in from nothing with it, and the rest crossfade on it.
+  const fade = ts.transition?.fade_beats ?? 0;
   for (const [start, end, pick, stem] of spans) {
     if (!pick) continue;
-    lane.items.push(itemFor(d, pick, `${stem}-${start}`, start, end - start));
+    lane.items.push(itemFor(d, pick, `${stem}-${start}`, start, end - start, fade));
     if (pick.palette && palLane) {
       (palLane.items ??= []).push({ id: uniqueId(d, `pal-${start}`), kind: "palette",
                                     palette: pick.palette, at: start, len: end - start });

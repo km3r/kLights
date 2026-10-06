@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import type { TemplateSetDoc, TemplateSummary } from "./model";
+import { TemplateAside, TemplatesView } from "./Templates";
+import { ShowSettingsView } from "./ShowSettings";
 import type { ReactNode } from "react";
 import { apiFetch } from "../useEngine";
 import type { StudioRoute } from "../studioRoute";
@@ -37,7 +40,7 @@ interface Library {
   error: string | null;
   routines: RoutineSummary[] | null;
   show: ShowSummary | null;
-  sets: { id: string; name?: string }[];
+  sets: TemplateSummary[];
   reload: () => void;
 }
 
@@ -49,7 +52,7 @@ function useLibrary(engine: Engine): Library {
   const [error, setError] = useState<string | null>(null);
   const [routines, setRoutines] = useState<RoutineSummary[] | null>(null);
   const [show, setShow] = useState<ShowSummary | null>(null);
-  const [sets, setSets] = useState<{ id: string; name?: string }[]>([]);
+  const [sets, setSets] = useState<TemplateSummary[]>([]);
   const [asked, setAsked] = useState(0);
   const folderRev = engine.state?.show?.rev;
   useEffect(() => {
@@ -62,7 +65,7 @@ function useLibrary(engine: Engine): Library {
       .catch(() => { if (live) setRoutines([]); });
     apiFetch<ShowSummary>("/api/show")
       .then((r) => { if (live) setShow(r); }).catch(() => { if (live) setShow(null); });
-    apiFetch<{ templates: { id: string; name?: string }[] }>("/api/templates")
+    apiFetch<{ templates: TemplateSummary[] }>("/api/templates")
       .then((r) => { if (live) setSets(r.templates); }).catch(() => { if (live) setSets([]); });
     return () => { live = false; };
   }, [folderRev, asked]);
@@ -90,6 +93,16 @@ export default function Studio({ engine, route }: {
   // What the last routine change did. Kept here, not in the panel: a rename
   // or a delete replaces the panel that did it.
   const [routineSaid, setRoutineSaid] = useState<string | null>(null);
+  // The template set being edited, as the panel beside it needs it: the
+  // working copy, unsaved or not.
+  const [tpl, setTpl] = useState<{ doc: TemplateSetDoc | null; dirty: boolean; rev: string }>(
+    { doc: null, dirty: false, rev: "" });
+  const onTemplateDoc = useCallback((doc: TemplateSetDoc | null, dirty: boolean, rev: string) =>
+    setTpl({ doc, dirty, rev }), []);
+  // What the last template-set or show.json change did (as above).
+  const [setSaid, setSetSaid] = useState<string | null>(null);
+  const tplId = route.view === "templates" ? (route.id ?? lib.sets[0]?.id ?? null) : null;
+  useEffect(() => { setSetSaid(null); }, [tplId, route.view]);
 
   // Something to look at in the details panel from the start.
   useEffect(() => {
@@ -130,6 +143,29 @@ export default function Studio({ engine, route }: {
                      })} />
     );
     side = <Coverage scope={route.find ? ALL : route.scope} tracks={tracks} />;
+  } else if (route.view === "templates") {
+    main = <TemplatesView engine={engine} sets={lib.routines == null ? null : lib.sets}
+                          routines={lib.routines ?? []} current={tplId} onDoc={onTemplateDoc} />;
+    side = (
+      <>
+        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        {tplId ? (
+          <TemplateAside key={tplId} engine={engine} id={tplId} doc={tpl.doc} dirty={tpl.dirty}
+                         rev={tpl.rev} summary={lib.sets.find((s) => s.id === tplId)}
+                         sets={lib.sets} tracks={tracks} show={lib.show}
+                         onDone={(said) => { setSetSaid(said); lib.reload(); }} />
+        ) : <p className="muted small">No template set yet.</p>}
+      </>
+    );
+  } else if (route.view === "show") {
+    main = (
+      <>
+        {setSaid && <p className="small s-ok" role="status">{setSaid}</p>}
+        <ShowSettingsView engine={engine} show={lib.show} sets={lib.sets}
+                          routines={lib.routines ?? []}
+                          onDone={(said) => { setSetSaid(said); lib.reload(); }} />
+      </>
+    );
   } else if (route.view === "routines") {
     main = (
       <RoutinesView routines={lib.routines} selected={routineId} onSelect={selectRoutine}
@@ -201,6 +237,13 @@ export default function Studio({ engine, route }: {
             <a className={`s-nav-item${route.view === "routines" ? " on" : ""}`} href="#studio/routines"
                aria-current={route.view === "routines" ? "page" : undefined}>
               <span className="s-nav-name">Routines</span><span className="s-n">{lib.routines?.length ?? ""}</span></a>
+            <a className={`s-nav-item${route.view === "templates" ? " on" : ""}`} href="#studio/templates"
+               aria-current={route.view === "templates" ? "page" : undefined}>
+              <span className="s-nav-name">Template sets</span><span className="s-n">{lib.sets.length || ""}</span></a>
+            <div className="s-sec">Show</div>
+            <a className={`s-nav-item${route.view === "show" ? " on" : ""}`} href="#studio/show"
+               aria-current={route.view === "show" ? "page" : undefined}>
+              <span className="s-nav-name">Show settings</span></a>
             <RekordboxNav scope={route.view === "rekordbox" && !route.find ? route.scope : null} />
           </nav>
         )}

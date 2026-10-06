@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { normalizeName, usageCount } from "./model";
+import { freeId as freeIdAmong, normalizeName, usageCount } from "./model";
 import type { RoutineDoc, RoutineSummary } from "./model";
 
 /**
@@ -28,12 +28,7 @@ export function nameOf(r: RoutineSummary): string { return r.name || r.id; }
 
 /** An id not taken by any routine, from a stem. */
 export function freeId(routines: RoutineSummary[], stem: string): string {
-  const taken = new Set(routines.map((r) => r.id));
-  const base = stem.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 58)
-    || "routine";
-  let id = base;
-  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
-  return id;
+  return freeIdAmong(routines.map((r) => r.id), stem);
 }
 
 export function RoutinesView({ routines, selected, onSelect, onAction }: {
@@ -207,7 +202,7 @@ async function readRoutine(id: string): Promise<{ doc: RoutineDoc; rev: string }
 }
 
 /** Save a file this browser made, with the name it should have. */
-function download(name: string, doc: unknown): void {
+export function download(name: string, doc: unknown): void {
   const url = URL.createObjectURL(new Blob([`${JSON.stringify(doc, null, 2)}\n`],
                                            { type: "application/json" }));
   const a = document.createElement("a");

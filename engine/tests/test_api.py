@@ -332,6 +332,68 @@ try:
           r["ok"] and r["data"]["deleted"] == "routines/spare.json"
           and not (shows / "routines" / "spare.json").exists(), f"{r}")
 
+    # -- 3c. template sets and show.json ---------------------------------------
+    print("\n3c. template sets, and the show's settings")
+    status, body = jget("/api/templates")
+    club_line = body["templates"][0] if status == 200 else {}
+    check("the template sets, each saying whether it is the show's set",
+          club_line.get("id") == "club" and club_line.get("show") is True
+          and club_line.get("rev", "").startswith("r:")
+          and club_line.get("phrases", 0) > 0, f"{club_line}")
+    show_rev = jget("/api/show")[1].get("show_rev")
+    check("/api/show carries show.json's own rev, for a save to quote",
+          isinstance(show_rev, str) and show_rev.startswith("r:"), f"{show_rev}")
+    club = json.loads((shows / "templates" / "club.json").read_text())
+    r = ask({"type": "template_draft", "doc": club, "id": 30})
+    check("a template set draft is checked: clean",
+          r and r["ok"] and r["data"] == {"errors": [], "warnings": [], "problems": []}, f"{r}")
+    odd = json.loads(json.dumps(club))
+    odd["phrases"]["Verse"] = {"routine": "no-such-routine"}
+    odd["phrases"]["Chorus"]["variation"] = "huge"
+    r = ask({"type": "template_draft", "doc": odd, "id": 31})
+    check("and says what it asks of the routines that they do not have",
+          r["ok"] and r["data"]["errors"] == []
+          and any("no-such-routine" in p for p in r["data"]["problems"])
+          and any("'huge'" in p for p in r["data"]["problems"]), f"{r}")
+    odd["phrases"]["Up"]["palette"] = "Nowhere"
+    r = ask({"type": "template_draft", "doc": odd, "id": 32})
+    check("a palette the set does not define is an error, not a note",
+          r["ok"] and any("Nowhere" in e for e in r["data"]["errors"]), f"{r}")
+    copy = {**club, "id": "club-2", "name": "Club 2"}
+    r = ask({"type": "template_save", "doc": copy, "base_rev": "", "id": 33})
+    check("a set is saved as a new file", r and r["ok"]
+          and (shows / "templates" / "club-2.json").is_file(), f"{r}")
+    club_rev = sc.show_library.folder.revs["templates/club.json"]
+    r = ask({"type": "template_delete", "template": "club", "base_rev": club_rev, "id": 34})
+    check("the show's own set is not deleted",
+          r["ok"] is False and "show's" in r["error"]
+          and (shows / "templates" / "club.json").is_file(), f"{r}")
+    show_doc = json.loads((shows / "show.json").read_text())
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": show_rev, "id": 35}, client=viewer)
+    check("show.json saves are configure-tier", r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": "r:000000000000", "id": 36})
+    check("a show.json save that has not seen the latest (the phone's latency "
+          "slider writes it too) is refused", r["ok"] is False and "changed since" in r["error"],
+          f"{r}")
+    r = ask({"type": "show_save", "doc": {**show_doc, "template_set": "club-2"},
+             "base_rev": show_rev, "id": 37})
+    check("making another set the show's is a show.json save",
+          r["ok"] and json.loads((shows / "show.json").read_text())["template_set"] == "club-2",
+          f"{r}")
+    rev2 = sc.show_library.folder.revs["templates/club-2.json"]
+    r = ask({"type": "template_rename", "template": "club-2", "to": "late-night",
+             "base_rev": rev2, "id": 38})
+    check("renaming the show's set renames it in show.json too",
+          r["ok"] and r["data"]["written"] == ["templates/late-night.json", "show.json"]
+          and json.loads((shows / "show.json").read_text())["template_set"] == "late-night"
+          and not (shows / "templates" / "club-2.json").exists(), f"{r}")
+    club_rev = sc.show_library.folder.revs["templates/club.json"]
+    r = ask({"type": "template_delete", "template": "club", "base_rev": club_rev, "id": 39})
+    check("a set that is no longer the show's can be deleted",
+          r["ok"] and not (shows / "templates" / "club.json").exists(), f"{r}")
+
     # -- 4. preview ----------------------------------------------------------
     print("\n4. the designer driving the rig")
     sc.apply({"type": "sync", "source": "blt", "deck": "1",

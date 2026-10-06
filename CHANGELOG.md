@@ -11,6 +11,37 @@ the only record of them until a roadmap doc lands.
 
 ## Unreleased
 
+### Added — template sets and show settings in Studio
+
+- **Template sets have an editor** (`#studio/templates`). Before this, only MCP
+  or a text editor could change one. It has a tab per set and a row per
+  phrase family (Intro to Outro, then Anything else), each picking a routine,
+  variation, parameters and palette. You can add exact labels (Up 2) that
+  start from their family's pick, a bar cycle for tracks with no phrases, the
+  set's own palettes, and the fade between phrases. Undo, the engine's check
+  and Save with the rev work as in the timeline editor, and a recovery copy
+  is kept in this browser.
+- **Try it on a track**: the panel beside shows what the working copy would
+  draft on any phrased track, phrase by phrase, and drafts that track's
+  timeline from the saved set.
+- **Make it the show's set**, duplicate, rename (show.json follows), download
+  and delete. The show's set cannot be deleted. Studio says plainly that sets
+  do not play tracks live yet (F19 milestone 2): new timelines draft from the
+  show's set.
+- **Show settings** (`#studio/show`) edit show.json: the show's template set,
+  what happens when the decks pause (policy, idle routine, silence, fade),
+  and how Follow starts and how fast it believes a track change. Latency is
+  shown, not edited, because it belongs to the phone's slider. A save quotes
+  the file's rev, so a latency change made meanwhile is never overwritten.
+- New engine commands: `template_draft` (the format, plus what the set asks of
+  the routines), `template_save`, `template_rename`, `template_delete`,
+  `show_save`. `/api/show` carries `show_rev`; `/api/templates` lines say which
+  set is the show's, with their revs.
+- A drafted clip now gets the set's fade between phrases (`transition.fade_beats`)
+  as its fade in.
+- Fixed: a save of show.json answered with nothing. The reply named the file
+  by a subfolder that show.json does not have.
+
 ### Added — Studio's routine library: folders, where used, rename, delete
 
 - **Routines are cards**, each with a strip per row showing what it drives

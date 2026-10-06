@@ -302,7 +302,7 @@ const AUDIO_TEXT: Record<AudioCheck, string> = {
 };
 
 export function TrackDetail({ t, set, sets, live }: {
-  t: TrackLine; set: ActiveSet; sets: { id: string; name?: string }[]; live: boolean;
+  t: TrackLine; set: ActiveSet; sets: { id: string; name?: string | null }[]; live: boolean;
 }) {
   const heights = useWaveform(t);
   const audio = useAudioCheck(t);

@@ -89,7 +89,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
   prep?: PrepPick[];
   /** Tracks already in the show, to start. */
   tracks?: StartTrack[];
-  sets: { id: string; name?: string }[];
+  sets: { id: string; name?: string | null }[];
   activeSet: string | null;
   onClose: () => void;
   /** The run wrote to the folder (or tried to): re-read what the page lists,

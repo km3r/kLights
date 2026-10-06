@@ -598,6 +598,14 @@ export type Command =
   | { type: "routine_rename"; routine: string; to: string; base_rev: string }
   /** Delete a routine nothing uses; refused with where, if anything does. */
   | { type: "routine_delete"; routine: string; base_rev: string }
+  | { type: "template_draft"; doc: unknown }
+  | { type: "template_save"; doc: unknown; base_rev: string }
+  /** Rename a template set, and show.json with it if it is the show's. */
+  | { type: "template_rename"; template: string; to: string; base_rev: string }
+  /** Delete a template set that is not the show's. */
+  | { type: "template_delete"; template: string; base_rev: string }
+  /** Write show.json, refused if it changed since `base_rev`. */
+  | { type: "show_save"; doc: unknown; base_rev: string }
   | { type: "track_link"; track_id: string }
   /** Prep tracks from the DJ's rekordbox collection into the show folder, by
    *  rekordbox id. Answered when the bridge has finished. */

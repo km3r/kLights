@@ -7,6 +7,8 @@ import { apiUrl } from "./useEngine";
  *
  *   #studio                      the track library
  *   #studio/routines             the routine library
+ *   #studio/templates[/<id>]     the template sets, or one of them
+ *   #studio/show                 the show's settings (show.json)
  *   #studio/rekordbox[/<id>]     the rekordbox collection, or one playlist
  *                                (?find=<text> searches the whole collection)
  *   #studio/track/<id>           a track's timeline
@@ -23,6 +25,8 @@ export const ALL_TRACKS = "all";
 export type StudioRoute =
   | { view: "tracks" }
   | { view: "routines" }
+  | { view: "templates"; id?: string }
+  | { view: "show" }
   | { view: "rekordbox"; scope: string; find?: string }
   | { view: "track"; id: string }
   | { view: "routine"; id: string };
@@ -32,6 +36,8 @@ export function studioRoute(hash: string): StudioRoute | null {
   const [root, what, ident] = path.split("/");
   if (root !== "studio") return null;
   if (what === "routines") return { view: "routines" };
+  if (what === "templates") return ident ? { view: "templates", id: ident } : { view: "templates" };
+  if (what === "show") return { view: "show" };
   if (what === "rekordbox") {
     const find = new URLSearchParams(query).get("find") ?? undefined;
     return { view: "rekordbox", scope: ident || ALL_TRACKS, ...(find ? { find } : {}) };

@@ -47,7 +47,9 @@ interface HistoryState<D> {
   saved: D | null;
 }
 
-export function useHistory<D extends RowsDoc = TimelineDoc>() {
+// Any document: a timeline and a routine are rows, a template set is not, and
+// undo needs nothing of either.
+export function useHistory<D extends object = TimelineDoc>() {
   const [h, setH] = useState<HistoryState<D>>({ past: [], doc: null, future: [], saved: null });
   const [snap, setSnap] = useState<Snap>("bar");
   const [phrases, setPhrases] = useState<number[]>([]);
@@ -104,7 +106,7 @@ export function useHistory<D extends RowsDoc = TimelineDoc>() {
   };
 }
 
-export type History<D extends RowsDoc = TimelineDoc> = ReturnType<typeof useHistory<D>>;
+export type History<D extends object = TimelineDoc> = ReturnType<typeof useHistory<D>>;
 
 /** What the lanes need of a history -- the same for a timeline and a routine. */
 export interface Edits {
@@ -121,8 +123,10 @@ const BACK_KEY = "klights.designer.back";
 
 /** Where this browser keeps the working copy of an unsaved document. Studio's
  *  library reads it too, to flag a track with unsaved work. */
-export function draftKey(kind: "timeline" | "routine", ident: string): string {
-  return kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.routine.${ident}`;
+export type DocKind = "timeline" | "routine" | "template";
+
+export function draftKey(kind: DocKind, ident: string): string {
+  return kind === "timeline" ? `klights.draft.${ident}` : `klights.draft.${kind}.${ident}`;
 }
 
 /** Remember this page, so the routine editor's back link returns to it. */
@@ -212,11 +216,11 @@ function itemOf(doc: RowsDoc, id: string): Item | undefined {
 interface DraftCheck { errors: string[]; warnings: string[]; problems: string[] }
 interface Kept<D> { doc: D; rev: string; at: number }
 
-function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident }: {
+function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }: {
   history: History<D>; rev: string; setRev: (r: string) => void; engine: Engine;
   /** What is being edited, and which one: the commands and the recovery copy
    *  follow from it. */
-  kind: "timeline" | "routine"; ident: string;
+  kind: DocKind; ident: string;
 }) {
   const { doc } = history;
   const [check, setCheck] = useState<DraftCheck | null>(null);
@@ -224,6 +228,8 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const key = draftKey(kind, ident);
+  // The lanes' tools mean nothing to a document without lanes.
+  const lanes = kind !== "template";
   // `request` is stable; `engine` is a new object on every snapshot, and a
   // debounce keyed on it would be reset ten times a second and never fire.
   const { request } = engine;
@@ -257,8 +263,8 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     }
     if (!connected) return;
     const timer = setTimeout(async () => {
-      const reply = await request(kind === "timeline"
-        ? { type: "timeline_draft", doc } : { type: "routine_draft", doc });
+      const reply = await request(kind === "timeline" ? { type: "timeline_draft", doc }
+        : kind === "routine" ? { type: "routine_draft", doc } : { type: "template_draft", doc });
       if (reply.ok && reply.data) setCheck(reply.data as DraftCheck);
     }, 500);
     return () => clearTimeout(timer);
@@ -287,7 +293,8 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     if (!copy) return;
     // One undoable edit: Undo goes back to the file as saved.
     history.apply((d) => {
-      for (const k of Object.keys(d)) delete d[k];
+      const bag = d as Record<string, unknown>;
+      for (const k of Object.keys(bag)) delete bag[k];
       Object.assign(d, structuredClone(copy));
     });
   };
@@ -300,9 +307,10 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
     if (!doc) return;
     setSaving(true);
     setSaveError(null);
-    const reply: Reply = await engine.request(kind === "timeline"
-      ? { type: "timeline_save", doc, base_rev: rev }
-      : { type: "routine_save", doc, base_rev: rev });
+    const reply: Reply = await engine.request(
+      kind === "timeline" ? { type: "timeline_save", doc, base_rev: rev }
+        : kind === "routine" ? { type: "routine_save", doc, base_rev: rev }
+          : { type: "template_save", doc, base_rev: rev });
     setSaving(false);
     if (reply.ok) {
       setRev((reply.data as { rev: string }).rev);
@@ -317,18 +325,18 @@ function Toolbar<D extends RowsDoc>({ history, rev, setRev, engine, kind, ident 
   const problems = (check?.problems.length ?? 0) + (check?.warnings.length ?? 0);
   return (
     <span className="d-tools">
-      <label className="small muted">Snap{" "}
+      {lanes && <label className="small muted">Snap{" "}
         <select value={history.snap} aria-label="snap"
                 onChange={(e) => history.setSnap(e.target.value as Snap)}>
           <option value="beat">beat</option>
           <option value="bar">bar</option>
           <option value="phrase">phrase</option>
         </select>
-      </label>
+      </label>}
       <button onClick={history.undo} disabled={!history.canUndo}>Undo</button>
       <button onClick={history.redo} disabled={!history.canRedo}>Redo</button>
-      <button className={history.listView ? "on" : ""}
-              onClick={() => history.setListView(!history.listView)}>List</button>
+      {lanes && <button className={history.listView ? "on" : ""}
+              onClick={() => history.setListView(!history.listView)}>List</button>}
       <button className={check && errors ? "d-bad" : problems ? "d-warn" : ""}
               onClick={() => setShowProblems(!showProblems)}
               title="What the engine thinks of this draft">

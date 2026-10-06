@@ -1153,6 +1153,63 @@ def rename_routine(root: Path, folder: "Folder", old: str, new: str,
     return written
 
 
+def template_set_problems(folder: "Folder", doc: dict) -> list[str]:
+    """What a template set asks of the folder's routines that they do not
+    have: a routine that is not there, a variation or a parameter it lacks.
+    The same check the folder load makes, for a set not saved yet."""
+    probe = Folder(root=folder.root, routines=folder.routines)
+    ident = doc.get("id") or "draft"
+    for label, pick in (doc.get("phrases") or {}).items():
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json phrase {label!r}", pick)
+    for i, pick in enumerate((doc.get("bars") or {}).get("cycle") or ()):
+        if isinstance(pick, dict) and isinstance(pick.get("routine"), str):
+            _check_use(probe, f"templates/{ident}.json bar cycle step {i + 1}", pick)
+    return probe.warnings
+
+
+def template_set_uses(folder: "Folder", tid: str) -> list[str]:
+    """What names a template set: only show.json, as the show's set."""
+    return (["show.json (the show's template set)"]
+            if (folder.show or {}).get("template_set") == tid else [])
+
+
+def rename_template_set(root: Path, folder: "Folder", old: str, new: str,
+                        base_rev: str) -> list[str]:
+    """Rename a template set, and show.json with it if it is the show's set.
+    The same order as a routine rename: new file, reference, old file last."""
+    if not ID_RE.match(new or ""):
+        raise ValueError(f"{new!r} is not a usable id: {ID_FIX}")
+    if new == old:
+        raise ValueError("that is its name already")
+    doc = folder.templates.get(old)
+    if doc is None:
+        raise ValueError(f"no template set {old!r}")
+    if new in folder.templates:
+        raise ValueError(f"there is already a template set {new!r}")
+    old_path = path_for(root, "template_set", old)
+    if doc_rev(old_path) != base_rev:
+        raise StaleEdit(f"{old_path.name} changed since you opened it (another "
+                        f"machine, MCP, or another tab saved it). Reload and "
+                        f"rename it again")
+    renamed = json.loads(json.dumps(doc))
+    renamed["id"] = new
+    write_doc(path_for(root, "template_set", new), renamed, "template_set", "")
+    written = [f"{SUBDIR['template_set']}/{new}.json"]
+    if (folder.show or {}).get("template_set") == old:
+        show = json.loads(json.dumps(folder.show))
+        show["template_set"] = new
+        try:
+            write_doc(path_for(root, "show", ""), show, "show",
+                      folder.revs.get("show.json", ""))
+        except (ValueError, OSError, configmod.ConfigError) as exc:
+            raise ValueError(f"wrote {written[0]}, then show.json could not be "
+                             f"changed: {exc}. {old!r} is still there") from exc
+        written.append("show.json")
+    old_path.unlink()
+    return written
+
+
 def delete_doc(path: Path, base_rev: str) -> None:
     """Remove one document, refused if it changed since `base_rev` -- the
     same rule as a save, for the same reason."""
