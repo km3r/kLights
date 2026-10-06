@@ -27,7 +27,7 @@ merely suspicious.
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
@@ -138,8 +138,16 @@ def event_dir(event: str) -> Path:
     return EVENTS / event
 
 
+# What an edit may START from. A rig with no fixtures cannot run, and
+# configmod.RIG says so -- but it is exactly what new_event scaffolds, and a
+# loader that refused it left add_fixture no way in. Edits still leave through
+# _validated, so what gets written is held to the full rule.
+RIG_DRAFT = {**configmod.RIG,
+             "fixtures": replace(configmod.RIG["fixtures"], non_empty=False)}
+
+
 def load_rig_config(event: str) -> dict:
-    return configmod.load(event_dir(event) / "rig.json", configmod.RIG)
+    return configmod.load(event_dir(event) / "rig.json", RIG_DRAFT)
 
 
 # ------------------------------------------------------------------ helpers --
@@ -173,8 +181,8 @@ def check_addresses(cfg: dict, lib: rigmod.ProfileLibrary) -> list[str]:
     treating it as one reports a mixed-universe rig -- a house rig alongside
     ours -- as one giant clash. `shared/tools/validate_patch.py` applies the
     same rule to `patch_sheet.csv`, which the engine does not read; that copy
-    is still separate, and the two agreeing is currently a matter of care
-    rather than of construction.
+    is still separate, and `engine/tests/test_patch.py` compares the two on
+    random patches so they cannot drift apart unnoticed.
     """
     errors: list[str] = []
     occupied: dict[tuple[int, int], str] = {}
