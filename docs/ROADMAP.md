@@ -115,6 +115,48 @@ Open, in rough priority order.
 - **`auto.AudioEnergy`.** Probably never: phrase from the DJ is a better energy
   signal than anything a room mic would give.
 
+### Noted next — not yet ranked
+
+Added 2026-10-03. Each one says where it starts from.
+
+- **Designer UI/UX.** The F19l designer works end to end (lanes, the routine
+  editor, a preview the engine evaluates). This is the polish pass, done once
+  it has been used to build real tracks' shows. What it is today:
+  [`design/timecoded-shows.md`](design/timecoded-shows.md), "The designer:
+  layout B".
+- **A DMX sidecar.** The engine sends only Art-Net. despacio's rig ran through
+  a USB-DMX widget under QLC+. `engine/output` leaves room for USB-DMX as
+  another driver, but serial/FTDI needs a library and the engine is
+  stdlib-only. So it goes in `bridges/`: a process that listens to the engine's
+  Art-Net and writes to the widget. The rig is then one more thing listening,
+  like the previz, and nothing sits between the engine and the wire. The F2
+  spike notes that a USB interface may block differently, so re-measure timing
+  when this lands ([`FINDINGS.md`](../spike/timing/FINDINGS.md)).
+- **rekordbox database integration.** Prep reads the XML export plus the ANLZ
+  analysis files, so every new track needs File → Export Collection first.
+  Reading the collection's `master.db` directly removes that step. It was left
+  out because the database is SQLCipher-encrypted and its key handling changes
+  between rekordbox versions
+  ([`bridges/rekordbox/`](../bridges/rekordbox/README.md), "Not built"). A
+  library that keeps up with those changes is fine in `bridges/`, since it never
+  enters the engine. The related item is reading a stick's `export.pdb`, for a
+  stick with no rekordbox machine to hand.
+- **Calibration without a mirror ball.** The solver doesn't need the ball. It
+  takes two or more captures at any world points, as long as they sit at
+  different bearings. The ball-shaped parts are around it: the Setup tab's first
+  capture is **Ball**, `calibration.json` stores each head as a `ball_dmx`
+  reading, `drift` parks every head on the ball, and the venue file requires
+  `ball` (the taper also treats it as an occluder). A room with no ball needs a
+  measured reference point in its place, such as a taped floor mark or a truss
+  leg, and the occluder made optional. `Venue.rest` already falls back from
+  `rest_point` because "not every room has a ball". This is part of what **A
+  second venue** above will hit.
+- **Previz UI.** `KLightsPreviz.exe` is driven by keys and command-line
+  arguments: WASD / Q E and the mouse, **1–4** for views, **H** for the overlay,
+  and `-Engine=`, `-ArtNetPort=` and `-Snapshot=` at launch
+  ([`previz/README.md`](../previz/README.md)). This item is an on-screen UI for
+  those, so the app is usable without knowing them.
+
 ## Conventions
 
 - **Comments say why, not what.** Where a guard exists because something broke,
