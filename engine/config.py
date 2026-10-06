@@ -424,6 +424,14 @@ PRESETS = {
         # UI's filter row suggests. Cross-cutting: a tag finds every drop in the
         # show, which a bank cannot, because a bank is a place.
         "tags": Spec(list, each=Spec(str)),
+        # A routine from the show folder, played over the looks from the next
+        # downbeat when the pad is pressed (milestone 2). Needs --show-dir.
+        "routine": Spec(dict, of={
+            "id": Spec(str, required=True, non_empty=True,
+                       fix="the id of a file in the show folder's routines/"),
+            "variation": Spec(str),
+            "params": Spec(dict),
+        }),
     })),
 }
 

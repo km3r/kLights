@@ -207,6 +207,27 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    [`bridges/prolink/`](bridges/prolink/README.md)). On the phone's **Track**
    card, arm **Follow** and the matched track's timeline drives the rig;
    picking a look grabs that lane back until you release it.
+4. **Templates** cover everything else: a template set maps rekordbox's phrase
+   labels (Intro, Verse, Up, Chorus, Down...) to routines, so a prepped track
+   with no timeline, the gaps in a timeline, and a guest DJ's track the folder
+   has never seen all get a show -- from the deck's live phrase, or a cycle
+   every N bars when there is none. Switch set live from the Track card; it
+   lands on the next downbeat. A preset pad can carry a routine too, starting on
+   the next downbeat when pressed. With CDJs, what the other decks have loaded
+   is matched and its show built while the DJ cues it, so a master switch is on
+   its timeline from the first frame.
+5. **VJ.** An OSC lane in the designer cues a VJ app (Resolume, or anything
+   that takes OSC) as the track plays -- clip triggers on, off and while
+   playing, and curves -- and a routine can carry one too, so templates cue
+   it on tracks nobody drew. MIDI lanes do the same for MIDI gear, through a
+   small sidecar ([`bridges/midi/`](bridges/midi/README.md)) that owns the
+   MIDI port. For a VJ app with its own timeline per track,
+   `outputs.timecode` sends Art-Net timecode at the DJ's position in the
+   track -- it jumps with loops and hot cues. Say where under `outputs` in
+   show.json, or per machine in `klights.local.json`. Or skip the VJ app: open
+   **`#visuals`** on a laptop on the projector for kLights' own scenes (wash,
+   bars, tunnel, particles, strobe, and videos from the folder's `media/`),
+   cued by a Visuals lane or by the template set phrase by phrase.
 
 What is safe by default: Follow starts **disarmed** every time, because the DJ
 feed arrives on an unauthenticated port; writing to the show folder and taking

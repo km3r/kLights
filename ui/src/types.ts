@@ -234,6 +234,8 @@ export interface Selection {
   level: SlotSelection;
 }
 
+export interface PadRoutine { id: string; variation?: string; params?: Record<string, unknown> }
+
 export interface Preset extends Selection {
   name: string;
   speed?: number;
@@ -259,6 +261,9 @@ export interface Preset extends Selection {
    *  the filter row offers. A tag finds every drop in the show; a bank cannot,
    *  because a bank is a place. */
   tags: string[];
+  /** A routine from the show folder, played over the looks from the next
+   *  downbeat when the pad is pressed (milestone 2). */
+  routine?: PadRoutine;
 }
 
 /** One fixture definition the engine can resolve, with its modes and their
@@ -316,6 +321,57 @@ export interface TrackState {
   match?: TrackMatch | null;
   /** The deck's own beats disagree with the prepped grid. */
   grid_warning?: GridWarning | null;
+  /** What the OTHER decks have loaded (milestone 2, beat-link-trigger only),
+   *  matched, with their shows built in advance. Absent before F22e. */
+  decks?: DeckLoaded[];
+}
+
+/** One built-in visuals item on now: its scene and parameters, and how far
+ *  into it the show is, in beats. */
+export interface VisualItem {
+  key: string;
+  scene: string;
+  params: Record<string, unknown>;
+  elapsed: number;
+  len: number;
+  source: string;
+}
+
+export interface VisualsState {
+  mode: string;
+  /** The show's beat when the snapshot was taken, and how fast it runs: the
+   *  page runs on from it between snapshots. bpm 0: paused. */
+  beat: number | null;
+  bpm: number | null;
+  phrase: string | null;
+  /** Palette roles as #rrggbb. */
+  palette: Record<string, string>;
+  items: VisualItem[];
+}
+
+export interface OutputsState {
+  osc: { target: string; sent: number; errors: number; last_error: string | null;
+         on: number } | null;
+  /** The MIDI sidecar: what is on is notes and CCs held. Absent before F23c. */
+  midi?: { target: string; sent: number; errors: number; last_error: string | null;
+           on: number } | null;
+  /** Art-Net timecode: the matched track's position. `now` is the last time
+   *  sent, null while silent (paused, disarmed, nothing matched). Absent
+   *  before F23b. */
+  timecode?: { target: string; fps: number; sent: number; errors: number;
+               last_error: string | null; now: string | null } | null;
+  /** Why an output is off: a bad address in show.json or klights.local.json. */
+  problems: string[];
+}
+
+/** A track loaded on a deck that is not the master. `ready`: its timeline is
+ *  built, so it drives from its first frame when the DJ makes it the master. */
+export interface DeckLoaded {
+  deck: string;
+  title: string | null;
+  track_id: string | null;
+  has_timeline: boolean;
+  ready: boolean;
 }
 
 /** What the playing track was matched to in the show folder. Fixed for the
@@ -343,14 +399,24 @@ export interface GridWarning {
 /** Who drives a lane: the track's timeline, the operator (a grab), the
  *  pause idle routine, or the operator's/auto show because the timeline is not
  *  driving at all. */
-export type LaneSource = "timeline" | "operator" | "idle" | "fallback";
+export type LaneSource = "timeline" | "template" | "operator" | "idle" | "fallback";
+
+/** What the template set plays now (milestone 2). */
+export interface TemplateNow {
+  set: string | null;
+  /** The phrase that chose it ("Chorus", "Verse 2"), "*", or "bars". */
+  label: string;
+  routine: string;
+  start: number;
+  fading: boolean;
+}
 
 /** Playback (F19i): whether Follow DJ is armed, whether the timeline is on
  *  stage, and who has each lane. */
 export interface ProgramState {
   armed: boolean;
   engaged: boolean;
-  mode: "timeline" | "preview" | "idle" | "fallback";
+  mode: "timeline" | "template" | "preview" | "idle" | "fallback";
   /** Why the timeline is not driving: "disarmed", "no track", "matching",
    *  "not in the show folder", "no timeline", "compiling", "paused"... */
   reason: string | null;
@@ -363,6 +429,12 @@ export interface ProgramState {
   first_problem: string | null;
   /** Per source, how far ahead of its position the lights run. */
   latency_ms: Record<string, number>;
+  /** The active template set, the one switching in on the next downbeat
+   *  ("off" for none), and every set in the folder. Absent before F22b. */
+  set?: string | null;
+  pending?: string | null;
+  sets?: { id: string; name: string }[];
+  template?: TemplateNow | null;
 }
 
 /** A designer's preview: who armed it, on which track, playing what. */
@@ -436,6 +508,14 @@ export interface EngineState {
   program?: ProgramState | null;
   /** The designer driving the rig from its own transport (F19j), or null. */
   preview?: PreviewState | null;
+  /** A routine pad, waiting for its downbeat or playing. Absent before F22d. */
+  pad?: { name: string; routine: string; waiting: boolean } | null;
+  /** The other outputs (milestone 3): where OSC goes and how it is doing.
+   *  Null when none is configured; absent before F23a. */
+  outputs?: OutputsState | null;
+  /** What a #visuals page draws (milestone 3). Null without a show folder;
+   *  absent before F23d. */
+  visuals?: VisualsState | null;
   auto: AutoState;
   looks: LookInfo[];
   /** What the operator has turned on each parametric look, by look name,
@@ -522,7 +602,7 @@ export type Command =
    *  cycle length is a musical decision, not a shape one. */
   | { type: "vary"; name: string; amount?: number; seed?: number }
   | { type: "preset_save"; name: string; bank?: number; cell?: number;
-      tags?: string[] }
+      tags?: string[]; routine?: PadRoutine | null }
   | { type: "preset_apply"; name: string }
   | { type: "preset_delete"; name: string }
   | { type: "preset_move"; name: string; bank: number; cell: number }
@@ -588,6 +668,8 @@ export type Command =
   | { type: "program_grab"; slot: Slot }
   | { type: "program_release"; slot?: Slot }
   | { type: "show_latency"; source: string; ms: number }
+  /** Milestone 2: switch template set (null = off), on the next downbeat. */
+  | { type: "template_set"; id: string | null }
   /** The designer (F19j). Drafts and saves are answered from the worker;
    *  send them with an id and wait for the reply. */
   | { type: "timeline_draft"; doc: unknown }

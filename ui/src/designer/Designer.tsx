@@ -12,8 +12,8 @@ import type {
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
-  Editor, clipOps, copyRange, cutRange, parsePointId, rememberBack, setClipBoard, uniqueId,
-  useClipBoard, useEditorKeys, useHistory,
+  Editor, ParamLanes, clipOps, copyRange, cutRange, parsePointId, parseWaveId, rememberBack,
+  setClipBoard, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys, useHistory,
 } from "./edit";
 import type { Placeable, RowsDoc } from "./edit";
 import { Browser } from "./Browser";
@@ -368,8 +368,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const selectedItem = findItem(doc, selected);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
+  const paramLanes = timelineLaneSpecs(doc, routines);
 
   /** One placement as an edit, its new item's id read from a dry run on a
    *  copy (an edit is applied when React renders, too late to read back). */
@@ -478,6 +480,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const menuItem = menu ? findItem(doc, menu.id) : null;
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <PanelToggle open={panels.browse} side="left" label="browser"
@@ -632,8 +635,9 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
               <p>Which lane drives each slot right now. Higher lanes win: a movement
                 lane above the scene lane only overrides the scene's movement.</p>
               <p><b>rest</b> means the lane that owns this slot is empty here, so
-                nothing drives it. <b>operator's show</b> means no lane has anything
-                here, so whatever the operator is running shows through.</p>
+                nothing drives it. <b>template set / show</b> means no lane has anything
+                here, so the template set that is on shows through, or the operator's show
+                where the set has nothing for this phrase.</p>
             </>}>At the playhead · bar {barBeat(beat)}</HelpHeading>
             <table className="d-who">
               <tbody>
@@ -644,7 +648,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                       ? <><b>{itemName(d.item)}</b> <span className="muted">· {d.row}</span></>
                       : d.source === "blank"
                         ? <span className="muted">rest ({d.row} owns it)</span>
-                        : <span className="muted">operator's show</span>}</td>
+                        : <span className="muted">template set / show</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -655,7 +659,9 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         {guide.drawer}
       </div>
 
-      {selectedPoint && pointRow && !history.listView
+      {waveRow && !history.listView
+        ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
+        : selectedPoint && pointRow && !history.listView
         ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                  onSelect={setSelected} />
         : <Editor.Inspector history={history} item={selectedItem} routines={routines}
@@ -695,6 +701,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         </div>
       )}
     </div>
+    </ParamLanes.Provider>
   );
 }
 

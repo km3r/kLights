@@ -406,6 +406,8 @@ label.field input, label.field select {
   padding-bottom: 2px; min-width: 0;
 }
 .pills::-webkit-scrollbar { display: none; }
+/* A choice made, landing on the next downbeat. */
+.pills button.pending, .tiles button.pending { border-style: dashed; border-color: var(--accent); }
 .pills button {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -499,3 +501,5 @@ button { max-width: 100%; overflow-wrap: anywhere; }
   overflow-wrap: normal;
   white-space: nowrap;
 }
+
+.warn-text { color: var(--warn); }

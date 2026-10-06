@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { BEATS_PER_BAR, PHRASE_HUE, curveValue, phraseFamily } from "./model";
-import type { Grid, Row, TrackDoc, Wave } from "./model";
-import { Editor } from "./edit";
+import { BEATS_PER_BAR, PHRASE_HUE, curveValue, laneValue, phraseFamily } from "./model";
+import type { Grid, Item, Row, TrackDoc, Wave } from "./model";
+import { Editor, defaultWave, laneTitle, useLaneSpec, waveId } from "./edit";
 import type { Edits, Placeable } from "./edit";
 
 /**
@@ -144,12 +144,18 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
                      selected={selected} onSelect={onSelect} />;
   }
   if (row.type === "external") {
+    if (row.output === "osc" || row.output === "midi" || row.output === "visuals"
+        || row.output === "vj") {
+      return <ExternalLane row={row} index={index} x={x} width={width} zoom={zoom}
+                           selected={selected} onSelect={onSelect} history={history}
+                           beat={beat} />;
+    }
     return (
       <div className="d-row d-external">
         <div className="d-head">{row.label ?? `${row.output ?? "external"} · ${row.id}`}
-          <span className="muted small"> (later)</span></div>
+          <Editor.LaneMenu row={row} index={index} history={history} /></div>
         <div className="d-empty muted small" style={{ width }}>
-          Output: {row.output} -- carried in the file, played from milestone 3</div>
+          Output: {row.output} -- kept in the file; not editable here</div>
       </div>
     );
   }
@@ -182,17 +188,107 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   );
 }
 
+/** A new cue on an OSC or MIDI lane, before its author says what it sends. */
+function newCue(output: string): Partial<Item> {
+  if (output === "midi") return { note: 60, velocity: 100 };
+  if (output === "visuals" || output === "vj") return { scene: "wash", params: { color: "@primary" } };
+  return { on: { address: "/composition/layers/1/clips/1/connect", args: [1] } };
+}
+
+const OUTPUT_LABEL: Record<string, string> = {
+  osc: "OSC", midi: "MIDI", visuals: "Visuals", vj: "Visuals",
+};
+
+/** An OSC or MIDI lane (milestone 3): cues as the track plays -- or, with
+ *  points, a curve sent to one OSC address or one MIDI controller. */
+function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history, beat }: {
+  row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
+  selected: string | null; onSelect: (id: string | null) => void;
+  history: Edits; beat: number;
+}) {
+  const curve = row.points != null;
+  const now = curve ? curveValue(row.points ?? [], beat) : null;
+  const set = (fields: Partial<Row>) => history.apply((d) => {
+    const r = d.rows.find((q) => q.id === row.id);
+    if (r) Object.assign(r, fields);
+  });
+  const midi = row.output === "midi";
+  return (
+    <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
+      <div className="d-head">
+        <span>{OUTPUT_LABEL[row.output ?? ""] ?? row.output}
+          <span className="muted small"> · {row.label ?? row.id}</span>
+          {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</span>
+        {curve && !midi && (
+          <input className="small mono d-osc-address" aria-label={`${row.id} address`}
+                 value={row.address ?? ""} placeholder="/address"
+                 onChange={(e) => set({ address: e.target.value })} />)}
+        {curve && midi && (
+          <span className="small">
+            cc <input type="number" className="d-num" min={0} max={127}
+                      aria-label={`${row.id} cc`} value={row.cc ?? 0}
+                      onChange={(e) => set({ cc: Number(e.target.value) })} />
+            {" "}ch <input type="number" className="d-num" min={1} max={16}
+                           aria-label={`${row.id} channel`} value={row.channel ?? 1}
+                           onChange={(e) => set({ channel: Number(e.target.value) })} />
+          </span>)}
+        {!curve && (
+          <button className="small" aria-label={`add a cue to ${row.id}`}
+                    onClick={() => {
+                      if (!history.doc) return;
+                      // Named first: the edit itself runs later, inside React's update.
+                      const id = Editor.uniqueId(history.doc, "cue");
+                      const at = history.snapBeat(beat);
+                      history.apply((d) => {
+                        const r = d.rows.find((q) => q.id === row.id);
+                        if (!r) return;
+                        r.items = [...(r.items ?? []), { id, at, len: 16,
+                                                          ...newCue(row.output ?? "") }];
+                      });
+                      onSelect(id);
+                    }}>+ cue</button>)}
+        <Editor.LaneMenu row={row} index={index} history={history} />
+      </div>
+      {curve
+        ? <Editor.AutoSvg row={row} x={x} width={width} history={history}
+                          selected={selected} onSelect={onSelect} />
+        : <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
+                          onSelect={onSelect} history={history} />}
+    </div>
+  );
+}
+
 export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number;
   history: Edits; beat: number;
   selected?: string | null; onSelect?: (id: string | null) => void;
 }) {
-  const now = curveValue(row.points ?? [], beat);
+  const spec = useLaneSpec(row);
+  const points = row.points ?? [];
+  // A colour lane has no number to show; it says the colour it last passed.
+  const now = spec.kind === "color"
+    ? [...points].reverse().find((p) => p[0] <= beat)?.[1] ?? points[0]?.[1] ?? null
+    : laneValue(row, beat);
   return (
     <div className="d-row d-auto">
       <div className="d-head">
-        <span>{row.target === "master" ? "Master" : row.target}
-          <span className="muted small mono"> {now == null ? "" : now.toFixed(2)}</span></span>
+        <span title={spec.reaches ? `drives $${spec.label} on ${spec.reaches.join(", ")}` : undefined}>
+          {laneTitle(row.target ?? "", spec)}
+          <span className="muted small mono">
+            {" "}{now == null ? "" : typeof now === "number" ? now.toFixed(2) : String(now)}</span></span>
+        <button className={`small d-wave${row.wave ? " on" : ""}`}
+                aria-label={`wave on ${row.id}`}
+                title={row.wave ? `${row.wave.shape} every ${row.wave.bars} bars -- edit it`
+                  : "Add a wave on top of the points"}
+                onClick={() => {
+                  if (!row.wave) {
+                    history.apply((d) => {
+                      const r = d.rows.find((q) => q.id === row.id);
+                      if (r) r.wave = defaultWave(r, spec);
+                    });
+                  }
+                  onSelect?.(waveId(row.id));
+                }}>∿</button>
         <Editor.LaneMenu row={row} index={-1} history={history} />
       </div>
       <Editor.AutoSvg row={row} x={x} width={width} history={history}

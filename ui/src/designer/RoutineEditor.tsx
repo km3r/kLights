@@ -3,14 +3,14 @@ import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
-  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem,
+  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, itemName,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
 import {
-  AUTOMATION_RANGES, Editor, FADES, ROLES, automationRow, backHash, parsePointId, uniqueId,
-  useEditorKeys, useHistory,
+  AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
+  parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
 } from "./edit";
-import type { History } from "./edit";
+import type { History, LaneSpecs } from "./edit";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
@@ -137,8 +137,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const rigBound = usesRig(doc);
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
+  const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
+  const paramLanes = routineLaneSpecs(doc);
 
   return (
+    <ParamLanes.Provider value={paramLanes}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <a className="d-link" href={back}
@@ -181,7 +184,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
                     selected={selected} onSelect={setSelected} history={history}
                     beat={loop.beat} roles={roles} />
             ))}
-            <AddLane history={history} roles={roles} />
+            <AddLane history={history} roles={roles} params={paramLanes} />
             {doc.rows.length === 0 && (
               <p className="small muted" style={{ paddingLeft: HEADER_W + 8 }}>
                 Empty. Add a block from the right, or a lane from “+ lane”.</p>)}
@@ -204,12 +207,15 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
 
       {history.listView
         ? <Editor.EventList history={history} />
+        : waveRow
+          ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow
           ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                    onSelect={setSelected} />
           : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
                             onDeleted={() => setSelected(null)} />}
     </div>
+    </ParamLanes.Provider>
   );
 }
 
@@ -219,9 +225,9 @@ function usesRig(doc: Doc): boolean {
 
 // -- lanes ------------------------------------------------------------------------
 
-function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
-  const doc = history.doc!;
-  const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
+function AddLane({ history, roles, params }: {
+  history: RHistory; roles: string[]; params: LaneSpecs;
+}) {
   return (
     <div className="d-row d-add">
       <div className="d-head">
@@ -230,6 +236,10 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
                   const target = e.target.value;
                   if (!target) return;
                   history.apply((d) => {
+                    // A routine can cue a VJ app too, wherever it plays: on a
+                    // track, from a template, on a pad (milestone 3).
+                    const external = externalRow(d, target);
+                    if (external) { d.rows.push(external); return; }
                     const id = uniqueId(d, target);
                     d.rows.push(target === "hits" ? { id, type: "hits", items: [] }
                       : { id, type: "clips", target, role: roles[0] ?? "", items: [] });
@@ -238,16 +248,13 @@ function AddLane({ history, roles }: { history: RHistory; roles: string[] }) {
           <option value="">+ lane</option>
           {SLOTS.map((s) => <option key={s} value={s}>{LANE_NAMES[s]}</option>)}
           <option value="hits">Hits</option>
+          <option value="osc">OSC cues</option>
+          <option value="osc-curve">OSC curve</option>
+          <option value="midi">MIDI cues</option>
+          <option value="midi-curve">MIDI curve</option>
+          <option value="visuals">Visuals</option>
         </select>
-        <select aria-label="add automation" value=""
-                onChange={(e) => {
-                  const target = e.target.value;
-                  if (target) history.apply((d) => { d.rows.push(automationRow(d, target)); });
-                }}>
-          <option value="">+ automation</option>
-          {Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t)).map((t) => (
-            <option key={t} value={t}>{t}</option>))}
-        </select>
+        <AutomationMenu history={history} params={params} />
       </div>
     </div>
   );
@@ -609,6 +616,34 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
   });
   const paramsOf = (...types: string[]) =>
     Object.entries(params).filter(([, p]) => types.includes(p.type)).map(([n]) => n);
+  const remove = () => {
+    history.apply((d) => {
+      for (const r of d.rows) if (r.items) r.items = r.items.filter((i) => i.id !== it.id);
+    });
+    onDeleted();
+  };
+
+  if (row.type === "external") {
+    return (
+      <footer className="d-inspector" aria-label="inspector">
+        <div className="d-insp-head">
+          <b>{itemName(it)}</b>
+          <span className="muted"> · {row.output} cue on {row.id}</span>
+          <span className="muted mono"> · beat {it.at} → {it.at + it.len} ({it.len} beats)</span>
+          <span className="grow" />
+          <button onClick={remove}>Delete</button>
+        </div>
+        <div className="d-insp-grid">
+          {row.output === "osc" &&
+            <Editor.OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+          {row.output === "midi" &&
+            <Editor.MidiCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+          {(row.output === "visuals" || row.output === "vj") &&
+            <Editor.VisualCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+        </div>
+      </footer>
+    );
+  }
 
   return (
     <footer className="d-inspector" aria-label="inspector">

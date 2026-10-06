@@ -143,6 +143,12 @@ export default function Studio({ engine, route }: {
 
   const setId = typeof lib.show?.show?.template_set === "string" ? lib.show.show.template_set : null;
   const set: ActiveSet = { id: setId, name: lib.sets.find((s) => s.id === setId)?.name ?? setId };
+  // The set playing a track with no timeline: the engine's, which the operator
+  // can switch or turn off; else show.json's, which the engine starts on.
+  const liveSet = engine.state?.program?.set;
+  const playingId = liveSet === undefined ? setId : liveSet;
+  const playing: ActiveSet = { id: playingId,
+                               name: lib.sets.find((s) => s.id === playingId)?.name ?? playingId };
   const liveTrack = engine.state?.track?.match?.track_id ?? null;
   const tracks = lib.tracks ?? [];
   const sel = tracks.find((t) => t.id === selected) ?? null;
@@ -234,7 +240,8 @@ export default function Studio({ engine, route }: {
     );
   } else {
     main = (
-      <TracksView tracks={lib.tracks} error={lib.error} set={set} liveTrack={liveTrack}
+      <TracksView tracks={lib.tracks} error={lib.error} set={set} playing={playing}
+                  liveTrack={liveTrack}
                   selected={selected} onSelect={setSelected}
                   ticked={tickedTracks} setTicked={setTickedTracks}
                   onStart={(ids) => {
@@ -243,7 +250,8 @@ export default function Studio({ engine, route }: {
                                 tracks: picked.map((t) => ({ id: t.id, title: t.title, artist: t.artist })) });
                   }} />
     );
-    side = sel ? <TrackDetail key={sel.id} t={sel} set={set} sets={lib.sets} live={sel.id === liveTrack} />
+    side = sel ? <TrackDetail key={sel.id} t={sel} set={set} playing={playing} sets={lib.sets}
+                              live={sel.id === liveTrack} />
       : <p className="muted small">Select a track to see what it needs.</p>;
   }
 

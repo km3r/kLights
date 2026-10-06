@@ -12,6 +12,15 @@
 ;;;;                      i master, i on_air                 -- 25 times a second
 ;;;;   /klights/v1/track  i deck, i rekordbox_id, s signature, s title,
 ;;;;                      s artist, s album, f duration_s    -- on every change
+;;;;   /klights/v1/phrase i deck, s label, f beats_into, f beats_left
+;;;;                      -- the tempo master's phrase, from the rekordbox
+;;;;                      analysis on the DJ's USB: on every change and every
+;;;;                      bar. An empty label: the track has no phrase analysis.
+;;;;   /klights/v1/deck   i deck, i rekordbox_id, s signature, s title,
+;;;;                      s artist, s album, f duration_s
+;;;;                      -- what EVERY deck has loaded, on every change, so
+;;;;                      the engine builds a track's show before the DJ fades
+;;;;                      it in. An empty title: the deck was emptied.
 ;;;;   /bpm  f            the tempo master's effective tempo  -- every beat
 ;;;;   /beat f            its beat within the bar, 0-3        -- every beat
 ;;;;
@@ -31,17 +40,132 @@
 ;;; ---- Shared Functions ------------------------------------------------------
 ;;; (Triggers window: File > Edit Shared Functions)
 
-(defn klights-send-track
-  "Who the given player's track is, in one message. Returns true if it was
-  sent -- metadata can take a moment to arrive after a track loads, and the
-  caller retries until it has."
-  [client player]
+(def klights-phrase-labels
+  "rekordbox's phrase names by mood and kind -- the same table as
+  bridges/rekordbox/anlz.py, so a guest's phrase reads exactly as a prepped
+  one does and a template set matches both the same way."
+  {:mid {1 "Intro" 2 "Verse 1" 3 "Verse 2" 4 "Verse 3" 5 "Verse 4"
+         6 "Verse 5" 7 "Verse 6" 8 "Bridge" 9 "Chorus" 10 "Outro"}
+   :low {1 "Intro" 2 "Verse 1" 3 "Verse 1" 4 "Verse 1" 5 "Verse 2"
+         6 "Verse 2" 7 "Verse 2" 8 "Bridge" 9 "Chorus" 10 "Outro"}})
+
+(defn klights-phrase-label
+  "The label rekordbox shows. High-mood numbering is not in `kind` but in
+  three flag bytes (anlz.adoc, \"High mood phrase variants\")."
+  [mood kind k1 k2 k3]
+  (if (= mood :high)
+    (case (int kind)
+      1 (if (= k1 1) "Intro 1" "Intro 2")
+      2 (cond (= k2 1) "Up 3" (= k3 1) "Up 2" :else "Up 1")
+      3 "Down"
+      5 (if (= k1 1) "Chorus 1" "Chorus 2")
+      6 (if (= k1 1) "Outro 1" "Outro 2")
+      (str "Phrase " kind))
+    (get-in klights-phrase-labels [mood (int kind)] (str "Phrase " kind))))
+
+(defn klights-id
+  "A Kaitai enum, or a plain number, as a number."
+  [v]
+  (if (number? v) (long v) (long (.id v))))
+
+;; Per player: {:id rekordbox-id :stale tag :tag tag :phrases [...]}. BLT's
+;; "latest analysis" for a player can still be the PREVIOUS track's for a
+;; moment after a new one loads; cached under the new track's id, the old
+;; phrases would have driven the new track's templates until it was unloaded.
+
+(defn klights-pssi-tag
+  "BLT's latest phrase analysis (the PSSI tag of the .EXT file) for `player`,
+  or nil. A lookup in BLT's own cache, cheap enough for every tick."
+  [player]
+  (.getLatestTrackAnalysisFor
+   (org.deepsymmetry.beatlink.data.AnalysisTagFinder/getInstance)
+   (int player) ".EXT" "PSSI"))
+
+(defn klights-note-track
+  "Called every tick for every deck. When a deck's track changes, remember
+  the analysis BLT holds for it at that moment: it is the previous track's
+  until the new one's arrives, so it is never read as the new track's. On
+  the first tick nothing came before, and what is there is this track's."
+  [player rekordbox-id]
+  (let [seen (get-in @globals [:klights-structure player])]
+    (when (not= rekordbox-id (:id seen))
+      (swap! globals assoc-in [:klights-structure player]
+             {:id rekordbox-id :stale (when seen (klights-pssi-tag player))}))))
+
+(defn klights-song-structure
+  "The phrases of the track `player` has loaded, from the rekordbox analysis
+  on the DJ's own USB, as [[start-beat end-beat label] ...] in beat numbers --
+  or nil when the track has none (exported by rekordbox 5, or never
+  analysed), or its analysis has not arrived yet. Worked out again only when
+  BLT's analysis object changes, so the 25 Hz tick is a lookup. Never from
+  an analysis that was there before this track loaded, nor while the deck's
+  metadata still describes another track."
+  [player rekordbox-id]
+  (let [tag      (klights-pssi-tag player)
+        seen     (get-in @globals [:klights-structure player])
+        metadata (.getLatestMetadataFor
+                  (org.deepsymmetry.beatlink.data.MetadataFinder/getInstance) player)]
+    (cond
+      (or (nil? tag)
+          (not= rekordbox-id (:id seen))
+          (identical? tag (:stale seen))
+          (nil? metadata)
+          (not= rekordbox-id (.rekordboxId (.trackReference metadata))))
+      nil
+
+      (identical? tag (:tag seen))
+      (:phrases seen)
+
+      :else
+      (let [body    (.body tag)
+            mood    (keyword (clojure.string/lower-case (str (.mood body))))
+            entries (vec (.entries body))
+            ends    (concat (map #(.beat %) (rest entries))
+                            [(.endBeat body)])
+            phrases (mapv (fn [e end]
+                            [(.beat e) end
+                             (klights-phrase-label mood (klights-id (.kind e))
+                                                   (.k1 e) (.k2 e) (.k3 e))])
+                          entries ends)]
+        (swap! globals update-in [:klights-structure player]
+               assoc :tag tag :phrases phrases)
+        phrases))))
+
+(defn klights-send-phrase
+  "Where the tempo master is in its phrase, if its track has phrases: sent
+  when the phrase changes and every bar, so an engine started mid-phrase
+  catches up within a bar."
+  [client player rekordbox-id beat]
+  (let [phrases (klights-song-structure player rekordbox-id)
+        here    (some (fn [[s e _ :as p]] (when (and (<= s beat) (< beat e)) p))
+                      phrases)
+        k       [player rekordbox-id (first here)]
+        [last-k last-beat] (:klights-phrase-at @globals)]
+    (when (and (pos? beat)
+               (or (not= k last-k) (>= (Math/abs (- beat (or last-beat 0))) 4)))
+      (let [[s e label] here]
+        (overtone.osc/osc-send client "/klights/v1/phrase"
+                               (int player)
+                               (str (or label ""))
+                               (float (if here (- beat s) 0))
+                               (float (if here (- e beat) 0))))
+      (swap! globals assoc :klights-phrase-at [k beat]))))
+
+(defn klights-send-identity
+  "Who the given player's track is, in one message to `address`
+  (/klights/v1/track for the tempo master, /klights/v1/deck for any deck).
+  Returns true if it was sent -- metadata can take a moment to arrive after a
+  track loads, and the caller retries until it has. Metadata still describing
+  the PREVIOUS track (its rekordbox id is not the one the deck reports) is not
+  sent: the caller would mark the new track as done and never send it."
+  [client address player rekordbox-id]
   (let [metadata (.getLatestMetadataFor
                   (org.deepsymmetry.beatlink.data.MetadataFinder/getInstance) player)
         signature (.getLatestSignatureFor
                    (org.deepsymmetry.beatlink.data.SignatureFinder/getInstance) player)]
-    (when metadata
-      (overtone.osc/osc-send client "/klights/v1/track"
+    (when (and metadata
+               (= rekordbox-id (.rekordboxId (.trackReference metadata))))
+      (overtone.osc/osc-send client address
                              (int player)
                              (int (.rekordboxId (.trackReference metadata)))
                              (str (or signature ""))
@@ -50,6 +174,27 @@
                              (str (or (some-> (.getAlbum metadata) .label) ""))
                              (float (.getDuration metadata)))
       true)))
+
+(defn klights-send-decks
+  "What every deck has loaded, whenever that changes -- a deck that is not
+  the master yet included, so the engine can build its show before the DJ
+  fades it in. An emptied deck (rekordbox id 0) sends an empty identity. A
+  deck whose metadata has not arrived is tried again on the next tick."
+  [client]
+  (let [loaded (:klights-loaded @globals)]
+    (doseq [status (.getLatestStatus virtual-cdj)
+            :when (instance? org.deepsymmetry.beatlink.CdjStatus status)]
+      (let [player (.getDeviceNumber status)
+            id     (.getRekordboxId status)]
+        (klights-note-track player id)
+        (when (and (not= id (get loaded player))
+                   (if (zero? id)
+                     (do (overtone.osc/osc-send client "/klights/v1/deck"
+                                                (int player) (int 0) "" "" "" ""
+                                                (float 0))
+                         true)
+                     (klights-send-identity client "/klights/v1/deck" player id)))
+          (swap! globals assoc-in [:klights-loaded player] id))))))
 
 (defn klights-tick
   "Runs :klights-hz times a second, off BLT's event threads: the tempo
@@ -64,7 +209,8 @@
               ident  [player (.getRekordboxId master)]
               millis (.getTimeFor time-finder player)]
           (when (and (not= ident klights-last)
-                     (klights-send-track klights-client player))
+                     (klights-send-identity klights-client "/klights/v1/track"
+                                            player (.getRekordboxId master)))
             (swap! globals assoc :klights-last ident))
           ;; -1 means TimeFinder has no position yet (nothing loaded, or the
           ;; track is still being analysed). Send nothing rather than a lie.
@@ -77,7 +223,12 @@
                                            (.getPitch master)))
                                    (int (.getBeatNumber master))
                                    (int 1)
-                                   (int (if (.isOnAir master) 1 0)))))))
+                                   (int (if (.isOnAir master) 1 0))))
+          (klights-send-phrase klights-client player (.getRekordboxId master)
+                               (.getBeatNumber master))))
+      ;; After the master's position, which matters more this tick.
+      (when klights-client
+        (klights-send-decks klights-client)))
     (catch Throwable t
       (timbre/warn t "kLights: position tick failed"))))
 
@@ -91,7 +242,7 @@
   (when-let [client (:klights-client @globals)]
     (osc/osc-close client))
   (swap! globals dissoc :klights-client :klights-executor :klights-beats
-         :klights-last))
+         :klights-last :klights-phrase-at :klights-structure :klights-loaded))
 
 
 ;;; ---- Global Setup Expression -----------------------------------------------
@@ -125,12 +276,13 @@
   ;; Player Status window is open.
   (doseq [finder [(org.deepsymmetry.beatlink.data.TimeFinder/getInstance)
                   (org.deepsymmetry.beatlink.data.MetadataFinder/getInstance)
-                  (org.deepsymmetry.beatlink.data.SignatureFinder/getInstance)]]
+                  (org.deepsymmetry.beatlink.data.SignatureFinder/getInstance)
+                  (org.deepsymmetry.beatlink.data.AnalysisTagFinder/getInstance)]]
     (try (.start finder)
          (catch Throwable t (timbre/warn t "kLights: could not start" finder))))
   (.addBeatListener (org.deepsymmetry.beatlink.BeatFinder/getInstance) beats)
   (swap! globals assoc :klights-client client :klights-executor executor
-         :klights-beats beats :klights-last nil)
+         :klights-beats beats :klights-last nil :klights-loaded {})
   (.scheduleAtFixedRate executor klights-tick 0
                         (quot 1000 (:klights-hz @globals))
                         java.util.concurrent.TimeUnit/MILLISECONDS))

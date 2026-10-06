@@ -7,15 +7,18 @@ import App from "../App";
 import type { Command } from "../types";
 import {
   BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave, draftFromTemplate, freeName, hexColor, newTimeline, phraseMatch,
-  templateFromTimeline, whoDrives,
+  decodeWave, draftFromTemplate, freeName, hexColor, laneValue, newTimeline, phraseMatch,
+  templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt,
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, paramSpec, pasteBoard,
+  routineLaneSpecs, splitAt, timelineLaneSpecs,
 } from "../designer/edit";
+import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
-import type { RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
+import waveVectors from "../designer/__fixtures__/wave-vectors.json";
+import type { Point, RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
 import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
@@ -95,6 +98,81 @@ describe("designer model", () => {
     expect(arg("scatter", "stations")).toMatchObject({ kind: "number", step: 1 });
     // A unit that only repeats the name is dropped rather than shown twice.
     expect(arg("orbit", "bars").unit).toBeUndefined();
+  });
+
+  it("ranges a parameter's lane by its declaration, then by the arguments it feeds", () => {
+    const fan = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    // declared: what the engine holds the lane to
+    expect(fan["param.width"]).toMatchObject(
+      { kind: "number", min: 0, max: 120, lo: 0, hi: 120, unit: "deg", start: 40 });
+    // a rate says nothing and is still held to 0-8, as the engine holds it
+    expect(fan["param.rate"]).toMatchObject({ min: 0, max: 8, start: 1 });
+    expect(fan["param.color"]).toMatchObject({ kind: "color", start: "@primary" });
+    // open-ended: accepted as anything, drawn on the orbit radius it feeds
+    const open = routineLaneSpecs({
+      params: { r: { type: "number", default: 10 }, which: { type: "look" } },
+      rows: [{ id: "m", type: "clips", target: "movement",
+               items: [{ id: "o", at: 0, len: 4, block: "orbit", args: { radius: "$r" } }] }],
+    });
+    expect(open["param.r"]).toMatchObject({ lo: 0, hi: 90, min: undefined, max: undefined });
+    // a look is chosen when the routine is built; no lane can change it
+    expect(open["param.which"]).toBeUndefined();
+    expect(paramSpec("which", { type: "look" })).toBeNull();
+  });
+
+  it("offers a track's timeline one lane per parameter name of the routines on it", () => {
+    const specs = timelineLaneSpecs(timelineDoc as unknown as TimelineDoc, [
+      { id: "fan-drop", params: fanDrop.params },
+      { id: "idle-orbit", params: idleOrbit.params },
+      { id: "verse-sweep", params: { width: { type: "number", min: 10, max: 90 } } },
+      { id: "not-placed", params: { gobo: { type: "number" } } },
+    ]);
+    expect(specs["param.color"]!.reaches).toEqual(["fan-drop", "idle-orbit"]);
+    // one lane drives every routine with the name, so it takes the narrowest range
+    expect(specs["param.width"]).toMatchObject(
+      { min: 10, max: 90, reaches: ["fan-drop", "verse-sweep"] });
+    expect(specs["param.radius"]!.reaches).toEqual(["idle-orbit"]);
+    expect(specs["param.gobo"]).toBeUndefined();
+  });
+
+  it("draws every wave shape exactly as the engine computes it, hold's hash included", () => {
+    expect(WAVE_SHAPES).toEqual(Object.keys(waveVectors));
+    for (const [shape, rows] of Object.entries(waveVectors)) {
+      for (const [p, seed, want] of rows as [number, number, number][]) {
+        // the fixture is rounded to 10 places, so it reads the same on every OS
+        expect(waveUnit(shape, p, seed), `${shape} at ${p} seed ${seed}`).toBeCloseTo(want, 9);
+      }
+    }
+    // a lane's value is its points plus its wave
+    const row = { id: "s", type: "automation" as const, target: "size",
+                  points: [[0, 1]] as Point[],
+                  wave: { shape: "square", bars: 1, depth: 0.5 } };
+    expect(laneValue(row, 1)).toBe(1);
+    expect(laneValue(row, 3)).toBe(1.5);
+  });
+
+  it("offers a lane per block argument, and none for one a $param already feeds", () => {
+    const specs = routineLaneSpecs(fanDrop as unknown as RoutineDoc);
+    expect(specs["arg.fan.spread"]).toMatchObject(
+      { kind: "number", min: -1, max: 1, start: 0.5, label: "fan.spread" });
+    expect(specs["arg.chase.width"]).toMatchObject({ kind: "number" });
+    // width is $width: the param's own lane moves it
+    expect(specs["arg.fan.width"]).toBeUndefined();
+    // a choice has no halfway
+    expect(specs["arg.chase.order"]).toBeUndefined();
+    // an absolute angle is only drawn on its fallback range, not held to it
+    const offset = routineLaneSpecs({ rows: [{ id: "m", type: "clips", target: "movement",
+      items: [{ id: "o", at: 0, len: 4, block: "offset", args: { bearing: 10 } }] }] });
+    expect(offset["arg.o.bearing"]).toMatchObject({ lo: -270, hi: 270, min: undefined, start: 10 });
+  });
+
+  it("starts a wave that stays inside its lane's range", () => {
+    const spec = routineLaneSpecs(fanDrop as unknown as RoutineDoc)["param.width"]!;
+    const near = defaultWave({ id: "w", type: "automation", points: [[0, 110]] }, spec);
+    // 10 of room above, 110 below: it swings down, a quarter of the range
+    expect(near.depth).toBe(-30);
+    const low = defaultWave({ id: "w", type: "automation", points: [[0, 10]] }, spec);
+    expect(low.depth).toBe(30);
   });
 
   it("offers the blocks the console's parametric looks are built from", () => {
@@ -340,6 +418,7 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/templates/warmup") {
     return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
   }
+  if (path === "/api/media") return [200, { media: [{ file: "loop-1.mp4", size: 5120 }] }];
   return [404, { error: `no ${path}` }];
 }
 
@@ -378,7 +457,7 @@ function reply(socket: MockSocket, type: string, ok: boolean, data?: unknown, er
 }
 
 describe("designer", () => {
-  it("lays the track out as lanes: phrases, clips, hits, automation, the VJ lane", async () => {
+  it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
     await open();
     expect(await screen.findByRole("region", { name: "lanes" })).toBeInTheDocument();
     const lanes = screen.getByRole("region", { name: "lanes" });
@@ -389,7 +468,10 @@ describe("designer", () => {
     expect(within(lanes).getByLabelText("Lazy Circle at bar 89.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("flash at bar 41.1")).toBeInTheDocument();
     expect(within(lanes).getByLabelText("automation master")).toBeInTheDocument();
-    expect(within(lanes).getByText(/Output: vj/)).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("clips/3/connect at bar 41.1")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("automation vj-opacity")).toBeInTheDocument();
+    expect(within(lanes).getByLabelText("vj-opacity address"))
+      .toHaveValue("/composition/layers/1/video/opacity");
     // Lane order is the file's: the movement lane sits above the scene lane.
     const order = screen.getAllByLabelText(/^lane /).map((el) => el.getAttribute("aria-label"));
     expect(order.slice(0, 2)).toEqual(["lane move", "lane scene"]);
@@ -497,6 +579,118 @@ describe("designer", () => {
     const scene = save.doc.rows.find((r) => r.id === "scene")!;
     expect(scene.items!.find((i) => i.id === "chorus1")!.variation).toBe("tight");
     expect(await screen.findByRole("button", { name: "Saved" })).toBeDisabled();
+  });
+
+  it("cues a VJ app over OSC: a lane, a cue, its messages, saved", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // The example's drop cue: on when it starts, a clear when it ends.
+    fireEvent.pointerDown(within(lanes).getByLabelText("clips/3/connect at bar 41.1")
+      .querySelector("rect")!);
+    let inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/3/connect");
+    expect(within(inspector).getByLabelText("off address"))
+      .toHaveValue("/composition/layers/1/clear");
+    expect(within(inspector).queryByText("Fade in")).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const address = within(inspector).getByLabelText("on address");
+    await user.clear(address);
+    await user.type(address, "/layer/2/go");
+    const args = within(inspector).getByLabelText("on args");
+    await user.clear(args);
+    await user.type(args, "1, $bar, club");
+    await user.tab();
+    await user.click(within(inspector).getByRole("button", { name: "+ off message" }));
+    const off = within(inspector).getByLabelText("off address");
+    await user.clear(off);
+    await user.type(off, "/layer/2/clear");
+    expect(within(lanes).getByLabelText(/layer\/2\/go at bar 1.1/)).toBeInTheDocument();
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:cccccccccccc" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "osc")!;
+    expect(row).toMatchObject({ type: "external", output: "osc" });
+    expect(row.items![0]).toMatchObject({
+      at: 0, len: 16, on: { address: "/layer/2/go", args: [1, "$bar", "club"] },
+      off: { address: "/layer/2/clear", args: [] },
+    });
+  });
+
+  it("plays MIDI through the sidecar: a note cue made a CC, and a CC curve", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi");
+    await user.click(await screen.findByRole("button", { name: "add a cue to midi" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(lanes).getByLabelText("note 60 at bar 1.1")).toBeInTheDocument();
+    await user.click(within(within(inspector).getByRole("group", { name: "midi kind" }))
+      .getByRole("button", { name: "CC" }));
+    const cc = within(inspector).getByLabelText("midi cc");
+    await user.clear(cc);
+    await user.type(cc, "7");
+    const then = within(inspector).getByLabelText("midi off_value");
+    await user.type(then, "0");
+    const channel = within(inspector).getByLabelText("midi channel");
+    await user.clear(channel);
+    await user.type(channel, "3");
+    expect(within(lanes).getByLabelText("cc 7 at bar 1.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "midi-curve");
+    expect(await screen.findByLabelText("midi-curve cc")).toHaveValue(1);
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:dddddddddddd" }) as
+      Command & { doc: TimelineDoc };
+    const sent = JSON.parse(JSON.stringify(save.doc)) as TimelineDoc;
+    const item = sent.rows.find((r) => r.id === "midi")!.items![0]!;
+    expect(item).toMatchObject({ cc: 7, value: 127, off_value: 0, channel: 3 });
+    expect(item.note).toBeUndefined();
+    expect(sent.rows.find((r) => r.id === "midi-curve")).toMatchObject({
+      type: "external", output: "midi", channel: 1, cc: 1, points: [[0, 0]] });
+  });
+
+  it("puts a scene on the projector: a visuals lane, a tunnel, a video from media/", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    expect(within(lanes).getByLabelText("tunnel at bar 41.1")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("add lane"), "visuals");
+    await user.click(await screen.findByRole("button", { name: "add a cue to visuals" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    const scenes = within(inspector).getByRole("group", { name: "visuals scene" });
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+    await user.selectOptions(within(inspector).getByLabelText("visuals color"), "@accent");
+    expect(within(lanes).getByLabelText("tunnel at bar 1.1")).toBeInTheDocument();
+    await user.click(within(scenes).getByRole("button", { name: "video" }));
+    const file = await within(inspector).findByLabelText("visuals file");
+    await waitFor(() => expect(within(file).getByRole("option", { name: "loop-1.mp4" }))
+      .toBeInTheDocument());
+    await user.selectOptions(file, "loop-1.mp4");
+    await user.click(within(scenes).getByRole("button", { name: "tunnel" }));
+    await user.type(within(inspector).getByLabelText("visuals speed"), "3");
+
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const save = reply(socket, "timeline_save", true, { rev: "r:eeeeeeeeeeee" }) as
+      Command & { doc: TimelineDoc };
+    const row = save.doc.rows.find((r) => r.id === "visuals")!;
+    expect(row).toMatchObject({ type: "external", output: "visuals" });
+    expect(row.items![0]).toMatchObject({ scene: "tunnel", params: { color: "@primary", speed: 3 } });
   });
 
   it("refuses to save while the engine says the draft is invalid", async () => {
@@ -633,6 +827,20 @@ describe("designer", () => {
     expect(row.points).toContainEqual([36, -0.5, "ease"]);
   });
 
+  it("offers a lane for each parameter of the routines on the track, naming them", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    await waitFor(() => expect(within(menu).getByRole("option", {
+      name: "$color · fan-drop, idle-orbit" })).toBeInTheDocument());
+    expect(within(menu).getByRole("option", { name: "$radius (deg) · idle-orbit" }))
+      .toBeInTheDocument();
+    await user.selectOptions(menu, "param.radius");
+    const radius = within(lanes).getByLabelText("automation param.radius");
+    expect(within(radius).getByLabelText("point at bar 1.1: 10")).toBeInTheDocument();
+  });
+
   it("answers the editing keys: Space plays, Ctrl+S saves, Escape lets go", async () => {
     const socket = await open();
     const lanes = await screen.findByRole("region", { name: "lanes" });
@@ -752,6 +960,84 @@ describe("routine editor", () => {
       .toMatchObject({ at: 0, len: 32, args: { depth: "$depth" } });
   });
 
+  it("automates its own parameters on lanes, held to their declared range", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    // each open parameter, by name and unit -- and a look would not be here
+    expect(within(menu).getByRole("option", { name: "$width (deg)" })).toBeInTheDocument();
+    expect(within(menu).getByRole("option", { name: "$rate" })).toBeInTheDocument();
+    await user.selectOptions(menu, "param.width");
+    expect(within(menu).queryByRole("option", { name: "$width (deg)" })).toBeNull();
+
+    // the lane starts at the default, so adding it changes nothing
+    const width = within(lanes).getByLabelText("automation param.width");
+    expect(within(width).getByLabelText("point at bar 1.1: 40")).toBeInTheDocument();
+    expect(within(lanes).getByText("$width (deg)")).toBeInTheDocument();
+    fireEvent.click(width, { clientX: 16 * 16, clientY: 3 });   // bar 5, the top
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/0 to 120 deg/)).toBeInTheDocument();
+    // past the declared max is refused here, as the engine would refuse it
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "500" } });
+    expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
+    fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "90" } });
+
+    // a colour parameter's lane takes colours, picked in the inspector
+    await user.selectOptions(menu, "param.color");
+    const colour = within(lanes).getByLabelText("automation param.color");
+    fireEvent.click(colour, { clientX: 8 * 16, clientY: 20 });
+    expect(within(colour).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "point colour" }))
+      .getByRole("button", { name: "accent" }));
+    expect(within(colour).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:f" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "param.width"))
+      .toMatchObject({ type: "automation", points: [[0, 40], [16, 90]] });
+    expect(doc.rows.find((r) => r.target === "param.color"))
+      .toMatchObject({ points: [[0, "@primary"], [8, "@accent"]] });
+  });
+
+  it("moves one block's argument on its own lane, and puts a wave on any lane", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#designer/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const menu = within(lanes).getByLabelText("add automation");
+    expect(within(menu).getByRole("option", { name: "fan.spread" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("option", { name: /fan\.width/ })).toBeNull();
+    await user.selectOptions(menu, "arg.fan.spread");
+    const spread = within(lanes).getByLabelText("automation arg.fan.spread");
+    expect(within(spread).getByLabelText("point at bar 1.1: 0.5")).toBeInTheDocument();
+
+    // a wave on it: the lane's ∿ adds one in range and opens it
+    await user.click(within(lanes).getByRole("button", { name: /^wave on arg[.-]fan[.-]spread/ }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/wave on arg[.-]fan[.-]spread/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "wave shape" }))
+      .getByRole("button", { name: "triangle" }));
+    fireEvent.change(within(inspector).getByLabelText("wave bars"), { target: { value: "2" } });
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "0.8" } });
+    // 0.5 + 0.8 is past spread's 1: said here, before the engine refuses it
+    expect(within(inspector).getByRole("alert")).toHaveTextContent(/reaches 1.3/);
+    fireEvent.change(within(inspector).getByLabelText("wave depth"), { target: { value: "-0.5" } });
+    expect(within(inspector).queryByRole("alert")).toBeNull();
+
+    // and on a macro lane, then taken off again with Delete
+    await user.selectOptions(menu, "size");
+    await user.click(within(lanes).getByRole("button", { name: /^wave on size/ }));
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    expect(screen.queryByText(/wave on size/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:g" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.target === "arg.fan.spread")).toMatchObject({
+      points: [[0, 0.5]], wave: { shape: "triangle", bars: 2, depth: -0.5 } });
+    expect(doc.rows.find((r) => r.target === "size")!.wave).toBeUndefined();
+  });
+
   it("starts a new routine and saves it as a new file", async () => {
     const user = userEvent.setup();
     const socket = await open("#studio/routines");
@@ -784,6 +1070,20 @@ describe("routine editor", () => {
                                       bars: 4 });
     expect(saved.doc.rows[0]).toMatchObject({ type: "clips", target: "color", role: "movers" });
     expect(saved.doc.rows[0]!.items![0]!.args).toEqual({ color: "@primary" });
+  });
+
+  it("gives a routine an OSC lane, so wherever it plays it can cue a VJ app", async () => {
+    const user = userEvent.setup();
+    await open("#designer/routine/fan-drop");
+    await screen.findByRole("region", { name: "lanes" });
+    await user.selectOptions(screen.getByLabelText("add lane"), "osc");
+    await user.click(await screen.findByRole("button", { name: "add a cue to osc" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/osc cue on osc/)).toBeInTheDocument();
+    expect(within(inspector).getByLabelText("on address"))
+      .toHaveValue("/composition/layers/1/clips/1/connect");
+    await user.click(within(inspector).getByRole("button", { name: "+ while message" }));
+    expect(within(inspector).getByLabelText("while address")).toHaveValue("/");
   });
 
   it("shows what the engine says will not work on this rig", async () => {
@@ -872,17 +1172,26 @@ describe("studio routes", () => {
 
 describe("studio library", () => {
   it("lists the show folder's tracks with what lights each on the night", async () => {
-    await open("#studio");
+    const socket = await open("#studio");
     const tracks = await screen.findByRole("region", { name: "tracks" });
     const row = (await within(tracks).findByText("synthetic 128")).closest("tr")!;
     expect(within(row).getByText("Timeline")).toBeInTheDocument();
     const second = within(tracks).getByText("Night Drive").closest("tr")!;
-    // No timeline: the operator's show runs. Template sets do not play live
-    // yet (F19 milestone 2), so the library must not say they do.
-    expect(within(second).getByText("Operator's show")).toBeInTheDocument();
+    // No timeline: the template set that is on plays it -- show.json's, until
+    // the engine says which (F22b).
+    expect(within(second).getByText("Template: Club")).toBeInTheDocument();
     // No CDJ signature is something to fix before the night.
     expect(within(second).getByRole("img", { name: /No CDJ signature/ })).toBeInTheDocument();
-    expect(within(tracks).getByText(/2 in the show folder\. 1 has a timeline/)).toBeInTheDocument();
+    expect(within(tracks).getByText(/2 in the show folder\. 1 has a timeline; the Club template set plays the other 1/))
+      .toBeInTheDocument();
+    // The operator turns the set off: then nothing but the operator's show is left.
+    act(() => socket.push(stateWith((st) => {
+      st.program = { armed: true, engaged: false, mode: "fallback", reason: "no track", beat: null,
+                     bar: null, lanes: {}, grabbed: [], policy: "idle", problems: 0,
+                     first_problem: null, latency_ms: {}, set: null };
+    })));
+    expect(within(second).getByText("Operator's show")).toBeInTheDocument();
+    expect(within(tracks).getByText(/with no template set on, the operator's show runs/)).toBeInTheDocument();
   });
 
   it("filters by what a track needs, and by name", async () => {
@@ -906,7 +1215,7 @@ describe("studio library", () => {
     await user.click(await within(tracks).findByRole("button", { name: /Night Drive/ }));
     const details = screen.getByRole("complementary", { name: "details" });
     expect(within(details).getByRole("heading", { name: "Night Drive" })).toBeInTheDocument();
-    expect(within(details).getByText(/when it plays the operator's show runs/)).toBeInTheDocument();
+    expect(within(details).getByText(/when it plays the Club template set lights it/)).toBeInTheDocument();
     expect(within(details).getByRole("link", { name: "Make a timeline" }))
       .toHaveAttribute("href", "#studio/track/kolsch-night-drive");
     // The engine is asked whether it can find the audio; the mock has none.
@@ -1232,12 +1541,12 @@ describe("template sets", () => {
   }
   const aside = () => screen.getByRole("complementary", { name: "details" });
 
-  it("opens on the show's set, and says what a set does today", async () => {
+  it("opens on the show's set, and says what a set does", async () => {
     const { page } = await sets();
     const tabs = within(page).getByRole("navigation", { name: "sets" });
     expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveAttribute("aria-current", "page");
     expect(within(tabs).getByRole("link", { name: /Club/ })).toHaveTextContent("show's");
-    expect(page).toHaveTextContent(/do not play tracks live yet/);
+    expect(page).toHaveTextContent(/the playing set lights tracks with no timeline/);
     expect(within(page).getByLabelText("Chorus routine")).toHaveValue("fan-drop");
     expect(within(page).getByLabelText("Chorus variation")).toHaveValue("wide");
     expect(within(page).getByLabelText("Chorus palette")).toHaveValue("Hot");

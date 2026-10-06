@@ -36,6 +36,13 @@ type TabId = (typeof TABS)[number]["id"];
 // Studio (F19l, once "the designer"), split into its own chunk: only a desk
 // that opens #studio downloads it -- a phone never does.
 const Designer = lazy(() => import("./designer/Designer"));
+// The built-in visuals (milestone 3), likewise: only the projector laptop that
+// opens #visuals downloads them.
+const Visuals = lazy(() => import("./visuals/Visuals"));
+
+function visualsRoute(): boolean {
+  return location.hash === "#visuals";
+}
 
 /** Studio's route from the address, or null for the console. An old
  *  #designer address is rewritten to Studio's in place, so Back does not
@@ -51,11 +58,19 @@ export default function App() {
   // Decided BEFORE the console's tab effects run: they rewrite the hash to the
   // current tab, which would throw a fresh #studio link straight back to Show.
   const [route, setRoute] = useState(currentRoute);
+  const [visuals, setVisuals] = useState(visualsRoute);
   useEffect(() => {
-    const onHash = () => setRoute(currentRoute());
+    const onHash = () => { setRoute(currentRoute()); setVisuals(visualsRoute()); };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
+  if (visuals) {
+    return (
+      <Suspense fallback={null}>
+        <Visuals engine={engine} />
+      </Suspense>
+    );
+  }
   if (route) {
     return (
       <Suspense fallback={<p className="muted" style={{ padding: 16 }}>Loading Studio…</p>}>

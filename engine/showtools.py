@@ -114,6 +114,11 @@ def put_doc(kind: str, doc: Any, base_rev: Optional[str] = None,
     except ValueError as exc:
         return _error(str(exc))
     result = showfiles.validate(kind, doc)
+    if kind == "timeline" and result.ok:
+        # The designer's draft says these too; an assistant should hear them
+        # before it writes, not only from a later lint.
+        result.warnings += showfiles.param_lane_problems(
+            doc, showfiles.load_folder(root).routines)
     current = showfiles.doc_rev(path)
     out = {"ok": result.ok, "errors": result.errors, "warnings": result.warnings,
            "path": str(path.relative_to(root)), "exists": current is not None,
@@ -149,6 +154,8 @@ def edit_timeline(track: str, ops: Sequence[Mapping], base_rev: Optional[str] = 
       update_item  {id, set: {...}}               e.g. {"at": 160, "fade": 4}
       remove_item  {id}
       set_points   {row: id, points: [[beat, value, curve?], ...]}
+      set_wave     {row: id, wave: {shape, bars, depth, ...} | null}
+                                                  a wave on top of the points
       set          {key: "palette" | "palettes" | "grid_rev", value}
     """
     root = _root(show_dir)
@@ -258,6 +265,19 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                 continue
             r["points"] = op.get("points")
             changes.append(f"set {len(r['points'] or [])} points on {r['id']!r}")
+        elif kind == "set_wave":
+            r = row(op.get("row"))
+            if r is None or r.get("type") != "automation":
+                problems.append(f"{at}: needs an existing automation row")
+                continue
+            if op.get("wave") is None:
+                r.pop("wave", None)
+                changes.append(f"removed the wave on {r['id']!r}")
+            else:
+                r["wave"] = op["wave"]
+                changes.append(f"set a {op['wave'].get('shape', 'sine')} wave on "
+                               f"{r['id']!r}" if isinstance(op["wave"], dict)
+                               else f"set a wave on {r['id']!r}")
         elif kind == "set":
             key = op.get("key")
             if key not in ("palette", "palettes", "grid_rev"):
@@ -267,7 +287,7 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
             changes.append(f"set {key}")
         else:
             problems.append(f"{at}: unknown op; one of add_row, remove_row, "
-                            f"add_item, update_item, remove_item, set_points, set")
+                            f"add_item, update_item, remove_item, set_points, set_wave, set")
     return changes, problems
 
 

@@ -33,6 +33,13 @@ export interface TrackDoc {
   [key: string]: unknown;
 }
 
+/** One OSC message an external item sends (milestone 3). Arguments are
+ *  numbers and text, or `$beat`, `$bar`, `$phase`, `$progress`, `$value`. */
+export interface OscMessage {
+  address: string;
+  args?: (number | string)[];
+}
+
 export interface Item {
   id: string;
   at: number;
@@ -53,10 +60,39 @@ export interface Item {
   envelope?: "hold" | "decay";
   block?: string;
   args?: Record<string, unknown>;
+  /** An OSC cue: sent when it comes on, when it goes off, and while it plays. */
+  on?: OscMessage;
+  off?: OscMessage;
+  while?: OscMessage;
+  /** A MIDI cue: one of a note, a CC or a program change, on a channel 1-16. */
+  channel?: number;
+  note?: number;
+  velocity?: number;
+  cc?: number;
+  value?: number;
+  off_value?: number;
+  pc?: number;
+  /** A visuals cue: a scene, and its parameters in `params`. */
+  scene?: string;
   [key: string]: unknown;
 }
 
-export type Point = [number, number | string] | [number, number | string, string];
+/** A number, or a colour for a colour parameter's lane: a palette role, a
+ *  hex colour, `[r, g, b]` from 0 to 1, or a colour look's name. */
+export type PointValue = number | string | number[];
+export type Point = [number, PointValue] | [number, PointValue, string];
+
+/** A musical shape added on top of an automation row's points (`waves.Wave`):
+ *  `depth` times the shape over `bars`, or for a colour lane a swing `toward`
+ *  a colour, `depth` (0-1) of the way. */
+export interface WaveSpec {
+  shape: string;
+  bars: number;
+  depth?: number;
+  phase?: number;
+  seed?: number;
+  toward?: PointValue;
+}
 
 export interface Row {
   id: string;
@@ -67,7 +103,15 @@ export interface Row {
   label?: string;
   items?: Item[];
   points?: Point[];
+  wave?: WaveSpec;
+  /** An external row's output: osc, midi, visuals (`vj` is read as visuals). */
   output?: string;
+  /** OSC: where a curve's value goes, and what it sends (default `$value`). */
+  address?: string;
+  args?: (number | string)[];
+  /** MIDI: the lane's channel, and the CC a curve drives. */
+  channel?: number;
+  cc?: number;
   [key: string]: unknown;
 }
 
@@ -606,6 +650,56 @@ export function curveValue(points: Point[], beat: number): number | null {
   return (a[1] as number) + ((b[1] as number) - (a[1] as number)) * t;
 }
 
+// -- waves ---------------------------------------------------------------------
+//
+// The engine's shapes (`engine/waves.py`), copied because the designer draws a
+// lane's wave as it is edited. `wave-vectors.json`, written from the engine,
+// holds the copy to the original -- `hold` included, whose levels are a 64-bit
+// hash and so need BigInt to come out the same.
+
+const MASK = (1n << 64n) - 1n;
+
+/** `waves.sampled`: splitmix64's finalizer, a stable -1..1 per key. */
+export function sampled(seed: number, ...key: number[]): number {
+  let x = BigInt(seed) & MASK;
+  for (const k of key) {
+    x = (x * 0x9E3779B97F4A7C15n + (BigInt(k) & MASK) + 0x165667B19E3779F9n) & MASK;
+    x ^= x >> 30n;
+    x = (x * 0xBF58476D1CE4E5B9n) & MASK;
+    x ^= x >> 27n;
+    x = (x * 0x94D049BB133111EBn) & MASK;
+    x ^= x >> 31n;
+  }
+  return (Number(x) / Number(MASK)) * 2 - 1;
+}
+
+/** A shape at `p` cycles, 0..1. */
+export function waveUnit(shape: string, p: number, seed = 0): number {
+  const f = p - Math.floor(p);
+  switch (shape) {
+    case "sine": return 0.5 - 0.5 * Math.cos(2 * Math.PI * f);
+    case "triangle": return f < 0.5 ? 2 * f : 2 - 2 * f;
+    case "ramp": return f;
+    case "saw": return 1 - f;
+    case "square": return f < 0.5 ? 0 : 1;
+    case "hold": return (sampled(seed, Math.floor(p)) + 1) / 2;
+    default: return 0;
+  }
+}
+
+/** What a wave adds at a beat: depth times its shape. */
+export function waveLevel(wave: WaveSpec, beat: number): number {
+  const cycles = beat / (wave.bars * BEATS_PER_BAR) + (wave.phase ?? 0);
+  return (wave.depth ?? 1) * waveUnit(wave.shape, cycles, wave.seed ?? 0);
+}
+
+/** A numeric lane's value at a beat: its points, plus its wave. */
+export function laneValue(row: Row, beat: number): number | null {
+  const base = curveValue(row.points ?? [], beat);
+  if (base == null || !row.wave) return base;
+  return base + waveLevel(row.wave, beat);
+}
+
 /** What a row drives: a scene lane drives every slot. */
 export function rowChannels(row: Row): string[] {
   if (row.type !== "clips" || !row.target) return [];
@@ -662,8 +756,47 @@ export function findItem(doc: { rows: Row[] }, id: string | null): { row: Row; i
 }
 
 /** A clip's name on a lane: what it IS, in a word or two. */
+/** The end of an OSC address, which is the part that says what it does:
+ *  `/composition/layers/1/clips/3/connect` is `clips/3/connect`. */
+/** The built-in visuals' scenes and what each reads -- a copy of
+ *  `engine/showfiles.VISUAL_PARAMS`: "color", "file", "bool", a list of
+ *  choices, or a [min, max] range. Every scene also takes `opacity`. */
+export const VISUAL_SCENES = ["wash", "bars", "tunnel", "particles", "strobe", "video"] as const;
+export type VisualRule = "color" | "file" | "bool" | string[] | [number, number];
+export const VISUAL_PARAMS: Record<string, Record<string, VisualRule>> = {
+  wash: { color: "color", pulse: [0, 1] },
+  bars: { color: "color", count: [1, 64], speed: [0, 8] },
+  tunnel: { color: "color", speed: [0, 8], depth: [2, 40] },
+  particles: { color: "color", count: [1, 2000], burst: [0, 1] },
+  strobe: { color: "color", rate: [0.25, 16] },
+  video: { file: "file", loop: "bool", rate: ["beat", "normal"], bpm: [20, 400] },
+};
+
+export function shortAddress(address: string): string {
+  const parts = address.split("/").filter(Boolean);
+  return parts.length > 3 ? parts.slice(-3).join("/") : address;
+}
+
+/** OSC arguments as typed in a text field: comma separated, numbers as
+ *  numbers, anything else as text. */
+export function parseOscArgs(text: string): (number | string)[] {
+  return text.split(",").map((a) => a.trim()).filter((a) => a !== "")
+    .map((a) => (/^-?\d+(\.\d+)?$/.test(a) ? Number(a) : a));
+}
+
+export function oscArgsText(args?: (number | string)[]): string {
+  return (args ?? []).map(String).join(", ");
+}
+
 export function itemName(it: Item): string {
   if (it.hit) return it.hit;
+  const osc = it.on ?? it.while ?? it.off;
+  if (osc?.address) return shortAddress(osc.address);
+  if (it.note != null) return `note ${it.note}`;
+  if (it.cc != null) return `cc ${it.cc}`;
+  if (it.pc != null) return `program ${it.pc}`;
+  if (it.scene) return it.scene === "video" && typeof it.params?.file === "string"
+    ? `video ${it.params.file}` : it.scene;
   if (it.kind === "routine") return it.routine ?? "routine";
   if (it.kind === "look") return it.look ?? "look";
   if (it.kind === "snapshot") return it.preset ?? "snapshot";
@@ -675,6 +808,14 @@ export function itemName(it: Item): string {
 /** The line under a clip's name: variation and parameter values. */
 export function itemSub(it: Item): string {
   const parts: string[] = [];
+  if (it.on?.args?.length) parts.push(oscArgsText(it.on.args));
+  if (it.while) parts.push("while");
+  if (it.off) parts.push("off");
+  if (it.note != null) parts.push(`vel ${it.velocity ?? 100}`);
+  if (it.cc != null) {
+    parts.push(`→ ${it.value ?? 127}${it.off_value != null ? `, then ${it.off_value}` : ""}`);
+  }
+  if (it.channel != null) parts.push(`ch ${it.channel}`);
   if (it.variation) parts.push(it.variation);
   for (const [k, v] of Object.entries(it.params ?? {})) parts.push(`${k} ${String(v)}`);
   for (const [k, v] of Object.entries(it.args ?? {})) {
@@ -766,6 +907,8 @@ export interface ArgSpec {
   unit?: string;
   choices?: string[];
   help?: string;
+  /** An absolute angle, really bounded by the playing rig's reach. */
+  reach?: string;
 }
 
 /** One engine declaration as an editor field. Integers are numbers to a field;
@@ -779,7 +922,7 @@ function argSpec(p: ParamSpec): ArgSpec {
     step: p.step ?? (p.kind === "integer" ? 1 : undefined),
     min: p.min, max: p.max,
     unit: unit && unit !== p.name ? unit : undefined,
-    choices: p.choices, help: p.help,
+    choices: p.choices, help: p.help, reach: p.reach,
   };
 }
 

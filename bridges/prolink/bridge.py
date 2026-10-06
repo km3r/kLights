@@ -139,7 +139,21 @@ def as_blt(fields: dict) -> list[bytes]:
     if "beat_in_bar" in fields:
         out.append(osc_message("/beat", fields["beat_in_bar"]))
     if "phrase_label" in fields:
-        out.append(osc_message("/phrase", fields["phrase_label"]))
+        # The tempo master's phrase from the USB's analysis (milestone 2): how
+        # far into it and how long left, so the engine knows where it began.
+        out.append(osc_args("/klights/v1/phrase", deck, fields["phrase_label"],
+                            float(fields.get("phrase_into", 0.0)),
+                            float(fields.get("phrase_ends_in", 0.0))))
+    if "loaded_deck" in fields:
+        # What a deck -- any deck -- has loaded (milestone 2), so the engine
+        # can build its show before the DJ fades it in.
+        out.append(osc_args("/klights/v1/deck", int(fields["loaded_deck"]),
+                            int(fields.get("loaded_rekordbox_id", 0)),
+                            fields.get("loaded_signature", ""),
+                            fields.get("loaded_title", ""),
+                            fields.get("loaded_artist", ""),
+                            fields.get("loaded_album", ""),
+                            float(fields.get("loaded_duration", 0.0))))
     return out
 
 
@@ -192,6 +206,7 @@ def fake(bpm: float, beats_per_bar: int = 4) -> Iterator[tuple[float, dict]]:
                 fields["phrase_label"] = label
                 fields["phrase_ends_in"] = (
                     (start + length * beats_per_bar) - beat)
+                fields["phrase_into"] = beat - start
             yield 60.0 / bpm, fields
             beat += 1
             del offset
@@ -262,9 +277,9 @@ def deck(bpm: float, script: str = "", hz: float = 30.0,
         for label, bars in FAKE_PHRASES:
             end = start + bars * 4
             if beat < end:
-                return label, end - beat
+                return label, end - beat, beat - start
             start = end
-        return None, None
+        return None, None, None
 
     def packet() -> dict:
         track = DECK_TRACKS[state["track"]]
@@ -284,10 +299,10 @@ def deck(bpm: float, script: str = "", hz: float = 30.0,
             fields.update({"bpm": bpm, "bpm_original": bpm,
                            "beat_in_bar": float(whole % 4)})
             if whole % 4 == 0 and track["phrases"]:
-                label, left = phrase_at(whole)
+                label, left, into = phrase_at(whole)
                 if label is not None:
                     fields.update({"phrase_label": label, "phrase_ends_in": left,
-                                   "phrase_measured": True})
+                                   "phrase_into": into, "phrase_measured": True})
         return fields
 
     def play(beats: Optional[float]):

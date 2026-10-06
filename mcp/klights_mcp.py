@@ -112,7 +112,10 @@ SHOW_TOOLS = [
                     "there is none), validate, and with write=true save. ops: "
                     "add_row {row, index?}, remove_row {row}, add_item {row, "
                     "item}, update_item {id, set}, remove_item {id}, "
-                    "set_points {row, points}, set {key: palette|palettes|"
+                    "set_points {row, points}, set_wave {row, wave: {shape: "
+                    "sine|triangle|ramp|saw|square|hold, bars, depth, phase?, "
+                    "seed?, toward? (colour lanes)} or null -- a wave added on "
+                    "top of the points}, set {key: palette|palettes|"
                     "grid_rev, value}. Rows are lanes, top first; the higher "
                     "lane wins.",
      "inputSchema": _schema({**_SHOW, "track": _STR,

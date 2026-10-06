@@ -43,12 +43,12 @@ export function attention(t: TrackLine): string[] {
   return out;
 }
 
-/** What lights the track on the night, in a few words. A template set does
- *  not play live yet (that is F19 milestone 2): until then, a track with no
- *  timeline gets whatever the operator is running, auto mode included. The
- *  show's set is what new timelines are drafted from. */
-export function nightOf(t: TrackLine): string {
-  return t.has_timeline ? "Timeline" : "Operator's show";
+/** What lights the track on the night, in a few words, with Follow armed: its
+ *  timeline; else the template set that is playing, phrase by phrase; else,
+ *  with no set on, whatever the operator is running, auto mode included. */
+export function nightOf(t: TrackLine, playing: ActiveSet): string {
+  if (t.has_timeline) return "Timeline";
+  return playing.id ? `Template: ${playing.name ?? playing.id}` : "Operator's show";
 }
 
 export function PhraseStrip({ items, tall }: { items?: [number, number, string][]; tall?: boolean }) {
@@ -66,9 +66,12 @@ export function PhraseStrip({ items, tall }: { items?: [number, number, string][
   );
 }
 
-export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, ticked,
+export function TracksView({ tracks, error, set, playing, liveTrack, selected, onSelect, ticked,
                             setTicked, onStart }: {
-  tracks: TrackLine[] | null; error: string | null; set: ActiveSet;
+  tracks: TrackLine[] | null; error: string | null;
+  /** show.json's set, which new timelines draft from; and the set playing
+   *  tracks with no timeline now (the operator can switch it, or turn it off). */
+  set: ActiveSet; playing: ActiveSet;
   liveTrack: string | null;
   selected: string | null; onSelect: (id: string) => void;
   ticked: Set<string>; setTicked: (next: Set<string>) => void;
@@ -114,7 +117,11 @@ export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, 
             {tracks == null ? "Loading the show folder…"
               : `${counts.all} in the show folder. ${counts.timeline} ha${counts.timeline === 1 ? "s" : "ve"} `
                 + "a timeline" + (counts.template
-                  ? `; the operator's show runs for the other ${counts.template} until they have one.`
+                  ? (playing.id
+                    ? `; the ${playing.name ?? playing.id} template set plays the other `
+                      + `${counts.template} until they have one.`
+                    : `; with no template set on, the operator's show runs for the other `
+                      + `${counts.template}.`)
                   : ".")
                 + (set.id ? ` New timelines draft from ${set.name ?? set.id}.` : "")}
           </span>
@@ -191,7 +198,7 @@ export function TracksView({ tracks, error, set, liveTrack, selected, onSelect, 
                         <b>{t.title}</b><span className="muted">{t.artist}</span></button>
                     </td>
                     <td><span className="s-pill"><i className={t.has_timeline ? "good" : ""} />
-                      {nightOf(t)}</span></td>
+                      {nightOf(t, playing)}</span></td>
                     <td className="s-phrase-cell"><PhraseStrip items={t.phrase_items} /></td>
                     <td className="mono">{t.bpm ? t.bpm.toFixed(t.bpm % 1 ? 2 : 0) : ""}</td>
                     <td className="mono">{mmss(t.duration_s)}</td>
@@ -276,8 +283,9 @@ const AUDIO_TEXT: Record<AudioCheck, string> = {
   unknown: "Could not ask the engine for its audio",
 };
 
-export function TrackDetail({ t, set, sets, live }: {
-  t: TrackLine; set: ActiveSet; sets: { id: string; name?: string | null }[]; live: boolean;
+export function TrackDetail({ t, set, playing, sets, live }: {
+  t: TrackLine; set: ActiveSet; playing: ActiveSet;
+  sets: { id: string; name?: string | null }[]; live: boolean;
 }) {
   const heights = useWaveform(t);
   const audio = useAudioCheck(t);
@@ -294,8 +302,11 @@ export function TrackDetail({ t, set, sets, live }: {
   const night = t.has_timeline
     ? `Its own timeline plays: ${t.timeline?.rows ?? 0} lane${t.timeline?.rows === 1 ? "" : "s"}, `
       + `${t.timeline?.items ?? 0} clips and points.`
-    : "No timeline yet, so when it plays the operator's show runs, as for any unknown "
-      + "track. Draft one from a template set to give it its own."
+    : (playing.id
+      ? `No timeline yet, so when it plays the ${playing.name ?? playing.id} template set `
+        + "lights it, a routine per phrase. Draft a timeline from a set to make it its own."
+      : "No timeline yet, and no template set is on, so when it plays the operator's show "
+        + "runs. Draft one from a template set to give it its own.")
       + (t.phrases ? "" : " With no phrases, a draft follows the set's bar cycle.");
   const checks: [boolean, string][] = [
     [!!t.grid_rev, t.grid_rev ? "Beat grid from rekordbox" : "No beat grid"],
@@ -323,7 +334,7 @@ export function TrackDetail({ t, set, sets, live }: {
   return (
     <div className="s-detail" aria-label="selected track">
       <div>
-        <span className="s-kicker">{nightOf(t)}{live ? " · playing now" : ""}</span>
+        <span className="s-kicker">{nightOf(t, playing)}{live ? " · playing now" : ""}</span>
         <h2>{t.title}</h2>
         <span className="muted">{[t.artist, t.album].filter(Boolean).join(" · ")}</span>
       </div>

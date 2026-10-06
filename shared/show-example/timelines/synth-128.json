@@ -273,10 +273,183 @@
       ]
     },
     {
-      "id": "vj1",
+      "id": "vj-clips",
       "type": "external",
-      "output": "vj",
-      "label": "VJ layer 1 (milestone 3)"
+      "output": "osc",
+      "label": "Resolume layer 1",
+      "items": [
+        {
+          "id": "vj-intro",
+          "at": 0,
+          "len": 128,
+          "on": {
+            "address": "/composition/layers/1/clips/1/connect",
+            "args": [
+              1
+            ]
+          }
+        },
+        {
+          "id": "vj-build",
+          "at": 128,
+          "len": 32,
+          "on": {
+            "address": "/composition/layers/1/clips/2/connect",
+            "args": [
+              1
+            ]
+          },
+          "while": {
+            "address": "/composition/layers/1/video/effects/blur/opacity",
+            "args": [
+              "$progress"
+            ]
+          }
+        },
+        {
+          "id": "vj-drop",
+          "at": 160,
+          "len": 64,
+          "on": {
+            "address": "/composition/layers/1/clips/3/connect",
+            "args": [
+              1
+            ]
+          },
+          "off": {
+            "address": "/composition/layers/1/clear",
+            "args": [
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "vj-opacity",
+      "type": "external",
+      "output": "osc",
+      "label": "Layer 1 opacity",
+      "address": "/composition/layers/1/video/opacity",
+      "args": [
+        "$value"
+      ],
+      "points": [
+        [
+          0,
+          0.5
+        ],
+        [
+          128,
+          0.5
+        ],
+        [
+          160,
+          1.0,
+          "ease"
+        ],
+        [
+          224,
+          1.0
+        ],
+        [
+          256,
+          0.5
+        ]
+      ]
+    },
+    {
+      "id": "screen",
+      "type": "external",
+      "output": "visuals",
+      "label": "Projector (#visuals)",
+      "items": [
+        {
+          "id": "scr-intro",
+          "at": 0,
+          "len": 64,
+          "scene": "wash",
+          "params": {
+            "color": "@secondary",
+            "pulse": 0.3
+          }
+        },
+        {
+          "id": "scr-verse",
+          "at": 64,
+          "len": 64,
+          "scene": "bars",
+          "params": {
+            "color": "@primary",
+            "count": 12,
+            "speed": 1
+          }
+        },
+        {
+          "id": "scr-up",
+          "at": 128,
+          "len": 32,
+          "scene": "particles",
+          "params": {
+            "color": "@accent",
+            "count": 400,
+            "burst": 1
+          }
+        },
+        {
+          "id": "scr-drop",
+          "at": 160,
+          "len": 64,
+          "scene": "tunnel",
+          "params": {
+            "color": "@primary",
+            "speed": 2,
+            "depth": 16
+          }
+        },
+        {
+          "id": "scr-down",
+          "at": 224,
+          "len": 32,
+          "scene": "wash",
+          "params": {
+            "color": "@secondary",
+            "pulse": 0.6
+          }
+        },
+        {
+          "id": "scr-up2",
+          "at": 256,
+          "len": 32,
+          "scene": "particles",
+          "params": {
+            "color": "@accent",
+            "count": 600,
+            "burst": 1
+          }
+        },
+        {
+          "id": "scr-drop2",
+          "at": 288,
+          "len": 64,
+          "scene": "tunnel",
+          "params": {
+            "color": "@primary",
+            "speed": 3,
+            "depth": 24
+          }
+        },
+        {
+          "id": "scr-outro",
+          "at": 352,
+          "len": 32,
+          "scene": "wash",
+          "params": {
+            "color": "@secondary",
+            "pulse": 0.2
+          }
+        }
+      ]
     }
   ]
 }

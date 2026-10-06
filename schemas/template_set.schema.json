@@ -58,6 +58,28 @@
               },
               "palette": {
                 "type": "string"
+              },
+              "visuals": {
+                "type": "object",
+                "properties": {
+                  "scene": {
+                    "type": "string",
+                    "enum": [
+                      "wash",
+                      "bars",
+                      "tunnel",
+                      "particles",
+                      "strobe",
+                      "video"
+                    ]
+                  },
+                  "params": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "scene"
+                ]
               }
             },
             "required": [

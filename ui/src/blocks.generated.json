@@ -781,5 +781,13 @@
   "square",
   "hold",
   "energy"
+ ],
+ "wave_shapes": [
+  "sine",
+  "triangle",
+  "ramp",
+  "saw",
+  "square",
+  "hold"
  ]
 }

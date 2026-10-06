@@ -17,10 +17,10 @@ import { download } from "./Routines";
  * (Up 2), else its family (Up), else `*` -- plus a bar cycle for tracks with a
  * grid and no phrases, the set's own palettes, and the fade between changes.
  *
- * What a set does TODAY is draft timelines: Studio lays it onto a track's
- * phrases as an editable start. Playing tracks that have no timeline from the
- * show's set, live, is F19 milestone 2; until then this page says so rather
- * than let a set look like it lights anything by itself.
+ * A set does two things. Live, with Follow armed, the playing set lights a
+ * track that has no timeline -- a routine per phrase -- and shows through a
+ * timeline's gaps (F22b). Here, it is what Studio drafts timelines from: laid
+ * onto a track's phrases as an editable start.
  *
  * The editor is the timeline editor's machinery: one undo history over the
  * document, the engine checking every change (`template_draft`), Save quoting
@@ -57,8 +57,8 @@ export function TemplatesView({ engine, sets, routines, library, current, onDoc,
         <div>
           <h1>Template sets</h1>
           <span className="muted small">A set picks a routine for each rekordbox phrase.
-            Studio drafts timelines from it; template sets do not play tracks live yet
-            (that is F19 milestone 2).</span>
+            Live, the playing set lights tracks with no timeline and shows through a
+            timeline's gaps; Studio also drafts timelines from it.</span>
         </div>
         <span className="grow" />
         <button onClick={onNew}>New set…</button>
@@ -479,13 +479,15 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
         <h2>{setName({ id, name: doc?.name ?? summary?.name })}</h2>
       </div>
       {isShows ? (
-        <p className="s-note"><b>The show's set</b>New timelines draft from it by default. Sets
-          do not play tracks live yet; when they do (F19 milestone 2), this is the one.</p>
+        <p className="s-note"><b>The show's set</b>The engine starts on it: with Follow armed it
+          lights tracks with no timeline, until the operator switches set. New timelines
+          draft from it by default.</p>
       ) : (
         <div className="s-action">
           <button onClick={() => void makeShows()} disabled={busy || !canWrite || rev === ""}
                   title={rev === "" ? "Save it first" : undefined}>Make it the show's set</button>
-          <span className="muted small">New timelines then draft from it by default.</span>
+          <span className="muted small">The engine then starts on it, and new timelines draft
+            from it by default.</span>
         </div>
       )}
 

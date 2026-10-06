@@ -19,34 +19,90 @@
   "palette": "Cool",
   "phrases": {
     "Intro": {
-      "routine": "idle-orbit"
+      "routine": "idle-orbit",
+      "visuals": {
+        "scene": "wash",
+        "params": {
+          "color": "@secondary",
+          "pulse": 0.3
+        }
+      }
     },
     "Verse": {
-      "routine": "verse-sweep"
+      "routine": "verse-sweep",
+      "visuals": {
+        "scene": "bars",
+        "params": {
+          "color": "@primary",
+          "count": 8
+        }
+      }
     },
     "Up": {
-      "routine": "build-rise"
+      "routine": "build-rise",
+      "visuals": {
+        "scene": "particles",
+        "params": {
+          "color": "@accent",
+          "burst": 1
+        }
+      }
     },
     "Chorus": {
       "routine": "fan-drop",
       "variation": "wide",
-      "palette": "Hot"
+      "palette": "Hot",
+      "visuals": {
+        "scene": "tunnel",
+        "params": {
+          "color": "@primary",
+          "speed": 2
+        }
+      }
     },
     "Down": {
       "routine": "idle-orbit",
       "params": {
         "color": "@secondary"
+      },
+      "visuals": {
+        "scene": "wash",
+        "params": {
+          "color": "@secondary",
+          "pulse": 0.6
+        }
       }
     },
     "Bridge": {
       "routine": "verse-sweep",
-      "variation": "wide"
+      "variation": "wide",
+      "visuals": {
+        "scene": "bars",
+        "params": {
+          "color": "@secondary",
+          "count": 16
+        }
+      }
     },
     "Outro": {
-      "routine": "idle-orbit"
+      "routine": "idle-orbit",
+      "visuals": {
+        "scene": "wash",
+        "params": {
+          "color": "@secondary",
+          "pulse": 0.3
+        }
+      }
     },
     "*": {
-      "routine": "verse-sweep"
+      "routine": "verse-sweep",
+      "visuals": {
+        "scene": "wash",
+        "params": {
+          "color": "@primary",
+          "pulse": 0.4
+        }
+      }
     }
   },
   "bars": {

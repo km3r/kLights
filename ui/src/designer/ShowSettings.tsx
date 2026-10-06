@@ -119,9 +119,10 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone }: {
             {sets.map((s) => <option key={s.id} value={s.id}>{s.name || s.id}</option>)}
           </select>
         </label>
-        <p className="muted small">New timelines draft from it by default. Template sets do not
-          play tracks live yet (F19 milestone 2): a track with no timeline gets the operator's
-          show.</p>
+        <p className="muted small">The set the engine starts on: with Follow armed it lights a
+          track that has no timeline, a routine per phrase, and the operator can switch it
+          from the Show tab. With none, such a track gets the operator's show. New timelines
+          draft from it by default.</p>
       </section>
 
       <section className="s-box" aria-label="when the decks pause">

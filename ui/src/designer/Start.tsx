@@ -13,11 +13,8 @@ import type { PrepSummary, TemplateSetDoc, TrackDoc } from "./model";
  *   draft     a timeline drafted from a template set -- the same draft the
  *             timeline editor makes, saved as the track's timeline
  *   empty     a timeline with one empty scene lane
- *   template  nothing yet: the track is in the show, and the operator's show
- *             runs when it plays. (Template sets playing live is F19
- *             milestone 2; until then a set is what timelines are drafted
- *             from, and saying otherwise here would promise light that the
- *             engine will not make.)
+ *   template  no timeline: the track is in the show, and when it plays the
+ *             template set that is on lights it (else the operator's show).
  *
  * From rekordbox, only the tracks the prep CREATED are started. A track that
  * was already in the show and is ticked again is being re-prepped -- fresh
@@ -52,11 +49,12 @@ const OPTIONS: { id: StartAs; title: string; text: string }[] = [
     text: "One routine per rekordbox phrase on a scene lane, and the set's palettes on a "
       + "palette lane. A starting point to edit; saved as each track's timeline." },
   { id: "template", title: "Just add it, no timeline yet",
-    text: "Only the track is written. When it plays, the operator's show runs, as for any "
-      + "track without a timeline; draft it one later from the library." },
+    text: "Only the track is written. When it plays, the template set that is on lights it, "
+      + "a routine per phrase (with none on, the operator's show); draft it a timeline later "
+      + "from the library." },
   { id: "empty", title: "An empty timeline",
     text: "One scene lane with nothing on it, for a track to build by hand. Until it has "
-      + "clips, the operator's show runs under it." },
+      + "clips, the template set that is on (else the operator's show) shows through it." },
 ];
 
 /** Wait for a track the engine is still loading: prep answers before the

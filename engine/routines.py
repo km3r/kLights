@@ -8,7 +8,10 @@ routine leaves open:
 - **params**: values for its open parameters. Lowest to highest: the
   parameter's default, then the use's `variation`, then the use's own
   `params`. A colour parameter takes a palette role (`"@primary"`), a hex
-  colour, `[r, g, b]`, or a colour look's name.
+  colour, `[r, g, b]`, or a colour look's name. Above all three, per frame:
+  the routine's own `param.<name>` lane, read in its own beats, and above
+  that the timeline's (`blocks.Env.param`). A routine's `arg.<item>.<arg>`
+  lane moves one item's argument the same way, as a hidden parameter.
 - **bind**: which rig tag plays each ROLE. Unbound, a role plays its default
   tag. A role marked `optional` that finds no fixtures on this rig is simply
   absent; a required one is a warning, and its rows do nothing.
@@ -56,6 +59,9 @@ class Instance:
     roles: dict[str, tuple[rigmod.PatchedFixture, ...]]
     env: blocksmod.Env
     problems: list[str] = field(default_factory=list)
+    # Routine-local beat the compiler last placed it at (`sched`), which its
+    # own param lanes are read at.
+    now: float = 0.0
 
     def sched(self, local: float) -> float:
         """Where in its own rows a routine is, `local` beats after it
@@ -76,6 +82,15 @@ class Instance:
     def curve(self, target: str) -> Optional[timelinemod.Curve]:
         entry = self.timeline.curves.get(target)
         return entry[1] if entry else None
+
+    def param_lane(self, name: str) -> Any:
+        """Its own `param.<name>` lane at `now`, or None if it has none. An
+        argument lane's hidden parameter is named after its target, so it is
+        looked up as itself."""
+        target = (name if name.startswith(blocksmod.ARG_PREFIX)
+                  else showfiles.PARAM_PREFIX + name)
+        curve = self.curve(target)
+        return blocksmod.automation_value(curve, self.now) if curve else None
 
     @property
     def fixtures(self) -> frozenset[int]:
@@ -150,6 +165,30 @@ def instantiate(doc: Mapping, use: Mapping, rigging: blocksmod.Rigging,
     if rig_name and rigging.event and rig_name != rigging.event:
         problems.append(f"{where}: routine {rid!r} was built for rig {rig_name!r} "
                         f"(this rig only) -- its looks may not exist here")
+    # Argument lanes: each item argument a lane drives is pointed at a hidden
+    # parameter named after the lane's target, holding the argument's own
+    # value for wherever the lane is silent. The block then reads it per frame
+    # through `Env.param`, as it would a `$param`.
+    redirect: dict[str, dict[str, str]] = {}
+    for row in doc.get("rows") or ():
+        target = row.get("target") if row.get("type") == "automation" else None
+        found = showfiles.arg_target(target)
+        if found is None:
+            continue
+        item_id, arg = found
+        item = next((i for r in doc.get("rows") or () if r.get("type") == "clips"
+                     for i in r.get("items") or () if i.get("id") == item_id), None)
+        if item is None:
+            problems.append(f"{where}: {target} drives item {item_id!r}, which "
+                            f"is not in the routine")
+            continue
+        literal = (item.get("args") or {}).get(arg)
+        if isinstance(literal, str) and literal.startswith("$"):
+            problems.append(f"{where}: {target} would take over {literal}; "
+                            f"automate that param instead")
+            continue
+        params[target] = literal
+        redirect.setdefault(item_id, {})[arg] = f"${target}"
     env = blocksmod.Env(params, rigging.look_colors())
     length = float(doc.get("bars") or 0) * tracktime.BEATS_PER_BAR
     try:
@@ -167,8 +206,9 @@ def instantiate(doc: Mapping, use: Mapping, rigging: blocksmod.Rigging,
         for item in row.items:
             role = item.data.get("role") or source.get("role")
             fixtures = roles.get(role, ())
+            args = {**(item.data.get("args") or {}), **redirect.get(item.id, {})}
             block = blocksmod.make(
-                str(item.data.get("block")), item.data.get("args") or {},
+                str(item.data.get("block")), args,
                 fixtures, slot, env, rigging,
                 where=f"{where} row {row.id!r} item {item.id!r}")
             problems += block.problems
@@ -178,5 +218,7 @@ def instantiate(doc: Mapping, use: Mapping, rigging: blocksmod.Rigging,
             role = item.data.get("role")
             hit_fixtures[(row.id, item.id)] = (
                 frozenset(f.fid for f in roles.get(role, ())) if role else everyone)
-    return Instance(rid, length, bool(doc.get("loop", True)), timeline, built,
+    inst = Instance(rid, length, bool(doc.get("loop", True)), timeline, built,
                     hit_fixtures, roles, env, problems)
+    env.lanes = inst.param_lane
+    return inst

@@ -359,8 +359,9 @@ export function Coverage({ scope, tracks }: { scope: string; tracks: TrackLine[]
         ))}
       </dl>
       <p className="muted small">A track without a timeline, in the show or not, gets the
-        operator's show when it plays. Adding it lets Studio draft it a timeline, and lets
-        the engine recognise it from rekordbox and from CDJs.</p>
+        template set that is on when it plays (else the operator's show). Adding it lets the
+        set follow its own phrases, lets Studio draft it a timeline, and lets the engine
+        recognise it from rekordbox and from CDJs.</p>
       {cant.length > 0 && (
         <div>
           <b className="small">Can't be added yet</b>
