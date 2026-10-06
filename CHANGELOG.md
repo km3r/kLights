@@ -17,6 +17,19 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — a routine's lanes can be filled where they are
+
+- In the routine editor, **click an empty spot on a clips or hits lane** to
+  choose what goes there: that lane's blocks (its slot's, then the rig's own),
+  or flash, strobe and blackout on a hits lane. It goes on that lane, from the
+  beat clicked to the next item on the lane or the routine's end, and is
+  selected so its arguments open below. Enter on a focused lane does the same
+  at the playhead. An empty lane says so.
+- Before, the only way in was the **Blocks** shelf at the foot of the side
+  panel, which always used the first lane of a slot. A second lane of the same
+  slot, such as a colour lane for another role, could not be filled, and a
+  routine's hits lane could not be filled at all.
+
 ### Added — Studio's + New: one way in to making anything
 
 - **+ New** sits in the top bar of Studio's library pages. It makes a timeline for a

@@ -5,7 +5,7 @@ import {
   BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
   RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, itemName,
 } from "./model";
-import type { ArgSpec, Item, ParamDef, RoutineDoc, Slot } from "./model";
+import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
 import {
   AutomationMenu, Editor, FADES, ParamLanes, ROLES, backHash, externalRow, parsePointId,
   parseWaveId, routineLaneSpecs, uniqueId, useEditorKeys, useHistory,
@@ -25,7 +25,8 @@ import "./designer.css";
  *   top        a loop transport at a tempo of your choosing, the routine's
  *              name, and the same snap / undo / redo / check / save
  *   lanes      a bar ruler over the routine's length, then its rows: a clips
- *              row per slot and role, hits, automation
+ *              row per slot and role, hits, automation. A click on a clips or
+ *              hits lane's empty space offers what that lane can hold
  *   right      the routine itself: length and looping, its roles, its open
  *              parameters, its variations, and the blocks to add
  *   bottom     the selected block's arguments -- each a value, or "$param"
@@ -86,6 +87,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [zoom, setZoom] = useState(16);
   const [bpm, setBpm] = useState(128);
   const [selected, setSelected] = useState<string | null>(null);
+  // The menu of what a lane can hold, open where its empty space was clicked.
+  const [adding, setAdding] = useState<Adding | null>(null);
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
   const [panels, togglePanel] = usePanels();
@@ -113,6 +116,18 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   useEditorKeys({ history, selected, setSelected,
                   playPause: () => loop.setPlaying(!loop.playing),
                   clip: { kind: "routine", beat: () => beatRef.current } });
+  // The menu closes on a click anywhere else, or Escape.
+  useEffect(() => {
+    if (!adding) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as Element | null)?.closest?.(".d-ctx")) return;
+      setAdding(null);
+    };
+    addEventListener("mousedown", close);
+    addEventListener("keydown", close);
+    return () => { removeEventListener("mousedown", close); removeEventListener("keydown", close); };
+  }, [adding]);
   const totalBeats = useMemo(() => {
     const ends = (doc?.rows ?? []).flatMap((r) => (r.items ?? []).map((i) => i.at + i.len));
     return Math.ceil(Math.max(length, ...ends) / BEATS_PER_BAR) * BEATS_PER_BAR;
@@ -182,12 +197,14 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
             {doc.rows.map((row, index) => (
               <Lane key={row.id} row={row} index={index} x={x} width={width} zoom={zoom}
                     selected={selected} onSelect={setSelected} history={history}
-                    beat={loop.beat} roles={roles} />
+                    beat={loop.beat} roles={roles}
+                    onAdd={(rowId, at, cx, cy) => setAdding({ row: rowId, at, x: cx, y: cy })} />
             ))}
             <AddLane history={history} roles={roles} params={paramLanes} />
             {doc.rows.length === 0 && (
               <p className="small muted" style={{ paddingLeft: HEADER_W + 8 }}>
-                Empty. Add a block from the right, or a lane from “+ lane”.</p>)}
+                Empty. Add a lane from “+ lane” and click in it to add a block, or
+                pick a block on the right.</p>)}
             <div className="d-loop-end" aria-hidden="true" style={{ left: HEADER_W + x(length) }}
                  title={doc.loop !== false ? "it repeats from here" : "it holds its end from here"} />
             <div className="d-playhead" aria-hidden="true" style={{ left: HEADER_W + x(loop.beat) }} />
@@ -214,6 +231,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
                                    onSelect={setSelected} />
           : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
                             onDeleted={() => setSelected(null)} />}
+
+      {adding && (
+        <AddMenu history={history} doc={doc} engine={engine} adding={adding}
+                 playhead={loop.beat}
+                 onAdded={(id) => { setSelected(id); setAdding(null); }} />)}
     </div>
     </ParamLanes.Provider>
   );
@@ -224,6 +246,89 @@ function usesRig(doc: Doc): boolean {
 }
 
 // -- lanes ------------------------------------------------------------------------
+
+/** Where a lane's empty space was clicked: its row, the beat (null for the
+ *  playhead) and the point on the screen to open the menu at. */
+interface Adding { row: string; at: number | null; x: number; y: number }
+
+const HITS = [
+  { hit: "flash", text: "a burst, decaying" },
+  { hit: "strobe", text: "for a bar" },
+  { hit: "blackout", text: "a beat of dark" },
+] as const;
+
+/** The grid line at or before a beat: a click adds in the cell it lands in,
+ *  not at the next line when it lands past the middle of one. */
+function snapDown(history: RHistory, beat: number): number {
+  const snapped = history.snapBeat(beat);
+  return snapped <= beat ? snapped
+    : history.snapBeat(beat - (history.snap === "beat" ? 1 : BEATS_PER_BAR));
+}
+
+/** A hit's starting length and envelope, as the track's browser places them. */
+function newHit(hit: (typeof HITS)[number]["hit"]): Pick<Item, "hit" | "len" | "envelope"> {
+  return { hit, len: hit === "strobe" ? 4 : hit === "flash" ? 2 : 1,
+           ...(hit === "flash" ? { envelope: "decay" as const } : {}) };
+}
+
+/**
+ * What a lane can hold, offered where its empty space was clicked: a clips
+ * lane's blocks (its slot's, then the rig's own), a hits lane's hits. The one
+ * picked goes on THAT lane -- the shelf on the right can only reach the first
+ * lane of a slot -- from the beat clicked until the next item on the lane, or
+ * the routine's end, and is selected so its arguments open below.
+ */
+function AddMenu({ history, doc, engine, adding, playhead, onAdded }: PanelProps & {
+  adding: Adding; playhead: number; onAdded: (id: string) => void;
+}) {
+  const row = doc.rows.find((r) => r.id === adding.row);
+  if (!row) return null;
+  const length = doc.bars * BEATS_PER_BAR;
+  const at = adding.at == null ? history.snapBeat(playhead) : snapDown(history, adding.at);
+  const start = Math.max(0, Math.min(length - 1, at));
+  const next = Math.min(length, ...(row.items ?? []).map((i) => i.at).filter((b) => b > start));
+  const until = Math.max(1, next - start);
+  const place = (id: string, change: (d: Doc, lane: Row) => void) => {
+    history.apply((d) => {
+      const lane = d.rows.find((r) => r.id === row.id);
+      if (lane) change(d, lane);
+    });
+    onAdded(id);
+  };
+  const blocks = row.type === "hits" ? [] : blocksFor(row.target ?? "");
+  const entries: { key: string; label: React.ReactNode; add: () => void }[] = row.type === "hits"
+    ? HITS.map(({ hit, text }) => ({
+        key: hit,
+        label: <>{hit}<span className="k">{text}</span></>,
+        add: () => {
+          // Named from the document as it is now: the edit may run later.
+          const id = uniqueId(doc, hit);
+          place(id, (_, lane) => { (lane.items ??= []).push({ id, at: start, ...newHit(hit) }); });
+        },
+      }))
+    : [...blocks.filter((b) => !RIG_BOUND.includes(b)), ...blocks.filter((b) => RIG_BOUND.includes(b))]
+        .map((block) => ({
+          key: block,
+          label: <>{block}{RIG_BOUND.includes(block) && <span className="d-badge">rig</span>}</>,
+          add: () => {
+            const id = uniqueId(doc, block);
+            place(id, (d, lane) => addBlock(d, lane, { id, block, at: start, len: until },
+                                            engine.state?.event));
+          },
+        }));
+  const height = entries.length * 28 + 40;
+  return (
+    <div className="d-ctx" role="menu" aria-label={`add to ${row.id}`}
+         style={{ left: Math.min(adding.x, innerWidth - 240),
+                  top: Math.max(8, Math.min(adding.y, innerHeight - height)) }}>
+      <span className="d-ctx-head small muted">
+        Add at bar {barBeat(start)}{row.role ? `, for ${row.role}` : ""}</span>
+      {entries.map((e, i) => (
+        <button key={e.key} role="menuitem" autoFocus={i === 0} onClick={e.add}>{e.label}</button>))}
+      {!entries.length && <span className="small muted">Nothing goes on this lane.</span>}
+    </div>
+  );
+}
 
 function AddLane({ history, roles, params }: {
   history: RHistory; roles: string[]; params: LaneSpecs;
@@ -524,6 +629,14 @@ function Variations({ history, doc, engine }: PanelProps) {
 
 // -- blocks -------------------------------------------------------------------------
 
+/** A block onto a lane, with its starting arguments. One that uses this rig's
+ *  looks or presets makes the routine this rig's own, if it is not already. */
+function addBlock(d: Doc, lane: Row, item: { id: string; block: string; at: number; len: number },
+                  event: string | undefined): void {
+  (lane.items ??= []).push({ ...item, args: startingArgs(item.block) });
+  if (RIG_BOUND.includes(item.block) && !d.rig && event) d.rig = event;
+}
+
 /** What a new block starts with: the arguments the engine NEEDS (colours,
  *  points); everything else is left to the engine's default. */
 function startingArgs(block: string): Record<string, unknown> {
@@ -556,16 +669,15 @@ function Blocks({ history, doc, engine, beat, selected, onAdded }: PanelProps & 
         d.rows.push(lane);
       }
       const at = Math.max(0, Math.min(length - 1, history.snapBeat(beat)));
-      (lane.items ??= []).push({ id: added, at, len: Math.max(1, length - at), block,
-                                 args: startingArgs(block) });
-      if (RIG_BOUND.includes(block) && !d.rig && engine.state?.event) d.rig = engine.state.event;
+      addBlock(d, lane, { id: added, block, at, len: Math.max(1, length - at) }, engine.state?.event);
     });
     onAdded(added);
   };
   return (
     <section>
       <h3>Blocks</h3>
-      <p className="small muted">Click to add one at the playhead, to the end of the routine,
+      <p className="small muted">To put a block on a particular lane, click an empty spot on
+        that lane. Or click one here to add it at the playhead, to the end of the routine,
         on the selected block's lane or the first lane of its slot.</p>
       {SLOTS.map((slot) => (
         <div key={slot}>

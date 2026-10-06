@@ -128,7 +128,7 @@ const TARGET_LABEL: Record<string, string> = {
 };
 
 export function Lane({ row, index, x, width, zoom, selected, onSelect, history, beat,
-                      roles, onMenu, onDropItem }: {
+                      roles, onMenu, onDropItem, onAdd }: {
   row: Row; index: number; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void;
   history: Edits; beat: number;
@@ -138,6 +138,9 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   /** A routine's lane: its rows play on a ROLE rather than owning a slot of
    *  the track, so the head picks the role and there is no gap mode. */
   roles?: string[];
+  /** A click on a clips or hits lane's empty space (the routine editor's):
+   *  at a beat, or null for the playhead. */
+  onAdd?: (rowId: string, beat: number | null, clientX: number, clientY: number) => void;
 }) {
   if (row.type === "automation") {
     return <AutoLane row={row} x={x} width={width} history={history} beat={beat}
@@ -183,7 +186,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
       </div>
       <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                       onSelect={onSelect} history={history} onMenu={onMenu}
-                      onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))} />
+                      onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))}
+                      onAdd={onAdd && ((at, cx, cy) => onAdd(row.id, at, cx, cy))} />
     </div>
   );
 }

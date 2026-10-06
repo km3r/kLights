@@ -821,13 +821,16 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
 
 const LANE_H = 40;
 
-function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem }: {
+function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem, onAdd }: {
   row: Row; x: (b: number) => number; width: number; zoom: number;
   selected: string | null; onSelect: (id: string | null) => void; history: Edits;
   /** A clip's menu, asked for with the other mouse button. */
   onMenu?: (id: string, clientX: number, clientY: number) => void;
   /** Something dragged from the browser, let go at a beat on this lane. */
   onDropItem?: (what: Placeable, beat: number) => void;
+  /** A click on the lane's empty space, to add something there: at the beat
+   *  clicked, or null for the playhead (Enter, with the lane focused). */
+  onAdd?: (beat: number | null, clientX: number, clientY: number) => void;
 }) {
   const menu = (e: React.MouseEvent, id: string) => {
     if (!onMenu) return;
@@ -872,12 +875,26 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onD
     });
   };
 
+  const addable = hits ? "a hit" : "a block";
   return (
-    <svg width={width} height={LANE_H} className="d-lane"
+    <svg width={width} height={LANE_H} className={`d-lane${onAdd ? " d-addable" : ""}`}
          aria-label={`lane ${row.id}`}
+         tabIndex={onAdd ? 0 : undefined}
+         aria-keyshortcuts={onAdd ? "Enter" : undefined}
          onPointerMove={move} onPointerUp={end} onPointerCancel={end}
          onClick={(e) => {
-           if (e.target === e.currentTarget) onSelect(null);
+           if (e.target !== e.currentTarget) return;
+           onSelect(null);
+           if (onAdd) {
+             const r = e.currentTarget.getBoundingClientRect();
+             onAdd(Math.max(0, (e.clientX - r.left) / zoom), e.clientX, e.clientY);
+           }
+         }}
+         onKeyDown={(e) => {
+           if (!onAdd || e.key !== "Enter" || e.target !== e.currentTarget) return;
+           e.preventDefault();
+           const r = e.currentTarget.getBoundingClientRect();
+           onAdd(null, r.left, r.bottom);
          }}
          onDragOver={(e) => {
            if (onDropItem && e.dataTransfer.types.includes(PLACE_MIME)) e.preventDefault();
@@ -889,6 +906,9 @@ function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onD
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
            onDropItem(what, Math.max(0, (e.clientX - r.left) / zoom));
          }}>
+      {onAdd && !items.length && (
+        <text x={8} y={LANE_H / 2 + 4} className="d-lane-hint" pointerEvents="none">
+          Empty -- click to add {addable}</text>)}
       {items.map((it) => {
         const live = drag?.id === it.id ? drag : null;
         const at = it.at + (live?.dAt ?? 0);

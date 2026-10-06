@@ -123,8 +123,10 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             Start it blank, as a copy of another, or from a look on the console.
             Or click <b>Open routine</b> on a clip.</>,
           <>Set the number of <b>Bars</b>, and whether it <b>loops</b>.</>,
-          <>Click a block under <b>Blocks</b> to add it at the playhead. Its
-            settings appear below.</>,
+          <>Add a lane from <b>+ lane</b> and pick its role, then click an
+            empty spot on the lane to choose a block for it. Or click a block
+            under <b>Blocks</b> to add it at the playhead. Click a block on a
+            lane to change its settings below.</>,
           <><b>Play</b> loops it at the <b>Tempo</b> you set here. To see it on
             the rig, put it on a track and drive the rig from there.</>,
           <><b>Save</b> (Ctrl+S).</>,

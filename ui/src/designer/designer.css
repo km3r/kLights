@@ -80,6 +80,11 @@
 .d-label { fill: var(--dim); font-size: 10px; }
 .d-ruler svg { cursor: pointer; }
 .d-lane { display: block; }
+/* A routine's clips and hits lanes: a click on empty space adds there. */
+.d-lane.d-addable { cursor: copy; }
+.d-lane.d-addable:focus { outline: none; }
+.d-lane.d-addable:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.d-lane-hint { fill: var(--dim); font-size: 11px; }
 .d-clip rect:first-child { fill: #24406a; stroke: #3b6db0; cursor: grab; }
 .d-clip-palette rect:first-child { fill: #4a2d5c; stroke: #8b5cc4; }
 .d-clip-look rect:first-child, .d-clip-snapshot rect:first-child { fill: #4b3a1c; stroke: #b88a2c; }
@@ -588,6 +593,8 @@ a.s-use:hover b { color: var(--accent); }
 .d-ctx > a:hover, .designer .d-ctx > button:hover:not(:disabled) { background: var(--line); }
 .designer .d-ctx > button.danger { color: #ff8a83; }
 .d-ctx .k { margin-left: auto; color: var(--dim); font-size: 11px; }
+.d-ctx-head { padding: 4px 10px 6px; }
+.designer .d-ctx > button:focus-visible { background: var(--line); outline: none; }
 .d-clip-tools { display: inline-flex; gap: 4px; margin-right: 8px; }
 
 /* Whose palette a palette is: a copy of the library's, one that differs from

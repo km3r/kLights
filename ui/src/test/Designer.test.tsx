@@ -960,6 +960,64 @@ describe("routine editor", () => {
       .toMatchObject({ at: 0, len: 32, args: { depth: "$depth" } });
   });
 
+  it("fills a lane from a click on its empty space, with what that lane can hold", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // a second colour lane, for the pinspots: the shelf only reaches the first
+    await user.selectOptions(within(lanes).getByLabelText("add lane"), "color");
+    await user.selectOptions(within(lanes).getByLabelText("color role"), "pins");
+    const lane = within(lanes).getByLabelText("lane color");
+    expect(within(lane).getByText(/Empty -- click to add a block/)).toBeInTheDocument();
+
+    fireEvent.click(lane, { clientX: 8 * 16, clientY: 20 });          // bar 3
+    let menu = screen.getByRole("menu", { name: "add to color" });
+    expect(menu).toHaveTextContent("Add at bar 3.1, for pins");
+    // the colour blocks, and the rig's own; no movement or level blocks
+    expect(within(menu).getByRole("menuitem", { name: "solid" })).toHaveFocus();
+    expect(within(menu).getByRole("menuitem", { name: /look/ })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: "orbit" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: "duo" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(within(lane).getByLabelText("duo at bar 3.1")).toBeInTheDocument();
+    // selected, so its arguments are open below
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByLabelText("block")).toHaveValue("duo");
+    expect(within(inspector).getByText(/on color, for pins/)).toBeInTheDocument();
+
+    // a click past the middle of a beat still lands in that beat, and the
+    // block runs up to the next one on the lane rather than over it
+    fireEvent.click(lane, { clientX: 2.7 * 16, clientY: 20 });
+    await user.click(within(screen.getByRole("menu", { name: "add to color" }))
+      .getByRole("menuitem", { name: "solid" }));
+    expect(within(lane).getByLabelText("solid at bar 1.3")).toBeInTheDocument();
+
+    // a hits lane offers hits; Escape closes the menu with nothing added
+    const hits = within(lanes).getByLabelText("lane h");
+    fireEvent.click(hits, { clientX: 4 * 16, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to h" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(hits, { clientX: 4 * 16, clientY: 20 });
+    menu = screen.getByRole("menu", { name: "add to h" });
+    expect(within(menu).queryByRole("menuitem", { name: "duo" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitem", { name: /flash/ }));
+    expect(within(hits).getByLabelText("flash at bar 2.1")).toBeInTheDocument();
+
+    // and from the keyboard: Enter on a lane offers it at the playhead
+    lane.focus();
+    fireEvent.keyDown(lane, { key: "Enter" });
+    expect(screen.getByRole("menu", { name: "add to color" })).toHaveTextContent("Add at bar 1.1");
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const { doc } = reply(socket, "routine_save", true, { rev: "r:h" }) as unknown as Saved;
+    expect(doc.rows.find((r) => r.id === "color")).toMatchObject({
+      type: "clips", target: "color", role: "pins",
+      items: [{ block: "duo", at: 8, len: 24 }, { block: "solid", at: 2, len: 6 }] });
+    expect(doc.rows.find((r) => r.id === "h")!.items!.find((i) => i.hit === "flash"))
+      .toMatchObject({ at: 4, len: 2, envelope: "decay" });
+  });
+
   it("automates its own parameters on lanes, held to their declared range", async () => {
     const user = userEvent.setup();
     const socket = await open("#designer/routine/fan-drop");
