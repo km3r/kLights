@@ -33,6 +33,7 @@ target and renaming makes the swap atomic on every platform we run on, and one
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -126,6 +127,13 @@ def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
         return
 
     if isinstance(value, Number) and not isinstance(value, bool):
+        # NaN passes every range test (each comparison is false), and a NaN or
+        # an infinity written back out is a bare token no strict JSON reader
+        # -- a browser among them -- will parse.
+        if not math.isfinite(value):
+            out.append(f"{where} must be a finite number, got {value!r}"
+                       + (f"\n      fix: {spec.fix}" if spec.fix else ""))
+            return
         if spec.min is not None and value < spec.min:
             out.append(f"{where} must be at least {spec.min}, got {value}"
                        + (f"\n      fix: {spec.fix}" if spec.fix else ""))
@@ -218,7 +226,43 @@ def load(path: Path, schema: dict[str, Spec]) -> dict:
             f"column {exc.colno}\n      fix: a trailing comma after the last "
             f"item in a list or object is the usual cause"]) from None
     validate(cfg, schema, path)
+    drop_absent(cfg, schema)
     return cfg
+
+
+def drop_absent(cfg: Any, schema: dict[str, Spec]) -> None:
+    """Remove every optional key set to null, in place, as `validate` read it.
+
+    The validator treats `"hold": null` exactly like a missing "hold". Loaders
+    written as `entry.get("hold", {})` do not -- the default only applies to a
+    MISSING key -- so a file the validator passed reached `dict(None)` or
+    `int(None)` and became a traceback at load-in. Dropping the keys here makes
+    every loader see what the validator saw, without each one having to know.
+    """
+    if not isinstance(cfg, dict):
+        return
+    for key, spec in schema.items():
+        if key not in cfg:
+            continue
+        if cfg[key] is None:
+            if not spec.required:
+                del cfg[key]
+            continue
+        _drop_within(cfg[key], spec)
+
+
+def _drop_within(value: Any, spec: Spec) -> None:
+    if isinstance(value, dict):
+        if spec.of is not None:
+            drop_absent(value, spec.of)
+        if spec.variants is not None:
+            key, table = spec.variants
+            tag = value.get(key)
+            if isinstance(tag, (str, int, float)) and tag in table:
+                drop_absent(value, table[tag])
+    elif isinstance(value, list) and spec.each is not None:
+        for item in value:
+            _drop_within(item, spec.each)
 
 
 # ------------------------------------------------------------------ writing --

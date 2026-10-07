@@ -298,6 +298,12 @@ def osc_fields(address: str, value: Any) -> Optional[dict]:
             return None
         if divisor <= 0:
             return None
+        # The argument came off the wire too: a string or a boolean is not a
+        # phase, and float("abc") here used to raise out of parse() -- costing
+        # the datagram via the listener's guard, but breaking parse's promise
+        # to answer None for what it cannot use.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
         return _tag({"beat_in_bar": float(value) * divisor}, rkbx)
 
     for span in (2, 1):
