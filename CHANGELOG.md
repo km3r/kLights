@@ -17,6 +17,66 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — a solved calibration applies live, like a patch edit
+
+- **Solve & write no longer ends in "restart the engine to load it."** The
+  engine reads the rig from `calibration.json` as well as `rig.json`, so the
+  reload behind a patch's **Apply now** loads a calibration too; the solve just
+  never offered it. Now it does: the calibration is saved, the running show
+  keeps aiming from the old one, and **Apply now** appears under the Solve
+  buttons. It is not loaded on write, because a new calibration moves every
+  look that aims at something and when that happens is the operator's call.
+- The snapshot's new `pending_files` says what is waiting (`rig.json`,
+  `calibration.json`, or both), and the banner shows in the card where each was
+  saved — Patch or Capture — naming everything one Apply will load. A reload
+  that brings in a calibration says so in the notices. Its **Apply now** button
+  no longer squeezes to a few letters a line beside the sentence.
+- The Capture card's help, the "Re-aim a head" guide and the runbook say Apply,
+  not restart. `ui/src/__fixtures__/despacio.json` is regenerated, which also
+  picks up four snapshot keys it had fallen behind on.
+
+### Added — the launcher has a field for the show folder
+
+- **Show folder** sits between Event and Engine, with **Browse...**. It used to
+  be an extra flag, and an engine started without one opened a Studio that
+  waited on "Loading the show folder" with nothing to say why.
+- **The line under it says what the engine will load**: how many tracks,
+  timelines, routines and template sets, and how many files will not load.
+  Left empty, it names the folder `$KLIGHTS_SHOW_DIR` or `klights.local.json`
+  gives the engine, or says there is none and that Studio needs one. The
+  folder is read off the Tk thread, like the rig.
+- **A `--show-dir` already in Extra flags moves into the field** the next time
+  the launcher opens. Extra flags come last on the command line, so left there
+  it would win over the field.
+
+### Fixed — the Patch card no longer says a patch needs a restart
+
+- A patch edit has applied live since **Apply now** arrived, but the Patch
+  card's locked text still said a restart was needed, and so did the comments
+  behind it and the CLI's and MCP server's refusals. They now say what happens:
+  each edit is saved to `rig.json` at once and goes live on **Apply now**, at a
+  frame boundary. The CLI and MCP still refuse to write while an engine runs
+  the event, because the engine does not watch `rig.json`; the refusal now
+  points at the Setup tab as well as at stopping the show.
+
+### Changed — the README says what kLights is, and starts from the launcher
+
+- **The intro covers the whole project**: Studio to design a show, Setup for
+  the rig and the room, and the console to run the night, each linking to its
+  section. The safety warning moved from the intro to *Running a show*.
+- **Quick start is the launcher**, with a screenshot and the steps from
+  picking an event and a show folder to the previz. `python -m engine.server`
+  and its flags are under *Without the launcher*.
+- *Editing the rig* says what actually happens: edits on the Setup tab apply
+  live with **Apply now**, and the CLI and MCP refuse while an engine runs.
+- **Screenshots retaken** from a live engine: the four phone tabs on cue 3
+  (Deep) with MH Breathe running, Setup at the patch, and Studio's timeline
+  driving the rig with the new right-hand panels. New: the launcher, and
+  Studio's track library. The plan-view diagram is gone; the Move tab shows
+  the real one.
+- Requirements say the launcher needs Tk, which Debian and Ubuntu ship
+  separately.
+
 ### Changed — Studio's right-hand panels say each thing once
 
 - **One layout for every details panel**: tracks, routines, template sets,

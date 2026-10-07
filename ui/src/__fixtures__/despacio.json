@@ -3,6 +3,7 @@
   "rev": 7,
   "version": "0.1.0",
   "pending_patch": false,
+  "pending_files": [],
   "strobe_policy": {
     "enabled": true,
     "ceiling": 0.75,
@@ -182,10 +183,14 @@
     "jump_seq": 0,
     "on_air": null,
     "match": null,
-    "grid_warning": null
+    "grid_warning": null,
+    "decks": []
   },
   "show": null,
   "program": null,
+  "pad": null,
+  "outputs": null,
+  "visuals": null,
   "preview": null,
   "auto": {
     "look": "Lazy Circle",

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shlex
 import socket
@@ -73,6 +74,9 @@ class Settings:
     artnet: str = "127.0.0.1"
     bind: str = "0.0.0.0"
     use_token: bool = True
+    # The show folder: prepped tracks, timelines, routines, template sets. ""
+    # leaves it to the engine: $KLIGHTS_SHOW_DIR, then klights.local.json.
+    show_dir: str = ""
     extra_args: str = ""
     previz_port: int = ARTNET_PORT
     previz_windowed: bool = True
@@ -99,6 +103,7 @@ def load_settings(state_dir: Path = STATE_DIR) -> Settings:
             continue
         values[key] = value
     settings = Settings(**values)
+    adopt_show_dir(settings)
     record = data.get("engine")
     if isinstance(record, dict):
         try:
@@ -106,6 +111,29 @@ def load_settings(state_dir: Path = STATE_DIR) -> Settings:
         except TypeError:
             pass
     return settings
+
+
+# `--show-dir X`, `--show-dir=X`, or either with X quoted.
+_SHOW_DIR_FLAG = re.compile(r"""(?:^|\s)--show-dir(?:=|\s+)("[^"]*"|'[^']*'|\S+)""")
+
+
+def adopt_show_dir(settings: Settings) -> bool:
+    """Move a `--show-dir` out of Extra flags into the show folder field.
+
+    Before the field existed, Extra flags was the only place for it. Left
+    there it would also win over the field, since extra flags come last on
+    the command line, so the field would say one folder and the engine load
+    another. True if anything moved.
+    """
+    if settings.show_dir:
+        return False
+    match = _SHOW_DIR_FLAG.search(settings.extra_args)
+    if match is None:
+        return False
+    settings.show_dir = match.group(1).strip("\"'")
+    rest = settings.extra_args[:match.start()] + settings.extra_args[match.end():]
+    settings.extra_args = " ".join(rest.split())
+    return True
 
 
 def save_settings(settings: Settings, state_dir: Path = STATE_DIR) -> None:
@@ -172,6 +200,79 @@ def describe_event(path: Path) -> EventInfo:
     return info
 
 
+# --------------------------------------------------------------- show folder --
+
+@dataclass
+class ShowInfo:
+    """Where the engine will find its show folder, and what is in it."""
+    path: Optional[Path] = None
+    # "" when the field names it; else "env" or "local": the engine's own
+    # default, from $KLIGHTS_SHOW_DIR or klights.local.json.
+    source: str = ""
+    tracks: int = 0
+    timelines: int = 0
+    routines: int = 0
+    template_sets: int = 0
+    problems: int = 0       # files that do not load, which the engine leaves out
+    error: str = ""
+
+    def summary(self) -> str:
+        if self.path is None:
+            return ("None. The console runs without one; Studio and timecoded shows "
+                    "need one. Try shared/show-example.")
+        where = {"env": f"From $KLIGHTS_SHOW_DIR: {self.path}. ",
+                 "local": f"From klights.local.json: {self.path}. "}.get(self.source, "")
+        if self.error:
+            return where + self.error
+
+        def n(count: int, what: str) -> str:
+            return f"{count} {what}{'' if count == 1 else 's'}"
+        text = where + ", ".join((n(self.tracks, "track"), n(self.timelines, "timeline"),
+                                  n(self.routines, "routine"),
+                                  n(self.template_sets, "template set")))
+        if self.problems:
+            text += (f". {n(self.problems, 'file')} will not load: "
+                     f"python -m engine.showfiles check says why.")
+        return text
+
+
+def describe_show_dir(text: str, env: Optional[dict] = None,
+                      local: Optional[Path] = None) -> ShowInfo:
+    """Resolve the show folder the way the engine will, and count what is in it.
+
+    Reads every file in the folder, so it runs off the Tk thread: a show folder
+    on a NAS can take a while. A relative path is taken from the repo, which is
+    where the engine is started.
+    """
+    from engine import showfiles
+    text = text.strip()
+    path = showfiles.resolve_show_dir(text or None, env=env, local=local)
+    if path is None:
+        return ShowInfo()
+    if text:
+        source = ""
+    elif (os.environ if env is None else env).get(showfiles.ENV_VAR):
+        source = "env"
+    else:
+        source = "local"
+    if not path.is_absolute():
+        path = REPO / path
+    info = ShowInfo(path=path, source=source)
+    if not path.is_dir():
+        info.error = (f"{path} is not a folder. Create one with "
+                      f"python -m engine.showfiles init, or pick another.")
+        return info
+    try:
+        folder = showfiles.load_folder(path)
+    except Exception as exc:                    # noqa: BLE001
+        info.error = f"the folder does not load: {type(exc).__name__}: {exc}"
+        return info
+    info.tracks, info.timelines = len(folder.tracks), len(folder.timelines)
+    info.routines, info.template_sets = len(folder.routines), len(folder.templates)
+    info.problems = len(folder.errors)
+    return info
+
+
 # -------------------------------------------------------------------- engine --
 
 def python_exe() -> str:
@@ -205,6 +306,9 @@ def engine_command(settings: Settings, token: Optional[str], stop_file: Path) ->
     # `--token=` and never `--token X`: a urlsafe token starts with "-" one time
     # in 64, and argparse then reads it as a flag and refuses to start.
     cmd.append(f"--token={token}" if token else "--no-token")
+    if settings.show_dir.strip():
+        # `=` for the same reason as the token: a folder may start with "-".
+        cmd.append(f"--show-dir={settings.show_dir.strip()}")
     if settings.extra_args.strip():
         cmd += shlex.split(settings.extra_args, posix=not NT)
     return cmd

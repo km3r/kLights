@@ -21,9 +21,10 @@ Two deliberate restrictions:
   * **Writes are opt-in per call.** Every editing tool takes `write`, defaulting
     to false, and a dry run reports exactly what would change. Describing a rig
     out loud is a lossy process and the first attempt is usually wrong.
-  * **It refuses to write the RIG while a show is running.** The engine reads
-    its config once at startup, so an edit mid-show leaves the file saying one
-    thing and the rig doing another, with nothing on screen to explain it.
+  * **It refuses to write the RIG while a show is running.** The engine does
+    not watch rig.json -- it reloads it only when its own Setup tab applies an
+    edit -- so an edit from here mid-show leaves the file saying one thing and
+    the rig doing another, with nothing on screen to explain it.
     The SHOW FOLDER is different: the engine reloads it, a playing track keeps
     its version until its next play, and every write quotes the rev it read, so
     a change made elsewhere is refused rather than overwritten.
@@ -282,9 +283,10 @@ def _edit(name: str, args: dict, apply) -> dict:
         out["written"] = False
         out["ok"] = False
         out["errors"] = [
-            f"{holder} is running a show against {event!r}. The engine reads its "
-            f"config once at startup, so writing now would leave the file and "
-            f"the rig disagreeing. Stop the show, or edit a copy."]
+            f"{holder} is running a show against {event!r}. The engine does not "
+            f"watch rig.json, so writing now would leave the file and the rig "
+            f"disagreeing. Make the edit on the console's Setup tab, which "
+            f"applies it live, or stop the show, or edit a copy."]
         return out
 
     out["written"] = True

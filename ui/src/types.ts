@@ -474,8 +474,12 @@ export interface EngineState {
   /** Engine version. The bundle is served from disk but a phone can hold a
    *  cached one, so this is the only reliable answer to "which engine is this". */
   version: string;
-  /** A patch edit is saved to rig.json that the running show is not using. */
+  /** Something is saved that the running show is not using: a patch edit or
+   *  a solved calibration. `patch_apply` loads it. */
   pending_patch: boolean;
+  /** Which files, in the order they were saved: "rig.json" from a patch edit,
+   *  "calibration.json" from Solve & write. Empty when nothing is pending. */
+  pending_files: string[];
   /** Fixture definitions available to patch, from shared/fixtures/. */
   profiles: ProfileInfo[];
   /** Live shape controls over whatever movement look is up. Identity is
