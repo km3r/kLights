@@ -1097,6 +1097,57 @@ describe("designer", () => {
       .toBe(false);
   });
 
+  it("plays on Space wherever the focus is, short of a text field", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const playing = () => screen.queryByRole("button", { name: "Pause" }) != null;
+
+    // The button just clicked is not pressed again: the lane keeps its mode.
+    await user.click(screen.getAllByRole("button", { name: "fills gaps" })[0]!);
+    const flipped = screen.getAllByRole("button", { name: "owns track" })[0]!;
+    const owning = screen.getAllByRole("button", { name: "owns track" }).length;
+    expect(flipped).toHaveFocus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+    expect(screen.getAllByRole("button", { name: "owns track" }).length).toBe(owning);
+    // ...nor as the key comes back up, where Firefox presses it regardless.
+    expect(fireEvent.keyUp(flipped, { key: " " })).toBe(false);
+
+    // A menu the same, and the page's own link.
+    screen.getByLabelText("zoom").focus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(false);
+    screen.getByTitle("Back to Studio's library").focus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+
+    // A phrase is picked with Enter; Space on it is still the transport's.
+    const chorus = within(lanes).getByRole("button", { name: "select Chorus, bars 41 to 56" });
+    fireEvent.keyDown(chorus, { key: " " });
+    expect(playing()).toBe(false);
+    expect(screen.queryByRole("toolbar", { name: "section" })).toBeNull();
+    fireEvent.keyDown(chorus, { key: "Enter" });
+    expect(screen.getByRole("toolbar", { name: "section" })).toHaveTextContent("Chorus");
+
+    // Held down, it is one press.
+    fireEvent.keyDown(document.body, { key: " " });
+    fireEvent.keyDown(document.body, { key: " ", repeat: true });
+    expect(playing()).toBe(true);
+
+    // In a field that takes text it is a space, and the field's.
+    const address = within(lanes).getByLabelText("vj-opacity address");
+    await user.click(address);
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+    expect(address).toHaveValue("/composition/layers/1/video/opacity ");
+    expect(fireEvent.keyUp(address, { key: " " })).toBe(true);
+    // ...and with Ctrl or Alt it is the browser's or the system's.
+    fireEvent.keyDown(document.body, { key: " ", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: " ", altKey: true });
+    expect(playing()).toBe(true);
+  });
+
   it("flips a lane between filling gaps and owning the track", async () => {
     const user = userEvent.setup();
     await open();
@@ -1133,6 +1184,23 @@ describe("routine editor", () => {
     expect(within(lanes).getByLabelText("p role")).toHaveValue("pins");
     expect(screen.queryByRole("button", { name: "fills gaps" })).toBeNull();
     expect(screen.getByLabelText("position")).toHaveTextContent("bar 1.1 of 8");
+  });
+
+  it("plays its loop on Space from a focused button, but not from the tempo box", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // On a block's button Space plays, and adds no block.
+    screen.getByRole("button", { name: "pulse" }).focus();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("pulse at bar 1.1")).toBeNull();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    // A number is typed, so its box keeps the key.
+    screen.getByLabelText("tempo").focus();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
 
   it("edits a block's arguments -- a value or a parameter -- and saves with the rev", async () => {
