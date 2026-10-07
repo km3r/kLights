@@ -225,14 +225,14 @@ cue = tm.cue_for_phrase(club, "Chorus", 0)
 fresh.begin(club, cue, 8.0, fallback=FALLBACK)
 timeline.begin(8.0, fallback=fresh.show)
 layered = states(timeline.show)
-check("where the timeline has a colour clip, its colour wins",
+check("where the timeline has a color clip, its color wins",
       all(abs(layered[f.fid].color[0] - 1.0) < 1e-6 for f in MOVERS))
 fresh.begin(club, cue, 24.0, fallback=FALLBACK)
 timeline.begin(24.0, fallback=fresh.show)
 gap = states(timeline.show)
 club.programs[cue.key].begin(24.0, fallback=FALLBACK)
 template_only = states(club.programs[cue.key].show)
-check("in its fill gap the template shows through, colour and all",
+check("in its fill gap the template shows through, color and all",
       same(gap, template_only, tol=1e-5))
 
 

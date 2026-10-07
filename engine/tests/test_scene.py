@@ -154,7 +154,7 @@ for f in m["fixtures"]:
               abs(geo.norm180(bearing - rest_yaw)) < 2.5 and abs(elev - rest_pitch) < 2.5,
               f"bearing {bearing:.2f} vs {rest_yaw:.2f}, elev {elev:.2f} vs {rest_pitch:.2f}")
     else:
-        check(f"{f['name']}: level is the colour's magnitude",
+        check(f"{f['name']}: level is the color's magnitude",
               math.isclose(level, 138 / 255) and max(color) == 1.0, f"{level} {color}")
 
 

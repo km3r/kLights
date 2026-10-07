@@ -16,9 +16,9 @@ import { STUDIO_TARGET, fromDesignerHash, studioHref, studioRoute } from "./stud
 // across all of them and Setup for the room and the rig. Venue and Rig used to
 // be their own tabs; they are both setup, and splitting them meant three places
 // to look for one job.
-// The glyphs are all text-presentation dingbats, drawn in the tab colour like
-// any other text. Colour used to be 🎨, which has emoji presentation forced by
-// Unicode -- so it alone rendered as a full-colour bitmap that ignored the
+// The glyphs are all text-presentation dingbats, drawn in the tab color like
+// any other text. Color used to be 🎨, which has emoji presentation forced by
+// Unicode -- so it alone rendered as a full-color bitmap that ignored the
 // active/inactive tint and sat at a different weight from its neighbours. The
 // filled circle is what the old console used for the same tab.
 // `setup` is Design-only. It is the one tab with nothing on it that makes

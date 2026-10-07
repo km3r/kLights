@@ -579,7 +579,7 @@ try:
     for label, it, needle in (
             ("no scene", item(color="@primary"), "needs a scene"),
             ("a scene that does not exist", item("lasers"), "must be one of"),
-            ("a look name for a colour", item("wash", color="MH Red"), "a visuals colour is"),
+            ("a look name for a color", item("wash", color="MH Red"), "a visuals color is"),
             ("a palette role that does not exist", item("wash", color="@tertiary"),
              "not a palette role"),
             ("a number out of range", item("bars", count=500), "from 1 to 64"),

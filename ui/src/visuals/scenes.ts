@@ -48,7 +48,7 @@ export function reanchor(old: Anchor | null, beat: number, bpm: number,
   return { beat: predicted + (beat - predicted) * 0.3, bpm, at: nowMs };
 }
 
-// -- colour ---------------------------------------------------------------------
+// -- color ---------------------------------------------------------------------
 
 const HEX = /^#[0-9a-f]{6}$/i;
 

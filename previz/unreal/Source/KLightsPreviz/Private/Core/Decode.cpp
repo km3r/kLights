@@ -126,7 +126,7 @@ namespace KLights
 			}
 		}
 		// Above the last slot the wheel is spinning: white is the honest stand-in
-		// for "some colour, changing".
+		// for "some color, changing".
 		OutColor = FVector::OneVector;
 	}
 

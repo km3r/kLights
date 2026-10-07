@@ -405,7 +405,7 @@
    "params": [
     {
      "name": "color",
-     "label": "Colour",
+     "label": "Color",
      "kind": "color",
      "default": "@primary"
     }
@@ -416,7 +416,7 @@
    "params": [
     {
      "name": "colors",
-     "label": "Colours",
+     "label": "Colors",
      "kind": "colors",
      "default": [
       "@primary",
@@ -525,13 +525,13 @@
    "params": [
     {
      "name": "color_a",
-     "label": "Colour A",
+     "label": "Color A",
      "kind": "color",
      "default": "@primary"
     },
     {
      "name": "color_b",
-     "label": "Colour B",
+     "label": "Color B",
      "kind": "color",
      "default": "@secondary"
     },

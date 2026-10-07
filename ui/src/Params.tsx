@@ -7,7 +7,7 @@ import type {
 } from "./types";
 
 /** The kinds a phone renders. The rest are block arguments for authoring —
- *  a list of colours, room points, a look or preset name — and live in the
+ *  a list of colors, room points, a look or preset name — and live in the
  *  routine editor, which has the room to do them justice. */
 export const CONSOLE_KINDS: ParamSpec["kind"][] =
   ["number", "integer", "bool", "choice", "color"];
@@ -77,14 +77,14 @@ export function ParamControl({ spec, value, onChange }: {
   }
 
   if (spec.kind === "color") {
-    // Three sliders rather than a colour picker. The Color tab already has a
+    // Three sliders rather than a color picker. The Color tab already has a
     // full HSV picker for the thing an operator reaches for mid-set; a
-    // block's colour is part of authoring a look, and RGB is what the
+    // block's color is part of authoring a look, and RGB is what the
     // engine stores, so showing anything else would round-trip through a
     // conversion for no gain.
-    // A block colour may also be a palette role ("@primary") or a hex colour,
+    // A block color may also be a palette role ("@primary") or a hex color,
     // which follow the palette or the file rather than these sliders. Shown as
-    // what it is, and the first touch of a slider replaces it with a colour of
+    // what it is, and the first touch of a slider replaces it with a color of
     // its own, starting from white.
     const literal = Array.isArray(current) ? (current as RGB) : null;
     const rgb: RGB = literal ?? [1, 1, 1];
@@ -227,7 +227,7 @@ export function TweakCard({ state, send, slot }: {
       {tunable.map((look) => {
         const declared = BLOCK_PARAMS[look.block!];
         if (!declared) return null;
-        // Only what a phone can sensibly turn. A colour list, room points and
+        // Only what a phone can sensibly turn. A color list, room points and
         // a look or preset name are authoring, done in the routine editor.
         const specs = declared.filter((s) => CONSOLE_KINDS.includes(s.kind));
         const overrides = state.look_params?.[look.name] ?? {};
@@ -285,7 +285,7 @@ export function TweakCard({ state, send, slot }: {
  * The old console could store the sum of two moves as a third scene, but only
  * at one relative phase, and that phase was baked in.
  *
- * Move tab only: the colour and level slots have nothing that adds.
+ * Move tab only: the color and level slots have nothing that adds.
  */
 export function StackCard({ state, send }: {
   state: EngineState; send: (c: Command) => void;

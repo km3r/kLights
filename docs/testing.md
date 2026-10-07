@@ -127,7 +127,7 @@ a tap and a byte on the wire. Each engine runs on throwaway copies of the event
 What it covers:
 
 - **The console:** Blackout, the Master fader, Panic, the cue list, a palette
-  colour, tempo typed and from a DJ bridge, two consoles sharing state, a
+  color, tempo typed and from a DJ bridge, two consoles sharing state, a
   view-only console, and a console riding out an engine restart.
 - **Layout:** a phone starts in Perform and a laptop in Design, no tab scrolls
   sideways, and the first visit offers the tour.

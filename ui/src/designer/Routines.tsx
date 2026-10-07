@@ -22,7 +22,7 @@ type View = { kind: "all" } | { kind: "folder"; folder: string } | { kind: "rig"
   | { kind: "unused" };
 type Sort = "name" | "used" | "length";
 
-/** A routine's files' rows, as a strip per row: movement, colour, level. */
+/** A routine's files' rows, as a strip per row: movement, color, level. */
 const SLOT_CLASS: Record<string, string> = { movement: "m", color: "c", level: "l" };
 
 export function nameOf(r: RoutineSummary): string { return r.name || r.id; }

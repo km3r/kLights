@@ -188,7 +188,7 @@
       "block": "breathe",
       "groups": ["corner movers"],
       "args": { "depth": 0.35, "spread": 0.0, "bars": 8.0 },
-      "notes": "A symmetrical swell with no attack. A MULTIPLIER, like every level look, so it dims whatever colour and route are running rather than replacing them."
+      "notes": "A symmetrical swell with no attack. A MULTIPLIER, like every level look, so it dims whatever color and route are running rather than replacing them."
     },
     {
       "name": "Rolling Breathe",
@@ -220,7 +220,7 @@
     },
 
     {
-      "name": "Colour Drift",
+      "name": "Color Drift Parametric",
       "block": "hue_cycle",
       "groups": ["corner movers"],
       "args": { "hue": 0.55, "span": 0.25, "saturation": 0.85, "brightness": 1.0, "spread": 0.0, "bars": 32.0 },
@@ -245,7 +245,7 @@
       "block": "duo",
       "groups": ["corner movers"],
       "args": { "color_a": [1.0, 0.2, 0.5], "color_b": [0.2, 0.8, 1.0], "blend": 0.0, "bars": 8.0 },
-      "notes": "Alternating across the heads, so on four corners the two colours land diagonally opposite and read across the room."
+      "notes": "Alternating across the heads, so on four corners the two colors land diagonally opposite and read across the room."
     },
     {
       "name": "Duo Swap",

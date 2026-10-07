@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * beat-link's own track signature, computed the way beat-link-trigger computes
- * it at a gig: the colour waveform is the PWV5 tagged section of the .EXT (what
+ * it at a gig: the color waveform is the PWV5 tagged section of the .EXT (what
  * SignatureFinder gets from AnalysisTagFinder), the grid is the .DAT's, and on a
  * stick the title, artist and length come from beat-link's own
  * TrackMetadata(reference, Database, cueList) over the stick's export.pdb.

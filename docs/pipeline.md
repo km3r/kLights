@@ -184,7 +184,7 @@ unused was that finding a scene on a phone was hard, not that the scenes were
 bad. Three things change in translation, and all three are the point:
 
 - **Scenes split by what they touch.** A stored scene that writes only the
-  colour wheel becomes a *colour* look and one that writes pan/tilt becomes a
+  color wheel becomes a *color* look and one that writes pan/tilt becomes a
   *pose* look, so the two compose instead of every combination needing its own
   stored scene.
 - **Positions become offsets** from each head's own calibrated ball aim,
@@ -357,7 +357,7 @@ still works, and the workspaces stay runnable as the fallback.
 
 The reason it is being retired: QLC+ stores *values*. Nothing in that pipeline
 knows where a beam lands, so nothing in it can guard one — which is what the
-engine's safety taper exists to fix. Per-fixture colour, phrase-aware
+engine's safety taper exists to fix. Per-fixture color, phrase-aware
 automation, smooth interpolated motion and running one show in two rooms are
 each combinatorially explosive as stored scenes, and all four were wanted.
 

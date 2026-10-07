@@ -480,35 +480,35 @@ class Launcher:
         # Show folder
         show = self.show_info
         if show is not None:
-            colour = RED if show.error else AMBER if show.path is None or show.problems else GREY
-            self.show_label.configure(text=show.summary(), foreground=colour)
+            color = RED if show.error else AMBER if show.path is None or show.problems else GREY
+            self.show_label.configure(text=show.summary(), foreground=color)
 
         # Engine
         if ours:
             pid = self.engine.pid
             if self.stopping_since is not None:
-                text, colour = f"Stopping (pid {pid})...", AMBER
+                text, color = f"Stopping (pid {pid})...", AMBER
                 if time.monotonic() - self.stopping_since > 10:
-                    text, colour = "Not stopping -- press Stop again to force it", RED
+                    text, color = "Not stopping -- press Stop again to force it", RED
             elif serving:
-                text, colour = f"Running {p.event} on port {port}  (pid {pid}, scene {p.rev})", GREEN
+                text, color = f"Running {p.event} on port {port}  (pid {pid}, scene {p.rev})", GREEN
                 if p.detail:
-                    text, colour = f"Running on port {port}, but {p.detail}", AMBER
+                    text, color = f"Running on port {port}, but {p.detail}", AMBER
             elif time.time() - self.engine.record.started > 30:
-                text, colour = f"Running (pid {pid}) but not answering on port {port} -- see the log", RED
+                text, color = f"Running (pid {pid}) but not answering on port {port} -- see the log", RED
             else:
-                text, colour = "Starting...", AMBER
+                text, color = "Starting...", AMBER
         elif p.state == "engine":
-            text, colour = (f"An engine started elsewhere is running {p.event} on port {port}. "
+            text, color = (f"An engine started elsewhere is running {p.event} on port {port}. "
                             f"Stop it where it was started, or pick another port."), GREEN
         elif p.state == "other":
-            text, colour = (f"Port {port} is taken ({p.detail}) -- an older engine, or "
+            text, color = (f"Port {port} is taken ({p.detail}) -- an older engine, or "
                             f"something else. Pick another port."), AMBER
         elif self.last_exit not in (None, 0):
-            text, colour = f"Stopped -- the engine exited with code {self.last_exit}. The log says why.", RED
+            text, color = f"Stopped -- the engine exited with code {self.last_exit}. The log says why.", RED
         else:
-            text, colour = "Stopped", GREY
-        self.engine_status.configure(text=text, foreground=colour)
+            text, color = "Stopped", GREY
+        self.engine_status.configure(text=text, foreground=color)
         problem = core.check_artnet(self.settings.artnet)
         self.artnet_problem.configure(text=problem)
 
@@ -550,18 +550,18 @@ class Launcher:
         state, detail = self.freshness
         building = self.build is not None
         if building:
-            text, colour = "Building -- see the Previz build tab.", AMBER
+            text, color = "Building -- see the Previz build tab.", AMBER
         elif ours_previz:
-            text, colour = f"Running (pid {self.previz.pid}), drawing the engine on port {port}.", GREEN
+            text, color = f"Running (pid {self.previz.pid}), drawing the engine on port {port}.", GREEN
         elif self.previz_found:
-            text, colour = "A previz started elsewhere is running.", GREEN
+            text, color = "A previz started elsewhere is running.", GREEN
         elif state == "missing":
-            text, colour = "Not built yet -- Build previz (needs Unreal 5.8).", AMBER
+            text, color = "Not built yet -- Build previz (needs Unreal 5.8).", AMBER
         elif state == "stale":
-            text, colour = f"Built, but {detail}: Build previz to bring it up to date.", AMBER
+            text, color = f"Built, but {detail}: Build previz to bring it up to date.", AMBER
         else:
-            text, colour = f"Ready ({detail}).", GREY
-        self.previz_status.configure(text=text, foreground=colour)
+            text, color = f"Ready ({detail}).", GREY
+        self.previz_status.configure(text=text, foreground=color)
         warning = "" if (not ours and p.state == "engine") else core.previz_feed_warning(
             self.settings.artnet, self.settings.previz_port, self.local)
         self.feed_warning.configure(text=warning)

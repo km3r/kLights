@@ -173,7 +173,7 @@ check("the traceback is kept for the operator",
       runner.last_error is not None and "deliberate show bug" in runner.last_error)
 check("frames kept flowing despite the bug", stats.frames > 10, f"{stats.frames}")
 
-# A broken show must hold the last good frame, not go black -- a wrong colour is
+# A broken show must hold the last good frame, not go black -- a wrong color is
 # recoverable mid-set, a dead room is a stopped show.
 good = statemod.Show()
 good.base.append(statemod.pose_layer(lambda c, h: c.geometry.aim_at_ball(h)))

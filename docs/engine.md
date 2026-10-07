@@ -58,7 +58,7 @@ to read a load report:
 - **Non-finite numbers are refused**, never clamped. `json.loads` accepts `NaN`
   and `Infinity`, and a clamp passes NaN straight through, to raise on its way
   to DMX every frame after.
-- **Colours are checked against the rig** before they are stored, with the same
+- **Colors are checked against the rig** before they are stored, with the same
   check `blocks.make` runs. `Param` can't tell whether `"@accent"` means
   anything; a value the block refuses would otherwise build an empty layer and
   light nothing. From the console it is refused; from a preset or a cue that key
@@ -145,11 +145,11 @@ milliseconds.
 
 ## The three slots
 
-Movement, colour and level are chosen **independently**, per fixture group.
-Picking a colour does not disturb the move. The pinspots can be on their own
-colour while the movers are on another.
+Movement, color and level are chosen **independently**, per fixture group.
+Picking a color does not disturb the move. The pinspots can be on their own
+color while the movers are on another.
 
-Each slot has its own **motion phase**, integrated separately, so a colour chase
+Each slot has its own **motion phase**, integrated separately, so a color chase
 can crawl under a move running flat out.
 
 ## Per-frame evaluation
@@ -160,10 +160,10 @@ Every frame, at 40 fps, the engine walks a layer stack:
 base  →  color  →  movement  →  fx  →  overrides  →  master  →  SAFETY
 ```
 
-- **base** points everything at the mirror ball and opens it up, so a colour
+- **base** points everything at the mirror ball and opens it up, so a color
   with no movement still produces a picture rather than leaving heads wherever
   the last look stopped.
-- **overrides** are live operator input — a colour picked on a phone, a hand
+- **overrides** are live operator input — a color picked on a phone, a hand
   trim, a flash. They sit after the look so they outrank it, and before the
   master so they are still subject to it.
 - **SAFETY is not a layer.** `apply_safety` and `apply_strobe_policy` run
@@ -253,7 +253,7 @@ run and embedded in the printed URL.
 | tier | what it covers |
 |---|---|
 | **view** | watch only; every command is refused with a reason |
-| **operate** | drive the show — looks, colour, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
+| **operate** | drive the show — looks, color, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
 | **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep`, and Studio's writes and preview (`*_draft`, `*_save`, `*_rename`, `*_delete`, `palette_sync`, `preview_*`) |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
@@ -297,7 +297,7 @@ gitignored `klights.local.json`; with none of those it runs exactly as before.
 | `tracks/<id>.json` | one prepped track: identity, beat grid, rekordbox's phrases |
 | `timelines/<track>.json` | the hand-built show for one track, in beats on its grid |
 | `routines/<id>.json`, `templates/<id>.json` | reusable routines, and phrase → routine template sets |
-| `palettes/<id>.json` | the show's palette library: one named palette, three colours |
+| `palettes/<id>.json` | the show's palette library: one named palette, three colors |
 | `waveforms/<track>.json` | rekordbox's waveform for a track, read on demand, never pushed |
 | `media/` | videos for the `#visuals` page |
 
@@ -331,7 +331,7 @@ and two seconds of disagreement shows as `track.grid_warning`.
 **What a timeline says at a beat** is [`timeline.py`](../engine/timeline.py),
 which imports nothing but the standard library so the lights and, later, VJ
 outputs share it. Rows are lanes, top first, and **the higher lane wins** for
-each channel it drives (a scene lane drives movement, colour and level). A fill
+each channel it drives (a scene lane drives movement, color and level). A fill
 lane lets the lanes below, then the template, show through its gaps; a lane that
 **owns the track** is blank in its gaps. A clip fades in over its `fade` from
 what was under it and, ending into a gap, fades out over the same. Automation
@@ -342,8 +342,8 @@ a function of the beat. Any automation row may also carry a `wave`
 (bars × 4) + phase). It is additive and one-sided, so the points stay where the
 lane rests. Every shape has an exact integral too (closed form, or a memoised
 exact sum for `hold`), and the swing is validated from the points rather than
-clamped, so a wave on a rate lane never breaks the phase. On a colour lane it
-pulls the colour `toward` another. Hits are windows: a jump into one shows it,
+clamped, so a wave on a rate lane never breaks the phase. On a color lane it
+pulls the color `toward` another. Hits are windows: a jump into one shows it,
 a jump over one never fires it. Everything is a pure function of the beat.
 `python -m engine.showfiles explain TRACK BEAT` prints it.
 
@@ -356,7 +356,7 @@ evaluate it like any show, so safety and the strobe policy still run last. Each
 fixture walks the lanes on its own: a clip drives only the fixtures it uses and
 the rest fall through to the lanes below, then the fallback show; a lane that
 owns the track rests them instead -- movers on the venue's `rest_point` (else
-the ball), colour white, level dark. Each source runs once per slot on a scratch
+the ball), color white, level dark. Each source runs once per slot on a scratch
 copy and only its fixtures are taken from it, so two movement sources never add
 their offsets together. A clip's phase is its own, a pure function of the beat
 through any rate curves, so a loop lands on the authored frame.
@@ -534,7 +534,7 @@ edits show.json (`show_save`, quoting `show_rev` from `/api/show`).
 `#studio/palettes` is the show's palette library, `palettes/<id>.json`: a
 library palette is a source that timelines and sets copy by name, never a
 link, so compiling is unchanged; `palette_sync` brings chosen copies up to the
-library's colours. Adding tracks preps them (`rekordbox_prep`) and can start
+library's colors. Adding tracks preps them (`rekordbox_prep`) and can start
 each one in the same step: a timeline drafted from a template set, an empty
 one, or none; the drafting is the timeline editor's own function, written with
 `timeline_save` and base_rev "". **+ New**, in the top bar of Studio's library

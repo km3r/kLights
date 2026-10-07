@@ -22,7 +22,7 @@ the commit messages keep those labels.
 - **A browser end-to-end suite** (`cd ui && npm run e2e`): the real engine,
   serving the committed `ui/dist`, driven by Chromium, with every claim about
   the rig checked on the Art-Net it actually sends. It covers Blackout,
-  Master, Panic, the cue list, a palette colour, tempo (typed, and from a DJ
+  Master, Panic, the cue list, a palette color, tempo (typed, and from a DJ
   bridge), two consoles at once, a view-only phone, riding out an engine
   restart, the phone and laptop layouts, and Studio saving through the engine
   to the file on disk and driving the rig. CI runs it on Ubuntu and Windows.
@@ -49,13 +49,13 @@ the commit messages keep those labels.
   unlike the code either side of it nothing caught it, so the thread ended. It
   is now guarded the same way, and the clock refuses a speed outside 1/64× to
   64× and a nudge of more than 64 beats.
-- **One console command could freeze every phone.** An empty colour froze the
-  rig on its last frame. A NaN or infinite speed, a non-name colour, level or
+- **One console command could freeze every phone.** An empty color froze the
+  rig on its last frame. A NaN or infinite speed, a non-name color, level or
   flash target, or a NaN hold put something into the snapshot that
   `JSON.parse` refuses, so no console updated until someone happened to clear
   it. Commands now refuse those values.
 - **A NaN went to full.** Clamping with min/max does not catch NaN, so a NaN
-  master, level, colour channel or energy (which drives auto strobe) set it to
+  master, level, color channel or energy (which drives auto strobe) set it to
   full brightness. A NaN crowd-zone edge would have switched the safety taper
   off silently. All of these are refused now.
 - **Saving the venue could stop the next show starting.** The live taper
@@ -174,7 +174,7 @@ the commit messages keep those labels.
   control.
 - **A palette's long "you are editing the library's" note is gone**: the kicker
   says *Library palette*, Save and Revert appear only once there is something
-  to save, and the copies say in one line that they keep their own colours.
+  to save, and the copies say in one line that they keep their own colors.
 - **The editors' side panels fold by section**: click a heading to fold it;
   Studio remembers which, per browser. Headings show counts (roles,
   parameters, variations, palettes), and the explanations that were always on
@@ -187,9 +187,9 @@ the commit messages keep those labels.
   - In the routine editor, a clips lane offers its slot's blocks, then the
     rig's own (look, snapshot), and a hits lane offers flash, strobe and
     blackout. Before, the Blocks shelf always used the first lane of a slot, so
-    a second colour lane for another role could not be filled, and a routine's
+    a second color lane for another role could not be filled, and a routine's
     hits lane could not be filled at all.
-  - On a track, a scene, movement, colour or level lane offers routines and
+  - On a track, a scene, movement, color or level lane offers routines and
     this rig's looks (a slot's lane, the looks for that slot), and a scene lane
     offers presets as snapshots. The palette lane offers this track's palettes
     and copies of the library's, and a hits lane offers hits. Before, the
@@ -252,7 +252,7 @@ the commit messages keep those labels.
     timeline**. That takes, for each phrase family, what its scene lane plays
     most (routine, variation and parameters together), plus the palette clip
     over it, the timeline's palettes and its most-used fade.
-  - **A palette**: three colours, a copy of a library palette, or one that
+  - **A palette**: three colors, a copy of a library palette, or one that
     lives in a file, which brings its name with it.
 - A timeline, routine or set **opens in its editor unsaved**, with its start
   applied. Nothing is written until Save, and a timeline's start can be undone.
@@ -291,23 +291,23 @@ the commit messages keep those labels.
   set's palettes", and say that a change there changes that file only.
 - The Palettes page says you are editing the library's palette. Its button is
   **Save to the library**, a copy that differs is called **different** (not
-  older), and the update is **Give N copies the library's colours**.
+  older), and the update is **Give N copies the library's colors**.
 
 ### Added — a palette library for the show
 
 - **`palettes/<id>.json`**, a new kind of show-folder file: one palette, with
-  the name timelines and template sets know it by, and three `#rrggbb` colours.
+  the name timelines and template sets know it by, and three `#rrggbb` colors.
   `python -m engine.showfiles init` makes the folder; `schemas/palette.schema.json`
   is generated with the rest.
 - **A library palette is a source, not a link.** Timelines and template sets
   keep their own copies by name, as they always did, so each file still
   describes its whole show and the engine compiles exactly as before.
   `/api/palettes` lists each library palette with its copies, and whether each
-  copy still has the library's colours. It also lists the palettes that live
+  copy still has the library's colors. It also lists the palettes that live
   only inside timelines and sets.
-- **Studio's Palettes page** edits the library: make, rename, recolour,
+- **Studio's Palettes page** edits the library: make, rename, recolor,
   duplicate, download, delete. After a change it offers **Update N copies to
-  these colours** (`palette_sync`), which writes each file quoting the rev it
+  these colors** (`palette_sync`), which writes each file quoting the rev it
   was read at, so a file changed meanwhile is left alone and named. A palette
   found inside a file can be **added to the library** in one click. Deleting a
   library palette leaves its copies where they are.
@@ -365,15 +365,15 @@ files load unchanged.
     sets a parameter a lane already drives gets a warning, since the lane
     makes it dead.
   - Points are held to the parameter's own declaration: range, rate 0-8, or
-    colour. That is an error in a routine. On a timeline it is a warning,
+    color. That is an error in a routine. On a timeline it is a warning,
     because the declaration lives in another file, and a timeline lane is
     checked against every placed routine that declares the name.
-  - A colour parameter's lane is drawn as a band of colour, not a curve.
+  - A color parameter's lane is drawn as a band of color, not a curve.
   - A look parameter cannot be automated: the look is read once, when the
     routine is bound to the rig, so a lane would change nothing.
 - **Block-argument lanes**: `arg.<item>.<argument>` (`arg.orbit.radius`)
   automates one block item's argument in a routine without declaring a
-  parameter. Only number, integer and colour arguments can be automated, and
+  parameter. Only number, integer and color arguments can be automated, and
   the block's own declaration sets the range. An argument a `$param` already
   feeds is refused, since the param's lane is how that value moves. A timeline
   has no blocks, so there `arg.` is an error that points at `param.<name>`.
@@ -383,7 +383,7 @@ files load unchanged.
   depth × shape), so a lane gains a wave without its resting values moving.
   The swing is checked exactly against the lane's range and never clamped, so
   a rate lane's integral stays closed-form and a loop or hot cue still lands
-  on the authored frame. On a colour lane, `toward` is the colour it swings
+  on the authored frame. On a color lane, `toward` is the color it swings
   to. In Studio, **∿** on a lane's head adds a wave sized to stay in range.
   MCP's `edit_timeline` gains `set_wave`.
 - **`engine/waves.py`** holds the shapes. It is stdlib-only and shared by
@@ -394,7 +394,7 @@ files load unchanged.
 ### Added — Studio's routine library: folders, where used, rename, delete
 
 - **Routines are cards**, each with a strip per row showing what it drives
-  (movement, colour, level) and with which blocks, its roles, open parameters
+  (movement, color, level) and with which blocks, its roles, open parameters
   and variations, and where it is used. Filter by folder, "this rig only" or
   "unused", search by name, block, role or parameter, sort by name, use or
   length.
@@ -821,7 +821,7 @@ that fails without it.
   illumination. The project now targets SM6 with ray tracing and hit lighting.
   A GPU without ray tracing falls back to software by itself.
 - **Golden parity vectors**, `engine/tests/data/previz_parity.json`, hold the
-  app's C++ decode, servo and colour to the Python. They are checked by
+  app's C++ decode, servo and color to the Python. They are checked by
   `python previz/build.py test`, and their staleness is checked in CI.
 
 ### Changed — F20
@@ -892,7 +892,7 @@ A review of the whole F19 branch before it merged. Each fix has a test.
   The right panel shows the rig from above and who drives each lane at the
   playhead.
 - **Editing**: drag clips and hits (snapped to beat, bar or phrase), resize,
-  fades, routine/variation/params with palette role or direct colour, looks,
+  fades, routine/variation/params with palette role or direct color, looks,
   presets, palettes and palette clips, hit type/level/who/envelope, lanes
   added, reordered, removed, fill-gaps/owns-track per lane, automation points,
   routines placed from the shelf, **Draft from template**, **Record** pads
@@ -978,12 +978,12 @@ A review of the whole F19 branch before it merged. Each fix has a test.
 - **`engine/blocks.py`**: the parametric blocks -- `orbit`, `pendulum`,
   `fan_sweep`, `aim_points` (in room fractions, so portable), `solid`,
   `color_chase`, `chase` (ordered by where fixtures hang), `pulse`, `dim`,
-  `strobe` -- plus the rig-bound `look` and `snapshot` adapters. Colours are a
-  palette role, `#hex`, `[r, g, b]` or a colour look; parameters and colours
+  `strobe` -- plus the rig-bound `look` and `snapshot` adapters. Colors are a
+  palette role, `#hex`, `[r, g, b]` or a color look; parameters and colors
   resolve as they run, so the palette lane and `param.*` automation reach them.
 - **Decided with the user:** a clip drives only the fixtures it uses and the
   rest fall through per fixture (an owning lane rests them); rest is the
-  venue's new `rest_point` (else the ball), colour white, level dark; a
+  venue's new `rest_point` (else the ball), color white, level dark; a
   routine that does not loop keeps running its end on a longer clip.
 - Each source runs once per slot on a scratch copy and only its own fixtures
   are taken, so movement offsets never stack; crossfades blend whole states in
@@ -1342,7 +1342,7 @@ The last thing the three slots did not have independently, and the reason it
 waited for a pass of its own rather than being bolted onto the macros.
 
 - **Three motion phases instead of one**, in `state.SlotPhases`. Each slot's
-  layers read that slot's phase, so a colour chase at 0.5× under a move at 2×
+  layers read that slot's phase, so a color chase at 0.5× under a move at 2×
   is now something the engine can express at all. The old console needed a
   separately stored chase per combination, which is a large part of how it
   accumulated 206 looks.
@@ -1486,7 +1486,7 @@ review finding #17 and the last substantial piece of F15.
   the original worked.
 - **Crossfade between shows** (`state.evaluate_crossfade`), which also closes the
   long-standing "a look change is a hard cut" gap independently. Blends in
-  *parameter* space — blending rendered DMX would interpolate a colour-wheel slot
+  *parameter* space — blending rendered DMX would interpolate a color-wheel slot
   index and quantise the aim to 8 bits before smoothing it. Aim blends in
   degrees, and because `bearing_delta` is unwrapped servo rotation, a head
   crossing ±180° travels the way a yoke physically can rather than teleporting.

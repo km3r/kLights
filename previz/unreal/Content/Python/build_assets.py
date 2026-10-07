@@ -30,8 +30,8 @@ WHITE = "/Engine/EngineResources/WhiteSquareTexture"
 # the fade in the outer third.
 DOT_SHOULDER = 1.8
 
-# How abruptly a split beam changes colour across its width, per Unreal cm. A
-# wheel between two segments throws two colours with a hard mechanical edge, so
+# How abruptly a split beam changes color across its width, per Unreal cm. A
+# wheel between two segments throws two colors with a hard mechanical edge, so
 # this is steep -- just wide enough (a couple of cm) to antialias.
 SPLIT_SHARPNESS = 0.4
 
@@ -117,7 +117,7 @@ def model_material():
 
     The room, the truss, the canopy, the mirror ball's core and tiles, fixture
     bodies, and every material of every glTF model are all instances of this,
-    with their colours set as parameters at runtime -- so a venue's optics
+    with their colors set as parameters at runtime -- so a venue's optics
     (`room_albedo`, `room_emissive`) are config, not baked into an asset.
 
     Parameters: BaseColor, BaseColorMap, Metallic, Roughness, Emissive,
@@ -193,8 +193,8 @@ def emissive_material(name, round_off, taper=False, soft_edge=0.0, split=False):
     shaft (Origin = the lens) and the ball's spray (Origin = the ball).
 
     `split` puts `ColorB` on the TOP half of the beam and `Color` on the bottom,
-    across the world-space plane `SplitNormal` through `Origin` -- a colour wheel
-    parked between segments throws two colours, not a blend.
+    across the world-space plane `SplitNormal` through `Origin` -- a color wheel
+    parked between segments throws two colors, not a blend.
     """
     material = _fresh(name)
     if material is None:

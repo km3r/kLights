@@ -5,7 +5,7 @@ rather than fixtures, and portable between rigs.
 A routine row says "the movers do an orbit of radius `$radius`". This turns
 that into a layer over the fixtures the role is bound to on THIS rig, reading
 its arguments when it runs -- because an argument can be a parameter the
-timeline automates, or a palette role whose colour changes when the palette
+timeline automates, or a palette role whose color changes when the palette
 does.
 
 Every block is one slot's worth of layer, and reads that slot's phase from the
@@ -17,7 +17,7 @@ got there.
   slot       blocks
   ---------------------------------------------------------------------------
   movement   orbit, pendulum, fan_sweep, aim_points     offsets from the ball
-  color      solid, color_chase                         sets colour
+  color      solid, color_chase                         sets color
   level      chase, pulse, dim, strobe                  multiplies / shutters
   any        look, snapshot                             THIS RIG ONLY
 
@@ -32,7 +32,7 @@ routine can say "this rig only": a look name means something only on the rig
 it was ported from.
 
 A block that cannot be built -- an unknown look, an argument of the wrong kind,
-a movement block on a colour row -- is reported and becomes an empty block that
+a movement block on a color row -- is reported and becomes an empty block that
 claims nothing, so the lane underneath shows through and the show runs on.
 """
 
@@ -206,12 +206,12 @@ PARAMS: dict[str, tuple[Param, ...]] = {
         Param("easing", "Easing", "ease_in_out", kind="choice",
               choices=_EASINGS),
     ),
-    # -- colour --------------------------------------------------------------
+    # -- color --------------------------------------------------------------
     "solid": (
-        Param("color", "Colour", "@primary", kind="color"),
+        Param("color", "Color", "@primary", kind="color"),
     ),
     "color_chase": (
-        Param("colors", "Colours", ["@primary", "@secondary"], kind="colors"),
+        Param("colors", "Colors", ["@primary", "@secondary"], kind="colors"),
         _bars(2.0),
         _phase_spread(0.0),
         Param("fade", "Fade", 0.0, min=0.0, max=1.0, step=0.05,
@@ -230,8 +230,8 @@ PARAMS: dict[str, tuple[Param, ...]] = {
         _phase_spread(0.0),
     ),
     "duo": (
-        Param("color_a", "Colour A", "@primary", kind="color"),
-        Param("color_b", "Colour B", "@secondary", kind="color"),
+        Param("color_a", "Color A", "@primary", kind="color"),
+        Param("color_b", "Color B", "@secondary", kind="color"),
         Param("blend", "Swap", 0.0, min=0.0, max=1.0, step=0.02,
               help="How far the two trade places over the cycle. 0 holds them "
                    "where they are."),
@@ -313,7 +313,7 @@ def publish() -> dict:
 @dataclass(frozen=True)
 class Blend:
     """A non-numeric automation value mid-curve: `a` becoming `b` by `t`.
-    What a colour parameter's automation is between two points."""
+    What a color parameter's automation is between two points."""
     a: Any
     b: Any
     t: float
@@ -321,8 +321,8 @@ class Blend:
 
 def automation_value(curve: Any, beat: float) -> Any:
     """A `timeline.Curve` at a beat, as a parameter reads it: a number, or a
-    Blend for a colour curve, which only `Env.color` knows how to mix -- with a
-    colour wave, the points' blend blended again toward the wave's colour."""
+    Blend for a color curve, which only `Env.color` knows how to mix -- with a
+    color wave, the points' blend blended again toward the wave's color."""
     if curve.numeric:
         return curve.value(beat)
     value = Blend(*curve.segment(beat))
@@ -407,7 +407,7 @@ class Env:
 
 def color_problem(value: Any, look_colors: Mapping[str, RGB],
                   params: Mapping[str, Any]) -> Optional[str]:
-    """Why a literal colour argument cannot be resolved on this rig."""
+    """Why a literal color argument cannot be resolved on this rig."""
     if isinstance(value, str) and value.startswith("$"):
         return None if value[1:] in params else f"{value} is not a parameter"
     if isinstance(value, str):
@@ -415,12 +415,12 @@ def color_problem(value: Any, look_colors: Mapping[str, RGB],
             return None
         if value in look_colors:
             return None
-        return (f"{value!r} is not a palette role, a #hex colour, or a "
-                f"single-colour look on this rig")
+        return (f"{value!r} is not a palette role, a #hex color, or a "
+                f"single-color look on this rig")
     if isinstance(value, (list, tuple)) and len(value) == 3 and all(
             isinstance(c, (int, float)) and not isinstance(c, bool) for c in value):
         return None
-    return f"{value!r} is not a colour"
+    return f"{value!r} is not a color"
 
 
 # -- a built block ------------------------------------------------------------
@@ -735,7 +735,7 @@ def _aim_points(args, movers, env, rigging):
 _MOVES = {**{name: _via(name) for name in OFFSETS}, "aim_points": _aim_points}
 
 
-# -- colour -------------------------------------------------------------------
+# -- color -------------------------------------------------------------------
 
 def _solid(args, fixtures, env, rigging):
     def layer(ctx, out):
@@ -774,7 +774,7 @@ def _color_chase(args, fixtures, env, rigging):
 
 
 def _hue_cycle(args, fixtures, env, rigging):
-    """Walk the colour wheel. Under a full wheel of span it DRIFTS -- out to
+    """Walk the color wheel. Under a full wheel of span it DRIFTS -- out to
     the far end of its span and back -- so a small span stays within a family
     and never jumps back to the start at the cycle boundary. At a full wheel or
     more it ROLLS, which is seamless on its own because the wheel wraps."""
@@ -801,7 +801,7 @@ def _hue_cycle(args, fixtures, env, rigging):
 
 
 def _duo(args, fixtures, env, rigging):
-    """Two colours alternating across the fixtures, so on four corner heads
+    """Two colors alternating across the fixtures, so on four corner heads
     they land diagonally opposite and read across the room -- a contiguous
     split reads as one half being wrong. `blend` trades them over the cycle."""
     def layer(ctx, out):
@@ -879,7 +879,7 @@ def _strobe(args, fixtures, env, rigging):
 
 def _breathe(args, fixtures, env, rigging):
     """A slow swell in and out. Unlike `pulse` it is symmetrical, so it has no
-    attack -- the thing to reach for under a held colour. A MULTIPLIER, like
+    attack -- the thing to reach for under a held color. A MULTIPLIER, like
     every level block, so the master and the safety taper still govern it."""
     def layer(ctx, out):
         depth = max(0.0, min(1.0, env.number(args.get("depth"),

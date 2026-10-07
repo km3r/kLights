@@ -122,7 +122,7 @@ move_above = tl.Timeline.from_rows([
 ], channels=lights)
 check("a movement lane ABOVE the scene overrides the scene's movement",
       ids(move_above.channel("movement", 40)) == ["look"])
-check("and only its movement: colour and level stay the scene's",
+check("and only its movement: color and level stay the scene's",
       ids(move_above.channel("color", 40)) == ["routine"]
       and ids(move_above.channel("level", 40)) == ["routine"])
 check("outside its clip the scene shows through the movement lane's fill gap",
@@ -222,7 +222,7 @@ waved = tl.Timeline.from_rows([
      "wave": {"shape": "square", "bars": 1, "toward": "#0000ff", "depth": 0.5}}])
 check("a wave adds to its points: a square of depth 0.5 is 1.0, then 1.5",
       close(waved.automation("size", 1), 1.0) and close(waved.automation("size", 3), 1.5))
-check("a colour lane's wave is in what the timeline explains: the points' blend, "
+check("a color lane's wave is in what the timeline explains: the points' blend, "
       "then what it swings toward and how far",
       waved.automation("param.c", 3) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.5)
       and waved.automation("param.c", 1) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.0))
@@ -270,12 +270,12 @@ check("so a rate curve's integral is its phase: 1 then 2 per beat over 16 beats"
       close(rate.integral(16), 24.0) and close(rate.integral(20), 32.0)
       and close(rate.integral(-4), -4.0))
 
-colour = tl.Curve.from_points([[0, "#ff0000"], [8, "@primary", "ease"]])
-a, b, t_ = colour.segment(4)
-check("a colour curve gives the two ends and the shaped blend, for the caller "
+color = tl.Curve.from_points([[0, "#ff0000"], [8, "@primary", "ease"]])
+a, b, t_ = color.segment(4)
+check("a color curve gives the two ends and the shaped blend, for the caller "
       "to mix", (a, b) == ("#ff0000", "@primary") and close(t_, 0.5))
 try:
-    colour.value(4)
+    color.value(4)
     refused = False
 except tl.TimelineError:
     refused = True
@@ -350,7 +350,7 @@ check("bar 38: the build, palette lane blank (so the default palette), "
       and 0.6 < e["automation"]["master"] < 1.0, json.dumps(e)[:300])
 e = ex.explain(370)
 check("the outro: the movement lane's look wins movement, the routine keeps "
-      "colour", e["channels"]["movement"][0]["item"] == "lazy"
+      "color", e["channels"]["movement"][0]["item"] == "lazy"
       and e["channels"]["color"][0]["item"] == "outro", json.dumps(e)[:300])
 check("span covers the whole show", ex.span == (0.0, 384.0), f"{ex.span}")
 json.dumps(ex.explain(161.5))

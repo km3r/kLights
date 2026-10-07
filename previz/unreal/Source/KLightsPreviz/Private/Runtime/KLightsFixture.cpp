@@ -89,7 +89,7 @@ void AKLightsFixture::Setup(const FKLightsFixture& InFixture, const FKLightsRigC
 	SetActorLocationAndRotation(Fixture.Location, Fixture.RestRotation);
 
 	Spot = MakeSpot(TEXT("Spot"));
-	// A split wheel position puts two colours in the aperture, and a spot light
+	// A split wheel position puts two colors in the aperture, and a spot light
 	// has one: so the two halves are two lights, tipped apart. Only built where
 	// the wheel has split slots, because a shadow-casting light is not free.
 	if (Fixture.HasSplitSlot())
@@ -317,7 +317,7 @@ void AKLightsFixture::LightUp(const FRotator& Aim, const KLights::FOutput& Out)
 	}
 	// Half the output each, because each half-aperture passes half the beam;
 	// tipped a quarter of the cone apart in elevation, overlapping down the
-	// middle as the real halves do. The primary keeps the bottom colour.
+	// middle as the real halves do. The primary keeps the bottom color.
 	const float Half = float(Fixture.Lumens * Out.Level * 0.5);
 	Spot->SetIntensity(Half);
 	SpotHalf->SetIntensity(Half);
@@ -462,7 +462,7 @@ void AKLightsFixture::PlaceReflections(const FVector& Origin, const FVector& Dir
 
 	// Every reflection of one fixture shares one material, so it is written
 	// only when the look changes. The spray of a split beam is drawn in the
-	// slot's averaged colour -- the shaft carries the split.
+	// slot's averaged color -- the shaft carries the split.
 	const double Level = FMath::RoundToDouble(Out.Level * Share * 1e4) / 1e4;
 	if (Out.Color != LastLookColor || Level != LastLookLevel)
 	{

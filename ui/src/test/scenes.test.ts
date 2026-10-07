@@ -106,7 +106,7 @@ describe("scenes: the flash limit, counted", () => {
   });
 });
 
-describe("scenes: time and colour", () => {
+describe("scenes: time and color", () => {
   it("a page opened mid-song draws what continuous play would: beatNow is linear in time", () => {
     const a = { beat: 32, bpm: 128, at: 5000 };
     for (const ms of [0, 100, 250, 999, 1500, 2000]) {
@@ -127,7 +127,7 @@ describe("scenes: time and colour", () => {
   });
 
   it("resolves only palette roles and #rrggbb; everything else is the fallback", () => {
-    const palette = { primary: "#ABCDEF", secondary: "not a colour", accent: "#fff" };
+    const palette = { primary: "#ABCDEF", secondary: "not a color", accent: "#fff" };
     expect(resolveColor("@primary", palette)).toBe("#ABCDEF");
     expect(resolveColor("@secondary", palette, "#000000")).toBe("#000000");
     expect(resolveColor("@accent", palette, "#000000")).toBe("#000000");   // 3 digits: no
@@ -175,7 +175,7 @@ const finite = (r: { x: number; y: number; w: number; h: number }) =>
 const styled = (r: { style: string }) => /^rgba\(\d+, \d+, \d+, (0|1|0\.\d+)(\.\d+)?\)$/.test(r.style);
 
 describe("scenes: each painter", () => {
-  it("wash fills the whole screen in its colour", () => {
+  it("wash fills the whole screen in its color", () => {
     const [r, ...rest] = paint("wash", { color: "@secondary", opacity: 0.5 });
     expect(rest).toEqual([]);
     expect(r).toMatchObject({ op: "fill", x: 0, y: 0, w: 400, h: 200, style: "rgba(0, 255, 0, 0.500)" });
@@ -215,7 +215,7 @@ describe("scenes: each painter", () => {
       { op: "fill", x: 0, y: 0, w: 400, h: 200, style: "rgba(255, 255, 255, 0.600)" }]);
   });
 
-  it("every painter, given hostile params, still draws finite shapes in valid colours", () => {
+  it("every painter, given hostile params, still draws finite shapes in valid colors", () => {
     const hostile = [{}, { count: NaN, depth: Infinity, speed: "fast", opacity: 7, color: "@nope" },
                      { count: -3, depth: -1, burst: NaN, opacity: -2, pulse: Infinity },
                      { count: 1e9 > 0 ? 3 : 0, color: 42, speed: -1e9 }];

@@ -115,7 +115,7 @@ SHOW_TOOLS = [
                     "item}, update_item {id, set}, remove_item {id}, "
                     "set_points {row, points}, set_wave {row, wave: {shape: "
                     "sine|triangle|ramp|saw|square|hold, bars, depth, phase?, "
-                    "seed?, toward? (colour lanes)} or null -- a wave added on "
+                    "seed?, toward? (color lanes)} or null -- a wave added on "
                     "top of the points}, set {key: palette|palettes|"
                     "grid_rev, value}. Rows are lanes, top first; the higher "
                     "lane wins.",

@@ -128,7 +128,7 @@ export function WaveLane({ wave, grid, duration, x, width }: {
 // -- the lanes ------------------------------------------------------------------
 
 const TARGET_LABEL: Record<string, string> = {
-  scene: "Scene", movement: "Movement", color: "Colour", level: "Level",
+  scene: "Scene", movement: "Movement", color: "Color", level: "Level",
   palette: "Palette",
 };
 
@@ -301,7 +301,7 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
 }) {
   const spec = useLaneSpec(row);
   const points = row.points ?? [];
-  // A colour lane has no number to show; it says the colour it last passed.
+  // A color lane has no number to show; it says the color it last passed.
   const now = spec.kind === "color"
     ? [...points].reverse().find((p) => p[0] <= beat)?.[1] ?? points[0]?.[1] ?? null
     : laneValue(row, beat);

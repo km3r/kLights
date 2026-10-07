@@ -303,7 +303,7 @@ describe("designer model", () => {
     expect(templateFromTimeline("x", "X", trackDoc as never, bare as never)).toBeNull();
   });
 
-  it("gives a copy a name of its own, and compares colours as the engine does", () => {
+  it("gives a copy a name of its own, and compares colors as the engine does", () => {
     // Copies are found by name, so a library palette's name must be its own.
     expect(freeName(["Hot", "Hot copy"], "Hot copy")).toBe("Hot copy 2");
     expect(freeName(["Hot"], "Hot copy")).toBe("Hot copy");
@@ -362,7 +362,7 @@ describe("designer model", () => {
     expect(scene.find((i) => i.id === tail)).toMatchObject({ at: 192, len: 32, routine: "fan-drop" });
   });
 
-  it("decodes rekordbox's colour waveform", () => {
+  it("decodes rekordbox's color waveform", () => {
     // rrrgggbbbhhhhh-- : full red, height 31
     const v = (7 << 13) | (31 << 2);
     const data = btoa(String.fromCharCode(v >> 8, v & 0xff));
@@ -419,21 +419,21 @@ const CATALOGUE = {
 let rekordbox: [number, unknown] = [200, CATALOGUE];
 
 const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
-/** The library: Hot, copied into the timeline (with older colours) and Club
+/** The library: Hot, copied into the timeline (with older colors) and Club
  *  (the same); Ice, in nothing yet. Cool lives only in Club. */
 const PALETTES = {
   palettes: [
     { id: "hot", name: "Hot", ...HOT, rev: "r:p", copies: [
       { file: "timelines/synth-128.json", kind: "timeline", id: "synth-128",
-        title: "synthetic 128", colours: { ...HOT, primary: "#ff0000" }, same: false },
+        title: "synthetic 128", colors: { ...HOT, primary: "#ff0000" }, same: false },
       { file: "templates/club.json", kind: "template_set", id: "club", title: "Club",
-        colours: HOT, same: true }] },
+        colors: HOT, same: true }] },
     { id: "ice", name: "Ice", primary: "#bae6fd", secondary: "#ffffff", accent: "#38bdf8",
       rev: "r:i", copies: [] },
   ],
   found: [{ name: "Cool", places: [{ file: "templates/club.json", kind: "template_set",
                                      id: "club", title: "Club",
-                                     colours: { primary: "#3b82f6", secondary: "#14b8a6",
+                                     colors: { primary: "#3b82f6", secondary: "#14b8a6",
                                                 accent: "#e2e8f0" } }] }],
 };
 
@@ -857,7 +857,7 @@ describe("designer", () => {
     const lanes = await screen.findByRole("region", { name: "lanes" });
 
     // The movement lane: the browser's click only reaches the scene lane.
-    // Its menu has the routines and this rig's MOVEMENT looks -- no colour
+    // Its menu has the routines and this rig's MOVEMENT looks -- no color
     // looks, no snapshots -- and, being long, a search box it starts in.
     const move = within(lanes).getByLabelText("lane move");
     fireEvent.click(move, { clientX: 6 * 34, clientY: 20 });         // inside bar 9
@@ -1197,7 +1197,7 @@ describe("routine editor", () => {
     const user = userEvent.setup();
     const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
-    // a second colour lane, for the pinspots: the shelf only reaches the first
+    // a second color lane, for the pinspots: the shelf only reaches the first
     await user.selectOptions(within(lanes).getByLabelText("add lane"), "color");
     await user.selectOptions(within(lanes).getByLabelText("color role"), "pins");
     const lane = within(lanes).getByLabelText("lane color");
@@ -1206,7 +1206,7 @@ describe("routine editor", () => {
     fireEvent.click(lane, { clientX: 8 * 16, clientY: 20 });          // bar 3
     let menu = screen.getByRole("menu", { name: "add to color" });
     expect(menu).toHaveTextContent("Add at bar 3.1, for pins");
-    // the colour blocks, and the rig's own; no movement or level blocks
+    // the color blocks, and the rig's own; no movement or level blocks
     expect(within(menu).getByRole("menuitem", { name: "solid" })).toHaveFocus();
     expect(within(menu).getByRole("menuitem", { name: /look/ })).toBeInTheDocument();
     expect(within(menu).queryByRole("menuitem", { name: "orbit" })).toBeNull();
@@ -1291,14 +1291,14 @@ describe("routine editor", () => {
     expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
     fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "90" } });
 
-    // a colour parameter's lane takes colours, picked in the inspector
+    // a color parameter's lane takes colors, picked in the inspector
     await user.selectOptions(menu, "param.color");
-    const colour = within(lanes).getByLabelText("automation param.color");
-    fireEvent.click(colour, { clientX: 8 * 16, clientY: 20 });
-    expect(within(colour).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
-    await user.click(within(screen.getByRole("group", { name: "point colour" }))
+    const color = within(lanes).getByLabelText("automation param.color");
+    fireEvent.click(color, { clientX: 8 * 16, clientY: 20 });
+    expect(within(color).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "point color" }))
       .getByRole("button", { name: "accent" }));
-    expect(within(colour).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
+    expect(within(color).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Save" }));
     const { doc } = reply(socket, "routine_save", true, { rev: "r:f" }) as unknown as Saved;
@@ -1746,7 +1746,7 @@ describe("timeline editing", () => {
     drop("lane scene", { kind: "routine", id: "idle-orbit" }, 6 * 96);
     expect(within(lanes).getByLabelText("idle-orbit at bar 25.1")).toBeInTheDocument();
     drop("lane palette", { kind: "routine", id: "idle-orbit" }, 6 * 96);
-    expect(screen.getByText("A routine goes on a scene, movement, colour or level lane."))
+    expect(screen.getByText("A routine goes on a scene, movement, color or level lane."))
       .toBeInTheDocument();
     // A drag can come from another window: what is not something to place is ignored.
     const scene = within(lanes).getByLabelText("lane scene");
@@ -1774,7 +1774,7 @@ describe("timeline editing", () => {
     expect(row("Cool")).toHaveTextContent("only here");
     fireEvent.input(within(side).getByLabelText("Hot primary"), { target: { value: "#00ff00" } });
     expect(row("Hot")).toHaveTextContent("differs from library");
-    await user.click(within(side).getByRole("button", { name: "use the library's colours for Hot" }));
+    await user.click(within(side).getByRole("button", { name: "use the library's colors for Hot" }));
     expect(within(side).getByLabelText("Hot primary")).toHaveValue("#ff2d6f");
     expect(row("Hot")).toHaveTextContent("copy of library");
   });
@@ -2138,14 +2138,14 @@ describe("palette library", () => {
     expect(found).toHaveTextContent(/Cool.*Club \(set\)/);
   });
 
-  it("gives the copies that differ the library's colours, and only those", async () => {
+  it("gives the copies that differ the library's colors, and only those", async () => {
     const { user, socket } = await library();
     // It says whose palette this is: the library's, not any track's.
     expect(within(aside()).getByText("Library palette")).toBeInTheDocument();
-    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colours" }));
+    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colors" }));
     const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
     expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
-    expect(await screen.findByText("Gave 1 copy of Hot the library's colours.")).toBeInTheDocument();
+    expect(await screen.findByText("Gave 1 copy of Hot the library's colors.")).toBeInTheDocument();
   });
 
   it("saves an edit with the rev it read, and copies wait for the save", async () => {
@@ -2161,7 +2161,7 @@ describe("palette library", () => {
                                      primary: "#00ff00", secondary: "#ff8a00" });
   });
 
-  it("is not unsaved for a colour typed in capitals that is the one saved", async () => {
+  it("is not unsaved for a color typed in capitals that is the one saved", async () => {
     const { user } = await library();
     const hex = within(aside()).getByLabelText("primary hex");
     await user.clear(hex);

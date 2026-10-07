@@ -9,12 +9,12 @@ hard. Judging which to keep is a decision for a room, not for a converter.
 
 Three things change in translation, and all three are the point:
 
-**Scenes split by what they touch.** QLC+ has one flat namespace, so a colour
+**Scenes split by what they touch.** QLC+ has one flat namespace, so a color
 and a position are the same kind of object and every combination of the two has
 to exist as its own stored scene. That is how 179 accumulated. Here a scene that
-writes only the colour wheel becomes a COLOUR look, one that writes pan/tilt
+writes only the color wheel becomes a COLOR look, one that writes pan/tilt
 becomes a POSE look, and they compose -- so the same 179 scenes yield far more
-than 179 combinations, and adding a colour costs one entry rather than N.
+than 179 combinations, and adding a color costs one entry rather than N.
 
 **Positions become offsets from each head's own ball point.** The stored DMX is
 decoded through the same geometry the engine aims with, then expressed relative
@@ -64,9 +64,9 @@ class PortedLook:
     kind: str                       # "pose" | "color" | "path" | "mixed"
     tags: list[str]
     # The rig groups this look actually writes, from the fixtures the scene
-    # touched. Without it a scene that coloured only the pinspots ported as an
-    # untagged uniform colour and repainted the movers too -- "Pin Ball Glow"
-    # writes two pinspots in the workspace and was recolouring the whole rig.
+    # touched. Without it a scene that colored only the pinspots ported as an
+    # untagged uniform color and repainted the movers too -- "Pin Ball Glow"
+    # writes two pinspots in the workspace and was recoloring the whole rig.
     groups: list[str] = field(default_factory=list)
     offsets: Optional[list[list[float]]] = None      # per head, (bearing, elev)
     steps: Optional[list[list[list[float]]]] = None  # per step, per head
@@ -80,7 +80,7 @@ class PortedLook:
     bars: Optional[float] = None
     intensity: Optional[float] = None
     # Per fixture, where the scene dims fixtures differently. Collapsing this to
-    # one number threw away exactly the information the per-fixture COLOUR
+    # one number threw away exactly the information the per-fixture COLOR
     # handling was added to preserve.
     intensities: Optional[dict[str, float]] = None
     # Per fixture, 0..1 across the fixture's own strobe band.
@@ -144,7 +144,7 @@ def parse_values(text: str) -> dict[int, int]:
 
 
 def wheel_color(profile, mode: str, offset: int, value: int) -> Optional[list[float]]:
-    """The RGB a colour-wheel value actually produces, from the .qxf."""
+    """The RGB a color-wheel value actually produces, from the .qxf."""
     name = profile.modes[mode][offset]
     for cap in profile.channels[name].capabilities:
         if cap.lo <= value <= cap.hi and cap.rgb is not None:
@@ -171,7 +171,7 @@ class Porter:
 
         A group is a rig tag ("movers", "pinspots"). Reported per look so the
         engine can scope the layer, and so the UI can offer a filter that means
-        something: the whole reason "colour" needed splitting by fixture type is
+        something: the whole reason "color" needed splitting by fixture type is
         that a pinspot palette and a mover palette are different decisions.
         """
         wanted = set(names)
@@ -246,17 +246,17 @@ class Porter:
     def colors_for(self, values_by_fixture: dict[int, dict[int, int]],
                    whites: Optional[dict[str, float]] = None
                    ) -> dict[str, list[float]]:
-        """{fixture name: RGB} for every fixture this scene colours.
+        """{fixture name: RGB} for every fixture this scene colors.
 
         Covers both mechanisms: a mechanical wheel, where the value is looked up
-        in the .qxf's own capability colours, and RGBW channels, where it is
+        in the .qxf's own capability colors, and RGBW channels, where it is
         read directly. Doing both matters because the pinspots are RGBW and the
         movers are a wheel, and a converter that only understood one would
-        silently drop half the colour library.
+        silently drop half the color library.
 
-        Per fixture, not one colour per scene. The Split, Duo and Quad families
-        give different heads different colours, and that is precisely what made
-        them worth having -- flattening them to a single colour, or skipping
+        Per fixture, not one color per scene. The Split, Duo and Quad families
+        give different heads different colors, and that is precisely what made
+        them worth having -- flattening them to a single color, or skipping
         them, loses a whole section of the old console.
         """
         out: dict[str, list[float]] = {}
@@ -271,7 +271,7 @@ class Porter:
                 rgb = wheel_color(fixture.profile, fixture.mode, wheel, values[wheel])
                 if rgb is not None:
                     out[fixture.name] = rgb
-                # A value in an auto-change band is not a colour; leave the
+                # A value in an auto-change band is not a color; leave the
                 # fixture out rather than inventing one for it.
                 continue
 
@@ -282,7 +282,7 @@ class Porter:
                 # A component the scene does not write reads as 0. Unlike
                 # `offsets_for`, which refuses a partial position, there is no
                 # way to express "set red and leave green alone" -- the engine's
-                # colour is one RGB triple, not three channels. Verified against
+                # color is one RGB triple, not three channels. Verified against
                 # the workspace: no scene writes a partial R/G/B set, so this
                 # branch does not fire on the material being ported.
                 out[fixture.name] = [round(values.get(o, 0) / 255.0, 4)
@@ -321,7 +321,7 @@ class Porter:
                       ) -> tuple[Optional[float], Optional[dict[str, float]]]:
         """(overall level, per-fixture levels where they differ).
 
-        The per-fixture half exists for the same reason the colour half does: a
+        The per-fixture half exists for the same reason the color half does: a
         scene that dims two heads differently is expressing something, and
         flattening it to the maximum turns a two-level look into a flat one.
         Where every fixture agrees, only the single number is emitted -- that
@@ -410,9 +410,9 @@ class Porter:
         intensity, intensities = self.intensity_for(values)
         strobes = self.strobe_for(values)
 
-        # One colour if every coloured fixture agrees, per-fixture if not.
+        # One color if every colored fixture agrees, per-fixture if not.
         # Collapsing the uniform case keeps the common look portable to a rig
-        # with a different number of heads, which per-fixture colours cannot be.
+        # with a different number of heads, which per-fixture colors cannot be.
         color = None
         per_fixture = None
         if colors:
@@ -447,13 +447,13 @@ class Porter:
         if look.whites:
             look.notes.append(
                 f"white channel on {', '.join(sorted(look.whites))} -- these are "
-                f"RGBW, and the W is part of the colour")
+                f"RGBW, and the W is part of the color")
         if look.intensities:
             look.notes.append("per-fixture levels differ")
         if per_fixture is not None:
             look.colors = per_fixture
             look.notes.append(
-                f"per-fixture colour ({len(set(map(tuple, per_fixture.values())))} "
+                f"per-fixture color ({len(set(map(tuple, per_fixture.values())))} "
                 f"distinct) -- a split, duo or quad")
         return look
 
@@ -501,7 +501,7 @@ class Porter:
             levels.append(self.dimmers_for(values))
             spans.append(span)
         if not steps:
-            # No positional step at all. It may still be a COLOUR chase -- the
+            # No positional step at all. It may still be a COLOR chase -- the
             # Rainbow Wheel and Wheel Walk families step through wheel slots
             # rather than positions -- or a LEVEL chase, which is what Spotlight,
             # Dim Chase and Crowd Cascade are. All three are named sections of
@@ -510,9 +510,9 @@ class Porter:
             # Only the LAST branch records a skip. Letting each failing branch
             # append one put the same chaser in the list three times under three
             # different reasons, which reads as three lost looks.
-            colour = self.port_color_chaser(func, scenes_by_id, record=False)
-            if colour is not None:
-                return colour
+            color = self.port_color_chaser(func, scenes_by_id, record=False)
+            if color is not None:
+                return color
             return self.port_level_chaser(func, scenes_by_id)
         if len(steps) < 2:
             self.skipped.append((name, "fewer than two positional steps"))
@@ -558,9 +558,9 @@ class Porter:
 
     def port_color_chaser(self, func, scenes_by_id: dict[int, ET.Element],
                           record: bool = True) -> Optional[PortedLook]:
-        """A chaser whose steps are colours rather than positions.
+        """A chaser whose steps are colors rather than positions.
 
-        Emitted as a list of colour frames rather than a path: colour on a
+        Emitted as a list of color frames rather than a path: color on a
         mechanical wheel is a set of discrete slots, so interpolating between
         them would ask for values the wheel cannot produce and land on whichever
         slot happened to be nearest. Stepping is the honest representation of
@@ -590,7 +590,7 @@ class Porter:
                            for name, rgb in colors.items()})
         if len(frames) < 2:
             if record:
-                self.skipped.append((name, "fewer than two colour steps"))
+                self.skipped.append((name, "fewer than two color steps"))
             return None
 
         speed = func.find(NS + "Speed")
@@ -602,9 +602,9 @@ class Porter:
             name=name, kind="color_path", tags=[],
             groups=self.groups_for({n for fr in frames for n in fr}), frames=frames,
             bars=snap_bars(raw_bars), source=f"Chaser {func.get('ID')}",
-            notes=[f"{len(frames)} colour steps; stepped, not interpolated -- a "
+            notes=[f"{len(frames)} color steps; stepped, not interpolated -- a "
                    f"mechanical wheel has no in-between slots"]
-                  + ([f"{dropped} step(s) wrote no colour and were skipped"]
+                  + ([f"{dropped} step(s) wrote no color and were skipped"]
                      if dropped else []))
 
     def port_level_chaser(self, func, scenes_by_id: dict[int, ET.Element]
@@ -617,10 +617,10 @@ class Porter:
         library as separate one-step looks -- the chase itself unreachable, and
         the steps individually meaningless.
 
-        Stepped rather than interpolated, matching the colour chases: the source
+        Stepped rather than interpolated, matching the color chases: the source
         is a step list, and inventing a fade between two dimmer levels would be
         asserting a shape the original never had. A level chase composes as a
-        MULTIPLIER over whatever colour and position are running -- see
+        MULTIPLIER over whatever color and position are running -- see
         `library.level_layers`.
         """
         name = func.get("Name", "?")
@@ -634,7 +634,7 @@ class Porter:
             values = self.scene_values(scene)
             overall, per_fixture = self.intensity_for(values)
             step_strobe = self.strobe_for(values)
-            # An EMPTY step is kept, unlike in the position and colour chases.
+            # An EMPTY step is kept, unlike in the position and color chases.
             # "MH Breathe" is literally Breathe On / Breathe Off, and the Off
             # half writes nothing the engine models -- dropping it would leave a
             # one-step chase that never breathes. In a level chase, "back to
@@ -658,7 +658,7 @@ class Porter:
         raw_bars = duration * len(levels) / self.ms_per_bar
         notes = [f"{len(levels)} level steps, {duration:.0f} ms each "
                  f"= {raw_bars:.2f} bars, snapped to {snap_bars(raw_bars):g}",
-                 "applied as a MULTIPLIER, so it composes with whatever colour "
+                 "applied as a MULTIPLIER, so it composes with whatever color "
                  "and position are running rather than replacing them"]
         return PortedLook(
             name=name, kind="level_path", tags=[],

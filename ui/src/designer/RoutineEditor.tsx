@@ -45,7 +45,7 @@ type RHistory = History<Doc>;
 const HEADER_W = 170;
 const ZOOMS = [8, 12, 16, 24, 32, 48];
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const LANE_NAMES: Record<string, string> = { movement: "Movement", color: "Colour", level: "Level" };
+const LANE_NAMES: Record<string, string> = { movement: "Movement", color: "Color", level: "Level" };
 
 export function newRoutine(id: string): Doc {
   return { kind: "klights.routine", version: 1, id, name: id, bars: 4, loop: true,
@@ -473,7 +473,7 @@ const PARAM_DEFAULTS: Record<ParamDef["type"], ParamDef> = {
   look: { type: "look" },
 };
 
-/** One value of a parameter: a palette role or a colour, a number, a look. */
+/** One value of a parameter: a palette role or a color, a number, a look. */
 function ParamValue({ name, def, value, onChange, engine }: {
   name: string; def: ParamDef; value: unknown; onChange: (v: unknown) => void; engine: Engine;
 }) {
@@ -608,7 +608,7 @@ function addBlock(d: Doc, lane: Row, item: { id: string; block: string; at: numb
   if (RIG_BOUND.includes(item.block) && !d.rig && event) d.rig = event;
 }
 
-/** What a new block starts with: the arguments the engine NEEDS (colours,
+/** What a new block starts with: the arguments the engine NEEDS (colors,
  *  points); everything else is left to the engine's default. */
 function startingArgs(block: string): Record<string, unknown> {
   const args: Record<string, unknown> = {};
@@ -807,8 +807,8 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
   );
 }
 
-/** A colour: a palette role, a colour of its own, or one of the routine's
- *  colour parameters. */
+/** A color: a palette role, a color of its own, or one of the routine's
+ *  color parameters. */
 function ColorValue({ label, value, onChange, params }: {
   label: string; value: unknown; onChange: (v: unknown) => void; params: string[];
 }) {
@@ -817,7 +817,7 @@ function ColorValue({ label, value, onChange, params }: {
     <span className="d-chips" role="group" aria-label={label}>
       {ROLES.map((r) => (
         <button key={r} className={role === r ? "on" : ""} onClick={() => onChange(`@${r}`)}>{r}</button>))}
-      <input type="color" aria-label={`${label} direct colour`}
+      <input type="color" aria-label={`${label} direct color`}
              value={typeof value === "string" && value.startsWith("#") ? value : "#ffffff"}
              onChange={(e) => onChange(e.target.value)} />
       {params.map((p) => (
@@ -835,7 +835,7 @@ function ArgField({ spec, value, params, onChange, engine }: {
     <span className="small muted" title={spec.help}>
       {spec.name}{spec.unit ? ` (${spec.unit})` : ""}</span>
   );
-  // Numbers and looks can come from a parameter; colours offer theirs inline.
+  // Numbers and looks can come from a parameter; colors offer theirs inline.
   const source = params.length > 0 && (spec.kind === "number" || spec.kind === "look") ? (
     <select aria-label={`${spec.name} from`} value={fromParam ? String(value) : ""}
             onChange={(e) => onChange(e.target.value || undefined)}>
@@ -882,7 +882,7 @@ function ArgField({ spec, value, params, onChange, engine }: {
                     onClick={() => onChange(list.filter((_, j) => j !== i))}>×</button>
           </div>
         ))}
-        <button className="small" onClick={() => onChange([...list, "@accent"])}>+ colour</button>
+        <button className="small" onClick={() => onChange([...list, "@accent"])}>+ color</button>
       </div>
     );
   } else if (spec.kind === "points") {

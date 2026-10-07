@@ -24,10 +24,10 @@ F19i): arming, disarming, a matched track starting, an unmatched one, pausing
 into idle and back.
 
 **Grabs.** While the timeline drives, an operator who picks a look, a preset or
-a cue takes that lane -- movement, colour or level -- and the operator's
+a cue takes that lane -- movement, color or level -- and the operator's
 selection shows there instead of the timeline's. A grab lasts until it is
 released (decided with the user): across track changes too, because an
-operator who took the colour for the rest of the set meant it. Picking looks
+operator who took the color for the rest of the set meant it. Picking looks
 while the timeline is NOT driving grabs nothing, so arming hands every lane to
 the timeline.
 
