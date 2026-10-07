@@ -242,12 +242,16 @@ class Connection:
         """Why this client should be dropped, in the words of the notice, or
         None while it should not.
 
-        The test is whether the socket is taking anything at all, not how far
-        behind the client is. A send returns once the kernel has the bytes, so
-        one that has not returned in `SEND_DEADLINE_S` means every buffer
-        between here and the client is full and has stayed full for that long:
+        The test is whether the socket takes a message, not how far behind the
+        client is. A send returns once the kernel has the bytes, so one that
+        has not returned in `SEND_DEADLINE_S` means the buffers between here
+        and the client filled and did not empty by one message in that time:
         a locked phone, a laptop out of wifi range, a page that hung. A browser
         whose main thread was busy empties them the moment it is back.
+
+        The clock is per message, and nothing restarts it part-way. So a link
+        that cannot carry one snapshot in `SEND_DEADLINE_S` -- about 12 kB/s
+        with a show folder loaded -- counts as not reading, though it is.
         """
         if self.stuck_for(now) >= SEND_DEADLINE_S:
             return f"{SEND_DEADLINE_S:g} seconds behind and not reading"
@@ -4037,8 +4041,8 @@ class ShowServer:
         The outbox keeps one snapshot, the newest, so a client that is behind
         is not dropped for it -- it used to be, at three snapshots, and that
         dropped browsers that were only busy (see `SEND_DEADLINE_S`). What is
-        dropped is a client whose socket has taken nothing for that long, and
-        this is still where it happens: the check is two comparisons per client
+        dropped is a client whose socket has not taken one message in that
+        long, and this is still where it happens: two comparisons per client
         on a thread that visits every client ten times a second anyway. Its
         browser reconnects on the backoff it already implements.
         """

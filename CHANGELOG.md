@@ -32,11 +32,11 @@ the commit messages keep those labels.
   is discarded for a client that is behind, where a reply to a client three
   snapshots behind used to be skipped.
 - **What is dropped is a client that has stopped reading:** one whose socket
-  has taken nothing for 5 seconds (`SEND_DEADLINE_S`). The notice now reads
-  `dropped <name>: 5 seconds behind and not reading`. So a phone that locked
-  its screen stays in the presence list about five seconds longer than it
-  did, and a Studio laptop that went away keeps the rig that much longer. One
-  stuck client still cannot delay the broadcast to the others.
+  has not taken a whole message in 5 seconds (`SEND_DEADLINE_S`). The notice
+  now reads `dropped <name>: 5 seconds behind and not reading`. So a phone
+  that locked its screen stays in the presence list about five seconds longer
+  than it did, and a Studio laptop that went away keeps the rig that much
+  longer. One stuck client still cannot delay the broadcast to the others.
 
 ### Fixed — explaining a colour lane that has a wave
 

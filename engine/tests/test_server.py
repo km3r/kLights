@@ -2076,45 +2076,59 @@ try:
     quiet.close()
 
     # And through the real server. This is the browser that was busy: it stops
-    # reading for two seconds, sends a command of its own meanwhile, and then
-    # reads again.
+    # reading, sends a command of its own meanwhile, and then reads again.
     #
-    # It has to be genuinely backed up for this to test anything. Linux would
-    # absorb two seconds of snapshots in the server's send buffer and the client
-    # would never be behind at all, so that buffer is made small from this side
-    # -- and the check below that the sender really was parked is what stops
-    # this passing on a platform where that did not work.
+    # How long a client must go unread before its sender parks is the kernel's
+    # business: a third of a second on one Windows, a second on another, seven
+    # on Linux with its send buffer left to grow. So the stall is measured from
+    # the park and not from the clock -- unread until its sender has been stuck
+    # for PARKED_S, five times what the old rule allowed. The server's send
+    # buffer is made small only so that Linux gets there in under a second;
+    # nothing below depends on it.
+    #
+    # The client's own receive buffer is left alone, unlike the never-reading
+    # client's further down. With it shrunk to 2 kB, CI's Linux runner closed
+    # this client a few seconds after it began reading again, one stale
+    # snapshot in. A browser does not shrink its buffer, and what is tested
+    # here is a client that reads at full speed once it reads.
     busy = Client(guarded_port, path="/ws?token=secret123")
     busy_id = busy.recv()["id"]
     busy.recv()
     busy_conn = guarded_server.sockets[busy_id]
     busy_conn.ws.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192)
-    busy.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
     live = Client(guarded_port, path="/ws?token=secret123")
     live.recv()
 
-    STALL_S = 2.0
-    todo = [(0.5, lambda: busy.send({"type": "master", "value": 0.31,
-                                     "id": "while-behind"})),
-            (1.5, lambda: live.send({"type": "master", "value": 0.77}))]
-    arrivals = []                       # every snapshot `live` gets meanwhile
-    started = time.perf_counter()
-    while (at := time.perf_counter() - started) < STALL_S:
-        while todo and at >= todo[0][0]:
-            todo.pop(0)[1]()
-        if live.recv().get("type") == "state":
-            arrivals.append(time.perf_counter())
-    parked = busy_conn.stuck_for(time.monotonic())
-    check("two seconds unread parks its sender for longer than the old rule gave it",
-          parked > 1.0, f"parked for {parked:.2f}s")
+    PARKED_S = 1.5
+    steps = [(0.5, lambda: busy.send({"type": "master", "value": 0.31,
+                                      "id": "while-behind"})),
+             (1.0, lambda: live.send({"type": "master", "value": 0.77}))]
+    arrivals = []           # (when, how long parked) per snapshot `live` gets
+    parked = 0.0
+    began = time.perf_counter()
+    while parked < PARKED_S and time.perf_counter() - began < 30.0:
+        if live.recv().get("type") != "state":
+            continue
+        parked = busy_conn.stuck_for(time.monotonic())
+        arrivals.append((time.perf_counter(), parked))
+        while steps and parked >= steps[0][0]:
+            steps.pop(0)[1]()
+    check("unread, its sender parks, for five times what the old rule allowed",
+          parked >= PARKED_S, f"parked for {parked:.2f}s, "
+          f"{time.perf_counter() - began:.1f}s after it stopped reading")
     check("and it is still connected", busy_id in guarded_server.sockets
           and busy_id in guarded.clients)
     # A broadcast waiting on this client would show as one gap the length of
     # the stall; a second is far above a slow runner's jitter and below that.
-    gaps = [b - a for a, b in zip(arrivals, arrivals[1:])]
+    gaps = [b[0] - a[0] for a, b in zip(arrivals, arrivals[1:])]
     check("the broadcast to another client did not pause for it",
           len(arrivals) >= 10 and max(gaps) < 1.0,
           f"{len(arrivals)} snapshots, longest gap {max(gaps, default=9) * 1000:.0f} ms")
+    # Snapshots broadcast before it parked went into the socket and will be
+    # read first, however many the kernel took. The ones broadcast while it
+    # was parked are the ones the outbox had a say in.
+    while_parked = sum(1 for _, p in arrivals if p > 0.2)
+    before_park = len(arrivals) - while_parked
 
     replies, stale, current = [], 0, None
     try:
@@ -2128,32 +2142,32 @@ try:
                     current = m
                 else:
                     stale += 1
-        failure = None
-    except (OSError, ConnectionError) as exc:
+        failure = None if current is not None else "no current snapshot in 10s"
+    except (OSError, ConnectionError, ValueError) as exc:
         failure = repr(exc)
-    check("reading again, it was not dropped", failure is None, f"{failure}")
+    check("reading again, it was not dropped", failure is None,
+          f"{failure}; engine notices {guarded.notices[-3:]}")
     check("the reply made while it was behind arrives, once, and first",
           [(r["id"], r["ok"]) for r in replies] == [("while-behind", True)],
           f"{replies}")
-    # What it reads first is what the kernel already held when it stopped --
-    # a few snapshots, how many is the platform's business -- and then the
-    # state as it is now, not the twenty that were broadcast while it was away.
     check("it catches up in a frame, not by replaying what it missed",
-          current is not None and stale < len(arrivals) // 2,
-          f"{stale} stale snapshots first, of {len(arrivals)} broadcast")
+          failure is None and while_parked >= 10 and stale <= before_park + 3,
+          f"{stale} stale snapshots first; {before_park} were broadcast before "
+          f"it parked and {while_parked} while it was parked")
     check("and nobody was told it had been dropped", current is not None
           and not any("dropped" in n for n in current["notices"])
           and any(c["id"] == busy_id for c in current["presence"]),
           f"{current['notices'] if current else None}")
-    busy.send({"type": "master", "value": 0.25, "id": "after"})
-    try:
-        after = None
-        while after is None:
-            m = busy.recv()
-            if m.get("type") == "reply" and m.get("id") == "after":
-                after = m
-    except (OSError, ConnectionError) as exc:
-        after = {"ok": False, "error": repr(exc)}
+    after = {"ok": False, "error": failure}
+    if failure is None:
+        busy.send({"type": "master", "value": 0.25, "id": "after"})
+        try:
+            while after.get("id") != "after":
+                m = busy.recv()
+                if m.get("type") == "reply":
+                    after = m
+        except (OSError, ConnectionError, ValueError) as exc:
+            after = {"ok": False, "error": repr(exc)}
     check("on the same socket, which still works", after.get("ok") is True,
           f"{after}")
     busy.close()
