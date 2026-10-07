@@ -59,9 +59,9 @@ def orbit_look(radius_deg: float = 20.0, bars: float = 8.0) -> statemod.Show:
 def set_list() -> autom.SetList:
     """A few looks, in the shape the Night cue list should take.
 
-    Each is a factory taking the current palette colour, so colour rotates
+    Each is a factory taking the current palette color, so color rotates
     independently of which look is running -- rather than every combination of
-    look and colour being its own stored scene, which is how 179 of them
+    look and color being its own stored scene, which is how 179 of them
     accumulated and why only a handful got used.
     """
     # Cycle lengths are stated on the patterns themselves; `as_move` reads them.

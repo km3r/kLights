@@ -33,7 +33,7 @@
         "name": "Deep",
         "fade": 16.0,
         "hold": 0.0,
-        "notes": "Colour arrives. Spread to a half cycle so the sweep reads as a chase rather than a bar."
+        "notes": "Color arrives. Spread to a half cycle so the sweep reads as a chase rather than a bar."
       },
       {
         "name": "Spiral",
@@ -3641,7 +3641,7 @@
       "step_of": null
     },
     {
-      "name": "Colour Drift",
+      "name": "Color Drift Parametric",
       "manual_only": false,
       "kind": "color_path",
       "slot": "color",
@@ -4170,7 +4170,7 @@
       "id": "c2",
       "name": "tablet",
       "connected_for": 12.8,
-      "last_action": "coloured pinspots",
+      "last_action": "colored pinspots",
       "last_action_ago": 0.9
     }
   ],

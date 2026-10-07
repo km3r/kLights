@@ -106,7 +106,7 @@ window.LAYOUT = {
       id: 'pins', label: 'Pins', icon: '◆', // diamond
       sections: [
         // Pin Split is the first pin look where the two fixtures differ (warm
-        // one side of the ball, cool the other -> two counter-coloured speck
+        // one side of the ball, cool the other -> two counter-colored speck
         // fields).
         { title: 'Looks', style: 'tile',
           items: ['Pin Glow', 'Pin Drift', 'Pin Amber', 'Pin Rose', 'Pin Magenta',

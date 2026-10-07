@@ -23,7 +23,7 @@
       "count": 4,
       "modes": ["11 Channel", "9 Channel"],
       "type": "moving-head-beam",
-      "notes": "14-slot mechanical colour wheel, no colour mixing. Strobe re-opens at 250-255. Channel 10 is Reset — always pin to 0. Used by: despacio."
+      "notes": "14-slot mechanical color wheel, no color mixing. Strobe re-opens at 250-255. Channel 10 is Reset — always pin to 0. Used by: despacio."
     },
     {
       "id": "uking-zqb93-pinspot",

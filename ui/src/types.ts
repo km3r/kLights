@@ -64,7 +64,7 @@ export interface FixtureState {
   address: number;
   is_mover: boolean;
   /** Whether this fixture's profile has a white channel at all — not every
-   *  fixture does, and the Colour tab uses this to decide whether to offer
+   *  fixture does, and the Color tab uses this to decide whether to offer
    *  a white control for the current target. */
   has_white: boolean;
   /** [x, y, z] in mm — present only for fixtures with geometry. */
@@ -135,7 +135,7 @@ export interface TaperState {
   enabled: boolean;
 }
 
-/** The three independent slots. Picking a colour must not disturb the movement
+/** The three independent slots. Picking a color must not disturb the movement
  *  and vice versa, which is what having slots at all is for. */
 export type Slot = "movement" | "color" | "level";
 
@@ -183,7 +183,7 @@ export interface ParamSpec {
   name: string;
   label: string;
   /** The last four are block arguments the routine editor renders and the
-   *  console's Tweak card does not: a colour list, room points, and names in
+   *  console's Tweak card does not: a color list, room points, and names in
    *  THIS rig's library. They are validated by the engine against a rig. */
   kind: "number" | "integer" | "bool" | "choice" | "color"
       | "colors" | "points" | "look" | "preset";
@@ -224,8 +224,8 @@ export interface ModulatorSpec {
   seed?: number;
 }
 
-/** Per slot, per fixture group: which look is loaded. A pinspot colour and a
- *  mover colour are different decisions and are held separately. */
+/** Per slot, per fixture group: which look is loaded. A pinspot color and a
+ *  mover color are different decisions and are held separately. */
 export type SlotSelection = Record<string, string>;
 
 export interface Selection {
@@ -697,7 +697,7 @@ export type Command =
   | { type: "palette_save"; doc: unknown; base_rev: string }
   /** Delete a library palette; its copies stay in their files. */
   | { type: "palette_delete"; palette: string; base_rev: string }
-  /** Give copies of a library palette its colours: `files` as /api/palettes lists them. */
+  /** Give copies of a library palette its colors: `files` as /api/palettes lists them. */
   | { type: "palette_sync"; palette: string; files: string[] }
   | { type: "track_link"; track_id: string }
   /** Prep tracks from the DJ's rekordbox collection into the show folder, by

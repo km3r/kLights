@@ -462,7 +462,7 @@ try:
     hot = {"kind": "klights.palette", "version": 1, "id": "hot", "name": "Hot",
            "primary": "#ff0000", "secondary": "#ff8800", "accent": "#ffffff"}
     r = ask({"type": "palette_save", "doc": {**hot, "primary": "@primary"}, "base_rev": "", "id": 40})
-    check("a library palette is plain colours", r["ok"] is False and "#rrggbb" in r["error"], f"{r}")
+    check("a library palette is plain colors", r["ok"] is False and "#rrggbb" in r["error"], f"{r}")
     r = ask({"type": "palette_save", "doc": hot, "base_rev": "", "id": 41})
     check("a palette is saved into the library as its own file",
           r and r["ok"] and (shows / "palettes" / "hot.json").is_file(), f"{r}")
@@ -470,7 +470,7 @@ try:
     lib = body["palettes"][0] if status == 200 and body["palettes"] else {}
     copies = {c["file"]: c for c in lib.get("copies", [])}
     check("it lists its copies -- every timeline and set with a palette of its "
-          "name -- and whether each still has its colours",
+          "name -- and whether each still has its colors",
           lib.get("name") == "Hot" and "timelines/synth-128.json" in copies
           and copies["timelines/synth-128.json"]["same"] is False
           and "Hot" not in {f["name"] for f in body["found"]}, f"{lib}")
@@ -485,7 +485,7 @@ try:
     check("updates are configure-tier", r["ok"] is False and "needs configure" in r["error"])
     r = ask({"type": "palette_sync", "palette": "hot", "files": sorted(copies), "id": 44})
     tl_doc = json.loads((shows / "timelines" / "synth-128.json").read_text())
-    check("updating the copies gives each the library's colours, and nothing else changes",
+    check("updating the copies gives each the library's colors, and nothing else changes",
           r["ok"] and set(r["data"]["written"]) == set(copies)
           and tl_doc["palettes"]["Hot"] == {"primary": "#ff0000", "secondary": "#ff8800",
                                             "accent": "#ffffff"}

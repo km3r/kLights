@@ -47,7 +47,7 @@ struct FKLightsShares
 };
 
 /**
- * One patched unit in the room: its light (two, for a split colour wheel), the
+ * One patched unit in the room: its light (two, for a split color wheel), the
  * shaft that stands in for its beam, the glow the mirror ball throws back, the
  * ball's reflections of it, and a body.
  *

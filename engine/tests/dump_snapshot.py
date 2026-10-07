@@ -37,16 +37,16 @@ def main() -> int:
         time.sleep(0.6)
 
         # Drive it into a state that covers the cases the UI has to handle:
-        # a held look, an auto axis on, a colour override, and a jogging head
+        # a held look, an auto axis on, a color override, and a jogging head
         # with its safety bypass. A snapshot of an idle engine would leave all
         # of those untested.
         # All three slots filled, so the fixture proves they coexist -- a
         # snapshot with only a movement look would let a regression that wipes
-        # the colour slot on selection pass unnoticed, which is the exact bug
+        # the color slot on selection pass unnoticed, which is the exact bug
         # the slot model was introduced to fix.
         for command in (
             {"type": "select_look", "name": "Lazy Circle"},      # movement
-            {"type": "select_look", "name": "MH Red"},           # colour
+            {"type": "select_look", "name": "MH Red"},           # color
             {"type": "select_look", "name": "Spotlight"},        # level chase
             {"type": "auto", "axis": "palette", "on": True},
             {"type": "color", "target": "pinspots", "color": [1.0, 0.2, 0.1]},
@@ -68,7 +68,7 @@ def main() -> int:
         {"id": "c1", "name": "phone", "connected_for": 41.2,
          "last_action": "selected 'sweep'", "last_action_ago": 3.1},
         {"id": "c2", "name": "tablet", "connected_for": 12.8,
-         "last_action": "coloured pinspots", "last_action_ago": 0.9},
+         "last_action": "colored pinspots", "last_action_ago": 0.9},
     ]
     # Frame counters vary per run; pin them so a regenerated fixture produces a
     # clean diff instead of noise on every line.
@@ -106,7 +106,7 @@ def main() -> int:
     movers = sum(1 for f in snapshot["fixtures"] if f.get("is_mover"))
     print(f"wrote {OUT.relative_to(REPO)}")
     print(f"  {len(snapshot['fixtures'])} fixtures ({movers} movers), "
-          f"{len(snapshot['looks'])} looks, {len(snapshot['palette'])} colours")
+          f"{len(snapshot['looks'])} looks, {len(snapshot['palette'])} colors")
     print(f"  look={snapshot['auto']['look']!r} held={snapshot['auto']['held']} "
           f"overrides={list(snapshot['color_overrides'])}")
     print(f"  jogging={[f['name'] for f in snapshot['fixtures'] if f.get('jogging')]}")

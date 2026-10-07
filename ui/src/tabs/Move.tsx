@@ -14,7 +14,7 @@ import type { Command, EngineState, ParamValue } from "../types";
  * A route and a rate are separate here, which is the point. In the old console
  * every combination of the two was its own stored chase, which is how 179
  * accumulated. Now they multiply instead of being enumerated — and picking a
- * route leaves the colour and level slots untouched.
+ * route leaves the color and level slots untouched.
  */
 export function MoveTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
@@ -37,7 +37,7 @@ export function MoveTab({ state, send }: {
 
       <ModulationCard state={state} send={send} slot="movement" />
 
-      {/* Move only: the colour and level slots have nothing that adds. */}
+      {/* Move only: the color and level slots have nothing that adds. */}
       <StackCard state={state} send={send} />
 
       {/* This card used to be a second copy of the Show tab's global Speed,
@@ -46,7 +46,7 @@ export function MoveTab({ state, send }: {
           it belongs to lives. */}
       <RateCard state={state} send={send} slot="movement" hint={
         <>
-          How fast the route runs, and <b>only</b> the route — the colours and
+          How fast the route runs, and <b>only</b> the route — the colors and
           levels keep their own. Slowing a move makes it <b>smoother</b>, not
           steppier: the route is a path sampled at the current phase, so a
           longer cycle just gets more frames. Changing it moves the phase on

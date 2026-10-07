@@ -3,7 +3,7 @@ import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, newVisuals, useHistory } from "./edit";
 import {
-  EXACT_LABELS, ID_RE, NEW_COLOURS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
+  EXACT_LABELS, ID_RE, NEW_COLORS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
 import type {
   PaletteSummary, RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary,
@@ -377,7 +377,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
 
         <section className="s-box" aria-label="palettes">
           <header><b>This set's palettes</b><span className="muted small">Copies: changing a
-            colour here changes this set only. The library's are on the{" "}
+            color here changes this set only. The library's are on the{" "}
             <a className="d-link" href="#studio/palettes">Palettes</a> page.</span></header>
           {palettes.map((name) => {
             const pal = doc.palettes![name]!;
@@ -387,7 +387,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
                   <input type="radio" name={`default-palette-${id}`} checked={doc.palette === name}
                          aria-label={`${name} is the default`}
                          onChange={() => apply((d) => { d.palette = name; })} />{name}</label>
-                <PaletteOrigin library={library} name={name} colours={pal} here="set"
+                <PaletteOrigin library={library} name={name} colors={pal} here="set"
                                onUseLibrary={(c) => apply((d) => { d.palettes![name] = c; })} />
                 {ROLES.map((role) => (
                   <input key={role} type="color" aria-label={`${name} ${role}`} value={hex(pal[role])}
@@ -413,7 +413,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             if (!name || palettes.includes(name)) return;
             apply((d) => {
               d.palettes = { ...(d.palettes ?? {}),
-                             [name]: { ...NEW_COLOURS } };
+                             [name]: { ...NEW_COLORS } };
               if (!d.palette) d.palette = name;
             });
             setPalName("");
@@ -423,8 +423,8 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
             <button type="submit" disabled={!palName.trim() || palettes.includes(palName.trim())}>
               + Palette</button>
             <FromLibrary library={library} has={palettes}
-                         onPick={(name, colours) => apply((d) => {
-                           d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                         onPick={(name, colors) => apply((d) => {
+                           d.palettes = { ...(d.palettes ?? {}), [name]: colors };
                            if (!d.palette) d.palette = name;
                          })} />
           </form>

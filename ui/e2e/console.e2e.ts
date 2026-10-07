@@ -41,7 +41,7 @@ test("Blackout takes every light to zero on the wire, and lets go where the show
     await openConsole(page);
     await artnet.waitFor("every mover lit", lit);
     await page.getByRole("button", { name: "Blackout", exact: true }).click();
-    await artnet.waitFor("every mover's dimmer and every pinspot colour at zero", dark);
+    await artnet.waitFor("every mover's dimmer and every pinspot color at zero", dark);
     await expect(page.locator(".banners")).toContainText("Blackout — master is at zero");
     // Blackout is the master, not panic: the pinspots' mode channel is a
     // setting, held where it is, not a light.
@@ -108,7 +108,7 @@ test("GO walks the Night cue list, Back steps back, and any cue can be jumped to
     await expect(card.getByRole("button", { name: /^GO — / })).toBeDisabled();
   });
 
-test("a colour tapped on the quick palette is what the pinspots put out", async ({ page, artnet, openConsole }) => {
+test("a color tapped on the quick palette is what the pinspots put out", async ({ page, artnet, openConsole }) => {
   await openConsole(page, { hash: "color" });
   await page.locator(".card").filter({ hasText: "Applies to" })
     .getByRole("button", { name: "pinspots", exact: true }).click();
@@ -128,7 +128,7 @@ test("a colour tapped on the quick palette is what the pinspots put out", async 
   expect(lit(artnet.frame()!)).toBe(true);
 
   await page.getByRole("button", { name: "Clear", exact: true }).click();
-  await artnet.waitFor("the pinspots back off that colour", (d) => !pinspotRgbw(d).every(matches));
+  await artnet.waitFor("the pinspots back off that color", (d) => !pinspotRgbw(d).every(matches));
 });
 
 test("a typed tempo is the engine's tempo", async ({ page, openConsole }) => {

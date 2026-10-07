@@ -115,12 +115,12 @@ namespace
 			const GLTF::FMaterial& M = Asset.Materials[Index];
 			if (M.ShadingModel != GLTF::FMaterial::EShadingModel::MetallicRoughness)
 			{
-				Warnings.Add(FString::Printf(TEXT("material %s is not metallic-roughness; drawn with its base colour only"), *M.Name));
+				Warnings.Add(FString::Printf(TEXT("material %s is not metallic-roughness; drawn with its base color only"), *M.Name));
 			}
 			// Metallic and roughness come from their FACTORS only. A packed
 			// metallic-roughness texture is linear data, and sampling it needs a
 			// linear default texture the engine does not ship; for judging a look
-			// in a dark room the factors are enough. Base colour and emissive maps
+			// in a dark room the factors are enough. Base color and emissive maps
 			// are honoured.
 			const FVector4f& C = M.BaseColorFactor;
 			MID->SetVectorParameterValue(PBaseColor, FLinearColor(C.X, C.Y, C.Z, C.W));

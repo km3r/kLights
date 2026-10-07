@@ -97,7 +97,7 @@ try:
         if cue.color:
             loaded = set(controller.slots["color"].values())
             wanted = set(cue.color.values())
-            check(f"  {cue.name}: colour slots filled",
+            check(f"  {cue.name}: color slots filled",
                   wanted <= loaded, f"{loaded} vs {wanted}")
         if cue.master is not None:
             check(f"  {cue.name}: master taken",

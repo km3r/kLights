@@ -173,7 +173,7 @@ button.blackout-btn.active {
 
 /* Pose reachability detail (tap a tile with the [data-aim-warn] marker below
    to populate this) -- shares the park-badge shape/rhythm but its own
-   colour and element, since it's an unrelated concern from MH Dim parking
+   color and element, since it's an unrelated concern from MH Dim parking
    and both can be relevant at once. */
 .aim-badge {
   background: rgba(224, 167, 47, .16);
@@ -275,7 +275,7 @@ button.blackout-btn.active {
    .aim-badge above -- amber for "minor" (routine clamp, tap for detail),
    red for "significant" (a real reachability problem, not just an
    expected-and-graceful clamp). Applies to .w-swatch/.w-flash too, not just
-   .w-tile -- a Statics colour or a Flash action can carry the [data-aim-warn]
+   .w-tile -- a Statics color or a Flash action can carry the [data-aim-warn]
    attribute exactly like any other button (renderTile() sets it regardless
    of tile style), so the marker needs to actually render there as well. */
 .w-tile[data-aim-warn]::before,

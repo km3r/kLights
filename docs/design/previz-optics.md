@@ -341,7 +341,7 @@ useful) survive a rebuild.
 | Actor | What it is for |
 |---|---|
 | `PZ_Fixture_<id>` | A spot light at the head's calibrated position, aimed at its **rest** pose — the mirror ball. A freshly built level shows every head on the ball before any DMX arrives, which is the cheapest check that `calibration.json` is sane. |
-| `PZ_Fixture_<id>_Beam` | The visible shaft. Stretched, aimed and coloured every frame. |
+| `PZ_Fixture_<id>_Beam` | The visible shaft. Stretched, aimed and colored every frame. |
 | `PZ_Fixture_<id>_Reflections` | Two instanced meshes — the shafts leaving the ball and the dots they land on. One batched transform write each per frame, rather than one actor write per reflection; that is what lets the facet count be a dial rather than a budget. A wide fixture draws every Nth facet by lattice index, sized so it stays under `REFLECT_BUDGET` (220) — density drops, coverage does not, and the drawn subset is the same every frame. |
 | `PZ_Fixture_<id>_BallGlow` | A point light at the ball carrying what that head's beam puts into it. Off unless the beam is actually on the ball. |
 
@@ -410,23 +410,23 @@ that is not an artefact, it is the shadow work in `SHADOW_RESOLUTION_SCALE`
 finally having something to show.
 
 
-## Split ("duo") colour-wheel positions
+## Split ("duo") color-wheel positions
 
-A colour wheel is a disc of coloured segments, and the positions **between** two
+A color wheel is a disc of colored segments, and the positions **between** two
 of them put half of one and half of the next in front of the lens. The beam
 comes out two-toned across its width — green above, blue below — not blended.
 The MingJie wheel declares seven of these (values 80–139, "Cyan + Pink" through
-"Yellow + Red"), which is half the colours it has.
+"Yellow + Red"), which is half the colors it has.
 
 Previz drew every one of them as a single muddy average until 2026-08-08. Three
 things had to change, and the third is the one that actually mattered:
 
 1. **`engine.rig` now resolves the pair.** The `.qxf` records a split slot as
    one approximate tint (`#80ff80` for "Green + Blue"), which is fine for the
-   engine's nearest-slot colour matching and useless for drawing one.
+   engine's nearest-slot color matching and useless for drawing one.
    `_resolve_split_slots` reads the label and looks the two names up among *that
-   same channel's* single-colour slots, so "Green + Blue" resolves to the exact
-   `#00ff00` and `#0000ff` the profile already declares. No colour-name table,
+   same channel's* single-color slots, so "Green + Blue" resolves to the exact
+   `#00ff00` and `#0000ff` the profile already declares. No color-name table,
    no guessing; an unresolvable name simply leaves `Capability.pair` None and
    the slot behaves as before. QLC+'s own `Res2` attribute is honoured first.
 2. **The shaft mesh splits.** `M_PrevizBeam` lerps `Color` → `ColorB` across a
@@ -435,19 +435,19 @@ things had to change, and the third is the one that actually mattered:
    from `Origin`: the shaft is a stretched cone whose local frame twists with
    its aim, so a local split would roll as the head moved.
 3. **The fixture gets a second spot light** — and this is the part without which
-   the other two are invisible. An Unreal spot light has exactly one colour, and
+   the other two are invisible. An Unreal spot light has exactly one color, and
    its volumetric fog is what makes a beam read as a beam at all. Splitting only
-   the mesh left the fog a single average and the beam still looked one colour.
+   the mesh left the fog a single average and the beam still looked one color.
    So a split fixture carries two lights at half intensity each, tipped a
    quarter of the cone apart in elevation, one per half of the aperture. They
    overlap down the middle as the real halves do. Built only where the profile
    has split slots (`_has_split_slot`), because a shadow-casting spot light is
    not free.
 
-**The ball's spray is drawn in the averaged colour**, deliberately. Each facet
+**The ball's spray is drawn in the averaged color**, deliberately. Each facet
 really does reflect whichever half struck it, but every reflection of one
 fixture shares a single material instance — that sharing is what makes a couple
-of hundred of them affordable — so per-facet colour would need per-instance data
+of hundred of them affordable — so per-facet color would need per-instance data
 and a per-instance write. A mirror ball's spray genuinely is a mix of both
 halves, so this reads acceptably; the *renderer's* own specular off the ball
 tiles does show both, since that comes from the two real lights.
@@ -486,9 +486,9 @@ scores 0.92/0.81/0.87; the UV lattice it replaced scores 0.117 at stride 1.
   them as a row of blobs rather than a continuous shaft. `snapshot.py` fights it
   with 24 accumulation passes and a per-view `fog_start`, and the froxel notes
   above are the state of the art here, but it is not solved.
-- **Colour on the movers is a wheel lookup, not mixing.** That is correct — the
-  MJ-OS-018 has 14 mechanical slots and no colour mixing — but it means a
-  requested colour snaps to its nearest slot, exactly as the real fixture does.
+- **Color on the movers is a wheel lookup, not mixing.** That is correct — the
+  MJ-OS-018 has 14 mechanical slots and no color mixing — but it means a
+  requested color snaps to its nearest slot, exactly as the real fixture does.
 - **Strobe is ignored.** The channel is read but nothing acts on it.
 - The editor tick is not locked to the engine's 40 fps, so the previz samples
   whatever the latest frame is. Fine for judging looks; not a timing reference.

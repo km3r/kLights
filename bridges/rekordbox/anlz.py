@@ -229,7 +229,7 @@ def _detail(fmt: str):
         _need(body, 12, fmt.upper())
         size, count = struct.unpack_from(">II", body, 0)
         _need(body, 12 + size * count, f"{fmt.upper()} data")
-        # The colour detail wins over the blue one when both are present.
+        # The color detail wins over the blue one when both are present.
         if out.detail_format == "pwv5" and fmt == "pwv3":
             return
         out.detail = bytes(body[12:12 + size * count])

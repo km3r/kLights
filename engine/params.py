@@ -143,7 +143,7 @@ class Param:
 
         Clamps rather than refuses -- see `ParamError`. The exceptions are the
         kinds where there is no nearest legal value to clamp to: a choice that
-        is not in the list, and a colour that is not three numbers.
+        is not in the list, and a color that is not three numbers.
         """
         if self.kind == "bool":
             return bool(value)
@@ -160,15 +160,15 @@ class Param:
             return value
 
         if self.kind == "color":
-            # A block's colour argument can also be a palette role ("@primary"),
-            # a hex colour, a `$parameter` or a single-colour look's name.
+            # A block's color argument can also be a palette role ("@primary"),
+            # a hex color, a `$parameter` or a single-color look's name.
             # Those resolve against a rig, in `blocks.Env.color`; only a literal
             # [r, g, b] is clamped here.
             if isinstance(value, str):
                 return value
             if not isinstance(value, (list, tuple)) or len(value) < 3:
                 raise ParamError(
-                    f"{self.name!r} is a colour and needs [r, g, b] in 0..1, "
+                    f"{self.name!r} is a color and needs [r, g, b] in 0..1, "
                     f"got {value!r}")
             return tuple(max(0.0, min(1.0, float(c))) for c in value[:3])
 

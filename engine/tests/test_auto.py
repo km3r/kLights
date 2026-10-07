@@ -377,7 +377,7 @@ check("turning it back on resumes rather than snapping forward",
 
 # -- per-slot rate ------------------------------------------------------------
 #
-# Three phases instead of one, so a colour chase can crawl under a move running
+# Three phases instead of one, so a color chase can crawl under a move running
 # flat out. The hazard is the same one the single phase already had, and it is
 # why this waited for its own pass rather than being bolted on: a phase computed
 # as rate * bar jumps by (new - old) * bars_so_far the instant a rate changes,
@@ -397,9 +397,9 @@ t = spin(slots, 20.0, t)
 moved = {slot: slots.phases.bars[slot] - base[slot] for slot in base}
 check("movement runs at 1x", abs(moved["movement"] - 10.0) < 0.2,
       f"{moved['movement']:.2f} bars over 10 bars of music")
-check("colour runs at half of it",
+check("color runs at half of it",
       abs(moved["color"] - moved["movement"] / 2) < 1e-9,
-      f"colour {moved['color']:.3f} vs movement {moved['movement']:.3f}")
+      f"color {moved['color']:.3f} vs movement {moved['movement']:.3f}")
 check("a rate of 0 freezes that slot alone", moved["level"] == 0.0,
       f"level {moved['level']:.3f}")
 
@@ -433,7 +433,7 @@ run_bars(energetic, 8.0)
 check("energy rate and slot rate compound",
       abs(energetic.phases.bars["color"]
           - energetic.phases.bars["movement"] * 2) < 1e-9,
-      f"colour {energetic.phases.bars['color']:.3f} vs movement "
+      f"color {energetic.phases.bars['color']:.3f} vs movement "
       f"{energetic.phases.bars['movement']:.3f} at rate "
       f"{energetic.rate}")
 check("and the energy rate really was in play", energetic.rate > 1.0,

@@ -13,7 +13,7 @@ import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite }
  * their own copies by name, as they always have, so each still describes its
  * whole show and the engine compiles nothing differently. What the library
  * adds is knowing where every copy is: change a palette here, save it, and
- * Studio offers to bring the copies that still have the old colours up to
+ * Studio offers to bring the copies that still have the old colors up to
  * date (`palette_sync`) -- one click, and never behind anyone's back.
  *
  * Palettes made inside a single timeline or set before there was a library
@@ -23,12 +23,12 @@ import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite }
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
 /** As the engine's own new documents carry it, for an editor's completion. */
 const PALETTE_SCHEMA = "../schemas/palette.schema.json";
-type Colours = Pick<PaletteDoc, "primary" | "secondary" | "accent">;
+type Colors = Pick<PaletteDoc, "primary" | "secondary" | "accent">;
 
-/** A palette as it would be saved -- name trimmed, colours in lower case -- so
+/** A palette as it would be saved -- name trimmed, colors in lower case -- so
  *  "#FF0000" typed and "#ff0000" saved are the same, and a save leaves the
  *  panel clean. */
-function savedForm(e: Colours & { name: string }): string {
+function savedForm(e: Colors & { name: string }): string {
   return JSON.stringify({ name: e.name.trim(), primary: e.primary.toLowerCase(),
                           secondary: e.secondary.toLowerCase(), accent: e.accent.toLowerCase() });
 }
@@ -41,7 +41,7 @@ function placeName(p: PalettePlace): string {
   return `${p.title ?? p.id}${p.kind === "template_set" ? " (set)" : ""}`;
 }
 
-function Swatches({ c, size = "s" }: { c: Partial<Colours>; size?: "s" | "l" }) {
+function Swatches({ c, size = "s" }: { c: Partial<Colors>; size?: "s" | "l" }) {
   return (
     <span className={`s-swatches ${size}`} aria-hidden="true">
       {ROLES.map((r) => <i key={r} style={{ background: c[r] ?? "#2a3140" }} />)}
@@ -61,11 +61,11 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
   const ids = list.map((p) => p.id);
   const canWrite = engine.tier === "configure";
 
-  const create = async (name: string, colours: Colours, said: string) => {
+  const create = async (name: string, colors: Colors, said: string) => {
     setError(null);
     const id = freeId(ids, name);
     const doc: PaletteDoc = { $schema: PALETTE_SCHEMA, kind: "klights.palette", version: 1, id,
-                              name, ...colours };
+                              name, ...colors };
     const reply = await engine.request({ type: "palette_save", doc, base_rev: "" });
     if (!reply.ok) { setError(reply.error ?? "the engine refused"); return; }
     onSelect(id);
@@ -117,19 +117,19 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
             timelines and sets</b><span className="muted small">Add one to the library to keep
             its copies in step from here.</span></header>
           {found.map((f) => {
-            const first = f.places[0]!.colours;
-            const mixed = f.places.some((p) => ROLES.some((r) => p.colours[r] !== first[r]));
+            const first = f.places[0]!.colors;
+            const mixed = f.places.some((p) => ROLES.some((r) => p.colors[r] !== first[r]));
             const usable = ROLES.every((r) => COLOR_RE.test(first[r] ?? ""));
             return (
               <div key={f.name} className="s-found-row">
-                <Swatches c={first as Partial<Colours>} />
+                <Swatches c={first as Partial<Colors>} />
                 <b>{f.name}</b>
                 <span className="muted small s-found-where">
                   {f.places.map((p) => placeName(p)).join(", ")}
-                  {mixed ? " · not the same colours in each" : ""}</span>
+                  {mixed ? " · not the same colors in each" : ""}</span>
                 <button disabled={!canWrite || !usable}
-                        title={mixed ? "Takes the colours of the first; the others then show as different" : undefined}
-                        onClick={() => void create(f.name, first as Colours, `Added ${f.name} to the library.`)}>
+                        title={mixed ? "Takes the colors of the first; the others then show as different" : undefined}
+                        onClick={() => void create(f.name, first as Colors, `Added ${f.name} to the library.`)}>
                   Add to the library</button>
               </div>
             );
@@ -147,7 +147,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
   onDone: (said: string) => void; onSelect: (id: string | null) => void;
 }) {
   const canWrite = engine.tier === "configure";
-  const saved: Colours & { name: string } = { name: p.name, primary: p.primary,
+  const saved: Colors & { name: string } = { name: p.name, primary: p.primary,
                                              secondary: p.secondary, accent: p.accent };
   const [edit, setEdit] = useState(saved);
   const { busy, error, setError, run, ask } = useWrite(engine, onDone);
@@ -174,13 +174,13 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
                                    accent: edit.accent.toLowerCase() });
   const save = () => run(async () => {
     await ask({ type: "palette_save", doc: doc(), base_rev: p.rev ?? "" });
-    return `Saved ${edit.name.trim()} to the library. Copies keep their own colours until you `
+    return `Saved ${edit.name.trim()} to the library. Copies keep their own colors until you `
       + "give them these.";
   });
   const sync = () => run(async () => {
     const { written } = await ask({ type: "palette_sync", palette: p.id,
                                     files: older.map((c) => c.file) }) as { written: string[] };
-    return `Gave ${written.length} cop${written.length === 1 ? "y" : "ies"} of ${p.name} the library's colours.`;
+    return `Gave ${written.length} cop${written.length === 1 ? "y" : "ies"} of ${p.name} the library's colors.`;
   });
   const duplicate = () => run(async () => {
     const name = freeName(palettes.map((x) => x.name), `${p.name} copy`);
@@ -224,12 +224,12 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
       )}
       {error && <p className="small d-error" role="alert">{error}</p>}
 
-      <DetailSection title="Colours">
+      <DetailSection title="Colors">
         <div className="s-roles">
           {ROLES.map((r) => (
             <div key={r} className="s-role-row">
               <b>{r[0]!.toUpperCase() + r.slice(1)}</b>
-              <input type="color" aria-label={`${r} colour`}
+              <input type="color" aria-label={`${r} color`}
                      value={COLOR_RE.test(edit[r]) ? edit[r] : "#000000"}
                      onChange={(e) => setEdit({ ...edit, [r]: e.target.value })} />
               <input className="mono" aria-label={`${r} hex`} value={edit[r]}
@@ -261,7 +261,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
             <a key={c.file} className="s-use s-copy" href={placeHref(c)}>
               <b>{placeName(c)}</b>
               <span className="s-copy-state">
-                <Swatches c={c.colours as Partial<Colours>} />
+                <Swatches c={c.colors as Partial<Colors>} />
                 <span className={`small ${c.same ? "muted" : "s-warn"}`}>
                   {c.same ? "the same" : "different"}</span>
               </span>
@@ -272,9 +272,9 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
           <>
             <button className="d-primary s-self" disabled={busy || dirty || !canWrite}
                     onClick={() => void sync()}>
-              Give {older.length} cop{older.length === 1 ? "y" : "ies"} the library's colours</button>
-            <span className="muted small">{dirty ? "Save first: copies take the saved colours."
-              : "Overwrites those copies' colours in their files. One changed meanwhile is left "
+              Give {older.length} cop{older.length === 1 ? "y" : "ies"} the library's colors</button>
+            <span className="muted small">{dirty ? "Save first: copies take the saved colors."
+              : "Overwrites those copies' colors in their files. One changed meanwhile is left "
                 + "alone and named."}</span>
           </>
         )}

@@ -88,28 +88,28 @@ check("every ported pose round-trips to its original DMX", not mismatches,
 check("enough poses were actually compared", compared > 200, f"{compared}")
 
 
-# -- 2b. ROUND-TRIP: a ported COLOUR renders the workspace's colour bytes -----
+# -- 2b. ROUND-TRIP: a ported COLOR renders the workspace's color bytes -----
 #
 # The position round-trip above is what the port was originally guarded by, and
-# it is blind to colour by construction. That is exactly how the pinspots' white
+# it is blind to color by construction. That is exactly how the pinspots' white
 # channel went missing: RGB matched, W was never read, and nothing complained.
-# So drive each colour look through the REAL renderer and diff the colour bytes.
-print("\n2b. colour round-trip (the gap that lost the white channel)")
+# So drive each color look through the REAL renderer and diff the color bytes.
+print("\n2b. color round-trip (the gap that lost the white channel)")
 from engine import rig as rigmod                                    # noqa: E402
 
 ctx = statemod.EvalContext(rig=rig, venue=rig.venue)
-COLOUR_ROLES = (rigmod.RED, rigmod.GREEN, rigmod.BLUE, rigmod.WHITE,
+COLOR_ROLES = (rigmod.RED, rigmod.GREEN, rigmod.BLUE, rigmod.WHITE,
                 rigmod.COLOR_WHEEL)
 
-colour_compared = 0
-colour_bad: list[str] = []
+color_compared = 0
+color_bad: list[str] = []
 white_seen = 0
 for entry in entries:
     if not entry.is_color or entry.name not in scenes:
         continue
     values_by_fixture = {int(fv.get("ID")): parse_values(fv.text or "")
                          for fv in scenes[entry.name].findall(NS + "FixtureVal")}
-    # The palette colour must not be able to mask a failure, so feed a colour
+    # The palette color must not be able to mask a failure, so feed a color
     # nothing in the library uses -- if a look falls through to the palette its
     # bytes will not match and we want to hear about it.
     frames = statemod.frame(ctx, libmod.build_look(entry).make((0.13, 0.29, 0.71)))
@@ -118,7 +118,7 @@ for entry in entries:
         if not original:
             continue
         offsets = fixture.profile.offsets(fixture.mode)
-        for role in COLOUR_ROLES:
+        for role in COLOR_ROLES:
             off = offsets.get(role)
             if off is None or off not in original:
                 continue
@@ -129,19 +129,19 @@ for entry in entries:
             # One byte of slack: the port stores 0..1 rounded to 4 places and the
             # renderer scales back through 255.
             if abs(got - want) > 1:
-                colour_bad.append(f"{entry.name}/{fixture.name}/{role}: "
+                color_bad.append(f"{entry.name}/{fixture.name}/{role}: "
                                   f"{got} vs {want}")
-            colour_compared += 1
+            color_compared += 1
 
-check("every ported colour renders the workspace's own bytes", not colour_bad,
-      f"{colour_compared} channels compared"
-      + (f"; e.g. {colour_bad[0]} ({len(colour_bad)} bad)" if colour_bad else ""))
+check("every ported color renders the workspace's own bytes", not color_bad,
+      f"{color_compared} channels compared"
+      + (f"; e.g. {color_bad[0]} ({len(color_bad)} bad)" if color_bad else ""))
 check("the white channel is actually exercised", white_seen >= 8,
       f"{white_seen} non-zero W channels compared -- this is what regressed")
-check("enough colour channels were compared", colour_compared > 200,
-      f"{colour_compared}")
+check("enough color channels were compared", color_compared > 200,
+      f"{color_compared}")
 
-# Colour CHASES too. They are Chasers, not Scenes, so the loop above never sees
+# Color CHASES too. They are Chasers, not Scenes, so the loop above never sees
 # them -- and "Pin Drift" walks the same RGBW pastels the Pin scenes hold, so a
 # gap here loses exactly what the scene fix just recovered.
 chasers = {f.get("Name"): f for f in engine_el.findall(NS + "Function")
@@ -167,7 +167,7 @@ for entry in entries:
     bars = entry.bars or 8.0
     for index, values_by_fixture in enumerate(originals[:len(entry.frames or [])]):
         # Land the phase in the middle of this frame's slot.
-        # set_phase, not motion_bar: colour chases read the COLOUR slot's
+        # set_phase, not motion_bar: color chases read the COLOR slot's
         # phase now, and a test that moved only the movement phase would
         # sample frame 0 of every chase forever and pass on nothing.
         ctx.set_phase(bars * (index + 0.5) / len(entry.frames))
@@ -177,7 +177,7 @@ for entry in entries:
             if not original:
                 continue
             offsets = fixture.profile.offsets(fixture.mode)
-            for role in COLOUR_ROLES:
+            for role in COLOR_ROLES:
                 off = offsets.get(role)
                 if off is None or off not in original:
                     continue
@@ -188,7 +188,7 @@ for entry in entries:
                 step_compared += 1
 ctx.set_phase(0.0)
 
-check("each step of a colour chase renders its own step's bytes", not step_bad,
+check("each step of a color chase renders its own step's bytes", not step_bad,
       f"{step_compared} channels across {len([e for e in entries if e.kind == 'color_path'])} chases"
       + (f"; e.g. {step_bad[0]} ({len(step_bad)} bad)" if step_bad else ""))
 
@@ -377,20 +377,20 @@ check("no dark move allows less than half the travel it needs", not short,
       f"{short}" if short else "against the assumed yoke speeds in engine.servo")
 
 
-# -- 4. per-fixture colour survived -------------------------------------------
-print("\n4. colour")
+# -- 4. per-fixture color survived -------------------------------------------
+print("\n4. color")
 splits = [e for e in entries if e.colors]
-check("split/duo/quad colours ported as per-fixture", len(splits) >= 5,
+check("split/duo/quad colors ported as per-fixture", len(splits) >= 5,
       f"{len(splits)}: {[e.name for e in splits[:4]]}")
 check("they really do differ between heads",
       all(len({tuple(c) for c in e.colors.values()}) > 1 for e in splits))
 
 uniform = [e for e in entries if e.color]
-check("uniform colours collapsed to one value", len(uniform) > 20,
+check("uniform colors collapsed to one value", len(uniform) > 20,
       f"{len(uniform)}")
 
 color_paths = [e for e in entries if e.kind == "color_path"]
-check("colour chases ported as stepped frames", len(color_paths) >= 3,
+check("color chases ported as stepped frames", len(color_paths) >= 3,
       f"{[e.name for e in color_paths]}")
 
 
@@ -440,7 +440,7 @@ check("snap_bars picks the nearest musical length",
 #
 # The check above deliberately puts every slot at the same phase, because "what
 # does this look emit at phase p" is a one-number question. That makes it blind
-# to a colour layer reading the movement phase -- so this is the test that
+# to a color layer reading the movement phase -- so this is the test that
 # actually pins the split down, by making the two phases disagree and asserting
 # which one each layer followed.
 print("\n7. per-slot phase")
@@ -464,10 +464,10 @@ first = bars * 0.5 / len(chase.frames)
 second = bars * 1.5 / len(chase.frames)
 check(f"{chase.name!r} has distinguishable frames",
       color_at(chase, first, first) != color_at(chase, second, second))
-check("a colour chase follows the COLOUR phase, not the movement one",
+check("a color chase follows the COLOR phase, not the movement one",
       color_at(chase, second, first) == color_at(chase, second, second),
-      "moving motion_bar under a fixed color_bar changed the colour")
-check("and moving the movement phase alone leaves the colour where it was",
+      "moving motion_bar under a fixed color_bar changed the color")
+check("and moving the movement phase alone leaves the color where it was",
       color_at(chase, first, second) == color_at(chase, first, first))
 
 
@@ -589,8 +589,8 @@ for label, doc, expect in (
      {"looks": [{"name": "X", "block": "orbit", "args": {"radius": "big"}}]},
      "must be a number"),
     # Load time has no rig, so a look name cannot resolve -- which is the
-    # point: a parametric look's colours are portable or they are refused.
-    ("a colour that only one rig's library could resolve",
+    # point: a parametric look's colors are portable or they are refused.
+    ("a color that only one rig's library could resolve",
      {"looks": [{"name": "X", "block": "duo", "args": {"color_a": "MH Red"}}]},
      "color_a"),
 ):

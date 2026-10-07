@@ -78,7 +78,7 @@ every one of them sends:
 | CDJs playing a USB stick, through beat-link-trigger | the stick's own id, and a signature | `ids.blt_signatures` |
 
 A stick numbers its tracks from 1, so its ids mean nothing here. The signature
-is what survives: beat-link's SHA-1 over the title, artist, length, colour
+is what survives: beat-link's SHA-1 over the title, artist, length, color
 waveform (`PWV5`) and every beat of the grid, all of which an export copies
 unchanged. **Prep computes it**, so a track matches exactly the first time it
 is played from any stick exported from this collection, instead of only after

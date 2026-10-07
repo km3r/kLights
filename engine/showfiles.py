@@ -100,7 +100,7 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
     """The channels a timeline clips row drives, for `timeline.Timeline`: a
     scene lane drives all three slots, any other lane its own target. With the
     higher lane winning, a movement lane ABOVE a scene lane overrides the
-    scene's movement and leaves its colour and level alone; below it, it only
+    scene's movement and leaves its color and level alone; below it, it only
     shows where the scene lane has nothing."""
     target = row["target"]
     return SLOTS if target == "scene" else (target,)
@@ -142,7 +142,7 @@ BLOCK_NAMES = ("offset", "fan_sweep", "orbit", "pendulum", "figure8", "spiral",
 RIG_BOUND_BLOCKS = ("look", "snapshot")
 
 COLOR_FIX = ('a palette role ("@primary", "@secondary", "@accent"), a hex '
-             'colour like "#ff2d6f", [r, g, b] from 0 to 1, or a colour look '
+             'color like "#ff2d6f", [r, g, b] from 0 to 1, or a color look '
              'name')
 
 _SIGNATURE_RE = re.compile(r"^[0-9a-f]{40}\Z")
@@ -351,18 +351,18 @@ _EXTERNAL_ROW = {
 }
 
 # A musical shape added on top of an automation row's points (`waves.Wave`).
-# What `depth` and `toward` must be depends on the lane -- a number or a colour
+# What `depth` and `toward` must be depends on the lane -- a number or a color
 # -- so that is checked in meaning, by `_check_wave`.
 _WAVE = S(dict, of={
     "shape": S(str, required=True, choices=waves.SHAPES),
     "bars": S(N, required=True, min=0.25, max=256,
               fix="one cycle, in bars -- musical, so right at any tempo"),
     "depth": S(N, fix="how far above the points it swings, in the lane's own "
-                      "units; negative swings below. On a colour lane, 0-1: "
+                      "units; negative swings below. On a color lane, 0-1: "
                       "how far toward `toward`"),
     "phase": S(N, min=0, max=1, fix="where in its cycle it starts, in cycles"),
     "seed": S(int, fix="which run of levels a hold wave picks"),
-    "toward": S(fix="a colour lane's wave: the colour it swings toward"),
+    "toward": S(fix="a color lane's wave: the color it swings toward"),
 }, fix='{"shape": "sine", "bars": 4, "depth": 0.5}')
 
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
@@ -476,7 +476,7 @@ WAVEFORM = {
 # A library palette is a SOURCE, not a link. Timelines and template sets keep
 # their own copies, by name, exactly as before -- so each still describes its
 # whole show, the compiler reads only the file it compiles, and nothing
-# recolours a track behind anyone's back. Studio shows every copy of a library
+# recolors a track behind anyone's back. Studio shows every copy of a library
 # palette and updates them on request (`sync_palette`).
 PALETTE = {
     "kind": _kind("palette"),
@@ -537,7 +537,7 @@ def validate(kind: str, doc: Any, where: str = "") -> Result:
 
 
 def color_problem(value: Any) -> Optional[str]:
-    """Why `value` is not a colour, or None if it is one."""
+    """Why `value` is not a color, or None if it is one."""
     if isinstance(value, str):
         if value.startswith("@"):
             if value[1:] not in PALETTE_ROLES:
@@ -546,11 +546,11 @@ def color_problem(value: Any) -> Optional[str]:
             return None
         if value.startswith("#"):
             return None if _HEX_RE.match(value) else f"{value!r} is not #rrggbb"
-        return None if value else "an empty colour"
+        return None if value else "an empty color"
     if (isinstance(value, list) and len(value) == 3
             and all(_num(v) and 0.0 <= v <= 1.0 for v in value)):
         return None
-    return f"{value!r} is not a colour: {COLOR_FIX}"
+    return f"{value!r} is not a color: {COLOR_FIX}"
 
 
 def _num(v: Any) -> bool:
@@ -710,7 +710,7 @@ def _check_visual(scene: str, params: dict, result: Result, where: str) -> None:
                                    f"(it reads {', '.join(sorted(known))})")
         elif rule == "color":
             if not (isinstance(value, str) and value[:1] in ("@", "#")):
-                result.errors.append(f"{at}: {value!r} -- a visuals colour is "
+                result.errors.append(f"{at}: {value!r} -- a visuals color is "
                                      f"@primary, @secondary, @accent or #rrggbb")
             elif color_problem(value):
                 result.errors.append(f"{at}: {color_problem(value)}")
@@ -778,7 +778,7 @@ def param_name(target: Any) -> Optional[str]:
 
 # A look parameter names a library entry, and `blocks._look` reads it once,
 # when the routine is bound to a rig -- not per frame, the way a number or a
-# colour is read. A lane for one would draw a curve and change nothing, so it
+# color is read. A lane for one would draw a curve and change nothing, so it
 # is refused rather than accepted and ignored. Switching looks over time is two
 # items on a lane.
 LOOK_NOT_AUTOMATABLE = ("is a look, which is chosen once when the routine is "
@@ -855,7 +855,7 @@ def _check_points(row: dict, result: Result, where: str,
                              f"automated; one of {allowed}")
         return
     # How a value is checked: `check(value)` says why it cannot be, under
-    # `label`; `kind` is number or colour once known; `soft` reports as a
+    # `label`; `kind` is number or color once known; `soft` reports as a
     # warning (an absolute angle, whose real bound is the rig's reach).
     check: Optional[Callable[[Any], Optional[str]]] = None
     label, kind, soft = target, None, False
@@ -882,7 +882,7 @@ def _check_points(row: dict, result: Result, where: str,
         def check(v: Any, decl: dict = decl) -> Optional[str]:
             return _param_value_problem(decl, v)
         label = f"{arg[0]}'s {arg[1]}"
-        kind = "colour" if decl["type"] == "color" else "number"
+        kind = "color" if decl["type"] == "color" else "number"
         soft = spec.reach is not None
         if spec.name == "bars":
             # A cycle length moved under a running block re-times the cycle
@@ -904,7 +904,7 @@ def _check_points(row: dict, result: Result, where: str,
         if isinstance(param, dict) and param.get("type") in PARAM_TYPES:
             def check(v: Any, param: dict = param) -> Optional[str]:
                 return _param_value_problem(param, v)
-            kind = "colour" if param["type"] == "color" else "number"
+            kind = "color" if param["type"] == "color" else "number"
         label = f"${name}"
     report = result.warnings.append if soft else result.errors.append
     kinds: set[str] = set()
@@ -931,14 +931,14 @@ def _check_points(row: dict, result: Result, where: str,
         elif _num(value):
             kinds.add("number")
         elif color_problem(value) is None:
-            kinds.add("colour")
+            kinds.add("color")
         else:
-            result.errors.append(f"{at} must be a number or a colour, got "
+            result.errors.append(f"{at} must be a number or a color, got "
                                  f"{value!r}")
-    # A curve from a number to a colour means nothing: `timeline.Curve` would
+    # A curve from a number to a color means nothing: `timeline.Curve` would
     # hand the block a blend of the two, which is neither.
     if len(kinds) > 1:
-        result.errors.append(f"{where}: {target} mixes numbers and colours; one "
+        result.errors.append(f"{where}: {target} mixes numbers and colors; one "
                              f"lane drives one parameter, which is one or the "
                              f"other")
     if row.get("wave") is not None:
@@ -960,20 +960,20 @@ def _check_wave(row: dict, kind: Optional[str],
     at = f"{where} wave"
     toward = wave.get("toward")
     depth = wave.get("depth")
-    if kind == "colour":
+    if kind == "color":
         if toward is None:
-            result.errors.append(f"{at} on a colour lane needs toward: the "
-                                 f"colour it swings to")
+            result.errors.append(f"{at} on a color lane needs toward: the "
+                                 f"color it swings to")
         else:
             problem = color_problem(toward)
             if problem:
                 result.errors.append(f"{at} toward: {problem}")
         if depth is not None and not 0.0 <= depth <= 1.0:
-            result.errors.append(f"{at} depth on a colour lane is how far toward "
+            result.errors.append(f"{at} depth on a color lane is how far toward "
                                  f"{toward!r} it goes, 0 to 1, got {depth!r}")
         return
     if toward is not None:
-        result.errors.append(f"{at} has a toward colour, but this lane is a "
+        result.errors.append(f"{at} has a toward color, but this lane is a "
                              f"number: it swings by depth")
     if depth is None:
         result.errors.append(f"{at} needs a depth: how far above its points it "
@@ -996,7 +996,7 @@ def param_lane_problems(timeline: Mapping,
                         routines: Mapping[str, Mapping]) -> list[str]:
     """A timeline's `param.<name>` lanes against the routines it places: each
     point checked against every one of them that declares the parameter, as
-    that routine declares it -- its range, colour or number, look or not.
+    that routine declares it -- its range, color or number, look or not.
 
     WARNINGS, although the same value in the routine's own lane is an error.
     The two halves are separate files in a folder that syncs one file at a
@@ -1050,7 +1050,7 @@ def param_lane_problems(timeline: Mapping,
                                    f"${name} {problem}")
             if param.get("type") == "color" and wave and wave.get("toward") is None:
                 out.append(f"{where} wave: ${name} in routine {rid!r} is a "
-                           f"colour, so the wave needs toward: the colour it "
+                           f"color, so the wave needs toward: the color it "
                            f"swings to")
     return out
 
@@ -1084,7 +1084,7 @@ def _check_palettes(doc: dict, result: Result) -> None:
             elif isinstance(pal[role], str) and pal[role].startswith("@"):
                 result.errors.append(f"palette {name!r} {role} is {pal[role]!r}; "
                                      f"a palette is where roles get their "
-                                     f"colour, so it cannot name one")
+                                     f"color, so it cannot name one")
     default = doc.get("palette")
     if default is not None and default not in palettes:
         result.errors.append(f"palette {default!r} is not one of this file's "
@@ -1363,7 +1363,7 @@ def _semantic_palette(doc: dict, result: Result) -> None:
         value = doc[role]
         if not _HEX_RE.match(value):
             result.errors.append(f"{role} {value!r} is not #rrggbb: a library "
-                                 f"palette is plain colours")
+                                 f"palette is plain colors")
 
 
 _SEMANTIC = {"show": _semantic_show, "track": _semantic_track,
@@ -1804,7 +1804,7 @@ def rename_routine(root: Path, folder: "Folder", old: str, new: str,
 # -- the palette library and its copies ---------------------------------------
 
 def hex_color(value: Any) -> Optional[str]:
-    """A palette colour as lower-case #rrggbb, for comparing copies: a hex
+    """A palette color as lower-case #rrggbb, for comparing copies: a hex
     string as it is, an [r, g, b] of 0..1 converted. None if neither."""
     if isinstance(value, str) and _HEX_RE.match(value):
         return value.lower()
@@ -1814,14 +1814,14 @@ def hex_color(value: Any) -> Optional[str]:
     return None
 
 
-def _same_colours(a: Mapping, b: Mapping) -> bool:
+def _same_colors(a: Mapping, b: Mapping) -> bool:
     return all(hex_color(a.get(r)) == hex_color(b.get(r)) and hex_color(a.get(r))
                for r in PALETTE_ROLES)
 
 
 def palette_places(folder: "Folder") -> dict[str, list[dict]]:
     """Every palette a timeline or template set carries, by name: where, and
-    its colours there. A library palette's copies are the entries under its
+    its colors there. A library palette's copies are the entries under its
     name; anything else is a palette that lives only in those files."""
     out: dict[str, list[dict]] = {}
     for kind, docs in (("timeline", folder.timelines), ("template_set", folder.templates)):
@@ -1837,29 +1837,29 @@ def palette_places(folder: "Folder") -> dict[str, list[dict]]:
                 out.setdefault(name, []).append({
                     "file": f"{SUBDIR[kind]}/{ident}.json", "kind": kind, "id": ident,
                     "title": title,
-                    "colours": {r: hex_color(pal.get(r)) for r in PALETTE_ROLES}})
+                    "colors": {r: hex_color(pal.get(r)) for r in PALETTE_ROLES}})
     return out
 
 
 def palette_copies(folder: "Folder", pid: str) -> list[dict]:
     """A library palette's copies: each file that carries a palette of its
-    name, and whether that copy's colours are the library's."""
+    name, and whether that copy's colors are the library's."""
     lib = folder.palettes.get(pid)
     if lib is None:
         return []
-    return [{**place, "same": _same_colours(place["colours"], lib)}
+    return [{**place, "same": _same_colors(place["colors"], lib)}
             for place in palette_places(folder).get(lib["name"], [])]
 
 
 def sync_palette(root: Path, folder: "Folder", pid: str, files: Iterable[str]) -> list[str]:
-    """Give the named copies the library palette's colours. Each file is
+    """Give the named copies the library palette's colors. Each file is
     written quoting the rev the folder was read at, so a file changed since is
     refused rather than overwritten; what was written before that is said."""
     lib = folder.palettes.get(pid)
     if lib is None:
         raise ValueError(f"no library palette {pid!r}")
     name = lib["name"]
-    colours = {r: lib[r] for r in PALETTE_ROLES}
+    colors = {r: lib[r] for r in PALETTE_ROLES}
     by_rel = {f"{SUBDIR['timeline']}/{i}.json": ("timeline", i, d)
               for i, d in folder.timelines.items()}
     by_rel.update({f"{SUBDIR['template_set']}/{i}.json": ("template_set", i, d)
@@ -1872,7 +1872,7 @@ def sync_palette(root: Path, folder: "Folder", pid: str, files: Iterable[str]) -
         if name not in (doc.get("palettes") or {}):
             raise ValueError(f"{rel} has no palette {name!r} to update")
         changed = json.loads(json.dumps(doc))
-        changed["palettes"][name] = dict(colours)
+        changed["palettes"][name] = dict(colors)
         try:
             write_doc(path_for(root, kind, ident), changed, kind, folder.revs.get(rel, ""))
         except (ValueError, OSError, configmod.ConfigError) as exc:
