@@ -84,6 +84,9 @@ const DUTY = 0.2;
 /** Flashes per beat: the scene's rate, halved until it fits under
  *  MAX_FLASH_HZ at this tempo, so it stays on the music. */
 export function flashesPerBeat(rate: number, bpm: number): number {
+  // Not a number, no flash. An infinite rate halved forever -- this loop never
+  // ended and the projector's tab froze -- and a NaN slipped through as NaN.
+  if (!Number.isFinite(rate) || !Number.isFinite(bpm)) return 0;
   let perBeat = Math.max(0.25, rate);
   const cap = (MAX_FLASH_HZ * 60) / Math.max(bpm, 1);
   while (perBeat > cap && perBeat > 0.25) perBeat /= 2;

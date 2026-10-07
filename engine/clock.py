@@ -46,6 +46,12 @@ TAP_RESET_SECONDS = 2.0
 TAP_WINDOW = 8
 
 MIN_BPM, MAX_BPM = 40.0, 250.0
+# The console offers 0.25x to 4x and a quarter-beat nudge; presets and cues in
+# the wild use 0.5x to 2x. These bounds are far outside all of that and exist
+# for one reason: a speed of 1e308 is "positive and finite" and still made the
+# beat infinite, and the director's math.floor(inf) then killed the DMX thread.
+MIN_SPEED, MAX_SPEED = 1 / 64, 64.0
+MAX_NUDGE_BEATS = 64.0                       # sixteen bars: a nudge, not a jump
 
 
 @dataclass(frozen=True)
@@ -242,8 +248,12 @@ class MasterClock:
         the speed of a look during a breakdown should not be undone the moment
         the clock re-syncs to the track.
         """
-        if multiplier <= 0:
-            raise ValueError("speed multiplier must be positive")
+        # A range test rather than `<= 0`: NaN compares false both ways, and a
+        # NaN or infinite speed made the beat NaN for the rest of the night --
+        # and put a bare NaN in every snapshot, which JSON.parse refuses.
+        if not MIN_SPEED <= multiplier <= MAX_SPEED:
+            raise ValueError(f"speed multiplier must be between {MIN_SPEED:g} and "
+                             f"{MAX_SPEED:g}, got {multiplier!r}")
         self._reanchor(now)
         self._speed = float(multiplier)
 
@@ -253,6 +263,9 @@ class MasterClock:
     def nudge_phase(self, beats: float, now: float) -> None:
         """Shift position without touching tempo -- for when the tempo is right
         but the lights are running slightly ahead of or behind the track."""
+        if not abs(beats) <= MAX_NUDGE_BEATS:            # NaN fails this too
+            raise ValueError(f"a phase nudge is at most {MAX_NUDGE_BEATS:g} beats "
+                             f"either way, got {beats!r}")
         self._reanchor(now)
         self._anchor_beat += beats
 

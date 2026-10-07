@@ -112,6 +112,7 @@ class WebSocket:
         """
         chunks: list[bytes] = []
         message_op: Optional[int] = None
+        size = 0
 
         while True:
             first, second = self._recv_exactly(2)
@@ -126,6 +127,11 @@ class WebSocket:
                 (length,) = struct.unpack(">Q", self._recv_exactly(8))
             if length > MAX_PAYLOAD:
                 raise WebSocketError(f"frame of {length} bytes exceeds the limit")
+            # The limit is on the MESSAGE, not only the frame: continuation
+            # frames each under it would otherwise add up without bound.
+            if opcode == OP_CONT and size + length > MAX_PAYLOAD:
+                raise WebSocketError(f"message of over {size + length} bytes "
+                                     f"exceeds the limit")
 
             # A client frame that is not masked is a protocol violation, and
             # unmasking with a zero key would silently accept it.
@@ -149,8 +155,10 @@ class WebSocket:
             if opcode in (OP_TEXT, OP_BINARY):
                 message_op = opcode
                 chunks = [payload]
+                size = length
             elif opcode == OP_CONT:
                 chunks.append(payload)
+                size += length
             else:
                 raise WebSocketError(f"unknown opcode {opcode}")
 

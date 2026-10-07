@@ -14,4 +14,6 @@ const GROUP_LABELS: Record<string, string> = {
   pars: "Pars", bars: "Bars",
 };
 
-export const groupLabel = (g: string) => GROUP_LABELS[g] ?? g;
+// Own keys only: a plain object answers "constructor" and "toString" from its
+// prototype, and a rig tagged with either got a function back as its label.
+export const groupLabel = (g: string) => (Object.hasOwn(GROUP_LABELS, g) ? GROUP_LABELS[g]! : g);

@@ -273,9 +273,11 @@ class ShowController:
         # shared/venues/ and be shared with another show, and reading the taper
         # from a path this class derives itself would silently pick up a stale
         # per-event file that nothing else is using.
-        taper_cfg = json.loads(
-            self.rig.venue_file.read_text(encoding="utf-8")
-        ).get("taper", {})
+        # Through configmod.load, not json.loads: the same file load_rig has
+        # already validated, read the same way, so `"taper": null` (or a null
+        # inside it) is absent here too rather than None.get() at startup.
+        venue_cfg = configmod.load(self.rig.venue_file, configmod.VENUE)
+        taper_cfg = venue_cfg.get("taper", {})
         taper = safetymod.TaperConfig(
             crowd_level=float(taper_cfg.get("crowd_level", 0.5)),
             margin_deg=float(taper_cfg.get("margin_deg", 6.0)),
@@ -286,8 +288,7 @@ class ShowController:
         # epilepsy) and nothing used to limit it. Policy lives beside the taper
         # because it is the same kind of thing: a property of the room and the
         # crowd in it, not of the rig.
-        strobe_cfg = json.loads(
-            self.rig.venue_file.read_text(encoding="utf-8")).get("strobe", {})
+        strobe_cfg = venue_cfg.get("strobe", {})
         strobe_policy = safetymod.StrobeConfig(
             enabled=bool(strobe_cfg.get("enabled", True)),
             ceiling=float(strobe_cfg.get("ceiling", 1.0)),
@@ -1137,7 +1138,9 @@ class ShowController:
         if slot not in ("movement", "color", "level"):
             raise ValueError(f"unknown slot {slot!r}")
         if slot == "movement":
-            self.director.select(name, hold=m.get("hold", True))
+            # bool(): `held` is published in the snapshot as it is stored, and
+            # a client's -Infinity there was a snapshot JSON could not carry.
+            self.director.select(name, hold=bool(m.get("hold", True)))
         else:
             # Fills its slot for every group it writes, and only those -- so a
             # pinspot colour replaces the pinspot colour and leaves the movers
@@ -1465,10 +1468,7 @@ class ShowController:
         if not entry.is_parametric:
             raise ValueError(
                 f"{name!r} is a ported look -- it has no parameters to vary")
-        amount = float(m.get("amount", 0.3))
-        if not math.isfinite(amount):
-            raise ValueError(f"vary amount must be a finite number, got {amount}")
-        amount = max(0.0, min(1.0, amount))
+        amount = max(0.0, min(1.0, _finite(m.get("amount", 0.3), "vary amount")))
         if m.get("seed") is not None:
             seed = int(m["seed"])
         else:
@@ -1652,6 +1652,7 @@ class ShowController:
         preset = next((p for p in self.presets if p["name"] == name), None)
         if preset is None:
             raise KeyError(f"no preset named {name!r}")
+        self._preset_numbers(preset)               # refused before anything changes
         self._clear_pad()
         routine = preset.get("routine")
         if routine and self.show_library is not None:
@@ -1669,8 +1670,28 @@ class ShowController:
                       f"applying its looks")
         self._apply_preset_looks(preset, now)
 
+    @staticmethod
+    def _preset_numbers(preset: dict) -> tuple[Optional[float], Optional[float]]:
+        """A preset's speed and master, refused if the clock or the master
+        would refuse them.
+
+        presets.json is hand-editable and not schema-checked. Checked before
+        anything changes: a speed the clock refuses used to raise with the
+        slots already replaced, leaving the rig half on the new preset; and a
+        NaN master clamped to full.
+        """
+        name = preset["name"]
+        speed = float(preset["speed"]) if preset.get("speed") else None
+        if speed is not None and not clockmod.MIN_SPEED <= speed <= clockmod.MAX_SPEED:
+            raise ValueError(f"preset {name!r}: speed {speed!r} is outside "
+                             f"{clockmod.MIN_SPEED:g}-{clockmod.MAX_SPEED:g}")
+        master = (None if preset.get("master") is None
+                  else _finite(preset["master"], f"the master of preset {name!r}"))
+        return speed, master
+
     def _apply_preset_looks(self, preset: dict, now: float) -> None:
         name = preset["name"]
+        speed, master = self._preset_numbers(preset)
         # A preset naming a look that has since been re-ported away applies the
         # rest rather than failing whole -- a preset is a shortcut, and half a
         # shortcut beats an error message mid-set.
@@ -1693,10 +1714,10 @@ class ShowController:
                                f"preset {name!r}")
         if preset.get("rates"):
             self.apply_rates(preset["rates"])
-        if preset.get("speed"):
-            self.clock.set_speed(float(preset["speed"]), now)
-        if preset.get("master") is not None:
-            self.master = max(0.0, min(1.0, float(preset["master"])))
+        if speed is not None:
+            self.clock.set_speed(speed, now)
+        if master is not None:
+            self.master = max(0.0, min(1.0, master))
         self.director.held = True
         self._grab(statemod.SLOTS)
         self._recompose()
@@ -1713,7 +1734,8 @@ class ShowController:
     # levels ---------------------------------------------------------------
 
     def _cmd_master(self, m: dict, now: float) -> None:
-        self.master = max(0.0, min(1.0, float(m["value"])))
+        value = _finite(m["value"], "master")
+        self.master = max(0.0, min(1.0, value))
 
     def _cmd_blackout(self, m: dict, now: float) -> None:
         self.blackout = bool(m.get("on", not self.blackout))
@@ -1754,12 +1776,13 @@ class ShowController:
     def _cmd_auto_interval(self, m: dict, now: float) -> None:
         field_name = {"looks": "change_every_phrases",
                       "palette": "palette_every_phrases"}[m["axis"]]
-        setattr(self.director.config, field_name, max(0.0625, float(m["value"])))
+        setattr(self.director.config, field_name,
+                max(0.0625, _finite(m["value"], "an auto interval")))
 
     def _cmd_energy(self, m: dict, now: float) -> None:
         source = m.get("source", "manual")
         if source == "manual":
-            level = float(m.get("value", 0.5))
+            level = _finite(m.get("value", 0.5), "energy")
             if not isinstance(self.director.energy_source, autom.ManualEnergy):
                 self.director.energy_source = autom.ManualEnergy(level)
             else:
@@ -1779,8 +1802,14 @@ class ShowController:
         survives an auto-mode look change -- which is what "everyone controls
         everything" needs to mean in practice.
         """
-        color = tuple(max(0.0, min(1.0, float(c))) for c in m["color"])
-        target = m.get("target", "all")
+        raw = m["color"]
+        # Exactly three. An empty list was stored as an empty colour, render()
+        # then raised on every frame, and the runner held the last good frame:
+        # the rig frozen on one command until someone cleared that colour.
+        if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+            raise ValueError(f"color must be [r, g, b], each 0 to 1, got {raw!r}")
+        color = tuple(max(0.0, min(1.0, _finite(c, "a colour channel"))) for c in raw)
+        target = _target(m)
         # `white_overrides` is REBOUND, never edited: the snapshot thread
         # publishes it, and a dict changing size under that copy fails the
         # broadcast. (`color_overrides` is not published.)
@@ -1801,7 +1830,7 @@ class ShowController:
                     self.white_overrides = whites
                 else:
                     self.white_overrides = {
-                        **whites, target: max(0.0, min(1.0, float(white)))}
+                        **whites, target: max(0.0, min(1.0, _finite(white, "white")))}
         self._rebuild_overrides()
 
     def _cmd_palette_select(self, m: dict, now: float) -> None:
@@ -1822,11 +1851,11 @@ class ShowController:
         in the order an operator would expect: the pattern keeps running, the
         trim rides on top of it, and the master still takes everything down.
         """
-        target = m.get("target", "all")
+        target = _target(m)
         if m.get("clear"):
             self.level_overrides.pop(target, None)
         else:
-            self.level_overrides[target] = max(0.0, min(1.0, float(m["value"])))
+            self.level_overrides[target] = max(0.0, min(1.0, _finite(m["value"], "level")))
         self._rebuild_overrides()
 
     def _cmd_flash(self, m: dict, now: float) -> None:
@@ -1840,7 +1869,7 @@ class ShowController:
         taper still runs after it, so a bump cannot put a beam anywhere a look
         could not.
         """
-        target = m.get("target", "all")
+        target = _target(m)
         # Rebound, not mutated. `snapshot()` runs on the broadcast thread and
         # reads this set while commands run on the output thread; a set that
         # changes size mid-iteration raises, and the broadcast that was building
@@ -2058,26 +2087,32 @@ class ShowController:
         crowd = venue.crowd_zone
         canopy = venue.canopy
 
+        # Finite or refused. Every comparison with NaN is false, so a NaN edge
+        # on the crowd zone would put no beam "over the crowd" ever again --
+        # the taper switched off, silently, by a slider. And within the venue
+        # schema's bounds, so the live venue is always one venue_save can write.
         if "crowd" in m and crowd is not None:
             c = m["crowd"]
             box = crowd.footprint
-            band_min = float(c.get("head_band_min", crowd.head_band_min))
-            band_max = float(c.get("head_band_max", crowd.head_band_max))
+            band_min = _finite(c.get("head_band_min", crowd.head_band_min), "head_band_min", 0)
+            band_max = _finite(c.get("head_band_max", crowd.head_band_max), "head_band_max", 0)
             if band_min >= band_max:
                 raise ValueError("head band min must be below max")
             crowd = venuemod.CrowdZone(
                 footprint=venuemod.Box(
-                    float(c.get("min_x", box.min_x)), float(c.get("max_x", box.max_x)),
+                    _finite(c.get("min_x", box.min_x), "min_x"),
+                    _finite(c.get("max_x", box.max_x), "max_x"),
                     band_min, band_max,
-                    float(c.get("min_z", box.min_z)), float(c.get("max_z", box.max_z))),
+                    _finite(c.get("min_z", box.min_z), "min_z"),
+                    _finite(c.get("max_z", box.max_z), "max_z")),
                 head_band_min=band_min, head_band_max=band_max)
 
         if "canopy" in m and canopy is not None:
             k = m["canopy"]
             canopy = replace(canopy,
                              enabled=bool(k.get("enabled", canopy.enabled)),
-                             height=float(k.get("height", canopy.height)),
-                             radius=float(k.get("radius", canopy.radius)))
+                             height=_finite(k.get("height", canopy.height), "height", 0),
+                             radius=_finite(k.get("radius", canopy.radius), "radius", 0))
 
         self.rig.venue = replace(venue, crowd_zone=crowd, canopy=canopy)
         self.ctx.venue = self.rig.venue
@@ -2088,11 +2123,16 @@ class ShowController:
         smoothly. `crowd_level` 0 restores a hard guard at the cost of every
         floor-sweep pose."""
         cfg = self.ctx.taper
+        # Finite, and inside the venue schema's own bounds, so what is live is
+        # always something venue_save can write and the next start can load.
         self.ctx.taper = replace(
             cfg,
-            crowd_level=max(0.0, min(1.0, float(m.get("crowd_level", cfg.crowd_level)))),
-            margin_deg=max(0.0, float(m.get("margin_deg", cfg.margin_deg))),
-            slew_per_second=max(0.0, float(m.get("slew_per_second", cfg.slew_per_second))),
+            crowd_level=max(0.0, min(1.0, _finite(m.get("crowd_level", cfg.crowd_level),
+                                                  "crowd_level"))),
+            margin_deg=max(0.0, min(90.0, _finite(m.get("margin_deg", cfg.margin_deg),
+                                                  "margin_deg"))),
+            slew_per_second=max(0.0, _finite(m.get("slew_per_second", cfg.slew_per_second),
+                                             "slew_per_second")),
             enabled=bool(m.get("enabled", cfg.enabled)))
         if not self.ctx.taper.enabled:
             self.note("SAFETY TAPER DISABLED -- beams are no longer dimmed over the crowd")
@@ -3133,6 +3173,10 @@ class ShowController:
                         "slew_per_second": taper.slew_per_second,
                         "enabled": taper.enabled}
 
+        # Held to the schema the next start will load it with. Without this a
+        # live value the schema refuses (a margin of 2**63 from a confused
+        # client) was saved, and the NEXT engine in this room would not start.
+        configmod.validate(cfg, configmod.VENUE, path)
         configmod.write_json_atomic(path, cfg)
         self.note(f"saved {path.name}")
 
@@ -3629,6 +3673,58 @@ def venue_summary(venue) -> dict:
                 "radius": venue.canopy.radius}}
 
 
+def _no_constant(name: str) -> float:
+    raise ValueError(f"{name} is not a number")
+
+
+def _finite_literal(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):           # 1e999 parses as infinity
+        raise ValueError(f"{text} is not a finite number")
+    return value
+
+
+def strict_json(text: str) -> Any:
+    """A message off the socket, as JSON a browser could have sent.
+
+    Python's json.loads also accepts NaN, Infinity and -Infinity, and reads
+    1e999 as infinity; JSON.stringify never writes any of them. Refused here,
+    once, for every command -- the per-handler `_finite` checks still catch a
+    number sent as a string ("nan"), which float() reads all the same.
+    """
+    return json.loads(text, parse_constant=_no_constant, parse_float=_finite_literal)
+
+
+def _finite(value: Any, what: str, minimum: Optional[float] = None) -> float:
+    """A number off the socket, refused if it is not a finite one -- or, given
+    `minimum`, if it is below it.
+
+    Python's json.loads accepts NaN and Infinity, so a client can send what a
+    browser never would -- and clamping does not catch NaN: min(1.0, nan) is
+    1.0, which put the master, or the energy that drives auto strobe, at FULL.
+    """
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{what} must be a finite number, got {value!r}")
+    if minimum is not None and number < minimum:
+        raise ValueError(f"{what} must be at least {minimum:g}, got {number:g}")
+    return number
+
+
+def _target(m: dict) -> str:
+    """The `target` of a colour, level or flash: a tag, a fixture name, or "all".
+
+    Checked because it becomes a dict key and a set member that the snapshot
+    publishes. A number there broke the flash set's sorted() on every
+    broadcast, and a NaN or infinite one is a key JSON cannot carry -- either
+    way every console stopped updating until someone cleared it.
+    """
+    target = m.get("target", "all")
+    if not isinstance(target, str):
+        raise ValueError(f"target must be a group or fixture name, got {target!r}")
+    return target
+
+
 def reply_id(message: dict) -> Optional[Any]:
     """The id a command wants its reply tagged with, or None for no reply.
 
@@ -3904,8 +4000,8 @@ class ShowServer:
                 if text is None:
                     continue
                 try:
-                    message = json.loads(text)
-                except json.JSONDecodeError:
+                    message = strict_json(text)
+                except ValueError:                 # JSONDecodeError is one too
                     continue
                 # Valid JSON that is not an object -- `[1, 2]`, `"go"`, `7` --
                 # used to reach `.get` below and end this client's connection.

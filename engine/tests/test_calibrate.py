@@ -15,7 +15,11 @@ tolerances here are the tolerances the field gets.
 Run: python engine/tests/test_calibrate.py
 """
 
+import contextlib
+import io
+import json
 import math
+import shutil
 import sys
 import tempfile
 from datetime import datetime
@@ -277,6 +281,140 @@ with tempfile.TemporaryDirectory() as tmp:
     check("exactly the nudged head is flagged",
           len(moved) == 1 and moved[0].head_name == rig.geometry.heads[2].name,
           f"{[d.head_name for d in moved]}")
+
+
+# -- 6. the load-in workflow, from the command line ---------------------------
+# Every step an operator runs at a load-in before the web form existed, in the
+# order they run it, against a throwaway copy of the event: the CLI writes
+# calibration.json and archives snapshots, and neither belongs in the real show.
+print("\n6. the load-in workflow from the command line")
+
+
+def check_cli(label, ok, output=""):
+    """check(), with a command's output attached only when it failed -- a passing
+    check that prints a screen of CLI output buries the next failure."""
+    check(label, ok, "" if ok else output[-400:])
+
+
+def cli(*argv) -> tuple[int, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = calibrate.main(list(argv))
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 2
+    return code, out.getvalue() + err.getvalue()
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    event = Path(tmp) / "despacio"
+    shutil.copytree(REPO / "events" / "despacio", event,
+                    ignore=shutil.ignore_patterns("__pycache__", "calibration_history",
+                                                  "*.bak", ".engine.lock"))
+    ev = ["--event", str(event)]
+    heads = rig.geometry.heads
+    stored = {h.name: tuple(h.calibrated_ball_dmx) for h in heads}
+
+    code, out = cli(*ev, "status")
+    check_cli("status names every head with its stored ball reading and inverts",
+          code == 0 and all(h.name in out and str(stored[h.name]) in out for h in heads)
+          and "0 snapshot(s)" in out, out[-300:])
+
+    code, out = cli(*ev, "jog", "--head", "1", "--pan", "100", "--tilt", "50",
+                    "--seconds", "0.2")
+    check_cli("jog holds one head (to a null output here) and says the taper is bypassed",
+          code == 0 and f"holding {heads[1].name} at pan=100 tilt=50" in out
+          and "BYPASSED" in out, out[-300:])
+    code, out = cli(*ev, "jog", "--head", "9", "--pan", "0", "--tilt", "0")
+    check_cli("jog refuses a head index the rig does not have", code == 2 and "0..3" in out, out)
+
+    code, out = cli(*ev, "solve", "--example")
+    template = json.loads(out)
+    check("solve --example prints a captures template: three targets per head, "
+          "pre-filled from the venue",
+          code == 0 and set(template["heads"]) == {h.name for h in heads}
+          and all(len(v) == 3 for v in template["heads"].values())
+          and template["heads"][heads[0].name][0]["target"] == list(BALL))
+    code, out = cli(*ev, "solve")
+    check("solve with no file says what to give it", code == 2 and "--example" in out)
+
+    # What a careful operator would record: the stored calibration's own aims,
+    # through the engine's geometry, at 8-bit resolution. One head left out, so
+    # the "keep what is stored" path runs too.
+    captures = {"mount_mode": "venue", "heads": {
+        h.name: [c.to_json() for c in synth_captures(h, "venue", spread_targets(h))]
+        for h in heads[:3]}}
+    cap_file = Path(tmp) / "captures.json"
+    cap_file.write_text(json.dumps(captures), encoding="utf-8")
+    before = (event / "calibration.json").read_text(encoding="utf-8")
+
+    code, out = cli(*ev, "solve", str(cap_file))
+    check_cli("solve without --write reports per head and writes nothing",
+          code == 0 and "nothing written" in out and "residual" in out
+          and (event / "calibration.json").read_text(encoding="utf-8") == before, out[-300:])
+    check("a head with no captures keeps its stored calibration, and says so",
+          f"{heads[3].name}: no captures, keeping stored calibration" in out)
+
+    code, out = cli(*ev, "solve", str(cap_file), "--write")
+    written = json.loads((event / "calibration.json").read_text(encoding="utf-8"))
+    solved = {e["fixture"]: e for e in written["heads"]}
+    check("solve --write replaces calibration.json, naming where it came from",
+          code == 0 and written["source"] == "solved from captures.json"
+          and written["mount_mode"] == "venue" and set(solved) == {h.name for h in heads})
+    worst = max(max(abs(a - b) for a, b in zip(solved[h.name]["ball_dmx"], stored[h.name]))
+                for h in heads)
+    check("and recovers the calibration the captures were made from, within one "
+          "coarse DMX step per axis", worst <= 1, f"worst {worst} steps")
+    check("including every head's inverts",
+          all(solved[h.name]["pan_invert"] == h.pan_invert
+              and solved[h.name]["tilt_invert"] == h.tilt_invert for h in heads))
+    snaps = calibrate.load_snapshots(event)
+    check("having archived the calibration before AND after, newest first",
+          [s_[1].get("note") for s_ in snaps] == ["after solve", "before solve"],
+          f"{[s_[1].get('note') for s_ in snaps]}")
+
+    code, out = cli(*ev, "history")
+    check_cli("history lists both snapshots", code == 0 and out.count("solve") == 2, out)
+
+    code, out = cli(*ev, "diff")
+    check_cli("diff of the latest two: a faithful re-solve moves nothing significantly",
+          code == 0 and "0 head(s) moved significantly" in out, out[-300:])
+
+    code, out = cli(*ev, "snapshot", "--note", "doors")
+    check("snapshot archives the current calibration with a note",
+          code == 0 and calibrate.load_snapshots(event)[0][1].get("note") == "doors")
+
+    # The overnight check: re-read each head at the ball and compare.
+    code, out = cli(*ev, "drift", *[f"{p},{t}" for p, t in stored.values()])
+    check_cli("drift with this morning's readings unchanged: nothing moved, exit 0",
+          code == 0 and "0 head(s) moved" in out and out.count("[  ok ]") == 4, out[-300:])
+    knocked = [f"{p},{t}" for p, t in stored.values()]
+    p2, t2 = stored[heads[2].name]
+    knocked[2] = f"{p2 + 6},{t2}"
+    code, out = cli(*ev, "drift", *knocked)
+    check_cli("a knocked head is flagged MOVED and the exit code says so",
+          code == 1 and "1 head(s) moved" in out and f"[MOVED] {heads[2].name}" in out,
+          out[-300:])
+    code, out = cli(*ev, "drift", "1,2")
+    check_cli("drift with the wrong number of readings is refused", code == 2
+          and "expected 4 readings, got 1" in out, out)
+
+    empty = Path(tmp) / "fresh"
+    empty.mkdir()
+    (empty / "calibration_history").mkdir()
+    check("an event with no snapshots has an empty history",
+          calibrate.load_snapshots(empty) == [])
+    (empty / "calibration_history" / "2026-08-01T00-00-00.json").write_text(
+        "{ truncated", encoding="utf-8")
+    check("and a corrupt snapshot is skipped rather than fatal",
+          calibrate.load_snapshots(empty) == [])
+    one = Path(tmp) / "one"
+    shutil.copytree(event, one, ignore=shutil.ignore_patterns("calibration_history"))
+    code, out = cli("--event", str(one), "diff")
+    check_cli("diff with fewer than two snapshots says it needs two", code == 2
+          and "two snapshots" in out, out)
+    code, out = cli("--event", str(one), "history")
+    check("history with none says where it looked", code == 0 and "no snapshots" in out)
 
 
 print()

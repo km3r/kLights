@@ -17,6 +17,81 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — tests at every layer, and a browser suite that checks the wire
+
+- **A browser end-to-end suite** (`cd ui && npm run e2e`): the real engine,
+  serving the committed `ui/dist`, driven by Chromium, with every claim about
+  the rig checked on the Art-Net it actually sends. It covers Blackout,
+  Master, Panic, the cue list, a palette colour, tempo (typed, and from a DJ
+  bridge), two consoles at once, a view-only phone, riding out an engine
+  restart, the phone and laptop layouts, and Studio saving through the engine
+  to the file on disk and driving the rig. CI runs it on Ubuntu and Windows.
+- **A fuzz suite** (`engine/tests/test_fuzz.py`) sends generated hostile input
+  at the three doors into a running show: the DJ-sync port, the config and
+  show-folder files, and the console's commands. Afterwards the show must
+  still render every frame and every phone's snapshot must still parse.
+  Seeded, so a failure reproduces; `KLIGHTS_FUZZ_SEED` explores further.
+- **New engine suites** for the patch editor's rules, the WebSocket layer, the
+  show-folder tools, and the command line end to end. The CLI suite puts
+  `engine.demo` on the wire, holds the three ArtDmx implementations to one
+  format, and runs the generators' `--check` modes, which nothing ran before.
+  The calibration CLI's load-in workflow is tested too.
+- **UI tests** for the patch editor, the plan view and the projector's flash
+  limit, which is now counted flash by flash across the tempos a DJ plays.
+  That brings the suite to 377 tests.
+- [`docs/testing.md`](docs/testing.md) maps every layer and how to add to it.
+
+### Fixed — what those tests found
+
+- **One console command could stop the lights for the rest of the night.** A
+  speed of 1e308 is "positive and finite", and it made the beat infinite. Code
+  that kept the clock in step then raised, on the thread that sends DMX, and
+  unlike the code either side of it nothing caught it, so the thread ended. It
+  is now guarded the same way, and the clock refuses a speed outside 1/64× to
+  64× and a nudge of more than 64 beats.
+- **One console command could freeze every phone.** An empty colour froze the
+  rig on its last frame. A NaN or infinite speed, a non-name colour, level or
+  flash target, or a NaN hold put something into the snapshot that
+  `JSON.parse` refuses, so no console updated until someone happened to clear
+  it. Commands now refuse those values.
+- **A NaN went to full.** Clamping with min/max does not catch NaN, so a NaN
+  master, level, colour channel or energy (which drives auto strobe) set it to
+  full brightness. A NaN crowd-zone edge would have switched the safety taper
+  off silently. All of these are refused now.
+- **Saving the venue could stop the next show starting.** The live taper
+  margin could hold a value the venue schema refuses, and *Save to venue.json*
+  wrote it. Saves are now validated first, and the live margin is held to the
+  schema's 0 to 90.
+- **A file the validator passed could still fail to load.** The validator reads
+  an optional key set to `null` as absent, and the loaders did not, so
+  `"hold": null` in rig.json, `"color": null` in a cue, and the like became a
+  traceback at load-in. The validator also let NaN through every range test.
+  Both are fixed.
+- **A new event could not be edited.** `engine.patch new` (and the MCP
+  `new_event` tool) scaffolded a rig that the next step, adding its first
+  fixture, refused to open.
+- The WebSocket layer capped each frame but not a whole message, so a client
+  that never finished a message could grow the server's memory without limit.
+- `edit_timeline` ops were applied by reference: the same ops applied twice (a
+  dry run, then the write) failed with "already exists". An `add_row` index
+  that was not a number raised instead of being reported.
+- `validate_patch.py` called two out-of-range fixtures an overlap of channels
+  that do not exist, disagreeing with the engine's own patch check.
+- The projector's flash guard looped forever on an infinite rate, and a rig
+  group tagged `constructor` or `toString` was labelled with a function.
+- A string argument on the DJ bridge's `/beat/subdiv/<n>` raised out of the
+  parser instead of being ignored. The bridge's absolute `beat` was unbounded,
+  so one datagram of 1e17 froze the musical clock; it is now bounded like
+  `beat_number`.
+- `venue.json` with `"taper": null` or `"strobe": null` stopped the engine
+  starting, although the validator had accepted it.
+- NaN, Infinity and 1e999 in a console command (Python's JSON reader accepts
+  them; no browser sends them) are now refused as the message is read, for
+  every command at once.
+- A cue's `speed` must be within the clock's 1/64× to 64×, checked when
+  `cues.json` loads. A preset's speed and master are checked before it changes
+  anything.
+
 ### Changed — a solved calibration applies live, like a patch edit
 
 - **Solve & write no longer ends in "restart the engine to load it."** The

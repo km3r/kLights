@@ -60,6 +60,56 @@ jobs:
       - run: npm test
         working-directory: ui
 
+  e2e:
+    # The browser end-to-end suite (ui/e2e): a real engine serving the
+    # COMMITTED ui/dist, driven by Chromium, checked on the Art-Net it puts on
+    # the wire. The jobs above each test one half -- the engine with a Python
+    # client, the console against a mock socket -- and this is the one that
+    # proves the halves still meet. Both platforms, as the engine job runs:
+    # the show laptop is Windows.
+    #
+    # The browser is the one download here that is not in a lockfile, and it
+    # is still pinned: `playwright install` fetches the exact Chromium build
+    # that the exact @playwright/test in package-lock.json was released with.
+    name: browser e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - name: Typecheck the suite
+        run: npm run typecheck:e2e
+        working-directory: ui
+      - name: Install the pinned Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+      - name: Console, Studio and layouts against a real engine
+        run: npm run e2e
+        working-directory: ui
+        env:
+          KLIGHTS_PYTHON: python
+      # Traces, screenshots and the engine's own log for every failed test.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: |
+            ui/playwright-report
+            ui/test-results
+          retention-days: 14
+
   bundle:
     # The job this whole file was written for.
     #

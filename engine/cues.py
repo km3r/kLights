@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
+from . import clock as clockmod
 from . import config as configmod
 
 
@@ -164,7 +165,12 @@ CUES_SCHEMA = {
         "hold": configmod.Spec(configmod.Number, min=0,
                                fix="beats before advancing on its own. "
                                    "0 waits for GO"),
-        "speed": configmod.Spec(configmod.Number, min=0),
+        # The clock's own bounds: a cue the clock would refuse must be refused
+        # here, at load, rather than halfway through taking it on GO.
+        "speed": configmod.Spec(configmod.Number, min=clockmod.MIN_SPEED,
+                                max=clockmod.MAX_SPEED,
+                                fix="a speed multiplier: 1 is the music's own "
+                                    "tempo, 0.5 half, 2 double"),
         "master": configmod.Spec(configmod.Number, min=0, max=1),
         "macro": configmod.Spec(dict),
         "rates": configmod.Spec(dict,

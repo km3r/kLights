@@ -333,7 +333,15 @@ class Runner:
                     # with the show errors and keep the clock running.
                     self.stats.eval_errors += 1
                     self.last_error = traceback.format_exc()
-            self.sync_clock()
+            # Guarded like the two either side of it. This one was not, and an
+            # infinite beat (a speed of 1e308 got through) raised OverflowError
+            # in the director's math.floor -- which ended this thread, and with
+            # it every frame to the rig for the rest of the night.
+            try:
+                self.sync_clock()
+            except Exception:                              # noqa: BLE001
+                self.stats.eval_errors += 1
+                self.last_error = traceback.format_exc()
             for universe, frame in self.render_once().items():
                 self.output.send(universe, frame)
             self.stats.frames += 1

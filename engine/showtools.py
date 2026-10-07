@@ -22,6 +22,7 @@ Positions are beats from the track's first downbeat; bar n starts at beat
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -195,6 +196,11 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
     changes: list[str] = []
     problems: list[str] = []
     rows: list = doc.setdefault("rows", [])
+    # The document is edited in place; the ops are not. Without a copy, a row
+    # added with "items": [] put the caller's own list into the document, the
+    # next add_item appended to it, and the same ops applied a second time --
+    # a dry run, then the write -- found their item "already exists".
+    ops = copy.deepcopy(list(ops))
 
     def row(rid):
         return next((r for r in rows if r.get("id") == rid), None)
@@ -218,6 +224,11 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                 problems.append(f"{at}: there is already a row {new['id']!r}")
                 continue
             index = op.get("index", len(rows))
+            if (isinstance(index, bool) or not isinstance(index, (int, float))
+                    or not math.isfinite(index)):
+                problems.append(f"{at}: index must be a number, 0 for the top "
+                                f"-- got {index!r}")
+                continue
             rows.insert(max(0, min(len(rows), int(index))), dict(new))
             changes.append(f"added lane {new['id']!r} at position {index}")
         elif kind == "remove_row":

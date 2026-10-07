@@ -79,10 +79,15 @@ def validate(rows: list[dict]) -> tuple[list[str], list[str], list[str]]:
             )
 
         # One error per conflicting fixture, not one per overlapping channel —
-        # a 30-channel clash used to emit 30 near-identical lines.
+        # a 30-channel clash used to emit 30 near-identical lines. Only real
+        # channels can clash: two fixtures both hanging past 512 are each
+        # already out of range, and engine/patch.py's check_addresses (which
+        # engine/tests/test_patch.py holds this to) does not call that an
+        # overlap either.
+        real = range(max(start, 1), min(end, 512) + 1)
         clashes = sorted({
             occupied[(artnet_uni, ch)]
-            for ch in range(start, end + 1)
+            for ch in real
             if (artnet_uni, ch) in occupied
         })
         for other in clashes:
@@ -90,7 +95,7 @@ def validate(rows: list[dict]) -> tuple[list[str], list[str], list[str]]:
                 f"OVERLAP: {name} (universe {artnet_uni}, ch {start}–{end}) "
                 f"conflicts with {other}"
             )
-        for ch in range(start, end + 1):
+        for ch in real:
             occupied.setdefault((artnet_uni, ch), name)
 
         if not row.get("gdtf_profile", "").strip():

@@ -81,7 +81,10 @@ LOADED_FIELDS = tuple(f"loaded_{k}" for k in (
     "deck", "title", "artist", "album", "duration", "rekordbox_id", "signature"))
 FIELDS = CLOCK_FIELDS + TRACK_FIELDS + LOADED_FIELDS
 
-_FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
+# `beat` is the deck's absolute beat count, as `beat_number` is. Bounded like
+# it: unbounded, one datagram of 1e17 made each frame's fraction of a beat
+# vanish in rounding, and the musical clock -- every look -- stood still.
+_FLOATS = {"bpm": (40.0, 250.0), "beat": (-64.0, 200000.0),
            "beat_in_bar": (0.0, 64.0), "phrase_ends_in": (None, None),
            # Position in the audio, in seconds. A little negative is real: a
            # cue set before the first sample. Four hours is longer than any
@@ -297,6 +300,12 @@ def osc_fields(address: str, value: Any) -> Optional[dict]:
         except ValueError:
             return None
         if divisor <= 0:
+            return None
+        # The argument came off the wire too: a string or a boolean is not a
+        # phase, and float("abc") here used to raise out of parse() -- costing
+        # the datagram via the listener's guard, but breaking parse's promise
+        # to answer None for what it cannot use.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
         return _tag({"beat_in_bar": float(value) * divisor}, rkbx)
 

@@ -358,8 +358,9 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 324 tests: the console against a fixture captured from a
+npm test         # 377 tests: the console against a fixture captured from a
                  # real engine, Studio against the example show folder
+npm run e2e      # the real engine, this bundle, Chromium -- see Tests below
 npm run build    # writes ui/dist/
 ```
 
@@ -370,15 +371,27 @@ nearly did.
 ## Tests
 
 ```bash
-python -m engine.tests    # every suite, no test framework
+python -m engine.tests    # every suite, no test framework -- what preflight runs
 cd ui && npm test         # the console and Studio
+cd ui && npm run e2e      # end to end: a tap in Chromium, checked on the Art-Net
 ```
 
 Engine suites are standalone scripts — run one directly with
 `python engine/tests/test_clock.py`. Each runs in its own subprocess, since
-several set process-wide timing and assert on wall-clock behaviour.
+several set process-wide timing and assert on wall-clock behaviour. Among them,
+`test_fuzz.py` sends generated hostile input at the DJ-sync port, the config
+files and the console's commands, and holds the show to still rendering
+afterwards.
 
-Two are load-bearing. `test_geometry_parity.py` compares every aim against the
+The browser suite starts the real engine, serving the committed `ui/dist`, and
+checks what a tap does on the Art-Net the rig would receive: Blackout, Master,
+Panic, cues, colour, tempo, two consoles at once, a view-only phone, an engine
+restart, and Studio saving through the engine. It needs Node and a Chromium
+(`npx playwright install chromium`), so it runs in CI rather than in preflight.
+[`docs/testing.md`](docs/testing.md) has the whole map and how to add to each
+layer.
+
+Two engine suites are load-bearing. `test_geometry_parity.py` compares every aim against the
 code that drove the real show and requires agreement within one 8-bit step.
 `test_qlc_parity.py` diffs whole DMX frames against QLC+ across the ported
 library, and requires every differing channel to fall into a category that was
@@ -418,6 +431,7 @@ safety taper reads.
 | [`docs/runbook.md`](docs/runbook.md) | show night, start to finish |
 | [`docs/SAFETY.md`](docs/SAFETY.md) | what the taper does and does not do |
 | [`docs/engine.md`](docs/engine.md) | how the engine works, for changing it |
+| [`docs/testing.md`](docs/testing.md) | every layer of tests, and how to add to each |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | what was built, why, and what is not |
 | [`docs/models.md`](docs/models.md) | the standalone previz's models, set pieces and fixture bodies |
 | [`docs/pipeline.md`](docs/pipeline.md) | Art-Net architecture; the QLC+ era |
