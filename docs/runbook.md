@@ -59,9 +59,9 @@ python -m engine.server --artnet 255.255.255.255
 Or double-click **`kLights.pyw`**, the launcher. Check **Art-Net to** before
 **Start engine**: it must reach the rig's node (for example
 `255.255.255.255`), not only `127.0.0.1`, which feeds a previz on this laptop
-and nothing else. Flags the launcher has no field for (`--show-dir`,
-`--sync-port`) go in **Extra flags**. The engine is its own process, so
-closing the launcher does not stop the show.
+and nothing else. The show folder has a field of its own, above the engine's;
+flags the launcher has no field for (`--sync-port`) go in **Extra flags**. The
+engine is its own process, so closing the launcher does not stop the show.
 
 Read the banner it prints. It states, every run:
 
@@ -99,7 +99,9 @@ On the **Setup** tab, jog every head onto the mirror ball, then press **Check
 all heads** in **Drift check**. It tells you whether anything has moved since
 the stored calibration, in degrees, and refuses until every head has been aimed.
 If a head shows **MOVED**, re-aim it: jog it onto the mirror ball, capture, then
-capture two more targets, then solve.
+capture two more targets, then **Solve & write**. The new calibration is saved
+but not yet live: **Apply now**, under the button, loads it into the running
+show without a restart. Then **Stop all**.
 
 > **Jog bypasses the safety taper**, necessarily — the taper works from the aim,
 > the aim comes from the geometry, and the geometry is what you are establishing.
@@ -138,6 +140,9 @@ folder and the sync port, then the bridge for the decks in use:
 ```bash
 python -m engine.server --artnet 255.255.255.255 --show-dir <show folder> --sync-port 9000
 ```
+
+From the launcher: the folder in **Show folder**, and `--sync-port 9000` in
+**Extra flags**.
 
 CDJs need beat-link-trigger and a DDJ needs rkbx_link, each pointed at that
 port. See [`bridges/prolink/`](../bridges/prolink/README.md).

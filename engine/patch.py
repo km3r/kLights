@@ -593,10 +593,11 @@ def held_by(event: str) -> Optional[str]:
     """Who is running a show against this event, if anyone.
 
     Editing a patch under a live show does not corrupt anything -- the engine
-    read its config at startup and will not read it again -- but it produces the
-    worst kind of confusion: the file says one thing, the rig does another, and
-    nothing on screen explains why. So the writing surfaces check this and
-    refuse, and say what to do about it.
+    does not watch rig.json, and reloads it only when its own Setup tab applies
+    an edit -- but it produces the worst kind of confusion: the file says one
+    thing, the rig does another, and nothing on screen explains why. So the
+    writing surfaces outside the engine check this and refuse, and say what to
+    do about it: edit on the Setup tab, which applies live, or stop the show.
     """
     path = lock_path(event)
     if not path.exists():
@@ -630,9 +631,10 @@ def _report(result: Result, event: str, write: bool, quiet: bool = False) -> int
     holder = held_by(event)
     if holder is not None:
         print(f"\nrefusing to write: {holder} is running against this event.\n"
-              f"  The engine reads its config once at startup, so an edit now "
-              f"would leave the file saying one thing and the rig doing "
-              f"another. Stop the show first, or edit a copy.")
+              f"  The engine does not watch rig.json, so an edit now would "
+              f"leave the file saying one thing and the rig doing another. "
+              f"Make it on the console's Setup tab, which applies it live, or "
+              f"stop the show first, or edit a copy.")
         return 1
     path = write_rig(event, result.config)
     print(f"\nwrote {path}")

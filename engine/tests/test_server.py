@@ -2146,6 +2146,78 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         live.stop()
 
+# -- 14b. a solved calibration applies live too -------------------------------
+#
+# Solve & write used to end in "restart the engine to load it", from before the
+# rig could be reloaded at all. The rig is read from calibration.json as well as
+# rig.json, so the same Apply loads it: saved first, live when applied.
+print("\n14b. a solved calibration, applied without a restart")
+with tempfile.TemporaryDirectory() as tmp:
+    ev = Path(tmp) / "ev"
+    ev.mkdir()
+    for name in ("rig.json", "calibration.json"):
+        shutil.copy(EVENT / name, ev / name)
+
+    from engine import geometry as geo
+    live = ShowController(ev)
+    live.start()
+    try:
+        head = live.rig.geometry.heads[0]
+        old_aim = tuple(head.calibrated_ball_dmx)
+        # A head knocked a few steps since it was calibrated: what a perfect
+        # operator would capture aiming it, through the engine's own geometry.
+        knocked = geo.Head(**{**head.__dict__,
+                              "calibrated_ball_dmx": (old_aim[0] + 6, old_aim[1] + 4)})
+        truth = geo.RigGeometry(heads=(knocked,), ball=live.rig.venue.ball,
+                                mount_mode=live.rig.geometry.mount_mode)
+        venue = live.rig.venue
+        far_x = 400.0 if head.x > venue.width / 2 else venue.width - 400.0
+        far_z = 400.0 if head.z > venue.depth / 2 else venue.depth - 400.0
+        for label, target in (("ball", venue.ball), ("floor", (far_x, 0.0, far_z)),
+                              ("wall", (far_x, head.height, venue.depth / 2))):
+            pan16, tilt16 = truth.encode(0, truth.aim_at_point(0, *target))
+            live.apply({"type": "capture", "fixture": head.name,
+                        "pan": geo.split16(pan16)[0], "tilt": geo.split16(tilt16)[0],
+                        "target": list(target), "label": label}, None)
+        live.apply({"type": "solve", "write": True}, None)
+        written = next(h for h in json.loads((ev / "calibration.json").read_text(
+            encoding="utf-8"))["heads"] if h["fixture"] == head.name)["ball_dmx"]
+        check("solve & write saves the new calibration", tuple(written) != old_aim,
+              f"{old_aim} -> {written}")
+        check("but the running show keeps aiming from the old one",
+              tuple(live.rig.geometry.heads[0].calibrated_ball_dmx) == old_aim)
+        snap = live.snapshot()
+        check("and says so: Apply now is offered, for calibration.json",
+              snap["pending_patch"] and snap["pending_files"] == ["calibration.json"],
+              f"{snap['pending_patch']} {snap['pending_files']}")
+        check("with a notice that says apply, not restart",
+              "Apply it" in live.notices[-1] and "restart" not in live.notices[-1],
+              live.notices[-1])
+
+        live.apply({"type": "patch_apply"}, None)
+        check("applying loads it into the running show",
+              tuple(live.rig.geometry.heads[0].calibrated_ball_dmx) == tuple(written),
+              f"{live.rig.geometry.heads[0].calibrated_ball_dmx}")
+        check("the context aims from it too",
+              tuple(live.ctx.rig.geometry.heads[0].calibrated_ball_dmx) == tuple(written))
+        check("and nothing is pending after",
+              not live.pending_patch and live.snapshot()["pending_files"] == [])
+        check("with a notice that the new calibration is live",
+              any("calibration is live" in n for n in live.notices[-3:]),
+              f"{live.notices[-3:]}")
+
+        # A patch edit and a solve both waiting: one Apply loads both.
+        live.apply({"type": "patch_tags", "name": head.name,
+                    "tags": ["movers", "corner movers"]}, None)
+        live.apply({"type": "solve", "write": True}, None)
+        check("a patch and a calibration both waiting are listed in order",
+              live.snapshot()["pending_files"] == ["rig.json", "calibration.json"],
+              f"{live.snapshot()['pending_files']}")
+        live.apply({"type": "patch_apply"}, None)
+        check("and one Apply clears both", live.snapshot()["pending_files"] == [])
+    finally:
+        live.stop()
+
 # -- 15. the DJ tempo seam, end to end ----------------------------------------
 #
 # A datagram in, a moved show clock out, with no CDJs in the room. Proving the

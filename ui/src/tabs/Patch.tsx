@@ -15,13 +15,54 @@ import type { Command, EngineState } from "../types";
  *   * **Locked by default.** Nothing here is reachable until you say so. Every
  *     other control on this surface is recoverable by pressing it again; a
  *     re-addressed rig is a walk around the room with a torch.
- *   * **Nothing takes effect until a restart**, and it says so, permanently,
- *     until the engine is restarted. The engine resolves profiles, channel
- *     offsets and head indices once at startup — re-deriving them mid-frame
- *     would change what every layer writes underneath a look that is up. So a
- *     saved patch and a running rig genuinely do disagree in that window, and
- *     that is exactly the state that has to be visible.
+ *   * **Nothing takes effect until it is applied**, and it says so until it
+ *     is. Each edit is saved to rig.json at once; Apply now swaps the saved rig
+ *     into the running show at a frame boundary (`patch_apply`), and a rig that
+ *     will not load is refused while the old one keeps running. Until then a
+ *     saved patch and the running rig genuinely disagree, and that is exactly
+ *     the state that has to be visible.
  */
+/**
+ * A saved change the running show is not using yet, and the button that loads
+ * it: a patch edit (rig.json) or a solved calibration (calibration.json).
+ *
+ * Shown in the card where that change was made — Patch for rig.json, Capture
+ * for calibration.json — because that is where the operator is looking when
+ * they make it; a banner at the other end of a phone-length tab is one nobody
+ * sees. Both say everything that is waiting, since one Apply loads it all: the
+ * engine reads the rig from both files.
+ */
+export function PendingApply({ state, send, file }: {
+  state: EngineState; send: (c: Command) => void; file: string;
+}) {
+  // An engine that predates the list only says *that* something is pending,
+  // and then it was a patch.
+  const files = state.pending_files?.length ? state.pending_files
+    : state.pending_patch ? ["rig.json"] : [];
+  if (!files.includes(file)) return null;
+  return (
+    <Banner kind="warn">
+      {/* One span: a banner is a flex row, and bare text either side of the
+          <code> would lay out as columns. */}
+      <span>
+        Saved to {files.map((f, i) => (
+          <span key={f}>{i ? " and " : ""}<code>{f}</code></span>
+        ))}, but the show is still running the rig it last loaded. Applying
+        swaps it in at a frame boundary; if the new one does not load, the
+        current one keeps running.
+        {files.includes("calibration.json") &&
+          " Every look that aims at something moves to the new calibration."}
+      </span>
+      {/* Never shrunk: the sentence beside it is long enough to squeeze the
+          button to a letter a line. */}
+      <button className="small" style={{ marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap" }}
+              onClick={() => send({ type: "patch_apply" })}>
+        Apply now
+      </button>
+    </Banner>
+  );
+}
+
 export function PatchSection({ state, send }: {
   state: EngineState; send: (c: Command) => void;
 }) {
@@ -35,24 +76,15 @@ export function PatchSection({ state, send }: {
         {unlocked ? "Lock" : "Unlock to edit"}
       </button>
     }>
-      {state.pending_patch && (
-        <Banner kind="warn">
-          Saved to <code>rig.json</code>, but the show is still running the rig
-          it last loaded. Applying swaps it in at a frame boundary; if the new
-          one does not load, the current one keeps running.
-          <button className="small" style={{ marginLeft: "auto" }}
-                  onClick={() => send({ type: "patch_apply" })}>
-            Apply now
-          </button>
-        </Banner>
-      )}
+      <PendingApply state={state} send={send} file="rig.json" />
 
       {!unlocked ? (
         <p className="small muted" style={{ marginBottom: 0 }}>
           {state.fixtures.length} fixture(s) patched. Unlock to change
-          addresses, tags and positions — this edits <code>rig.json</code> and
-          needs an engine restart to take effect, so it is load-in work rather
-          than something to reach for mid-set.
+          addresses, tags and positions. Each edit is saved
+          to <code>rig.json</code> and goes live when you apply it, with no
+          restart — but a re-addressed rig means re-dialling every unit, so it
+          is load-in work rather than something to reach for mid-set.
         </p>
       ) : (
         <>

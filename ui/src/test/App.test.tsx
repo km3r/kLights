@@ -1110,10 +1110,15 @@ describe("patch", () => {
     expect(socket.commands.some((c) => c.type === "patch_position")).toBe(false);
   });
 
+  const pending = (files: string[]) => stateWith((s) => {
+    s.pending_patch = files.length > 0;
+    s.pending_files = files;
+  });
+
   it("says so, permanently, when a saved patch is not the running one", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    act(() => socket.push(stateWith((s) => { s.pending_patch = true; })));
+    act(() => socket.push(pending(["rig.json"])));
     await openSetup(user);
     expect(screen.getByText(/still running the rig it last loaded/i)).toBeTruthy();
   });
@@ -1121,10 +1126,54 @@ describe("patch", () => {
   it("applies a pending patch without a restart", async () => {
     const user = userEvent.setup();
     const socket = mount();
-    act(() => socket.push(stateWith((s) => { s.pending_patch = true; })));
+    act(() => socket.push(pending(["rig.json"])));
     await openSetup(user);
     await user.click(screen.getByRole("button", { name: /Apply now/i }));
     expect(socket.last()).toEqual({ type: "patch_apply" });
+  });
+
+  it("still shows the patch banner for an engine that only says pending_patch", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(stateWith((s) => {
+      s.pending_patch = true;
+      delete (s as Partial<typeof s>).pending_files;
+    })));
+    await openSetup(user);
+    expect(screen.getAllByRole("button", { name: /Apply now/i })).toHaveLength(1);
+  });
+
+  // Solve & write used to end in "restart the engine to load it". The rig is
+  // read from calibration.json too, so the same Apply loads it, live.
+  it("offers Apply now for a saved calibration, under Solve & write", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(pending(["calibration.json"])));
+    await openSetup(user);
+    // One banner, in the Capture card: the patch card has nothing pending.
+    const apply = screen.getAllByRole("button", { name: /Apply now/i });
+    expect(apply).toHaveLength(1);
+    const banner = apply[0]!.closest(".banner")!;
+    expect(banner.textContent).toMatch(/calibration\.json/);
+    expect(banner.textContent).toMatch(/moves to the new calibration/);
+    expect(banner.textContent).not.toMatch(/restart/i);
+    const solve = screen.getByRole("button", { name: /Solve & write/i });
+    expect(solve.closest(".card")).toBe(banner.closest(".card"));
+    await user.click(apply[0]!);
+    expect(socket.last()).toEqual({ type: "patch_apply" });
+  });
+
+  it("says both files where either was saved, since one Apply loads both", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    act(() => socket.push(pending(["rig.json", "calibration.json"])));
+    await openSetup(user);
+    const apply = screen.getAllByRole("button", { name: /Apply now/i });
+    expect(apply).toHaveLength(2);
+    for (const button of apply) {
+      expect(button.closest(".banner")!.textContent)
+        .toMatch(/rig\.json and calibration\.json/);
+    }
   });
 });
 

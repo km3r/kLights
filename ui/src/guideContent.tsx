@@ -281,8 +281,9 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
             and capture those too.</>,
           <>Tap <b>Solve (preview)</b> and check <b>Notices</b>. A residual of
             a degree or two is good.</>,
-          <>Tap <b>Solve &amp; write</b> to save, then <b>Stop all</b>.
-            Restart the engine to load the new calibration.</>,
+          <>Tap <b>Solve &amp; write</b> to save, then <b>Apply now</b> to
+            load the new calibration into the running show, then{" "}
+            <b>Stop all</b>.</>,
         ],
       },
       {

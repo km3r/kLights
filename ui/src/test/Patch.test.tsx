@@ -11,8 +11,8 @@ import { despacioState, stateWith } from "./mockSocket";
  * through the whole console; this covers what it does not -- removing a unit,
  * autopatching, adding one, and input the operator did not mean.
  *
- * Every one of these writes a file that takes an engine restart to undo, and
- * a re-addressed rig is a walk round the room with a torch. So the property
+ * Every one of these rewrites rig.json, which goes live on Apply now, and a
+ * re-addressed rig is a walk round the room with a torch. So the property
  * held throughout is the same: a command goes out only for a deliberate,
  * complete, changed value.
  */

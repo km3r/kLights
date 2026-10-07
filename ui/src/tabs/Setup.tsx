@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Banner, Card } from "../components";
-import { PatchSection } from "./Patch";
+import { PatchSection, PendingApply } from "./Patch";
 import { RigSection } from "./Rig";
 import { VenueSection } from "./Venue";
 import type { Command, EngineState, FixtureState } from "../types";
@@ -146,7 +146,9 @@ export function SetupTab({ state, send, name, setName }: {
           is how much the captures disagree, in degrees.</p>
         <p><b>Solve &amp; write</b> saves it and snapshots the old calibration. It
           won't save a head with a residual over 5°, which usually means a capture
-          was taken before the head was jogged. Restart the engine to load it.</p>
+          was taken before the head was jogged. <b>Apply now</b> then loads it
+          into the running show; every look that aims at something moves to
+          it.</p>
       </>} right={
         <button className="small" onClick={() => send({ type: "capture_clear" })}>
           Clear all
@@ -197,6 +199,8 @@ export function SetupTab({ state, send, name, setName }: {
             Solve &amp; write
           </button>
         </div>
+        {/* Right under the button that wrote it: written is not loaded. */}
+        <PendingApply state={state} send={send} file="calibration.json" />
         <p className="small muted" style={{ marginBottom: 0 }}>
           Writing snapshots the previous calibration first, so an overnight
           nudge stays a diff rather than a from-scratch re-aim.

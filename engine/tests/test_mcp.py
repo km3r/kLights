@@ -187,7 +187,7 @@ with tempfile.TemporaryDirectory() as tmp:
           is_error and any("list_profiles" in e for e in bad["errors"]),
           f"{bad['errors'][:1]}")
 
-    # The engine reads its config once at startup, so an edit under a live show
+    # The engine does not watch rig.json, so an edit from here under a live show
     # leaves the file and the rig disagreeing with nothing on screen to say so.
     Path(ev, ".engine.lock").write_text("engine 0.1.0 since 12:00:00\n",
                                         encoding="utf-8")
@@ -195,8 +195,8 @@ with tempfile.TemporaryDirectory() as tmp:
                                    name="Pinspot #2", write=True)
     check("a write is refused while a show holds the lock",
           is_error and locked["written"] is False, f"{locked.get('errors')}")
-    check("and the refusal says what to do",
-          any("Stop the show" in e for e in locked["errors"]),
+    check("and the refusal says what to do: the Setup tab, or stop the show",
+          any("Setup tab" in e and "stop the show" in e for e in locked["errors"]),
           f"{locked['errors'][:1]}")
     Path(ev, ".engine.lock").unlink()
     freed, is_error = server.tool("remove_fixture", event=ev,
