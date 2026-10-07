@@ -679,7 +679,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for track_id, doc in sorted(folder.timelines.items()):
         if args.track and track_id != args.track:
             continue
-        timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
+        audio, missing = showfiles.timeline_audio(root, doc,
+                                                  folder.tracks.get(track_id))
+        timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels,
+                                                 audio)
+        for m in missing:
+            print(f"  warn   {m}")
         program = compile(timeline, folder.routines, rigging,
                           f"timelines/{track_id}.json")
         print(f"{track_id}: {len(program.sources)} clips on {rigging.event}"

@@ -149,6 +149,7 @@ change and writes nothing.
 | phrases | `ANLZ0000.EXT` (`PSSI`) | rekordbox's labels as it shows them: `Intro 1`, `Up 2`, `Verse 3`, `Chorus` |
 | cues | `.EXT` (`PCO2`, with names), else `.DAT` (`PCOB`), else the XML | |
 | waveform | `.DAT` (`PWAV`) and `.EXT` (`PWV5`/`PWV3`) | for the designer |
+| three-band waveform | `.2EX` (`PWV7`) | what a lane follows when it follows the audio |
 | which analysis is which track | `PPTH` in each analysis file | joined on the full path, else the file name |
 
 The file-name fallback is what makes a stick work: its analysis files record

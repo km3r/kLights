@@ -227,7 +227,8 @@ def cue_entry(grid: tracktime.Grid, time_ms: float, hot: int, loop: bool,
 
 
 def waveform_from(analysis: anlz.Analysis) -> Optional[dict]:
-    if analysis.preview is None and analysis.detail is None:
+    if (analysis.preview is None and analysis.detail is None
+            and analysis.bands is None):
         return None
     doc: dict = {}
     if analysis.preview is not None:
@@ -235,7 +236,28 @@ def waveform_from(analysis: anlz.Analysis) -> Optional[dict]:
     if analysis.detail is not None:
         doc["detail"] = {"format": analysis.detail_format, "rate": DETAIL_RATE,
                          "data": base64.b64encode(analysis.detail).decode("ascii")}
+    if analysis.bands is not None:
+        # What a lane follows when its row carries `audio` (engine/bands.py).
+        doc["bands"] = {"format": "pwv7", "rate": DETAIL_RATE,
+                        "data": base64.b64encode(analysis.bands).decode("ascii")}
     return doc
+
+
+def _waveform_note(root: Path, tid: str, waveform: dict) -> Optional[str]:
+    """Why a track's stored waveform should be written again although the
+    track itself is unchanged, or None if it is as rekordbox has it."""
+    path = sf.path_for(root, "waveform", tid)
+    if not path.exists():
+        return "waveform was missing; rewritten"
+    result, _ = sf.read_doc(path, "waveform")
+    stored = result.doc if result.ok else {}
+    if all(stored.get(k) == v for k, v in waveform.items()):
+        return None
+    if "bands" in waveform and "bands" not in stored:
+        # Prepped before lanes could follow the audio: the same analysis, now
+        # with the three bands rekordbox measured rather than its colours.
+        return "waveform rewritten with rekordbox's three-band analysis"
+    return "waveform changed in rekordbox; rewritten"
 
 
 NO_ARTIST = "[no artist]"
@@ -717,11 +739,12 @@ def apply(root: Path, prepared: list[Prepared], dry_run: bool = False,
         title = f"{p.identity.get('artist', '')} - {p.identity.get('title', '')}"
         note = "".join(f"\n      {n}" for n in p.notes)
         if _without_stamp(doc) == _without_stamp(base):
-            if (p.waveform is not None and tid not in folder.waveforms
-                    and not dry_run):
+            again = (_waveform_note(root, tid, p.waveform)
+                     if p.waveform is not None and not dry_run else None)
+            if again:
                 wave = sf.new_doc("waveform", track=tid, **p.waveform)
                 sf.write_doc(sf.path_for(root, "waveform", tid), wave, "waveform")
-                note += "\n      waveform was missing; rewritten"
+                note += f"\n      {again}"
             lines.append(f"  unchanged  {tid}  ({title}){note}")
             record("unchanged", tid, p)
             continue

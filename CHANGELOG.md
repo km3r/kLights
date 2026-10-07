@@ -17,6 +17,30 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — a taller waveform, and lanes that follow the track's audio
+
+- **The waveform lane resizes.** Drag its bottom edge (or focus it and use the
+  arrow keys) to make it up to ten times taller; double-click puts it back.
+  **Bands** shows the track's low, mid and high one above another. Both are
+  remembered by the browser. The lane is also drawn a pixel column at a time
+  now, and no longer redrawn on every frame of playback.
+- **An automation lane can follow a frequency band of the track.** **♪** on a
+  number lane of a track's timeline adds `audio` to its row: the `low`, `mid`
+  or `high` band, or `all`, added on top of the points as `depth` times the
+  band's level. `floor` and `ceiling` choose how loud counts, and `release`
+  how fast it lets go. It reads rekordbox's analysis, not live audio, so a
+  loop or a scrub lands on the same level every time, and a `rate.*` lane
+  that follows a band keeps its phase. Master, size, spread, centre, rate and
+  any `param.<name>` lane can follow; a colour lane and a routine's own lanes
+  cannot.
+- **Prep keeps rekordbox's three-band waveform** (`PWV7`, from `.2EX`) in
+  `waveforms/<id>.json` as `bands`. Tracks prepped before this still work:
+  their bands are estimated from the colour waveform, and Studio says so.
+  Run prep again on a track to store the real ones -- it rewrites the
+  waveform without touching the track.
+- MCP and the CLI: `edit_timeline` has a `set_audio` op, and `explain` and
+  `lint` take the audio into account.
+
 ### Added — tests at every layer, and a browser suite that checks the wire
 
 - **A browser end-to-end suite** (`cd ui && npm run e2e`): the real engine,

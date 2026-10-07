@@ -1,5 +1,5 @@
 import {
-  Fragment, createContext, useCallback, useContext, useEffect, useRef, useState,
+  Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   useSyncExternalStore,
 } from "react";
 import type { EngineState, FixtureState, LookInfo, Reply } from "../types";
@@ -8,13 +8,13 @@ import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
 import { SideSection } from "./detail";
 import {
-  BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES, barBeat, curveValue,
-  draftFromTemplate, hexColor, itemName, itemSub, laneValue, normalizeName, oscArgsText,
-  parseOscArgs, uniqueId, waveLevel,
+  AUDIO_BANDS, AUDIO_STEP, BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES,
+  barBeat, curveValue, draftFromTemplate, hexColor, itemName, itemSub, laneValue, normalizeName,
+  oscArgsText, parseOscArgs, uniqueId, waveLevel,
 } from "./model";
 import type {
-  Item, OscMessage, PaletteSummary, Point, PointValue, RoutineSummary, Row, TemplateSetDoc,
-  TimelineDoc, TrackDoc, VisualRule, WaveSpec,
+  AudioBand, AudioSpec, Item, OscMessage, PaletteSummary, Point, PointValue, RoutineSummary, Row,
+  TemplateSetDoc, TimelineDoc, TrackAudio, TrackDoc, VisualRule, WaveSpec,
 } from "./model";
 
 /**
@@ -213,6 +213,11 @@ export function timelineLaneSpecs(doc: { rows: Row[] },
 
 /** The parameter lanes the page being edited offers, keyed by target. */
 export const ParamLanes = createContext<LaneSpecs>({});
+
+/** The audio a lane on this page can follow: the track's, laid on its beats;
+ *  null for a track with no waveform to read it from; undefined where there
+ *  is no track at all -- a routine plays on any -- so following is not offered. */
+export const LaneAudio = createContext<TrackAudio | null | undefined>(undefined);
 
 /** How to draw a lane, whatever it targets -- including a `param.<name>` no
  *  routine declares any more, drawn from its own points so it can still be
@@ -428,6 +433,12 @@ export function removeSelected(d: RowsDoc, id: string): void {
   if (waved) {
     const r = rowOf(d, waved);
     if (r) delete r.wave;
+    return;
+  }
+  const heard = parseAudioId(id);
+  if (heard) {
+    const r = rowOf(d, heard);
+    if (r) delete r.audio;
     return;
   }
   const pt = parsePointId(id);
@@ -1222,6 +1233,48 @@ export function defaultWave(row: Row, spec: LaneSpec): WaveSpec {
   return { shape: "sine", bars: 4, depth: Math.round(depth * 100) / 100 };
 }
 
+/** A lane's audio band's selection id: a row has at most one. */
+export function audioId(rowId: string): string {
+  return `audio:${rowId}`;
+}
+
+export function parseAudioId(id: string | null): string | null {
+  return id?.startsWith("audio:") ? id.slice(6) : null;
+}
+
+/** How far a row's wave and audio band can lower its points, and lift them
+ *  (`showfiles.swing`): each adds between nothing and its depth, so together
+ *  they reach the sum of the depths on each side. */
+export function swing(row: Pick<Row, "wave" | "audio">): [number, number] {
+  let down = 0;
+  let up = 0;
+  for (const depth of [row.wave?.depth, row.audio?.depth]) {
+    if (typeof depth !== "number") continue;
+    down += Math.min(0, depth);
+    up += Math.max(0, depth);
+  }
+  return [down, up];
+}
+
+/**
+ * A new audio band for a lane, sized to stay in range as the engine checks it
+ * -- its wave's swing counted too: half the lane's drawn range, upward if its
+ * points leave more room above than below, else downward (a master resting at
+ * full ducks on the kick). The bass, where the track's analysis has it, falling
+ * away over half a beat.
+ */
+export function defaultAudio(row: Row, spec: LaneSpec,
+                             bands: readonly string[] = AUDIO_BANDS): AudioSpec {
+  const nums = (row.points ?? []).map((p) => p[1]).filter((v): v is number => typeof v === "number");
+  const [waveDown, waveUp] = swing({ wave: row.wave });
+  const up = (spec.max ?? spec.hi) - (Math.max(spec.lo, ...nums) + waveUp);
+  const down = Math.min(spec.hi, ...nums) + waveDown - (spec.min ?? spec.lo);
+  const half = (spec.hi - spec.lo) / 2;
+  const depth = up >= down ? Math.min(up, half) : -Math.min(down, half);
+  return { band: bands.includes("low") ? "low" : bands[0] ?? "all",
+           depth: Math.round(Math.max(-half, depth) * 100) / 100, release: 0.5 };
+}
+
 const CURVES = ["linear", "step", "ease"] as const;
 
 /** A colour value as CSS, or null for one only the show can resolve -- a
@@ -1344,6 +1397,35 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
       ? [p[0] + drag.dBeat, drag.value ?? p[1], ...(p.length > 2 ? [p[2]] : [])] as Point
       : p)).sort((a, b) => a[0] - b[0])
     : points;
+  // The band the lane follows, as where it carries the lane to: from its
+  // resting value (the points, and the wave) out to the loudest level under
+  // each pixel. A cell is a thirty-second of a beat -- far finer than a pixel
+  // -- so a line through every cell would be a smear; the reach is what reads.
+  const audio = useContext(LaneAudio);
+  const cells = !colour && row.audio && audio ? audio.cells(row.audio) : null;
+  const depth = row.audio?.depth ?? 0;
+  const { wave } = row;
+  const heard = useMemo(() => {
+    if (!cells || !audio || !shown.length || !depth) return null;
+    const resting = { id: "", type: "automation" as const, points: shown, wave };
+    const step = Math.max(1, width / 6000);
+    const at = (v: number) => LANE_H - 3
+      - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (LANE_H - 6);
+    const rest: string[] = [];
+    const reach: string[] = [];
+    for (let px = 0; px < width; px += step) {
+      const from = Math.floor(px / perBeat / AUDIO_STEP) - audio.first;
+      const to = Math.max(from + 1, Math.ceil((px + step) / perBeat / AUDIO_STEP) - audio.first);
+      let level = 0;
+      for (let j = Math.max(0, from); j < Math.min(cells.length, to); j++) {
+        if (cells[j]! > level) level = cells[j]!;
+      }
+      const base = laneValue(resting, (px + step / 2) / perBeat) ?? lo;
+      rest.push(`${px},${at(base)}`);
+      reach.push(`${px},${at(base + depth * level)}`);
+    }
+    return { line: reach.join(" "), area: [...reach, ...rest.reverse()].join(" ") };
+  }, [cells, audio, shown, wave, depth, width, perBeat, lo, hi]);
   const samples: string[] = [];
   if (shown.length && row.wave && !colour) {
     // A wave never settles, so the whole lane is sampled, finely enough to
@@ -1424,6 +1506,11 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
            });
            onSelect?.(pointId(row.id, beat));
          }}>
+      {heard && (
+        <g pointerEvents="none" aria-label="audio">
+          <polygon points={heard.area} className="d-heard" />
+          <polyline points={heard.line} className="d-heard-line" />
+        </g>)}
       {colour
         ? <ColourBand points={shown} x={x} width={width} id={row.id} />
         : <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />}
@@ -1631,6 +1718,115 @@ function WaveInspector({ row, history, onSelect }: {
         {num("Starts at (cycles)", "phase", 0.05, 0, 1)}
         {wave.shape === "hold" && num("Seed", "seed", 1)}
         {over && <div className="small d-error" role="alert">{over}</div>}
+      </div>
+    </footer>
+  );
+}
+
+const BAND_HINT: Record<AudioBand, string> = {
+  low: "the kick and the bass", mid: "vocals, synths, snares",
+  high: "hats and cymbals", all: "the track's overall level",
+};
+
+/**
+ * The band of the track's audio a lane follows: which band, how far it carries
+ * the lane, the part of the band's range it listens to, and how fast it lets
+ * go. Like a wave it rides on the points -- they are where the lane rests --
+ * so its reach is checked against the lane's range at every point, with the
+ * wave's on top, as the engine checks it.
+ */
+function AudioInspector({ row, history, onSelect }: {
+  row: Row; history: Edits; onSelect: (id: string | null) => void;
+}) {
+  const spec = useLaneSpec(row);
+  const track = useContext(LaneAudio);
+  const audio = row.audio;
+  if (!audio) return null;
+  const set = (patch: Partial<AudioSpec>) => history.apply((d) => {
+    const r = rowOf(d, row.id);
+    if (r?.audio) r.audio = { ...r.audio, ...patch };
+  });
+  const floor = audio.floor ?? 0;
+  const ceiling = audio.ceiling ?? 1;
+  const num = (label: string, key: "depth" | "floor" | "ceiling" | "release", step: number,
+               value: number | undefined, ok: (v: number) => boolean) => (
+    <label className="small">{label}{" "}
+      <input type="number" step={step} value={value ?? ""} aria-label={`audio ${key}`}
+             style={{ width: 64 }}
+             onChange={(e) => {
+               if (e.target.value === "") return;
+               const v = Number(e.target.value);
+               if (Number.isFinite(v) && ok(v)) set({ [key]: v });
+             }} />
+    </label>
+  );
+  // Where the lane would go past what it accepts: said here, before the
+  // engine refuses the draft, with the point that does it.
+  let over: string | null = null;
+  if (spec.kind === "number") {
+    for (const p of row.points ?? []) {
+      if (typeof p[1] !== "number") continue;
+      const value = p[1];
+      const reach = swing(row).map((by) => value + by)
+        .find((v) => (spec.max !== undefined && v > spec.max) || (spec.min !== undefined && v < spec.min));
+      if (reach !== undefined) {
+        over = `At bar ${barBeat(p[0])} it reaches ${Math.round(reach * 100) / 100}`
+          + `${row.wave ? " with the wave" : ""}, outside ${spec.min ?? "any"} to ${spec.max ?? "any"}.`;
+        break;
+      }
+    }
+  }
+  const missing = track && !track.bands.includes(audio.band as AudioBand);
+  return (
+    <footer className="d-inspector" aria-label="inspector">
+      <div className="d-insp-head">
+        <b>{laneTitle(row.target ?? "", spec)}</b>
+        <span className="muted"> · follows the audio on {row.id}</span>
+        <span className="grow" />
+        <button onClick={() => {
+          history.apply((d) => { const r = rowOf(d, row.id); if (r) delete r.audio; });
+          onSelect(null);
+        }}>Stop following</button>
+      </div>
+      <div className="d-insp-grid">
+        <div>
+          <span className="small muted">Band</span>
+          <div className="d-chips" role="group" aria-label="audio band">
+            {AUDIO_BANDS.map((b) => (
+              <button key={b} className={audio.band === b ? "on" : ""} title={BAND_HINT[b]}
+                      disabled={!!track && !track.bands.includes(b)}
+                      onClick={() => set({ band: b })}>{b}</button>))}
+          </div>
+          <div className="small muted">{BAND_HINT[audio.band as AudioBand] ?? ""}</div>
+        </div>
+        <div>
+          {num(`Depth${spec.unit ? ` (${spec.unit})` : ""}`, "depth", (spec.hi - spec.lo) / 100,
+               audio.depth, () => true)}
+          <div className="small muted">At the band's loudest; negative goes below the points.</div>
+        </div>
+        <div>
+          {num("Listens from", "floor", 0.05, floor, (v) => v >= 0 && v < ceiling)}{" "}
+          {num("to", "ceiling", 0.05, ceiling, (v) => v <= 1 && v > floor)}
+          <div className="small muted">
+            Of the band's loudest in this track: quieter is silence, louder is all the way.</div>
+        </div>
+        <div>
+          {num("Release (beats)", "release", 0.25, audio.release ?? 0, (v) => v >= 0 && v <= 64)}
+          <div className="small muted">How long a full level takes to fall away. 0 follows every hit.</div>
+        </div>
+        {over && <div className="small d-error" role="alert">{over}</div>}
+        {track === null && (
+          <div className="small d-error" role="status">
+            This track has no waveform to read its audio from, so the lane plays its points
+            alone. Prep the track from rekordbox.</div>)}
+        {missing && (
+          <div className="small d-error" role="status">
+            This track's analysis has only its overall level: follow "all", or analyse it in
+            rekordbox with the colour waveform and prep it again.</div>)}
+        {track && !track.exact && !missing && audio.band !== "all" && (
+          <div className="small muted" role="status">
+            Estimated from the colour waveform. Prep the track again to follow rekordbox's own
+            three-band analysis.</div>)}
       </div>
     </footer>
   );
@@ -2472,5 +2668,5 @@ function EventList({ history }: { history: Edits & { doc: RowsDoc | null } }) {
 
 export const Editor = {
   Toolbar, LaneSvg, AutoSvg, GapToggle, LaneMenu, AddLane, Shelf, Inspector, EventList, Param,
-  PointInspector, WaveInspector, uniqueId, OscCue, MidiCue, VisualCue,
+  PointInspector, WaveInspector, AudioInspector, uniqueId, OscCue, MidiCue, VisualCue,
 };

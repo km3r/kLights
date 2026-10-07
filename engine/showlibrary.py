@@ -121,9 +121,15 @@ def load(root: Path, previous: Optional[Library] = None) -> Library:
             pass                        # validated already; belt and braces
     timelines: dict[str, timelinemod.Timeline] = {}
     for track_id, doc in folder.timelines.items():
+        # The track's own audio, for the lanes that follow a band of it. Kept
+        # by `showfiles` while the waveform file is unchanged, so a reload
+        # does not decode it again.
+        audio, missing = showfiles.timeline_audio(
+            root, doc, folder.tracks.get(track_id))
+        folder.warnings.extend(f"timelines/{track_id}.json: {m}" for m in missing)
         try:
             timelines[track_id] = timelinemod.Timeline.from_doc(
-                doc, showfiles.timeline_channels)
+                doc, showfiles.timeline_channels, audio)
         except timelinemod.TimelineError as exc:
             # Validated already, so this is a bug between the two modules
             # rather than a bad file -- reported where a bad file would be.

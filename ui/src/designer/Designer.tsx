@@ -4,16 +4,16 @@ import { apiFetch, apiUrl } from "../useEngine";
 import { SideSection } from "./detail";
 import { PlanSvg } from "../Plan";
 import {
-  BEATS_PER_BAR, DESIGNER_CHUNK, Grid, barBeat, clock, decodeWave, draftFromTemplate, findItem,
-  itemName, whoDrives,
+  BEATS_PER_BAR, DESIGNER_CHUNK, Grid, TrackAudio, barBeat, clock, decodeWave, draftFromTemplate,
+  findItem, itemName, whoDrives,
 } from "./model";
 import type {
-  PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave,
+  PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave, WaveformDoc,
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
 import {
-  Editor, HITS, ParamLanes, PickMenu, clipOps, copyRange, cutRange, gapStart, newHit, offeredLooks,
-  parsePointId, parseWaveId,
+  Editor, HITS, LaneAudio, ParamLanes, PickMenu, clipOps, copyRange, cutRange, gapStart, newHit,
+  offeredLooks, parseAudioId, parsePointId, parseWaveId,
   rememberBack, setClipBoard, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
   useHistory, useMenuDismiss,
 } from "./edit";
@@ -33,9 +33,10 @@ import "./designer.css";
  * lanes (layout B, chosen with the user from the mock-ups).
  *
  *   top        transport, position, snap, track and match, undo/redo/save
- *   lanes      bar ruler, rekordbox's phrases, the waveform, then the
- *              timeline's rows top to bottom -- the higher lane wins -- with
- *              hits, automation and the VJ lane last
+ *   lanes      bar ruler, rekordbox's phrases, the waveform (its bottom edge
+ *              drags it taller), then the timeline's rows top to bottom --
+ *              the higher lane wins -- with hits, automation and the VJ lane
+ *              last. An automation lane can follow a band of the waveform.
  *   right      the rig from above, live from the engine, and who drives each
  *              lane at the playhead
  *   bottom     the selected clip, and inside the routine it plays
@@ -253,8 +254,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       .then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
     apiFetch<{ palettes: PaletteSummary[] }>("/api/palettes")
       .then((r) => setLibrary(r.palettes)).catch(() => setLibrary([]));
-    apiFetch<{ doc: { preview?: string; detail?: { format: string; rate?: number; data: string } } }>(
-      `/api/waveforms/${trackId}`)
+    apiFetch<{ doc: WaveformDoc }>(`/api/waveforms/${trackId}`)
       .then((r) => setWave(decodeWave(r.doc))).catch(() => setWave(null));
   }, [trackId, setBase]);
 
@@ -304,6 +304,9 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   }, [track, doc, trackId, apply]);
 
   const grid = useMemo(() => (track ? new Grid(track.grid.segments) : null), [track]);
+  // The track's audio on its beats, for the lanes that follow a band of it:
+  // null while there is no waveform, which the lanes say.
+  const audio = useMemo(() => (grid ? TrackAudio.from(wave, grid) : null), [wave, grid]);
   const { setPhrases } = history;
   useEffect(() => {
     setPhrases((track?.phrases?.items ?? []).flatMap(([s, e]) => [s, e]));
@@ -427,6 +430,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const selectedPoint = parsePointId(selected);
   const pointRow = selectedPoint ? doc.rows.find((r) => r.id === selectedPoint.row) : undefined;
   const waveRow = doc.rows.find((r) => r.id === parseWaveId(selected) && r.wave);
+  const audioRow = doc.rows.find((r) => r.id === parseAudioId(selected) && r.audio);
   const match = engine.state?.track?.match;
   const live = engine.state?.track;
   const paramLanes = timelineLaneSpecs(doc, routines);
@@ -560,6 +564,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
 
   return (
     <ParamLanes.Provider value={paramLanes}>
+    <LaneAudio.Provider value={audio}>
     <div className="designer" data-chunk={DESIGNER_CHUNK}>
       <header className="d-top">
         <PanelToggle open={panels.browse} side="left" label="browser"
@@ -742,6 +747,8 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
 
       {waveRow && !history.listView
         ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
+        : audioRow && !history.listView
+        ? <Editor.AudioInspector row={audioRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow && !history.listView
         ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                  onSelect={setSelected} />
@@ -790,6 +797,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                       onPick={(what, at) => { place(what, at, addRow.id, true); setAdding(null); }} />
       )}
     </div>
+    </LaneAudio.Provider>
     </ParamLanes.Provider>
   );
 }

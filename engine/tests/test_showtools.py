@@ -197,6 +197,21 @@ try:
     doc, ch, pr = apply({"op": "set_wave", "row": "scene", "wave": {"shape": "sine"}})
     check("set_wave on a lane that is not automation is a problem",
           pr and "automation row" in pr[0])
+    doc, ch, pr = apply({"op": "set_audio", "row": "size",
+                         "audio": {"band": "low", "depth": 0.3, "release": 0.5}})
+    check("set_audio names the band the lane now follows",
+          not pr and "follows the audio's low band" in ch[0]
+          and row_of(doc, "size")["audio"]["release"] == 0.5)
+    doc, ch, pr = apply({"op": "set_audio", "row": "size", "audio": {"band": "low"}},
+                        {"op": "set_audio", "row": "size", "audio": None})
+    check("a null audio takes it off again", not pr and "audio" not in row_of(doc, "size")
+          and "no longer follows" in ch[1])
+    doc, ch, pr = apply({"op": "set_audio", "row": "size", "audio": "loud"})
+    check("audio that is not an object is passed to validation, not crashed on",
+          not pr and row_of(doc, "size")["audio"] == "loud")
+    doc, ch, pr = apply({"op": "set_audio", "row": "scene", "audio": {"band": "low"}})
+    check("set_audio on a lane that is not automation is a problem",
+          pr and "automation row" in pr[0])
 
     doc, ch, pr = apply({"op": "set", "key": "palette", "value": "cool"})
     check("set may change the palette", not pr and doc["palette"] == "cool")

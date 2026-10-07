@@ -11,6 +11,7 @@ Run: python engine/tests/test_timeline.py
 """
 
 import ast
+import base64
 import json
 import random
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import bands  # noqa: E402
 from engine import showfiles  # noqa: E402
 from engine import timeline as tl  # noqa: E402
 
@@ -65,12 +67,15 @@ def imports_of(name):
 
 STDLIB = {"__future__", "bisect", "dataclasses", "types", "typing", "math"}
 imported = imports_of("timeline.py")
-check("timeline.py imports only the standard library and waves.py -- a VJ "
-      "output must be able to use it without the lights coming along",
-      imported <= STDLIB | {".waves"}, f"{sorted(imported - STDLIB)}")
+check("timeline.py imports only the standard library, waves.py and bands.py "
+      "-- a VJ output must be able to use it without the lights coming along",
+      imported <= STDLIB | {".waves", ".bands"}, f"{sorted(imported - STDLIB)}")
 check("and waves.py, the shapes a lane's wave follows, imports only the "
       "standard library itself", imports_of("waves.py") <= STDLIB,
       f"{sorted(imports_of('waves.py') - STDLIB)}")
+check("as does bands.py, the audio a lane follows",
+      imports_of("bands.py") <= STDLIB | {"base64", "binascii"},
+      f"{sorted(imports_of('bands.py') - STDLIB)}")
 
 
 # -- 1. one row ---------------------------------------------------------------
@@ -233,6 +238,52 @@ try:
 except tl.TimelineError as exc:
     check("a wave the timeline cannot evaluate is refused, not guessed at",
           "wobble" in str(exc), str(exc))
+
+# A band of the track's own audio, added the same way. 120 bpm from 0 s: a
+# beat is 75 columns, and the kick is the first 10 of each.
+kicks = bytes(v for i in range(75 * 16) for v in ((100 if i % 75 < 10 else 0), 0, 0))
+AUDIO = bands.Audio(
+    bands.decode({"bands": {"format": "pwv7", "rate": 150,
+                            "data": base64.b64encode(kicks).decode("ascii")}}),
+    lambda beat: beat * 0.5, lambda seconds: seconds * 2.0)
+following = [
+    {"id": "m", "type": "automation", "target": "master", "points": [[0, 0.2]],
+     "audio": {"band": "low", "depth": 0.6}},
+    {"id": "r", "type": "automation", "target": "rate.movement", "points": [[0, 1.0]],
+     "wave": {"shape": "square", "bars": 1, "depth": 0.5},
+     "audio": {"band": "low", "depth": 2.0, "release": 0.5}},
+    {"id": "c", "type": "automation", "target": "param.c", "points": [[0, "#ff0000"]],
+     "audio": {"band": "low", "depth": 1.0}}]
+heard = tl.Timeline.from_rows(following, audio=AUDIO)
+check("a lane following a band is its points plus depth times the band's "
+      "level: up on the kick, back between",
+      close(heard.automation("master", 4.0), 0.8)
+      and close(heard.automation("master", 4.5), 0.2),
+      f"{heard.automation('master', 4.0)} {heard.automation('master', 4.5)}")
+check("a wave and a band on one lane both add",
+      close(heard.automation("rate.movement", 3.0), 1.0 + 0.5 + 2.0)
+      and close(heard.automation("rate.movement", 1.0), 1.0 + 2.0))
+rate = heard.curves["rate.movement"][1]
+steps = 8 * 512
+numeric = sum(rate.value((i + 0.5) / 512) for i in range(steps)) / 512
+check("and the integral takes both in, exactly -- a rate lane following the "
+      "bass keeps its phase through a loop",
+      close(rate.integral(8.0) - rate.integral(0.0), numeric, 1e-6),
+      f"{rate.integral(8.0) - rate.integral(0.0)} vs {numeric}")
+check("a colour lane has no number to add a level to, and is left as it is",
+      heard.curves["param.c"][1].audio is None
+      and heard.automation("param.c", 4.0) == ("#ff0000", "#ff0000", 0.0))
+deaf = tl.Timeline.from_rows(following)
+check("without the track's audio -- no waveform yet, or a routine's own rows "
+      "-- the lane plays its points alone",
+      close(deaf.automation("master", 4.0), 0.2) and deaf.curves["master"][1].audio is None)
+try:
+    tl.Timeline.from_rows([{**following[0], "audio": {"band": "sub", "depth": 1}}],
+                          audio=AUDIO)
+    check("a band the timeline cannot evaluate is refused, not guessed at", False)
+except tl.TimelineError as exc:
+    check("a band the timeline cannot evaluate is refused, not guessed at",
+          "sub" in str(exc), str(exc))
 single = tl.Curve.from_points([[32, 0.7]])
 check("one point is a constant", close(single.value(0), 0.7)
       and close(single.value(100), 0.7))

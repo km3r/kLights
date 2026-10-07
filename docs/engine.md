@@ -298,7 +298,7 @@ gitignored `klights.local.json`; with none of those it runs exactly as before.
 | `timelines/<track>.json` | the hand-built show for one track, in beats on its grid |
 | `routines/<id>.json`, `templates/<id>.json` | reusable routines, and phrase → routine template sets |
 | `palettes/<id>.json` | the show's palette library: one named palette, three colours |
-| `waveforms/<track>.json` | rekordbox's waveform for a track, read on demand, never pushed |
+| `waveforms/<track>.json` | rekordbox's waveform for a track, read on demand, never pushed; its frequency bands are what a lane follows |
 | `media/` | videos for the `#visuals` page |
 
 [`showfiles.py`](../engine/showfiles.py) is the one authoring API: Studio,
@@ -346,6 +346,25 @@ clamped, so a wave on a rate lane never breaks the phase. On a colour lane it
 pulls the colour `toward` another. Hits are windows: a jump into one shows it,
 a jump over one never fires it. Everything is a pure function of the beat.
 `python -m engine.showfiles explain TRACK BEAT` prints it.
+
+A track's timeline can also have a number lane **follow the track's own
+audio** ([`bands.py`](../engine/bands.py)): a row's `audio` is
+`{band, depth, floor, ceiling, release}`, and its value is points + wave +
+depth × the band's level. The bands are `low`, `mid`, `high` and `all`, read
+from rekordbox's analysis in `waveforms/<track>.json` -- its three-band
+waveform (`PWV7`) where the track has one, else the colour waveform's colours
+times its height (an estimate), else the height alone (`all` only). It is
+not live audio, so it is as repeatable as a point: a loop or a scrub lands on
+the level that was authored there. Each band is scaled to its loudest moment
+in the track; `floor` and `ceiling` pick the part of that range the lane
+listens to, and `release` is the beats a full level takes to fall away. The
+columns (150 a second) are pooled onto the grid, a thirty-second of a beat to
+a cell, so the integral is an exact prefix sum and a `rate.*` lane can follow
+a band without losing its phase. The swing is validated like a wave's, and
+with it when a row has both. A track with no waveform is a warning, and the
+lane plays its points alone. A routine's own lanes cannot follow audio -- a
+routine plays on any track -- but a timeline's `param.<name>` lane can, which
+drives that parameter on every routine placed there.
 
 **What the fixtures do** is [`program.py`](../engine/program.py), the only
 place a timeline meets `state.py`. It compiles a track's timeline for one rig --
@@ -545,8 +564,9 @@ on each phrase family) or a palette. The first three open in their editor
 unsaved, the start handed over in sessionStorage (`pending.ts`, for a minute)
 and applied there, so nothing is written until Save; a palette has no editor
 and is written at once. `#studio/track/<id>` is layout B
--- bar ruler, rekordbox's phrases, the waveform, then the timeline's rows (the
-higher lane wins), hits, automation and the VJ lane, with the rig's plan and
+-- bar ruler, rekordbox's phrases, the waveform (its bottom edge drags it
+taller, and **Bands** stacks its low, mid and high), then the timeline's rows
+(the higher lane wins), hits, automation and the VJ lane, with the rig's plan and
 "who drives each lane" at the playhead on the right and the selected clip
 below; `#studio/routine/<id>` edits a routine with the same lanes in loop
 mode, plus its roles, open parameters, variations and blocks. Its beat grid,
@@ -577,6 +597,7 @@ the folder may be written while a show runs.
 | what a knob is: range, label, units | [`params.py`](../engine/params.py) |
 | the building blocks routines and parametric looks share | [`blocks.py`](../engine/blocks.py) |
 | parameters that move on their own | [`modulate.py`](../engine/modulate.py), [`waves.py`](../engine/waves.py) |
+| a track's audio as levels over its beats | [`bands.py`](../engine/bands.py) |
 | self-running axes | [`auto.py`](../engine/auto.py) |
 | the ported look library | [`library.py`](../engine/library.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |

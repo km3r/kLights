@@ -75,6 +75,13 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <><b>∿</b> on a curve adds a wave on top of its points: a sine,
             triangle, ramp, saw, square or hold every few bars. Depth is how
             far above the points it swings; negative swings below.</>,
+          <><b>♪</b> on a curve has it follow the track's own audio: the
+            <b> low</b>, <b>mid</b> or <b>high</b> band, or <b>all</b> of it,
+            on top of its points. <b>Listens from</b> and <b>to</b> pick how
+            loud counts, and <b>Release</b> is how fast it lets go. It reads
+            rekordbox's analysis, so it plays the same on every pass.</>,
+          <>Drag the bottom edge of the <b>waveform</b> to make it taller.{" "}
+            <b>Bands</b> shows its low, mid and high one above another.</>,
           <><b>List</b> shows every item in order, with nudge buttons for exact
             timing.</>,
         ],

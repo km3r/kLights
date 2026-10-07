@@ -39,6 +39,25 @@
         "data"
       ]
     },
+    "bands": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 1
+        },
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "data"
+      ]
+    },
     "version": {
       "type": "integer",
       "description": "Format version. Current is 1; a file with no version is treated as 1."

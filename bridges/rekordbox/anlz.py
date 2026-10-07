@@ -4,7 +4,8 @@ A reader for rekordbox's analysis files (ANLZ0000.DAT / .EXT / .2EX).
 rekordbox writes one set of these per analysed track. They hold what F19 needs
 and nothing else in the chain can supply: the beat grid (`PQTZ`), the phrase
 analysis (`PSSI`, in .EXT), the waveforms the designer draws (`PWAV`, `PWV3`,
-`PWV5`), the cue points (`PCOB`, `PCO2`) and the path of the audio file the
+`PWV5`), the three-band waveform a lane can follow (`PWV7`, in .2EX), the cue
+points (`PCOB`, `PCO2`) and the path of the audio file the
 analysis belongs to (`PPTH`) -- which is how a folder of these is joined to a
 track list.
 
@@ -76,6 +77,7 @@ class Analysis:
     preview: Optional[bytes] = None    # PWAV: 400 columns
     detail: Optional[bytes] = None     # PWV5 if present, else PWV3
     detail_format: Optional[str] = None
+    bands: Optional[bytes] = None      # PWV7: low, mid, high per column
     unknown: list[str] = field(default_factory=list)
 
 
@@ -237,6 +239,23 @@ def _detail(fmt: str):
     return handle
 
 
+def _pwv7(body: bytes, out: Analysis) -> None:
+    """Three-band scrolling waveform (the CDJ-3000's). u4 entry_bytes (3),
+    u4 entries, u4 ?, then three bytes a column: LOW, MID, HIGH, each 0-127.
+
+    That order is not crate-digger's documented one; it was read off real
+    files (`engine/bands.py` says how). A tag whose entries are not three
+    bytes is a layout this reader does not know, and is left out rather than
+    read as if it were."""
+    _need(body, 12, "PWV7")
+    size, count = struct.unpack_from(">II", body, 0)
+    if size != 3:
+        out.unknown.append(f"PWV7/{size}")
+        return
+    _need(body, 12 + 3 * count, "PWV7 data")
+    out.bands = bytes(body[12:12 + 3 * count])
+
+
 def _pssi(body: bytes, out: Analysis) -> None:
     """Song structure. u4 entry_bytes (24), u2 len_entries, then -- masked in
     rekordbox 6+ -- u2 mood, 6 ?, u2 end_beat, 2 ?, u1 bank, 1 ?, entries."""
@@ -325,6 +344,6 @@ def _pco2(body: bytes, out: Analysis) -> None:
 
 _TAGS = {
     b"PQTZ": _pqtz, b"PPTH": _ppth, b"PWAV": _pwav,
-    b"PWV3": _detail("pwv3"), b"PWV5": _detail("pwv5"),
+    b"PWV3": _detail("pwv3"), b"PWV5": _detail("pwv5"), b"PWV7": _pwv7,
     b"PSSI": _pssi, b"PCOB": _pcob, b"PCO2": _pco2,
 }

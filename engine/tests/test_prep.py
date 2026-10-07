@@ -75,6 +75,13 @@ def pwv3(data: bytes) -> bytes:
     return tag(b"PWV3", struct.pack(">III", 1, len(data), 0x960000), data)
 
 
+def pwv7(columns, entry_bytes: int = 3) -> bytes:
+    """columns: [(low, mid, high)] -- the header as rekordbox 6 and 7 write it
+    (entry size, entry count, then 150 in the top half of a word)."""
+    data = bytes(v for c in columns for v in c)
+    return tag(b"PWV7", struct.pack(">III", entry_bytes, len(columns), 0x960000), data)
+
+
 MASK_BASE = [0xCB, 0xE1, 0xEE, 0xFA, 0xE5, 0xEE, 0xAD, 0xEE, 0xE9, 0xD2,
              0xE9, 0xEB, 0xE1, 0xE9, 0xF3, 0xE8, 0xE9, 0xF4, 0xE1]
 
@@ -156,6 +163,25 @@ check("named cues from PCO2 replace PCOB's",
       f"{a.cues}")
 check("the colourless detail waveform is kept", a.detail_format == "pwv3"
       and len(a.detail) == 1024)
+
+BANDS = [(100, 20, 5), (0, 64, 127), (50, 50, 50)] * 40
+TWO = anlz_file(ppth("C:/Music/Night Drive.mp3"), pwv7(BANDS),
+                tag(b"PWV6", struct.pack(">II", 3, 4), bytes(12)))
+anlz.parse(TWO, a)
+check("the .2EX's three-band waveform is kept whole: low, mid, high a column",
+      a.bands == bytes(v for c in BANDS for v in c) and a.bands[:3] == bytes([100, 20, 5]))
+check("and merging it disturbs nothing already read",
+      a.detail_format == "pwv3" and len(a.beats) == 200 and a.unknown == ["PVBR", "PWV6"])
+odd = anlz.parse(anlz_file(pwv7([(1, 2, 3, 4)] * 5, entry_bytes=4)))
+check("a three-band tag whose entries are not three bytes is a layout this "
+      "reader does not know: left out and listed, not read as if it were",
+      odd.bands is None and odd.unknown == ["PWV7/4"], f"{odd.unknown}")
+try:
+    anlz.parse(anlz_file(tag(b"PWV7", struct.pack(">III", 3, 500, 0x960000), bytes(30))))
+    check("refused: a three-band waveform claiming more columns than it holds", False)
+except anlz.AnlzError as exc:
+    check("refused: a three-band waveform claiming more columns than it holds",
+          "PWV7" in str(exc), str(exc)[:60])
 
 clear = anlz.parse(anlz_file(pssi(1, 163, PHRASES, masked=False)))
 check("a clear PSSI decodes to the same phrases as a masked one",
@@ -344,6 +370,25 @@ try:
           wave_path.exists() and "waveform was missing" in out
           and (show / "tracks" / f"{night['id']}.json").read_bytes()
           == before[show / "tracks" / f"{night['id']}.json"], out)
+
+    # Analysed again by a rekordbox that writes the three-band waveform -- or
+    # prepped before lanes could follow the audio. The track is unchanged; its
+    # waveform is not.
+    track_bytes = (show / "tracks" / f"{night['id']}.json").read_bytes()
+    (anlz_root / "ANLZ0000.2EX").write_bytes(TWO)
+    code, out = run("--show-dir", str(show), "xml", str(xml),
+                    "--anlz-root", str(tmp / "USBANLZ"), "--db", "collection:TEST")
+    wave = json.loads(wave_path.read_text())
+    check("a track gains rekordbox's three-band analysis without being touched",
+          "three-band analysis" in out and out.count("unchanged") == 2
+          and base64.b64decode(wave["bands"]["data"]) == bytes(v for c in BANDS for v in c)
+          and wave["bands"]["format"] == "pwv7" and wave["detail"]["format"] == "pwv3"
+          and (show / "tracks" / f"{night['id']}.json").read_bytes() == track_bytes, out)
+    stamp = wave_path.read_bytes()
+    code, out = run("--show-dir", str(show), "xml", str(xml),
+                    "--anlz-root", str(tmp / "USBANLZ"), "--db", "collection:TEST")
+    check("and once it has it, running prep again leaves the waveform alone",
+          "waveform" not in out and wave_path.read_bytes() == stamp, out)
 
     # Renamed in rekordbox: same id, so the same track, with the old name kept.
     xml.write_text(XML.replace("{title}", "Night Drive (Club Mix)"), encoding="utf-8")

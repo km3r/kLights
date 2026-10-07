@@ -344,6 +344,47 @@
                   "shape",
                   "bars"
                 ]
+              },
+              "audio": {
+                "type": "object",
+                "description": "{\"band\": \"low\", \"depth\": 0.5, \"release\": 0.5}",
+                "properties": {
+                  "band": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "mid",
+                      "high",
+                      "all"
+                    ],
+                    "description": "low (the kick and bass), mid, high (hats and cymbals), or all: the track's overall level"
+                  },
+                  "depth": {
+                    "type": "number",
+                    "description": "how far above the points the lane goes at the band's loudest, in the lane's own units; negative goes below"
+                  },
+                  "floor": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "levels under this count as silence, 0-1 of the band's loudest; default 0"
+                  },
+                  "ceiling": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "the level that is all the way there, 0-1 of the band's loudest; default 1"
+                  },
+                  "release": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 64.0,
+                    "description": "beats a full level takes to fall away; 0 follows every transient"
+                  }
+                },
+                "required": [
+                  "band"
+                ]
               }
             },
             "required": [
