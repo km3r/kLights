@@ -17,6 +17,18 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — Drive the rig plays what is on Studio's screen
+
+- **Studio's rig preview stayed on the saved file, or on nothing.** The engine
+  arms a preview on the timeline as saved, and lets a draft replace it only
+  for a page that is already driving. Studio sent its draft when the timeline
+  was edited, which is before **Drive the rig** is pressed, and not again. So
+  the rig played the file as saved until the next edit, while the lanes showed
+  the working copy. For a timeline not saved yet (a new track, or a draft from
+  a template set) there was no file, and the rig preview stayed on the live
+  show however the playhead moved. Studio now sends its working copy as it
+  takes the rig.
+
 ### Added — tests at every layer, and a browser suite that checks the wire
 
 - **A browser end-to-end suite** (`cd ui && npm run e2e`): the real engine,

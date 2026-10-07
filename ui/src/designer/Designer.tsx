@@ -327,11 +327,21 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [driveError, setDriveError] = useState<string | null>(null);
   const preview = engine.state?.preview ?? null;
 
+  const docRef = useRef(doc);
+  docRef.current = doc;
   const arm = async (force = false) => {
     setDriveError(null);
     const reply = await engine.request({ type: "preview_arm", track_id: trackId, force });
-    if (reply.ok) setDriving(true);
-    else setDriveError(reply.error ?? "the engine refused");
+    if (!reply.ok) {
+      setDriveError(reply.error ?? "the engine refused");
+      return;
+    }
+    setDriving(true);
+    // The engine arms on the file as saved, and a draft only replaces that
+    // for a page already driving -- the check this copy went through when it
+    // was last edited came before. Sent again, or the rig plays the saved
+    // file (nothing at all, for a timeline not saved yet) until the next edit.
+    if (docRef.current) void engine.request({ type: "timeline_draft", doc: docRef.current });
   };
   const release = () => {
     setDriving(false);

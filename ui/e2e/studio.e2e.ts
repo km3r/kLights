@@ -64,6 +64,34 @@ test("a clip edited in the inspector is checked by the engine and saved to the f
       .toBeVisible();
   });
 
+test("the rig Studio drives plays the timeline on its screen, not the file as saved",
+  async ({ page, browser, engine }) => {
+    const sent: string[] = [];
+    page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+    const drafts = () => sent.filter((f) => f.includes('"type":"timeline_draft"')
+      && f.includes('"variation":"tight"')).length;
+    await openTimeline(page, engine.url("studio"));
+    const lanes = page.getByRole("region", { name: "lanes" });
+    await lanes.getByLabel("fan-drop at bar 41.1").locator("rect").first().click();
+    await page.getByRole("contentinfo", { name: "inspector" })
+      .getByRole("button", { name: "tight" }).click();
+    // The edit's own check has gone to the engine before the page has the
+    // rig, so it put nothing on stage and no other is on its way.
+    await expect.poll(drafts).toBe(1);
+    await page.getByRole("button", { name: "Drive the rig" }).click();
+
+    const phone = await browser.newContext();
+    await phone.addInitScript(() => localStorage.setItem("klights.guide.welcomed", "1"));
+    const console_ = await phone.newPage();
+    try {
+      await console_.goto(engine.url());
+      await expect(console_.locator(".banners"))
+        .toContainText("is driving the rig on synth-128 (unsaved draft)");
+    } finally {
+      await phone.close();
+    }
+  });
+
 test("Studio can drive the rig, every console is told, and a console can take it back",
   async ({ page, browser, engine }) => {
     await openTimeline(page, engine.url("studio"));
