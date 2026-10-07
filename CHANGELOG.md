@@ -41,6 +41,27 @@ the commit messages keep those labels.
 - MCP and the CLI: `edit_timeline` has a `set_audio` op, and `explain` and
   `lint` take the audio into account.
 
+### Fixed — a browser that was only busy is no longer disconnected
+
+- **The engine dropped a console for being 0.3 s behind.** A client three
+  state snapshots behind was taken to have gone, and disconnected. With a show
+  folder loaded a snapshot is about 59 kB, and a browser reads nothing while
+  its page is busy, so a page that spent 1.5 s loading Studio's editor was
+  dropped while it was about to read. It reconnected 400 ms later, but a Save
+  pressed in that gap was answered "not connected to the engine", and a page
+  driving the rig lost it ("The connection to the engine dropped, so the rig
+  went back to the show").
+- The engine now keeps one snapshot per client, the newest, and sends that
+  when the client next reads. Replies to commands are kept in order, and none
+  is discarded for a client that is behind, where a reply to a client three
+  snapshots behind used to be skipped.
+- **What is dropped is a client that has stopped reading:** one whose socket
+  has not taken a whole message in 5 seconds (`SEND_DEADLINE_S`). The notice
+  now reads `dropped <name>: 5 seconds behind and not reading`. So a phone
+  that locked its screen stays in the presence list about five seconds longer
+  than it did, and a Studio laptop that went away keeps the rig that much
+  longer. One stuck client still cannot delay the broadcast to the others.
+
 ### Fixed — explaining a colour lane that has a wave
 
 - `python -m engine.showfiles explain TRACK BEAT` and MCP's `explain_position`

@@ -230,8 +230,22 @@ live.
 - State is broadcast at 10 Hz, not per frame — a display cannot show 40 Hz, and
   serialising that much JSON on a thread sharing a GIL with the DMX clock is
   exactly the in-process work the timing spike identified as fatal.
-- Each client has a **bounded queue and its own sender thread**, so one phone
-  that locks its screen cannot stall the broadcast for everyone.
+- Each client has **its own outbox and sender thread**, so one phone that
+  locks its screen cannot stall the broadcast for everyone.
+- **A client that is behind is not disconnected.** The outbox keeps one
+  snapshot, the newest, so a browser whose page was busy for a second or two
+  reads what was already in transit and then the state as it is now, not
+  everything it missed. Replies are different: each answers one command, so
+  they are kept in order (up to 256 waiting) and none is discarded for a
+  connected client.
+- **A client that has stopped reading is dropped after 5 seconds**
+  (`SEND_DEADLINE_S` in [`server.py`](../engine/server.py)): one message has
+  sat unfinished in its socket for that long. The notice reads
+  `dropped <name>: 5 seconds behind and not reading`, and a browser
+  reconnects by itself. Until then the client stays in the presence list, and
+  a Studio page that is driving the rig keeps it. The clock is per message, so
+  a link too slow to carry one snapshot in 5 seconds (about 12 kB/s with a
+  show folder loaded) is dropped as well.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
 - A command may carry an `id` (a short string or an integer). It then gets a

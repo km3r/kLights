@@ -41,6 +41,7 @@ import threading
 import time
 import traceback
 from urllib.parse import parse_qs, urlparse
+from collections import deque
 from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -92,11 +93,25 @@ BROADCAST_HZ = 10.0
 # (`ShowController._deferred`). Never sent anywhere.
 DEFERRED = object()
 
-# How many snapshots a client may fall behind before it is dropped. Three is a
-# third of a second at BROADCAST_HZ: long enough to ride out a garbage collection
-# or a wifi hiccup, short enough that a client which has genuinely gone away is
-# gone before anyone reaches for the master and wonders why nothing moved.
-QUEUE_DEPTH = 3
+# How long one message may sit unfinished in a client's socket before the client
+# is dropped as not reading. A client that is only behind is never dropped: it
+# is sent the newest snapshot when it next takes one (see `Connection`).
+#
+# This was a count, three snapshots, a third of a second. That was sized for a
+# 30 kB snapshot. With a show folder loaded a snapshot is about 59 kB, and a
+# browser stops reading its socket whenever its main thread is busy, so a page
+# that spent a second and a half loading Studio's editor was dropped while it
+# was alive and about to read -- and a page driving the rig lost it. Five
+# seconds is longer than a working page stalls, and short enough that a phone
+# which has really gone leaves the presence list, and lets go of a rig it was
+# driving, while someone is still looking at it.
+SEND_DEADLINE_S = 5.0
+
+# Replies one client may have waiting. Only a client that sends commands and
+# does not read the answers can reach it, and it is dropped when it does: the
+# cap is what keeps that client from growing the engine's memory until
+# SEND_DEADLINE_S catches up with it.
+REPLY_BACKLOG = 256
 
 # A solve fitting worse than this is not written over a working calibration.
 # Comfortably above the 0.67 deg worst case the solver hits on clean captures,
@@ -159,23 +174,109 @@ TIER: dict[str, str] = {
 class Connection:
     """One socket, with the thread that owns writing to it.
 
-    The write side is a queue and a thread rather than a direct call, so the
+    The write side is an outbox and a thread rather than a direct call, so the
     broadcast loop can hand off a payload without ever waiting on a client --
     see `ShowServer.send_all` for why that matters.
+
+    The outbox holds two kinds of message and treats them differently, because
+    they are different. A snapshot is the whole state, so the next one makes it
+    worthless: one is kept, the newest, and a client that fell behind catches up
+    in a single frame instead of replaying everything it missed. A reply answers
+    one command and nothing repeats it: every reply is kept, in the order they
+    were made. What goes out is what a plain queue would have sent with the
+    superseded snapshots left out, so a reply still arrives before the first
+    snapshot made after it.
+
+    Being behind is therefore not a reason to drop anyone. Not reading is: see
+    `given_up`.
     """
 
     def __init__(self, ws: WebSocket):
         self.ws = ws
         self.lock = threading.Lock()
-        self.queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=QUEUE_DEPTH)
+        # Guards the outbox below. Held for a few assignments and never across
+        # a send, so taking it cannot wait on the client.
+        self._wake = threading.Condition()
+        self._replies: "deque[str]" = deque()
+        self._snapshot: Optional[str] = None
+        # How many of the waiting replies were made before the waiting snapshot
+        # and so go out ahead of it.
+        self._ahead = 0
+        self._overflowed = False
+        # When the pump took the message it is sending now; None between sends.
+        self._sending_since: Optional[float] = None
+        self._closed = False
         self.thread = threading.Thread(target=self._pump, daemon=True)
         self.thread.start()
 
+    def offer_snapshot(self, payload: str) -> None:
+        """The state as of now, replacing one this client has not taken yet."""
+        with self._wake:
+            self._snapshot = payload
+            self._ahead = len(self._replies)
+            self._wake.notify()
+
+    def offer_reply(self, payload: str) -> None:
+        """An answer to one command. Kept until sent, in order.
+
+        Past `REPLY_BACKLOG` it is not kept, and the client is dropped on the
+        next broadcast: a connection that is about to end loses everything
+        still waiting for it anyway, and its browser answers every command it
+        was waiting on with "the connection to the engine dropped".
+        """
+        with self._wake:
+            if len(self._replies) >= REPLY_BACKLOG:
+                self._overflowed = True
+                return
+            self._replies.append(payload)
+            self._wake.notify()
+
+    def stuck_for(self, now: float) -> float:
+        """Seconds the message being sent now has been in the socket; 0.0
+        between sends. `now` is `time.monotonic()`."""
+        with self._wake:
+            since = self._sending_since
+        return 0.0 if since is None else max(0.0, now - since)
+
+    def given_up(self, now: float) -> Optional[str]:
+        """Why this client should be dropped, in the words of the notice, or
+        None while it should not.
+
+        The test is whether the socket takes a message, not how far behind the
+        client is. A send returns once the kernel has the bytes, so one that
+        has not returned in `SEND_DEADLINE_S` means the buffers between here
+        and the client filled and did not empty by one message in that time:
+        a locked phone, a laptop out of wifi range, a page that hung. A browser
+        whose main thread was busy empties them the moment it is back.
+
+        The clock is per message, and nothing restarts it part-way. So a link
+        that cannot carry one snapshot in `SEND_DEADLINE_S` -- about 12 kB/s
+        with a show folder loaded -- counts as not reading, though it is.
+        """
+        if self.stuck_for(now) >= SEND_DEADLINE_S:
+            return f"{SEND_DEADLINE_S:g} seconds behind and not reading"
+        if self._overflowed:
+            return f"{REPLY_BACKLOG} replies behind and not reading"
+        return None
+
     def _pump(self) -> None:
         while True:
-            payload = self.queue.get()
-            if payload is None:                     # close sentinel
-                return
+            with self._wake:
+                self._sending_since = None
+                while not (self._closed or self._replies
+                           or self._snapshot is not None):
+                    self._wake.wait()
+                if self._closed:
+                    return
+                if self._snapshot is not None and self._ahead == 0:
+                    payload, self._snapshot = self._snapshot, None
+                else:
+                    payload = self._replies.popleft()
+                    self._ahead = max(0, self._ahead - 1)
+                # Stamped before the lock below as well as the send: the only
+                # other holder is the handler writing the welcome, and a client
+                # that never reads even that is stuck in the same way.
+                self._sending_since = time.monotonic()
             try:
                 # Same per-connection lock as before: a broadcast and a command
                 # acknowledgement interleaving on one socket would splice two
@@ -183,6 +284,8 @@ class Connection:
                 with self.lock:
                     self.ws.send(payload)
             except (WebSocketClosed, WebSocketError, OSError):
+                # `_sending_since` is left standing: if the reader has not
+                # noticed the socket is dead, the deadline still will.
                 return
 
     def close(self) -> None:
@@ -199,10 +302,11 @@ class Connection:
         down underneath it. A browser that misses the frame just sees the TCP
         close and reconnects on the backoff it already implements.
         """
-        try:
-            self.queue.put_nowait(None)
-        except queue.Full:
-            pass                    # the pump is stuck; the shutdown below ends it
+        with self._wake:
+            # Ends a pump that is waiting. One stuck in a send does not see
+            # this; the shutdown below ends that one.
+            self._closed = True
+            self._wake.notify()
         try:
             self.ws.sock.settimeout(0.2)
             self.ws.close()
@@ -3934,30 +4038,38 @@ class ShowServer:
         either -- it reports ready when a single byte of buffer is free, and a
         30 kB snapshot then blocks partway anyway.
 
-        So the broadcast thread is made structurally incapable of blocking: a
-        bounded queue per client, drained by that client's own thread. Full
-        queue means the client is behind by `QUEUE_DEPTH` snapshots and is not
-        coming back, so it is dropped and its browser reconnects on the backoff
-        it already implements.
+        So the broadcast thread is made structurally incapable of blocking: an
+        outbox per client, drained by that client's own thread. Handing a
+        snapshot over is an assignment under a lock nobody holds across a send.
+
+        The outbox keeps one snapshot, the newest, so a client that is behind
+        is not dropped for it -- it used to be, at three snapshots, and that
+        dropped browsers that were only busy (see `SEND_DEADLINE_S`). What is
+        dropped is a client whose socket has not taken one message in that
+        long, and this is still where it happens: two comparisons per client
+        on a thread that visits every client ten times a second anyway. Its
+        browser reconnects on the backoff it already implements.
         """
+        now = time.monotonic()
         for cid, conn in list(self.sockets.items()):
-            try:
-                conn.queue.put_nowait(payload)
-            except queue.Full:
-                who = self.controller.clients.get(cid)
-                self.controller.note(
-                    f"dropped {who.name if who else cid}: {QUEUE_DEPTH} "
-                    f"snapshots behind and not reading")
-                self.drop(cid)
+            why = conn.given_up(now)
+            if why is None:
+                conn.offer_snapshot(payload)
+                continue
+            who = self.controller.clients.get(cid)
+            self.controller.note(f"dropped {who.name if who else cid}: {why}")
+            self.drop(cid)
 
     def send_to(self, cid: str, payload: dict) -> None:
         """One message to one client. Never blocks, because it is called from
         the output thread with a frame waiting.
 
-        A full queue means this client is already `QUEUE_DEPTH` snapshots behind
-        and the broadcast loop is about to drop it; the reply is skipped rather
-        than dropping it from here, because closing a socket can wait on the
-        network and the output thread cannot.
+        The reply waits in the client's outbox behind any made before it, and
+        is not discarded for a client that is behind: a page that was busy for
+        two seconds still learns that its save went through. A client with
+        `REPLY_BACKLOG` of them unread is not dropped from here but by the
+        broadcast loop, because closing a socket can wait on the network and
+        the output thread cannot.
         """
         conn = self.sockets.get(cid)
         if conn is None:
@@ -3970,10 +4082,7 @@ class ShowServer:
             text = json.dumps({"type": "reply", "id": payload.get("id"),
                                "ok": payload.get("ok"),
                                "error": f"reply data not serialisable: {exc}"})
-        try:
-            conn.queue.put_nowait(text)
-        except queue.Full:
-            pass
+        conn.offer_reply(text)
 
     def drop(self, cid: str) -> None:
         conn = self.sockets.pop(cid, None)
