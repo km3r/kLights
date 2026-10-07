@@ -13,12 +13,12 @@ import { groupLabel } from "./groups";
  *
  * Four things do the work:
  *
- *   * **One slot per tab.** A colour cannot appear on the Move tab, so nothing
+ *   * **One slot per tab.** A color cannot appear on the Move tab, so nothing
  *     you press here can disturb what another tab set.
  *   * **Pill filters per fixture type.** "MH Red" and "Pin Ball Glow" are both
- *     colours but they are different decisions about different lights, and they
+ *     colors but they are different decisions about different lights, and they
  *     were sharing one list of 51. Each group also holds its own selection, so
- *     a pinspot colour and a mover colour are up at the same time.
+ *     a pinspot color and a mover color are up at the same time.
  *   * **A chase's own steps are filed under the chase.** "Spotlight Step 1..4"
  *     are meaningless alone and were four entries wide in a list of twenty.
  *   * **A filter box**, because past about thirty items typing beats scanning.
@@ -32,13 +32,13 @@ import { groupLabel } from "./groups";
 
 
 const KIND_LABELS: Record<string, string> = {
-  pose: "Positions", path: "Moves", mixed: "Position + colour",
-  color: "Colours", color_path: "Colour chases",
+  pose: "Positions", path: "Moves", mixed: "Position + color",
+  color: "Colors", color_path: "Color chases",
   intensity: "Levels", level_path: "Level chases",
 };
 // Per slot, because the first group is the one that opens by default and the
-// right default differs. A single global order opened "Colour chases" (5 of
-// them) on the Color tab and left the 51 plain colours collapsed, which is the
+// right default differs. A single global order opened "Color chases" (5 of
+// them) on the Color tab and left the 51 plain colors collapsed, which is the
 // wrong way round: the common case should be the visible one.
 const KIND_ORDER: Record<Slot, string[]> = {
   movement: ["path", "pose", "mixed"],

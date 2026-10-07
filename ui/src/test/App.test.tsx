@@ -101,7 +101,7 @@ describe("header", () => {
     expect(socket.last()).toEqual({ type: "blackout", on: false });
   });
 
-  it("distinguishes blackout from panic in words, not just in colour", () => {
+  it("distinguishes blackout from panic in words, not just in color", () => {
     const socket = mount();
     act(() => socket.push(stateWith((s) => { s.blackout = true; s.panicked = true; })));
     // Blackout leaves the show running underneath; panic bypasses it entirely.
@@ -163,14 +163,14 @@ describe("banners", () => {
 });
 
 /**
- * The three slots are the heart of the reorganisation: colour, movement and
+ * The three slots are the heart of the reorganisation: color, movement and
  * level are picked on their own tabs and do not disturb each other. These tests
  * guard that separation, since it is invisible until it breaks.
  */
 describe("slots", () => {
   it("shows what each slot holds, and they are all filled at once", () => {
     mount();
-    // The fixture has a move, a colour AND a level chase loaded together --
+    // The fixture has a move, a color AND a level chase loaded together --
     // which was impossible while one selection replaced the whole show.
     const now = screen.getByText(/On now/i).closest(".card")!;
     expect(now.textContent).toContain("Lazy Circle");
@@ -183,17 +183,17 @@ describe("slots", () => {
     mount();
     await goTo(user, /Move/);
     const card = screen.getByText(/^Route$/).closest(".card")! as HTMLElement;
-    // 'MH Red' is a colour: it must not be reachable from here, or picking a
-    // route could clobber the colour.
+    // 'MH Red' is a color: it must not be reachable from here, or picking a
+    // route could clobber the color.
     await user.type(within(card).getByLabelText(/filter movement/), "MH Red");
     expect(within(card).queryByRole("button", { name: /^MH Red/ })).toBeNull();
   });
 
-  it("offers only colour looks on the Color tab", async () => {
+  it("offers only color looks on the Color tab", async () => {
     const user = userEvent.setup();
     mount();
     await goTo(user, /Color/);
-    const card = screen.getByText("Colour look").closest(".card")! as HTMLElement;
+    const card = screen.getByText("Color look").closest(".card")! as HTMLElement;
     await user.type(within(card).getByLabelText(/filter color/), "Lazy Circle");
     expect(within(card).queryByRole("button", { name: /^Lazy Circle/ })).toBeNull();
   });
@@ -606,7 +606,7 @@ describe("show tab", () => {
     await goTo(user, /Move/);
     expect(screen.getByRole("button", { name: /Moves · \d+/ })).toBeInTheDocument();
     await goTo(user, /Color/);
-    expect(screen.getByRole("button", { name: /Colours · \d+/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Colors · \d+/ })).toBeInTheDocument();
   });
 
   it("filters across every group, not just the open one", async () => {
@@ -673,12 +673,12 @@ describe("show tab", () => {
   });
 });
 
-describe("colour", () => {
+describe("color", () => {
   async function openColor(user: ReturnType<typeof userEvent.setup>) {
     await goTo(user, /Color/);
   }
 
-  it("applies a palette colour to the chosen target", async () => {
+  it("applies a palette color to the chosen target", async () => {
     const user = userEvent.setup();
     const socket = mount();
     await openColor(user);
@@ -687,7 +687,7 @@ describe("colour", () => {
     expect(socket.last()).toMatchObject({ type: "color", target: "pinspots" });
   });
 
-  it("defaults to everything, so a colour is never silently scoped", async () => {
+  it("defaults to everything, so a color is never silently scoped", async () => {
     const user = userEvent.setup();
     const socket = mount();
     await openColor(user);
@@ -825,7 +825,7 @@ describe("setup tab", () => {
     await openSetup(user);
     const peers = document.querySelector(".presence")!;
     expect(within(peers as HTMLElement).getByText("tablet")).toBeInTheDocument();
-    expect(peers.textContent).toContain("coloured pinspots");
+    expect(peers.textContent).toContain("colored pinspots");
   });
 
   it("shows the solver's own words when captures disagree", async () => {

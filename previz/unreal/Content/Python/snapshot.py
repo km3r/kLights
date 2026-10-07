@@ -134,8 +134,8 @@ def snapshot(name="overview", out_dir=OUT_DIR, width=WIDTH, height=HEIGHT,
     try:
         component = capture.capture_component2d
         component.set_editor_property("texture_target", target_rt)
-        # Final colour, so what lands in the PNG is what the viewport shows --
-        # volumetric fog, bloom and tone mapping included. Scene colour alone
+        # Final color, so what lands in the PNG is what the viewport shows --
+        # volumetric fog, bloom and tone mapping included. Scene color alone
         # would omit exactly the haze the beams are visible in.
         component.set_editor_property(
             "capture_source", unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR)

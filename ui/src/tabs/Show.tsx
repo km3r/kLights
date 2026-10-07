@@ -13,7 +13,7 @@ import { STUDIO_TARGET, studioHref } from "../studioRoute";
  * Show-level controls: what the whole rig is doing, not what any one part of it
  * looks like.
  *
- * Deliberately holds no look pickers. Colour, movement and level each live on
+ * Deliberately holds no look pickers. Color, movement and level each live on
  * their own tab because they are independent slots — mixing them back in here
  * would rebuild the flat list the split was meant to retire. What is left is the
  * stuff that applies across all three: the clock, the automation, and presets
@@ -71,14 +71,14 @@ function Panic({ state, send }: { state: EngineState; send: (c: Command) => void
 /**
  * What is currently loaded, and where to go to change it.
  *
- * One row per slot per fixture group, because a pinspot colour and a mover
- * colour are separate selections — collapsing them to one line would hide the
+ * One row per slot per fixture group, because a pinspot color and a mover
+ * color are separate selections — collapsing them to one line would hide the
  * fact that both are up.
  */
 function Now({ state, send }: { state: EngineState; send: (c: Command) => void }) {
   const slots: [string, string, string][] = [
     ["Move", "movement", "#move"],
-    ["Colour", "color", "#color"],
+    ["Color", "color", "#color"],
     ["Bright", "level", "#bright"],
   ];
   type Row = { key: string; label: string; value: string | null; href: string };
@@ -242,7 +242,7 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
 
   return (
     <Card title={`Presets — ${state.presets.length}`} help={<>
-      <p>Tap a pad to recall it: the move, colour and level, plus the speed and
+      <p>Tap a pad to recall it: the move, color and level, plus the speed and
         master it was saved with.</p>
       <p>To save, tap an empty pad, type a name and tap <b>Save</b>. Skip the pad
         and it goes in the first free one. Saving with an existing name updates
@@ -383,7 +383,7 @@ function Presets({ state, send }: { state: EngineState; send: (c: Command) => vo
           ? picked
             ? <>Now tap where <b>{picked}</b> should go — landing on a full pad swaps the two.</>
             : "Tap a preset to pick it up and move it, or use the buttons below to delete or tag it."
-          : <>Saves the move, colour and level that are up now, with the speed and
+          : <>Saves the move, color and level that are up now, with the speed and
              master. A pad keeps its preset: saving over one leaves it exactly
              where it is.</>}
       </p>
@@ -461,7 +461,7 @@ const TRACK_STATE: Record<string, string> = {
 };
 
 const LANE_NAMES: Record<Slot, string> = {
-  movement: "Movement", color: "Colour", level: "Level",
+  movement: "Movement", color: "Color", level: "Level",
 };
 const LANE_SOURCE: Record<LaneSource, string> = {
   timeline: "timeline", template: "template", operator: "operator", idle: "idle",
@@ -886,8 +886,8 @@ function Auto({ state, send }: { state: EngineState; send: (c: Command) => void 
           place.</li>
         <li><b>Move changes</b>: the route changes every few phrases (set by{" "}
           <b>Looks every</b>). A move you pick by hand stays until released.</li>
-        <li><b>Palette</b>: the colour steps through the palette (set by{" "}
-          <b>Colours every</b>). Colours you set by hand stay on top.</li>
+        <li><b>Palette</b>: the color steps through the palette (set by{" "}
+          <b>Colors every</b>). Colors you set by hand stay on top.</li>
         <li><b>Energy</b>: level, rate and strobe follow an energy level, guessed
           from the phrase or set with <b>Manual</b>.</li>
       </ul>
@@ -901,7 +901,7 @@ function Auto({ state, send }: { state: EngineState; send: (c: Command) => void 
                   ? "on phrase boundaries" : "on bars — phrase is counted"}
                 on={auto.axes.look_changes}
                 onChange={(on) => send({ type: "auto", axis: "look_changes", on })} />
-        <Toggle label="Palette" hint="rotate colour over time"
+        <Toggle label="Palette" hint="rotate color over time"
                 on={auto.axes.palette}
                 onChange={(on) => send({ type: "auto", axis: "palette", on })} />
         <Toggle label="Energy" hint="drives level, rate and strobe"
@@ -915,11 +915,11 @@ function Auto({ state, send }: { state: EngineState; send: (c: Command) => void 
       <div className="row tight" style={{ marginTop: "0.6rem", flexWrap: "wrap" }}>
         {(["looks", "palette"] as const).map((axis) => (
           <div key={axis} className="row tight" style={{ gap: "0.3rem" }}>
-            {/* "Colours every", not "Palette every": there is a Palette toggle
+            {/* "Colors every", not "Palette every": there is a Palette toggle
                 two lines above, and two controls whose labels both start with
                 the same word is ambiguous to read and ambiguous to click. */}
             <span className="small muted">
-              {axis === "looks" ? "Looks every" : "Colours every"}
+              {axis === "looks" ? "Looks every" : "Colors every"}
             </span>
             {[0.5, 1, 2, 4, 8].map((v) => (
               <button key={v} className={
@@ -927,7 +927,7 @@ function Auto({ state, send }: { state: EngineState; send: (c: Command) => void 
                       // The accessible name comes from here, not the visible text,
                       // so this has to avoid the "Palette" toggle above just as
                       // the label does.
-                      aria-label={`${axis === "looks" ? "looks" : "colours"} `
+                      aria-label={`${axis === "looks" ? "looks" : "colors"} `
                                   + `every ${v} phrases`}
                       onClick={() => send({ type: "auto_interval", axis, value: v })}>
                 {v}

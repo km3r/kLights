@@ -26,7 +26,7 @@ This is the reason it is not just unused but actively flagged, and
 [`engine/rig.py`](../../engine/rig.py) says so at the top of the file: it
 **hand-transcribes** channel layouts rather than reading them from the `.qxf`
 it claims to correspond to. The two can therefore disagree, silently, and the
-symptom is a fixture whose colours or position channels are subtly wrong in
+symptom is a fixture whose colors or position channels are subtly wrong in
 previz while being right on the wire — or the reverse.
 
 The engine parses `.qxf` for channel *roles* precisely so there is one

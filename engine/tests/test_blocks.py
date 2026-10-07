@@ -12,7 +12,7 @@ its ranges. So the claims here are about the declaration as much as the shapes:
   * every declared default sits inside its declared range, or a slider could
     not show it;
   * every shape is finite at every phase and head, every level block is a
-    multiplier, every colour block is a colour.
+    multiplier, every color block is a color.
 
 The sweep is over EVERY block rather than a hand-picked few. A registry whose
 entries are only checked when someone remembers to add a case grows broken
@@ -66,7 +66,7 @@ def sweep_offsets(name, args):
 
 
 def sweep_layer(name, args):
-    """What a colour or level block does to every fixture across the sweep."""
+    """What a color or level block does to every fixture across the sweep."""
     slot = SLOT_OF[name]
     env = blocksmod.Env()
     block = blocksmod.make(name, args, everyone, slot, env, rigging)
@@ -105,7 +105,7 @@ for name in OFFSETS:
           sweep_offsets(name, {}) == sweep_offsets(name, explicit))
 for name in [b for b in BLOCKS if SLOT_OF[b] in ("color", "level")]:
     explicit = {p.name: p.default for p in PARAMS[name] if p.default is not None}
-    # A colour block needs its colours; left out is a build problem, so the
+    # A color block needs its colors; left out is a build problem, so the
     # "no arguments" side gets the declared ones too and the comparison is of
     # everything else.
     required = {k: v for k, v in explicit.items()
@@ -180,14 +180,14 @@ for name in [b for b in BLOCKS if SLOT_OF[b] == "level" and b != "strobe"]:
     check(f"{name} stays within 0..1", all(0.0 <= v <= 1.0 + 1e-12 for v in levels),
           f"{min(levels):.3f}..{max(levels):.3f}")
 
-print("\n8. a colour block writes a colour in 0..1")
+print("\n8. a color block writes a color in 0..1")
 for name in [b for b in BLOCKS if SLOT_OF[b] == "color"]:
     defaults = {p.name: p.default for p in PARAMS[name] if p.default is not None}
     block, frames = sweep_layer(name, defaults)
     check(f"{name} builds", not block.problems, f"{block.problems}")
-    colours = [c for frame in frames for _, c in frame.values()]
+    colors = [c for frame in frames for _, c in frame.values()]
     check(f"{name} stays within 0..1",
-          all(len(c) == 3 and all(0.0 <= x <= 1.0 for x in c) for c in colours))
+          all(len(c) == 3 and all(0.0 <= x <= 1.0 for x in c) for c in colors))
 
 print("\n9. hue_cycle under a full wheel drifts back rather than jumping")
 # The first version walked `hue + span * phase`, which at a quarter-wheel span
@@ -223,7 +223,7 @@ check("chase's order is refused with the wording it always had",
       problems == ["order must be one of x, -x, y, -y, z, -z, index"],
       f"{problems}")
 problems = blocksmod._check_args("duo", {"color_a": "beige"}, env, rigging)
-check("a duo colour that resolves to nothing is refused",
+check("a duo color that resolves to nothing is refused",
       any("color_a" in p for p in problems), f"{problems}")
 check("and a valid duo is not",
       not blocksmod._check_args("duo", {"color_a": "@primary",

@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/presets.schema.json",
   "_comment": [
-    "Named combinations of the three slots -- movement, colour and",
+    "Named combinations of the three slots -- movement, color and",
     "level -- plus the speed and master they were built at.",
     "",
     "Written by the UI. Safe to hand-edit; a preset naming a look",

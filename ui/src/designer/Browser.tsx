@@ -104,11 +104,11 @@ export function Browser({ routines, palettes, library, looks, presets, onPlace }
           {!palettes.length && <span className="muted small">None yet.</span>}
           {fromLibrary.length > 0 && <span className="d-browse-group">From the library</span>}
           {fromLibrary.map((p) => {
-            const colours = { primary: p.primary, secondary: p.secondary, accent: p.accent };
+            const colors = { primary: p.primary, secondary: p.secondary, accent: p.accent };
             return (
               <button key={p.id} className="d-browse-item" draggable
-                      onDragStart={drag({ kind: "palette", name: p.name, colours })}
-                      onClick={() => onPlace({ kind: "palette", name: p.name, colours })}
+                      onDragStart={drag({ kind: "palette", name: p.name, colors })}
+                      onClick={() => onPlace({ kind: "palette", name: p.name, colors })}
                       title="Placing it copies it into this track first: the copy is this track's own">
                 <span className="d-browse-name">{p.name}</span>
                 <span className="d-swatch-row" aria-hidden="true">
@@ -142,7 +142,7 @@ export function Browser({ routines, palettes, library, looks, presets, onPlace }
             if (!these.length) return null;
             return (
               <div key={slot} role="group" aria-label={`${slot} looks`}>
-                <span className="d-browse-group">{slot === "color" ? "colour" : slot}</span>
+                <span className="d-browse-group">{slot === "color" ? "color" : slot}</span>
                 {these.map((l) => (
                   <button key={l.name} className="d-browse-item" draggable
                           onDragStart={drag({ kind: "look", name: l.name })}

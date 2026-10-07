@@ -122,14 +122,14 @@ const RATES = [0, 0.25, 0.5, 1, 2, 4];
  * NOT the same as Speed, which is the clock: speed changes what the music is
  * doing as far as the whole show is concerned, including cue holds and auto
  * boundaries, and it is on the Show tab beside the tempo it belongs to. A rate
- * moves only this slot's phase, which is why a colour chase at 0.5× under a
+ * moves only this slot's phase, which is why a color chase at 0.5× under a
  * move at 2× is now something that can be said at all. The old console needed a
  * separately stored chase per combination, and that is a large part of how it
  * accumulated 206 looks.
  *
  * Each rate lives on the tab that owns the slot rather than in one panel of
- * three faders, because the question "how fast should the colours run" is one
- * you ask while looking at the colours.
+ * three faders, because the question "how fast should the colors run" is one
+ * you ask while looking at the colors.
  */
 export function RateCard({ state, send, slot, hint }: {
   state: EngineState; send: (c: Command) => void; slot: Slot; hint: ReactNode;

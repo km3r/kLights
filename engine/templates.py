@@ -34,7 +34,7 @@ not restart the movement.
 
 **Changing pick** crossfades over the set's `transition.fade_beats`, in
 parameter space (`state.blend`), slot by slot -- so the result is still a Show
-whose colour, movement and level lists a timeline can sit on top of, gap by
+whose color, movement and level lists a timeline can sit on top of, gap by
 gap. A jump (a loop, a hot cue) that lands in another phrase cuts, as every
 jump does.
 

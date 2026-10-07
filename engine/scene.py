@@ -150,7 +150,7 @@ OPTICS: dict[str, float] = {
     # exp(-k d). A beam you can see in haze is one losing light.
     "beam_extinction_per_m": 0.09,
     # Emissive gain on a beam's shaft mesh. Additive over a near-black room
-    # saturates fast, so this is what keeps a beam's colour judgeable.
+    # saturates fast, so this is what keeps a beam's color judgeable.
     "beam_gain": 1.4,
     # The mirror ball's dots on the walls, and the shafts that reach them.
     "dot_gain": 2.3,
@@ -659,8 +659,8 @@ def unit_key(fixture: rigmod.PatchedFixture) -> str:
 
 def _color_slots(fixture: rigmod.PatchedFixture) -> list[list[int]]:
     """A mechanical wheel's slots as [lo, hi, r, g, b, r1, g1, b1, r2, g2, b2]:
-    the slot's averaged colour, then the two halves actually in the aperture.
-    The halves repeat the average on an ordinary single-colour slot."""
+    the slot's averaged color, then the two halves actually in the aperture.
+    The halves repeat the average on an ordinary single-color slot."""
     for name in fixture.profile.modes[fixture.mode]:
         channel = fixture.profile.channels[name]
         if channel.role == rigmod.COLOR_WHEEL:
@@ -1078,12 +1078,12 @@ def beam_direction(bearing_deg: float, elev_deg: float) -> tuple[float, float, f
 
 def decode_color(fixture: dict, frame) -> tuple[tuple[float, float, float],
                                                  Optional[tuple[tuple[float, ...], tuple[float, ...]]]]:
-    """((r, g, b), split) 0-1 for a fixture, from whichever colour system it has.
+    """((r, g, b), split) 0-1 for a fixture, from whichever color system it has.
 
     A mixing fixture adds white into each primary. A wheel snaps its value to
     the slot table; above the last slot the wheel is spinning, and white is the
-    honest stand-in for "some colour, changing". `split` is (top, bottom) for a
-    wheel parked between two segments -- the first-named colour of a slot goes
+    honest stand-in for "some color, changing". `split` is (top, bottom) for a
+    wheel parked between two segments -- the first-named color of a slot goes
     on TOP -- and None otherwise.
     """
     channels = fixture["channels"]
@@ -1109,11 +1109,11 @@ def decode_color(fixture: dict, frame) -> tuple[tuple[float, float, float],
 
 
 def fixture_output(fixture: dict, frame):
-    """(level, colour, split) for one fixture this frame.
+    """(level, color, split) for one fixture this frame.
 
     One rule for every kind of fixture: level is the dimmer (full if there is
-    none) times the colour's own magnitude, and the colour is normalised to it.
-    The editor driver had two rules -- dimmer-and-raw-colour for movers,
+    none) times the color's own magnitude, and the color is normalised to it.
+    The editor driver had two rules -- dimmer-and-raw-color for movers,
     magnitude-and-normalised for fixed fixtures -- which agree on every product
     a renderer draws, and this is that agreement written once.
     """

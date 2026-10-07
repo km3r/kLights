@@ -3,7 +3,7 @@ Load a ported look library into runnable looks.
 
 `looks.json` is produced by `shared/tools/port_library.py` from the QLC+
 workspace. This turns each entry into an `auto.Look` -- a factory that takes the
-current palette colour and returns a layer stack.
+current palette color and returns a layer stack.
 
 The kinds map onto the engine's layers rather than onto QLC+'s flat namespace,
 and each occupies exactly one of three independent SLOTS:
@@ -11,20 +11,20 @@ and each occupies exactly one of three independent SLOTS:
   slot        kinds                    what it sets
   ----------------------------------------------------------------------------
   movement    pose, path, mixed        where the heads point
-  color       color, color_path        what colour everything is
+  color       color, color_path        what color everything is
   level       intensity, level_path    a brightness MULTIPLIER over the above
 
-**The three slots are filled independently.** Picking a colour does not disturb
-the movement, and picking a movement does not disturb the colour -- which is the
+**The three slots are filled independently.** Picking a color does not disturb
+the movement, and picking a movement does not disturb the color -- which is the
 entire point of having split the scenes during the port, and was not true while
 selecting any look replaced the whole show. A `mixed` entry fills the movement
-and colour slots together, because it genuinely states both; either can then be
+and color slots together, because it genuinely states both; either can then be
 changed without losing the other.
 
 **The level slot MULTIPLIES.** It is never a base layer, so a level chase dims
-whatever colour and position are running rather than replacing them, and it
+whatever color and position are running rather than replacing them, and it
 composes with the master and with the safety taper instead of fighting them. A
-level look that replaced the base would blank the colour the moment it was
+level look that replaced the base would blank the color the moment it was
 selected -- which is what "we lost the actual dimming" was describing.
 
 Offsets are relative to each head's calibrated ball aim, so every ported look
@@ -69,7 +69,7 @@ class LibraryEntry:
     tags: tuple[str, ...]
     # The rig groups this look writes ("corner movers", "pinspots"). Layers are
     # scoped to these: without it a pinspot-only scene ported as an untagged
-    # uniform colour and repainted the movers as well. It is also the axis the
+    # uniform color and repainted the movers as well. It is also the axis the
     # UI filters on, because a pinspot palette and a mover palette are two
     # different decisions and were sharing one list.
     groups: tuple[str, ...] = ()
@@ -108,7 +108,7 @@ class LibraryEntry:
     color: Optional[list[float]] = None
     colors: Optional[dict[str, list[float]]] = None
     # Per fixture 0..1. The pinspots are RGBW and several looks blend real white
-    # into the colour -- dropping it made them cooler and dimmer than authored.
+    # into the color -- dropping it made them cooler and dimmer than authored.
     whites: Optional[dict[str, float]] = None
     bars: Optional[float] = None
     intensity: Optional[float] = None
@@ -168,7 +168,7 @@ class LibraryEntry:
     def slot(self) -> str:
         """Which of the three slots this entry fills.
 
-        `mixed` lands in movement and is ALSO applied to colour when selected --
+        `mixed` lands in movement and is ALSO applied to color when selected --
         see `ShowController`. One entry, two slots, because it really does state
         both; the slots stay independently changeable afterwards.
         """
@@ -360,7 +360,7 @@ def cue_level_layer(step_levels: list[dict[str, float]],
 
 
 def color_frames_layer(frames: list[dict[str, list[float]]], bars: float):
-    """A stepped colour sequence, held per step rather than interpolated.
+    """A stepped color sequence, held per step rather than interpolated.
 
     A frame value is [r, g, b], or [r, g, b, w] where the fixture is RGBW and
     the step blends real white -- "Pin Drift" walks the same warm pastels the
@@ -368,8 +368,8 @@ def color_frames_layer(frames: list[dict[str, list[float]]], bars: float):
     colder than authored.
     """
     def layer(ctx: statemod.EvalContext, out: dict) -> None:
-        # color_bar, not motion_bar: this is the colour slot, and the whole
-        # point of per-slot rate is that a colour chase can crawl under a move
+        # color_bar, not motion_bar: this is the color slot, and the whole
+        # point of per-slot rate is that a color chase can crawl under a move
         # that is running flat out.
         index = int(motion.phase(ctx.color_bar, bars) * len(frames)) % len(frames)
         for fixture in ctx.rig.fixtures:
@@ -395,7 +395,7 @@ def per_fixture_color_layer(colors: dict[str, list[float]],
 def white_layer(whites: dict[str, float]):
     """The W of an RGBW fixture, where the look sets one.
 
-    Separate from the colour layer because a uniform-colour look can still have
+    Separate from the color layer because a uniform-color look can still have
     per-fixture white -- "Pin Ball Glow" gives both pinspots the same RGB and
     the same W, but the W is per fixture in the source and only the pinspots
     have the channel at all.
@@ -441,7 +441,7 @@ def level_frames_layer(levels: list[dict[str, float]],
     ramp between two dimmer values asserts a shape the original never had.
 
     Multiplying is the whole point. "Spotlight" puts one head at full and its
-    neighbours at 43%; as a base layer that would blank whatever colour was
+    neighbours at 43%; as a base layer that would blank whatever color was
     running and ignore the master, which is what made the level looks read as
     broken. As a multiplier it dims the picture that is already there.
 
@@ -549,7 +549,7 @@ def arg_problems(entry: LibraryEntry, rig) -> list[str]:
 
     `blocks.make` answers a bad argument with an empty block -- right for a
     routine file, whose problems are reported when it loads, and silent for a
-    value arriving from the console, a preset or a cue: a duo whose colour was
+    value arriving from the console, a preset or a cue: a duo whose color was
     "nonsense" built nothing, and the movers sat in the palette's white with no
     word said. Callers on those paths ask here first.
     """
@@ -615,15 +615,15 @@ DEFAULT_BARS = 8.0
 def base_layers(show: statemod.Show) -> None:
     """Point everything at the ball and open it up.
 
-    Always present, whatever is selected, so that a colour with no movement --
+    Always present, whatever is selected, so that a color with no movement --
     or nothing at all -- still produces a picture instead of leaving the heads
     wherever the last look happened to stop.
 
     Full brightness, deliberately. Everything that dims lives downstream: the
     level slot, the master, and the safety taper. A pinspot has no dimmer
-    channel, so `render` scales its RGB by this level -- which means a colour
+    channel, so `render` scales its RGB by this level -- which means a color
     look's authored bytes ARE its brightness, and seeding anything below 1.0
-    here would silently scale every ported colour.
+    here would silently scale every ported color.
     """
     show.base.append(statemod.pose_layer(
         lambda ctx, head: ctx.geometry.aim_at_ball(head), tags=("movers",),
@@ -668,18 +668,18 @@ def movement_layers(show: statemod.Show, entry: Optional[LibraryEntry]) -> None:
 
 def color_layers(show: statemod.Show, entry: LibraryEntry,
                  roles: Optional[dict] = None) -> None:
-    """One colour look, scoped to the fixtures it actually writes.
+    """One color look, scoped to the fixtures it actually writes.
 
     The scoping is the fix for a real defect: "Pin Ball Glow" writes two
-    pinspots in the workspace, ported as a uniform colour with no tags, and so
+    pinspots in the workspace, ported as a uniform color with no tags, and so
     repainted all four movers amber as well. A look now only touches its own
-    group, which is also what lets a pinspot colour and a mover colour be up at
+    group, which is also what lets a pinspot color and a mover color be up at
     the same time.
     """
     tags = tuple(entry.groups) or None
     if entry.is_parametric:
         # `roles` is the console's palette as "@primary"/"@secondary"/"@accent",
-        # so a parametric colour follows the palette the operator is rotating,
+        # so a parametric color follows the palette the operator is rotating,
         # the same way a routine's palette roles follow its show's palette.
         show.color.append(block_layer(entry, "color", roles))
         return
@@ -690,7 +690,7 @@ def color_layers(show: statemod.Show, entry: LibraryEntry,
     elif entry.frames is not None:
         show.color.append(color_frames_layer(entry.frames,
                                              entry.bars or DEFAULT_BARS))
-    # White rides after the colour layer, because `color_layer` resets it.
+    # White rides after the color layer, because `color_layer` resets it.
     if entry.whites and entry.colors is None:
         show.color.append(white_layer(entry.whites))
 
@@ -699,7 +699,7 @@ def level_layers(show: statemod.Show, entry: LibraryEntry) -> None:
     """One level look. Everything here goes in `fx`, and everything multiplies.
 
     `fx` rather than `base` is the fix for "we lost the actual dimming": a level
-    look must scale the colour and position already established, and then be
+    look must scale the color and position already established, and then be
     scaled itself by the master and the safety taper. Anything in `base` would
     instead wipe them.
     """
@@ -732,12 +732,12 @@ def compose(movement: Optional[LibraryEntry],
     """The slots, plus the base and the auto-mode effects, as one Show.
 
     `colors` and `levels` are LISTS because each slot is filled per fixture
-    group: the pinspots can be on their own colour while the movers are on
+    group: the pinspots can be on their own color while the movers are on
     another, which is the whole point of splitting them. Each entry is scoped to
     its own group, so they cannot fight.
 
-    The palette goes down first and unscoped, so any group with no colour look
-    of its own still gets a colour rather than rendering whatever the last look
+    The palette goes down first and unscoped, so any group with no color look
+    of its own still gets a color rather than rendering whatever the last look
     left behind.
 
     `movement_extra` STACKS more movement on top of the base route, and it works
@@ -753,9 +753,9 @@ def compose(movement: Optional[LibraryEntry],
     show = statemod.Show()
     base_layers(show)
     show.color.append(statemod.color_layer(palette_color))
-    # A parametric colour look names palette ROLES ("@primary"). Without a
-    # palette to read them from, every role is the current palette colour --
-    # which is what a single-colour palette means anyway.
+    # A parametric color look names palette ROLES ("@primary"). Without a
+    # palette to read them from, every role is the current palette color --
+    # which is what a single-color palette means anyway.
     roles = palette_roles or {"primary": palette_color,
                               "secondary": palette_color,
                               "accent": palette_color}
@@ -775,7 +775,7 @@ def build_look(entry: LibraryEntry) -> autom.Look:
     """One entry as a standalone Look, for auto mode's set list.
 
     Auto mode advances the MOVEMENT slot, so this is what a movement entry looks
-    like on its own; the controller re-composes it with whatever colour and
+    like on its own; the controller re-composes it with whatever color and
     level are selected.
     """
     return autom.Look(
@@ -845,8 +845,8 @@ def load_parametric(path: Path) -> tuple[list[LibraryEntry], dict[str, dict]]:
 
 class _NoRig:
     """Enough of a rig for `_check_args` at load time: no fixtures, so no
-    single-colour looks, so a colour argument has to be a palette role, a hex
-    colour or [r, g, b] -- which is what keeps a parametric look portable."""
+    single-color looks, so a color argument has to be a palette role, a hex
+    color or [r, g, b] -- which is what keeps a parametric look portable."""
     fixtures: tuple = ()
 
 

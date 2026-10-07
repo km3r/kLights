@@ -7,7 +7,7 @@ want to walk away from it. The axes:
 
   timing        movement follows the clock                  (F6; on by default)
   look_changes  advance a set list on musical boundaries
-  palette       rotate colour over time
+  palette       rotate color over time
   energy        build/drop inference driving level and rate
 
 **Changes land on musical boundaries, not on timers.** A look change that
@@ -38,7 +38,7 @@ from . import state as statemod
 from .clock import MasterClock, Position
 
 # A look is a factory, not a stored scene: it is handed the current palette
-# colour and returns the layer stack. That is what lets colour rotate
+# color and returns the layer stack. That is what lets color rotate
 # independently of which look is running, instead of every combination being
 # its own stored scene.
 LookFactory = Callable[[tuple[float, float, float]], statemod.Show]
@@ -91,7 +91,7 @@ class SetList:
 
 @dataclass
 class Palette:
-    """Colours to rotate through. Linear 0..1 RGB."""
+    """Colors to rotate through. Linear 0..1 RGB."""
     colors: list[tuple[float, float, float]] = field(
         default_factory=lambda: [(1.0, 1.0, 1.0)])
     index: int = 0
@@ -264,7 +264,7 @@ class AutoDirector:
         # How a chosen look becomes a Show. Overridable because the director
         # owns WHICH movement look is up, not what the whole show is: the
         # controller composes the movement slot with the separately-selected
-        # colour and level slots, so an auto look change no longer discards
+        # color and level slots, so an auto look change no longer discards
         # them. Default is the look on its own.
         self.compose: Callable[[Look, tuple[float, float, float]],
                                statemod.Show] = lambda look, color: look.make(color)
@@ -435,7 +435,7 @@ class AutoDirector:
             "rate": round(self.rate, 3),
             # Per-slot rates, which MULTIPLY the energy rate above rather than
             # replacing it. Reported here because the UI has to be able to say
-            # that a colour chase is crawling on purpose.
+            # that a color chase is crawling on purpose.
             "slot_rates": self.phases.status(),
             "strobe": self.strobe,
             "changes": self.changes,

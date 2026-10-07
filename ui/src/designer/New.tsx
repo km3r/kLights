@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, ID_RE, NEW_COLOURS, freeId, phraseMatch, templateFromTimeline,
+  BEATS_PER_BAR, ID_RE, NEW_COLORS, freeId, phraseMatch, templateFromTimeline,
 } from "./model";
 import type {
   FoundPalette, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, TemplateSetDoc,
@@ -221,18 +221,18 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   });
   const goPalette = () => run(async () => {
     const label = name.trim();
-    let colours = { ...NEW_COLOURS };
+    let colors = { ...NEW_COLORS };
     if (start === "copy") {
       const p = palettes.find((x) => x.id === copyPalette);
-      if (p) colours = { primary: p.primary, secondary: p.secondary, accent: p.accent };
+      if (p) colors = { primary: p.primary, secondary: p.secondary, accent: p.accent };
     } else if (start === "found") {
-      const f = found.find((x) => x.name === foundName)?.places[0]?.colours;
+      const f = found.find((x) => x.name === foundName)?.places[0]?.colors;
       if (f && f.primary && f.secondary && f.accent) {
-        colours = { primary: f.primary, secondary: f.secondary, accent: f.accent };
+        colors = { primary: f.primary, secondary: f.secondary, accent: f.accent };
       }
     }
     const doc: PaletteDoc = { $schema: "../schemas/palette.schema.json", kind: "klights.palette",
-                              version: 1, id, name: label, ...colours };
+                              version: 1, id, name: label, ...colors };
     const reply = await engine.request({ type: "palette_save", doc, base_rev: "" });
     if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
     location.hash = "#studio/palettes";
@@ -403,11 +403,11 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
         {nameRow}
         <b className="small">Start from</b>
         <Options value={start} options={[
-          { id: "blank", title: "Three colours", text: "White, grey and red, to change on the Palettes page." },
+          { id: "blank", title: "Three colors", text: "White, grey and red, to change on the Palettes page." },
           ...(palettes.length ? [{ id: "copy", title: "A copy of a library palette",
-                                   text: "The same three colours, to change one." }] : []),
+                                   text: "The same three colors, to change one." }] : []),
           ...(found.length ? [{ id: "found", title: "A palette that lives in a file",
-                                text: "Its colours, from the timeline or set it is in." }] : []),
+                                text: "Its colors, from the timeline or set it is in." }] : []),
         ]} onChange={(v) => { setStart(v); if (v === "found" && !name.trim()) setName(foundName); }}>{{
           copy: (
             <select value={copyPalette} aria-label="copy of" onChange={(e) => setCopyPalette(e.target.value)}>

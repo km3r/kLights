@@ -135,7 +135,7 @@ check("the movers take the Hot palette's primary from the chorus routine",
       all(rgb_close(s[f.fid].color, hot) for f in MOVERS),
       f"{[s[f.fid].color for f in MOVERS]}")
 check("and the flash on beat 160", all(close(s[f.fid].intensity, 1.0) for f in MOVERS))
-check("the routine colours only the movers, so the pinspots' colour FALLS "
+check("the routine colors only the movers, so the pinspots' color FALLS "
       "THROUGH to the fallback (decided with the user)",
       all(rgb_close(s[f.fid].color, FALLBACK_RGB) for f in PINS),
       f"{[s[f.fid].color for f in PINS]}")
@@ -188,7 +188,7 @@ check("a chase ordered by x starts at the lowest x", lit and
 bad = routine("bad", [clips("m", "color", [block("o", "orbit", 0, 32)])
                       | {"role": "movers"}])
 p = build([clips("scene", "scene", [use("a", "bad", 0, 32)])], [bad])
-check("a movement block on a colour row is a problem, and claims nothing",
+check("a movement block on a color row is a problem, and claims nothing",
       any("movement block, on a color row" in x for x in p.problems)
       and all(rgb_close(frame(p, 4)[f.fid].color, FALLBACK_RGB) for f in MOVERS),
       f"{p.problems}")
@@ -202,7 +202,7 @@ p = build([clips("scene", "scene", [use("a", "solid-movers", 0, 32)]),
            clips("col", "color", [use("b", "solid-pins", 0, 32)])],
           [movers_red, pins_green])
 s = frame(p, 4)
-check("a lower colour lane shows on the fixtures the scene routine leaves alone",
+check("a lower color lane shows on the fixtures the scene routine leaves alone",
       all(rgb_close(s[f.fid].color, (0, 1, 0)) for f in PINS)
       and all(rgb_close(s[f.fid].color, (1, 0, 0)) for f in MOVERS))
 
@@ -279,19 +279,19 @@ tinted = routine("tint", [clips("c", "color", [block("s", "solid", 0, 32,
                  params={"color": {"type": "color", "default": "@primary"}})
 pals = {"P": {"primary": "#ff0000", "secondary": "#00ff00", "accent": "#0000ff"}}
 for value, want, label in (("@secondary", (0, 1, 0), "a palette role"),
-                           ("#336699", blocksmod.parse_hex("#336699"), "a hex colour"),
-                           ("Pin Teal", teal, "a colour look's name"),
+                           ("#336699", blocksmod.parse_hex("#336699"), "a hex color"),
+                           ("Pin Teal", teal, "a color look's name"),
                            (None, (1, 0, 0), "nothing (the default, @primary)")):
     extra = {"params": {"color": value}} if value else {}
     p = build([clips("scene", "scene", [use("a", "tint", 0, 32, **extra)])],
               [tinted], meta={"palettes": pals, "palette": "P"})
     s = frame(p, 4)
-    check(f"a colour param can be {label}",
+    check(f"a color param can be {label}",
           rgb_close(s[MOVERS[0].fid].color, want) and not p.problems,
           f"{s[MOVERS[0].fid].color} {p.problems}")
 p = build([clips("scene", "scene", [use("a", "tint", 0, 32,
                                         params={"color": "Nope"})])], [tinted])
-check("a colour that is not on this rig is a problem, and the default plays",
+check("a color that is not on this rig is a problem, and the default plays",
       any("not a palette role" in x for x in p.problems), f"{p.problems}")
 
 build_up = routine("build", [
@@ -341,13 +341,13 @@ p = build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
                 "fade": 4}], gap="exclusive")],
           [tinted], meta={"palettes": pals, "palette": "A"})
 s = frame(p, 18)
-check("a palette clip crossfades every role-coloured fixture",
+check("a palette clip crossfades every role-colored fixture",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 p = build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
            {"id": "pc", "type": "automation", "target": "param.color",
             "points": [[0, "#ff0000"], [8, "#0000ff"]]}], [tinted])
 s = frame(p, 4)
-check("param automation overrides a routine's colour, blended between points",
+check("param automation overrides a routine's color, blended between points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 
 
@@ -393,7 +393,7 @@ fade_tint = routine("ftint", tinted["rows"] + [
      "points": [[0, "#ff0000"], [8, "#0000ff"]]}], params=tinted["params"])
 s = frame(build([clips("scene", "scene", [use("a", "ftint", 16, 64)])],
                 [fade_tint]), 20)
-check("a colour param's own lane blends between its points",
+check("a color param's own lane blends between its points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 
 # A routine on a LOWER lane still plays for the fixtures the top one leaves
@@ -433,7 +433,7 @@ red_solid = routine("rs", [
     {"id": "sc", "type": "automation", "target": "arg.s.color",
      "points": [[0, "#ff0000"], [8, "#0000ff"]]}])
 s = frame(build([clips("scene", "scene", [use("a", "rs", 0, 64)])], [red_solid]), 4)
-check("a colour argument's lane blends between its points",
+check("a color argument's lane blends between its points",
       rgb_close(s[MOVERS[0].fid].color, (0.5, 0, 0.5)), f"{s[MOVERS[0].fid].color}")
 
 # Every argument the format lets a lane drive must really be read per frame:
@@ -471,7 +471,7 @@ for name, declared in blocksmod.PARAMS.items():
             ends = ("#ff0000", "#0000ff")
         else:
             # The bottom and the MIDDLE of the range: the two ends of a hue
-            # are the same colour.
+            # are the same color.
             lo = spec.min if spec.min is not None else 0.0
             hi = spec.max if spec.max is not None else lo + 10.0
             ends = (lo, (lo + hi) / 2.0)
@@ -503,7 +503,7 @@ s1 = frame(build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
 s3 = frame(build([clips("scene", "scene", [use("a", "tint", 0, 64)]),
                   red | {"wave": {"shape": "square", "bars": 1, "toward": "#0000ff",
                                   "depth": 0.5}}], [tinted]), 3)
-check("a colour lane's wave swings toward its colour, as far as its depth",
+check("a color lane's wave swings toward its color, as far as its depth",
       rgb_close(s1[MOVERS[0].fid].color, (1, 0, 0))
       and rgb_close(s3[MOVERS[0].fid].color, (0.5, 0, 0.5)),
       f"{s1[MOVERS[0].fid].color} {s3[MOVERS[0].fid].color}")

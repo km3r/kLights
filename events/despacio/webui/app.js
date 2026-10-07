@@ -1058,19 +1058,19 @@
   // theory that it "writes no pan/tilt at all", which despacio.qxw's Build
   // Chaser's steps -- Walls -> Iris Out -> Ball -> Apex -> Zenith -- disprove).
   var POSE_CAPTIONS = VC.poseCaptions || [];
-  // Colour family -- any of these being active means the shutter/gobo chain
-  // is plausibly already open (see README: base colour scenes bake
+  // Color family -- any of these being active means the shutter/gobo chain
+  // is plausibly already open (see README: base color scenes bake
   // Strobe=0). Used only for the soft Beam Open hint below, not a hard rule.
-  // Structurally derived the same way as POSE_CAPTIONS, from Colour-group
-  // channel writes (this show's moving heads expose colour as a single
-  // Colour-Wheel-preset channel, not RGB intensities).
+  // Structurally derived the same way as POSE_CAPTIONS, from Color-group
+  // channel writes (this show's moving heads expose color as a single
+  // Color-Wheel-preset channel, not RGB intensities).
   var COLOR_CAPTIONS = VC.colorCaptions || [];
 
   // A cuelist counts as active when its chaser is running -- checked via
   // runningFunctions (the signal every FUNCTION broadcast updates, live or
   // seeded) with a state.playing fallback for the brief window right after a
   // reload before the first broadcast lands. Previously isActive() only
-  // handled the button shape (state.get(id) === 255), so a pose or colour
+  // handled the button shape (state.get(id) === 255), so a pose or color
   // look driven by the Night CueList's chaser -- now in POSE_CAPTIONS/
   // COLOR_CAPTIONS above, since resolve_movement_and_color() resolves
   // CueList widgets too -- could never actually satisfy either banner check.
@@ -1150,7 +1150,7 @@
       banner.className = "banner warn";
       banner.innerHTML = "";
       banner.appendChild(el("span", null,
-        "MH Dim is up but Beam Open hasn't been pressed and no colour look is active -- " +
+        "MH Dim is up but Beam Open hasn't been pressed and no color look is active -- " +
         "the heads may not be visibly lit yet. "));
       var open = el("button", null, "Beam Open");
       open.addEventListener("click", function () {

@@ -73,7 +73,7 @@ namespace KLights
 		bool Arrived(double Tolerance = 8.0) const;
 	};
 
-	/** A mechanical colour wheel slot: the averaged colour, then the two halves. */
+	/** A mechanical color wheel slot: the averaged color, then the two halves. */
 	struct FColorSlot
 	{
 		int32 Lo = 0;
@@ -104,7 +104,7 @@ namespace KLights
 	/** scene.channel_word: coarse << 8 | fine, or coarse << 8 with no fine. */
 	KLIGHTSPREVIZ_API int32 ChannelWord(const uint8* Frame, int32 Coarse, int32 Fine);
 
-	/** scene.decode_color: (rgb, split) from whichever colour system a fixture has. */
+	/** scene.decode_color: (rgb, split) from whichever color system a fixture has. */
 	KLIGHTSPREVIZ_API void DecodeColor(const FChannels& Channels, const TArray<FColorSlot>& Slots,
 	                                   const uint8* Frame, FVector& OutColor, bool& bOutSplit,
 	                                   FVector& OutTop, FVector& OutBottom);

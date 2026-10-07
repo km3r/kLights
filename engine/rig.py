@@ -116,17 +116,17 @@ def _hex_rgb(text: Optional[str]) -> Optional[tuple[int, int, int]]:
 
 
 def _resolve_split_slots(caps: list[Capability]) -> list[Capability]:
-    """Fill in `Capability.pair` for wheel slots that name two colours.
+    """Fill in `Capability.pair` for wheel slots that name two colors.
 
-    A colour wheel's in-between positions put half of one segment and half of
+    A color wheel's in-between positions put half of one segment and half of
     the next in front of the lens, and the beam comes out split down the middle
     rather than blended. `.qxf` names these by convention -- "Green + Blue" --
-    but records a single approximate tint for them, so the two real colours have
+    but records a single approximate tint for them, so the two real colors have
     to come from somewhere else.
 
-    They come from the SAME CHANNEL's own single-colour slots, which is the
+    They come from the SAME CHANNEL's own single-color slots, which is the
     point: "Green + Blue" resolves to exactly the `#00ff00` and `#0000ff` that
-    channel already declares for Green and for Blue. No colour-name table, no
+    channel already declares for Green and for Blue. No color-name table, no
     guessing -- a profile is internally consistent or the pair is left None and
     the slot keeps behaving exactly as it did before.
 
@@ -157,24 +157,24 @@ def merge_for_group(group: Optional[str]) -> str:
 
 @dataclass(frozen=True)
 class Capability:
-    """One band of a channel's range, with the colour it produces if it is a
-    colour-wheel slot. `.qxf` records these as Res1="#rrggbb"."""
+    """One band of a channel's range, with the color it produces if it is a
+    color-wheel slot. `.qxf` records these as Res1="#rrggbb"."""
     lo: int
     hi: int
     label: str
     rgb: Optional[tuple[int, int, int]] = None
-    # The TWO colours actually in the aperture, when this slot is a split.
+    # The TWO colors actually in the aperture, when this slot is a split.
     #
-    # A colour wheel is a disc of coloured segments, and the positions between
+    # A color wheel is a disc of colored segments, and the positions between
     # two of them put half of each in front of the lens -- so the beam comes out
     # two-toned, split across its width, rather than blended. The MingJie wheel
     # declares seven of these (80-139: "Cyan + Pink" through "Yellow + Red") and
-    # they are half the colours the show actually uses.
+    # they are half the colors the show actually uses.
     #
     # `rgb` stays whatever the `.qxf` says, which for these slots is a single
-    # approximate tint -- fine for "what colour is this roughly", which is what
-    # the engine's nearest-slot colour matching wants, and useless for drawing
-    # one. This is the pair, and it is None for an ordinary single-colour slot.
+    # approximate tint -- fine for "what color is this roughly", which is what
+    # the engine's nearest-slot color matching wants, and useless for drawing
+    # one. This is the pair, and it is None for an ordinary single-color slot.
     pair: Optional[tuple[tuple[int, int, int], tuple[int, int, int]]] = None
 
     @property
@@ -185,7 +185,7 @@ class Capability:
     def mid(self) -> int:
         """A value safely inside the band. Slots are narrow (10 wide on the
         MingJie wheel) and the edges are where a fixture's own rounding puts you
-        in the neighbouring colour, so aim for the middle."""
+        in the neighbouring color, so aim for the middle."""
         return (self.lo + self.hi) // 2
 
 
@@ -204,13 +204,13 @@ class ChannelDef:
 
     @property
     def color_slots(self) -> tuple[Capability, ...]:
-        """Capabilities that name an actual colour.
+        """Capabilities that name an actual color.
 
-        This is what lets one colour picker drive both kinds of fixture: an
+        This is what lets one color picker drive both kinds of fixture: an
         RGBW pinspot takes the value directly, and a fixture with a mechanical
         wheel snaps to its nearest slot. The despacio movers have 14 slots and
-        no colour mixing at all, so without this they can only be driven by slot
-        number -- which is why the old UI had colour buttons rather than a
+        no color mixing at all, so without this they can only be driven by slot
+        number -- which is why the old UI had color buttons rather than a
         picker.
         """
         return tuple(c for c in self.capabilities if c.rgb is not None)
@@ -309,7 +309,7 @@ def parse_qxf(path: Path) -> FixtureProfile:
         caps = []
         for cap in c.findall(QXF_NS + "Capability"):
             rgb = _hex_rgb(cap.get("Res1"))
-            # Res2 is QLC+'s own way of saying "this slot is two colours at
+            # Res2 is QLC+'s own way of saying "this slot is two colors at
             # once". None of our profiles use it, but honouring it first means a
             # profile that does needs no name to parse.
             second = _hex_rgb(cap.get("Res2"))

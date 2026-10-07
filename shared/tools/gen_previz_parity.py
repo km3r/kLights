@@ -17,8 +17,8 @@ automation tests (`KLights.Parity.*`) to reproduce:
                still fails three synthetic heads by exactly 360 degrees.
   * servo   -- `engine.servo.Servo.follow` stepped at fixed dt, from the rates
                the manifest carries (16-bit words per second).
-  * color   -- `engine.scene.fixture_output`: level, colour and split for the
-               real profiles' colour systems, every wheel value.
+  * color   -- `engine.scene.fixture_output`: level, color and split for the
+               real profiles' color systems, every wheel value.
   * words   -- `engine.scene.channel_word`: coarse/fine assembly.
   * manifest -- the whole manifest of `engine/tests/data/events/sample`, so
                the C++ parser is tested against a real one.
@@ -108,7 +108,7 @@ def servo_vectors() -> list[dict]:
 
 
 def color_vectors(manifest: dict) -> list[dict]:
-    """Every colour system the shared profiles have, over its whole range."""
+    """Every color system the shared profiles have, over its whole range."""
     out = []
     seen = set()
     for fixture in manifest["fixtures"]:
@@ -144,7 +144,7 @@ def color_vectors(manifest: dict) -> list[dict]:
                           [float(c) for c in color],
                           None if split is None else [[float(c) for c in half] for half in split]])
         out.append({"name": " / ".join(key), "fixture": spec, "cases": cases})
-    # And a fixture with no colour system at all, which is white.
+    # And a fixture with no color system at all, which is white.
     spec = {"channels": {rigmod.DIMMER: 0}, "color_slots": []}
     cases = []
     for v in (0, 64, 255):

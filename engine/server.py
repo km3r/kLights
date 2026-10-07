@@ -132,7 +132,7 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
 #
 #   view       read the state. The default for a client that arrives with no
 #              token, so showing someone the console stays a one-tap thing.
-#   operate    run the show: looks, colour, tempo, master, blackout, panic.
+#   operate    run the show: looks, color, tempo, master, blackout, panic.
 #   configure  change what survives the night, or bypass a guard: jog (which
 #              disables the safety taper for that head), writing a calibration,
 #              editing the room, editing the patch.
@@ -487,13 +487,13 @@ class ShowController:
         self.notices: list[str] = []
         self.rev = 0
 
-        # The three independent slots. Selecting a colour must not disturb the
+        # The three independent slots. Selecting a color must not disturb the
         # movement and vice versa -- while one selection replaced the entire
-        # show, picking a colour threw away the move you had running, which is
+        # show, picking a color threw away the move you had running, which is
         # the opposite of what splitting the scenes during the port was for.
         self.by_name = {e.name: e for e in self.library}
-        # Colour and level are stored PER FIXTURE GROUP, so the pinspots can be
-        # on their own colour while the movers are on another. One slot for the
+        # Color and level are stored PER FIXTURE GROUP, so the pinspots can be
+        # on their own color while the movers are on another. One slot for the
         # whole rig meant picking a pinspot palette threw away the movers', and
         # the two are simply different decisions.
         #
@@ -606,9 +606,9 @@ class ShowController:
                 "level": dict(self.slots["level"])}
 
     def palette_roles(self, current: tuple[float, float, float]) -> dict:
-        """The console's palette, as the roles a block's colours name.
+        """The console's palette, as the roles a block's colors name.
 
-        `primary` is the colour auto mode (or the operator) has up right now;
+        `primary` is the color auto mode (or the operator) has up right now;
         `secondary` and `accent` are the next two round the palette. So a duo
         built on "@primary"/"@secondary" turns when the palette does, the same
         way a routine's roles follow its show folder's palette -- the console
@@ -1176,7 +1176,7 @@ class ShowController:
 
         The director keeps owning WHICH movement look is up (that is what auto
         look changes change), but it no longer owns the whole Show -- it
-        delegates back here so the colour and level slots survive a look change.
+        delegates back here so the color and level slots survive a look change.
 
         `fade_beats` crossfades into the result instead of cutting. Only cues
         pass it today: a look picked by hand is an operator watching the rig and
@@ -1226,7 +1226,7 @@ class ShowController:
 
         The caller does not say which slot; the library already knows, because
         the port split every scene by which channels it touched. A `mixed` entry
-        fills movement and colour together, since it genuinely states both --
+        fills movement and color together, since it genuinely states both --
         and either stays independently changeable afterwards.
         """
         name = m["name"]
@@ -1243,7 +1243,7 @@ class ShowController:
             self.director.select(name, hold=bool(m.get("hold", True)))
         else:
             # Fills its slot for every group it writes, and only those -- so a
-            # pinspot colour replaces the pinspot colour and leaves the movers
+            # pinspot color replaces the pinspot color and leaves the movers
             # alone. A look covering the whole rig naturally replaces both.
             for group in (entry.groups or ("movers",)):
                 self.slots[slot][group] = name
@@ -1320,10 +1320,10 @@ class ShowController:
         current = dict(self.look_params.get(name, {}))
         for key in values:
             current[key] = resolved[key]
-        # A colour or a list is passed through by `Param` -- whether "@accent"
+        # A color or a list is passed through by `Param` -- whether "@accent"
         # or "#ff0080" means anything is a question for the rig -- so ask the
         # check the block itself would make, before storing rather than after.
-        # Refused whole, unlike a clamped number: there is no nearest colour to
+        # Refused whole, unlike a clamped number: there is no nearest color to
         # "nonsense", and storing it builds an empty block that lights nothing.
         problems = libmod.arg_problems(
             replace(base, args={**base.args, **current}), self.rig)
@@ -1401,7 +1401,7 @@ class ShowController:
                 except parammod.ParamError:
                     dropped.append(f"{name}.{key}")
                     continue
-                # One key at a time against the authored look, so a colour this
+                # One key at a time against the authored look, so a color this
                 # rig cannot resolve is dropped on its own and the rest of the
                 # tuning still lands -- see `_cmd_look_params` for why it is
                 # checked at all.
@@ -1620,7 +1620,7 @@ class ShowController:
     def _cmd_preset_save(self, m: dict, now: float) -> None:
         """Snapshot all three slots plus the tempo feel under one name.
 
-        A preset is the thing a slot-based console loses: with colour, movement
+        A preset is the thing a slot-based console loses: with color, movement
         and level independent you can build a picture in three taps, and then
         have no way to get back to it. Saved to the event so it survives a
         restart -- a preset that lives in memory is a preset you rebuild.
@@ -1892,23 +1892,23 @@ class ShowController:
         else:
             raise ValueError(f"unknown energy source {source!r}")
 
-    # colour ---------------------------------------------------------------
+    # color ---------------------------------------------------------------
 
     def _cmd_color(self, m: dict, now: float) -> None:
         """Per-fixture picker and global quick palette, in one command.
 
         `target` is a tag, a fixture name, or "all". Applied as an override
-        layer rather than by rebuilding the look, so a colour picked by hand
+        layer rather than by rebuilding the look, so a color picked by hand
         survives an auto-mode look change -- which is what "everyone controls
         everything" needs to mean in practice.
         """
         raw = m["color"]
-        # Exactly three. An empty list was stored as an empty colour, render()
+        # Exactly three. An empty list was stored as an empty color, render()
         # then raised on every frame, and the runner held the last good frame:
-        # the rig frozen on one command until someone cleared that colour.
+        # the rig frozen on one command until someone cleared that color.
         if not isinstance(raw, (list, tuple)) or len(raw) != 3:
             raise ValueError(f"color must be [r, g, b], each 0 to 1, got {raw!r}")
-        color = tuple(max(0.0, min(1.0, _finite(c, "a colour channel"))) for c in raw)
+        color = tuple(max(0.0, min(1.0, _finite(c, "a color channel"))) for c in raw)
         target = _target(m)
         # `white_overrides` is REBOUND, never edited: the snapshot thread
         # publishes it, and a dict changing size under that copy fails the
@@ -1919,7 +1919,7 @@ class ShowController:
             self.white_overrides = whites
         else:
             self.color_overrides[target] = color
-            # "white" absent (the quick palette, most colour picks) leaves any
+            # "white" absent (the quick palette, most color picks) leaves any
             # white already overridden for this target alone -- a palette tap
             # is a statement about RGB only, not an instruction to forget the
             # white the operator dialed in a moment ago. `white: null` (the
@@ -1940,7 +1940,7 @@ class ShowController:
     def _cmd_level(self, m: dict, now: float) -> None:
         """Dim one fixture, one group, or everything, by hand.
 
-        The counterpart to the colour picker, and the same shape: an override
+        The counterpart to the color picker, and the same shape: an override
         layer keyed by target, so a level trimmed by hand survives an auto-mode
         look change. Distinct from the Bright slot, which holds a PATTERN from
         the library -- this is the operator saying "that head is too hot right
@@ -2812,7 +2812,7 @@ class ShowController:
         return self._on_worker(f"deleting palette {pid}", work, then)
 
     def _cmd_palette_sync(self, m: dict, now: float) -> object:
-        """Give copies of a library palette its colours: `files` are the
+        """Give copies of a library palette its colors: `files` are the
         timelines and sets to update, as /api/palettes lists them."""
         library = self._need_library()
         pid, files = m.get("palette"), m.get("files")
@@ -3043,7 +3043,7 @@ class ShowController:
         Distinct from `speed`, which is the CLOCK: speed changes what the music
         is doing as far as the whole show is concerned, including cue holds and
         auto boundaries. A rate changes only how fast one slot's phase
-        advances, so a colour chase at 0.5x under a move at 2x is a thing that
+        advances, so a color chase at 0.5x under a move at 2x is a thing that
         can now be said. The old console needed a separately stored chase for
         every combination, which is a large part of why it accumulated 206
         looks.
@@ -3170,7 +3170,7 @@ class ShowController:
         """Drop operator state naming something the rig no longer has.
 
         Everything cleared alongside the rig swap is keyed by fixture ID. This
-        is the other half: trims, colours, flashes, jogs and captures are keyed
+        is the other half: trims, colors, flashes, jogs and captures are keyed
         by NAME, and a patch edit can rename or delete the thing they name.
         Left alone they are invisible -- a trim with no row to reset it, and a
         `jog` entry that would silently re-bypass the safety taper if a fixture
@@ -3300,7 +3300,7 @@ class ShowController:
                 "id": f.fid, "name": f.name, "tags": list(f.tags),
                 "head": f.head, "universe": f.universe, "address": f.address,
                 "is_mover": f.is_mover,
-                # So the Colour tab can offer a white control only for fixtures
+                # So the Color tab can offer a white control only for fixtures
                 # that can actually do anything with it, instead of showing a
                 # slider that silently does nothing on an RGB-only fixture.
                 "has_white": f.has(rigmod.WHITE),
@@ -3462,7 +3462,7 @@ class ShowController:
             # What the operator has turned, by look name, over what the routine
             # authored. Sparse, and sent separately from `looks[].params` for
             # the same reason `color_overrides` is sent separately from the
-            # colour a look states: the UI needs to show both to be able to
+            # color a look states: the UI needs to show both to be able to
             # offer a meaningful Reset.
             "look_params": {name: dict(values)
                             for name, values in self.look_params.items()},
@@ -3742,7 +3742,7 @@ def save_presets(event_dir: Path, presets: list[dict]) -> None:
         # with it.
         "$schema": "../../schemas/presets.schema.json",
         "_comment": [
-            "Named combinations of the three slots -- movement, colour and",
+            "Named combinations of the three slots -- movement, color and",
             "level -- plus the speed and master they were built at.",
             "",
             "Written by the UI. Safe to hand-edit; a preset naming a look",
@@ -3812,7 +3812,7 @@ def _finite(value: Any, what: str, minimum: Optional[float] = None) -> float:
 
 
 def _target(m: dict) -> str:
-    """The `target` of a colour, level or flash: a tag, a fixture name, or "all".
+    """The `target` of a color, level or flash: a tag, a fixture name, or "all".
 
     Checked because it becomes a dict key and a set member that the snapshot
     publishes. A number there broke the flash set's sorted() on every
@@ -3851,7 +3851,7 @@ def describe(message: dict) -> str:
     if kind == "select_look":
         return f"selected {message.get('name')!r}"
     if kind == "color":
-        return f"coloured {message.get('target', 'all')}"
+        return f"colored {message.get('target', 'all')}"
     if kind == "level":
         target = message.get("target", "all")
         return (f"cleared the level on {target}" if message.get("clear")

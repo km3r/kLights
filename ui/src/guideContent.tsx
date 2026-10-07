@@ -47,7 +47,7 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
       {
         title: "Three ideas",
         notes: [
-          <><b>Movement, colour and level are separate.</b> Move, Color and
+          <><b>Movement, color and level are separate.</b> Move, Color and
             Bright each change one without touching the others.</>,
           <><b>Presets stay put.</b> Show has pages of eight pads, and saving
             over a preset keeps its pad.</>,
@@ -58,8 +58,8 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
       {
         title: "Try it",
         steps: [
-          <>On <b>Color</b>, tap a colour.</>,
-          <>On <b>Move</b>, tap a route. The colour doesn't change.</>,
+          <>On <b>Color</b>, tap a color.</>,
+          <>On <b>Move</b>, tap a route. The color doesn't change.</>,
           <>On <b>Bright</b>, pull a dimmer down a little.</>,
           <>On <b>Show</b>, type a name under the presets and tap <b>Save</b>.
             That pad now brings back all three.</>,
@@ -88,7 +88,7 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
     title: "Show: running the night",
     tab: "show",
     lead: <>Controls for the whole rig: cues, presets, tempo and auto mode.
-      Colours and moves have their own tabs.</>,
+      Colors and moves have their own tabs.</>,
     sections: [
       {
         title: "Try it",
@@ -128,35 +128,35 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
   {
     id: "color",
     label: "Color",
-    title: "Color: picking colours",
+    title: "Color: picking colors",
     tab: "color",
-    lead: <>Pick a colour look, then paint over it by hand if you want to.</>,
+    lead: <>Pick a color look, then paint over it by hand if you want to.</>,
     sections: [
       {
         title: "Try it",
         steps: [
-          <>Under <b>Colour look</b>, tap a look. With more than one type of
+          <>Under <b>Color look</b>, tap a look. With more than one type of
             fixture, the pills filter the list, and each type keeps its own
-            colour.</>,
-          <>Under <b>Applies to</b>, choose what to colour: everything, a
+            color.</>,
+          <>Under <b>Applies to</b>, choose what to color: everything, a
             group, or one fixture.</>,
           <>Tap a <b>Quick palette</b> swatch, or mix one in the{" "}
             <b>Picker</b> and tap <b>Apply</b>.</>,
-          <><b>Clear</b> removes the hand-picked colour.</>,
+          <><b>Clear</b> removes the hand-picked color.</>,
         ],
       },
       {
         title: "Good to know",
         notes: [
-          <>Hand-picked colours stay on top until you clear them, even when
+          <>Hand-picked colors stay on top until you clear them, even when
             auto mode changes the look.</>,
           <>Long-press a swatch (right-click with a mouse) to set the palette's
-            current colour instead. Looks and auto rotation use that one.</>,
-          <>Colour looks marked <b>tune</b> have their own knobs under{" "}
+            current color instead. Looks and auto rotation use that one.</>,
+          <>Color looks marked <b>tune</b> have their own knobs under{" "}
             <b>Tweak</b>, and <b>Modulation</b> can move them in time.</>,
-          <>Movers with a colour wheel can't mix, so they snap to the nearest
-            colour on the wheel.</>,
-          <><b>Rate</b> changes how fast a colour chase steps, without
+          <>Movers with a color wheel can't mix, so they snap to the nearest
+            color on the wheel.</>,
+          <><b>Rate</b> changes how fast a color chase steps, without
             touching the movement.</>,
         ],
       },
@@ -224,7 +224,7 @@ export const CONSOLE_GUIDES: ConsoleGuide[] = [
         title: "Try it",
         steps: [
           <>Tap a <b>Bright pattern</b>. Chases move brightness around the rig
-            without touching the colour.</>,
+            without touching the color.</>,
           <>Under <b>Dimmers</b>, pull a group down. This trims the pattern
             rather than replacing it.</>,
           <>Hold a <b>Flash</b> button. Let go and it stops.</>,

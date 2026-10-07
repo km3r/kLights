@@ -671,7 +671,7 @@ try:
     cue_ok = ""
 except Exception as exc:  # noqa: BLE001
     cue_ok = f"{type(exc).__name__}: {exc}"
-check("cues: \"color\": null, \"fade\": null load as no colour and the default fade",
+check("cues: \"color\": null, \"fade\": null load as no color and the default fade",
       not cue_ok and cuesmod.load(TMP / "cues.json").cues[0].fade == 8.0, cue_ok)
 
 # From the code review of this suite's own fixes: each a way the first round
@@ -734,9 +734,9 @@ try:
         return snapshot_problem()
 
     for msg, what in [
-        ({"type": "color", "color": [], "target": "all"}, "an empty colour (froze the rig)"),
-        ({"type": "color", "color": [1.0], "target": "movers"}, "a one-channel colour"),
-        ({"type": "color", "color": [1, 0, 0], "target": float("nan")}, "a NaN colour target"),
+        ({"type": "color", "color": [], "target": "all"}, "an empty color (froze the rig)"),
+        ({"type": "color", "color": [1.0], "target": "movers"}, "a one-channel color"),
+        ({"type": "color", "color": [1, 0, 0], "target": float("nan")}, "a NaN color target"),
         ({"type": "level", "value": 0.5, "target": float("inf")}, "an infinite level target"),
         ({"type": "flash", "target": 2.5}, "a numeric flash target (froze the snapshot)"),
         ({"type": "select_look", "slot": "movement", "name": looks[0],
@@ -751,7 +751,7 @@ try:
     sc.submit({"type": "level", "value": float("nan"), "target": "movers"}, None)
     sc.submit({"type": "color", "color": [float("nan"), 0, 0], "target": "pinspots"}, None)
     wait_frames(3)
-    check("command: a NaN level or colour channel is refused, not clamped to full",
+    check("command: a NaN level or color channel is refused, not clamped to full",
           "movers" not in sc.level_overrides and "pinspots" not in sc.color_overrides,
           f"{sc.level_overrides} {sc.color_overrides}")
 

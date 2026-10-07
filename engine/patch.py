@@ -285,7 +285,7 @@ def add_fixture(cfg: dict, *, name: str, manufacturer: str, model: str,
     """Add one unit. With no address, the first gap that fits is used.
 
     Names must be unique, and that is an error rather than a warning: a look's
-    per-fixture colours and a calibration's per-head readings are both keyed by
+    per-fixture colors and a calibration's per-head readings are both keyed by
     name, so two fixtures sharing one would make both files ambiguous in a way
     neither would report.
     """

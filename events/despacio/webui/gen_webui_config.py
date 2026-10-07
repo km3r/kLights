@@ -40,14 +40,14 @@ webui plan for the reasoning:
     ID) doesn't require editing ui_layout.js.
 
   * Flag every widget that places a "pose" (writes a Position-group channel,
-    i.e. Pan/Tilt) or a "colour look" (writes a Colour-group channel) --
+    i.e. Pan/Tilt) or a "color look" (writes a Color-group channel) --
     app.js's "a layer is running with no pose under it" / "MH Dim is up but
-    no colour look is active" show banners need this, and it used to be a
+    no color look is active" show banners need this, and it used to be a
     hand-kept caption list in app.js that nothing validated against the live
     workspace (and had gone stale -- see resolve_movement_and_color()'s
     docstring). Reuses the same Chaser/Collection -> Scene flattening and
     FixtureVal parsing the HTP conflict scan above already does, just
-    checked against Position/Colour instead of Intensity, and covers
+    checked against Position/Color instead of Intensity, and covers
     CueList widgets (e.g. the Night cue list) the same way
     resolve_aim_warnings() does -- something the old caption list, being
     Button-only, never could.
@@ -171,7 +171,7 @@ def resolve_channel_groups(ws):
     finds, so this single walk of the Fixture/.qxf/Mode tree serves every
     caller that needs a channel's group, not just the HTP dim-conflict scan:
     resolve_dim_conflicts() below narrows this to "Intensity", and
-    resolve_movement_and_color() narrows it to "Position"/"Colour". Fixtures
+    resolve_movement_and_color() narrows it to "Position"/"Color". Fixtures
     whose .qxf can't be found, or whose active Mode isn't in it, are skipped
     (printed as a warning) and excluded from EVERY caller consistently --
     never guessed by any of them individually."""
@@ -188,7 +188,7 @@ def resolve_channel_groups(ws):
             path = find_qxf(manufacturer, model)
             if path is None:
                 print(f"WARNING: no .qxf found for {manufacturer} {model!r} (fixture {fid}) -- "
-                      f"its channels are excluded from HTP/dimmer-conflict and pose/colour analysis")
+                      f"its channels are excluded from HTP/dimmer-conflict and pose/color analysis")
                 qxf_cache[key] = None
             else:
                 fx_root = ET.parse(path).getroot()
@@ -205,7 +205,7 @@ def resolve_channel_groups(ws):
         mode_el = next((m for m in fx_root.findall(qf("Mode")) if m.get("Name") == mode), None)
         if mode_el is None:
             print(f"WARNING: mode {mode!r} not found in .qxf for {manufacturer} {model!r} "
-                  f"(fixture {fid}) -- excluded from HTP/dimmer-conflict and pose/colour analysis")
+                  f"(fixture {fid}) -- excluded from HTP/dimmer-conflict and pose/color analysis")
             continue
 
         groups = {}
@@ -434,38 +434,38 @@ def find_dim_conflicts(ws, widgets, intensity_channels):
 
 
 # ---------------------------------------------------------------------------
-# Pose / colour detection (structural replacement for app.js's hand-kept
+# Pose / color detection (structural replacement for app.js's hand-kept
 # POSE_CAPTIONS / COLOR_CAPTIONS caption lists)
 # ---------------------------------------------------------------------------
 
 def resolve_movement_and_color(ws, widgets, channel_groups):
     """(pose_captions, color_captions) -- sorted caption lists for the
     despacio show banners (app.js's "a layer is running with no pose under
-    it" / "MH Dim is up but no colour look is active" checks).
+    it" / "MH Dim is up but no color look is active" checks).
 
     A widget counts as a POSE if any Scene step any of its functions can ever
     run writes a Position-group channel (Pan/Tilt) -- i.e. it places the
     heads somewhere, the thing a layer (Drift/Counter-Orbit) needs under it
     to not immediately integrate to a rail. It counts as a COLOR look if any
-    step writes a Colour-group channel (this show's moving heads expose their
-    colour as a single Colour-Wheel-preset channel, not RGB intensities --
+    step writes a Color-group channel (this show's moving heads expose their
+    color as a single Color-Wheel-preset channel, not RGB intensities --
     see MingJie-MJ-OS-018-60W-Beam.qxf).
 
     This replaces app.js's LAYER_CAPTIONS-adjacent POSE_CAPTIONS/
     COLOR_CAPTIONS arrays, which were hand-kept caption lists nothing ever
     validated against the live workspace (a QLC+ rename broke them silently)
-    and which only ever looked at Button widgets -- so a pose or colour look
+    and which only ever looked at Button widgets -- so a pose or color look
     driven by the Night CueList's chaser was invisible to them. Using the
     same Chaser/Collection -> Scene flattening (Workspace.scene_steps()) and
     FixtureVal parsing find_dim_conflicts() already does -- just checked
-    against Position/Colour instead of Intensity -- covers CueList widgets
+    against Position/Color instead of Intensity -- covers CueList widgets
     for free (see the functionId-vs-chaserId branch below, matching
     resolve_aim_warnings()'s widget_scene_ids pattern), and the caption list
     lint below (see lint()) means a future rename fails preflight instead of
     silently going stale.
 
     Only Button and CueList widgets carry a function that can reach a
-    Position/Colour-writing Scene (Sliders/SpeedDials in this show don't),
+    Position/Color-writing Scene (Sliders/SpeedDials in this show don't),
     same restriction as resolve_aim_warnings()."""
     pose_captions = set()
     color_captions = set()
@@ -634,7 +634,7 @@ def lint(widgets, conflicts, layout_text):
     #    layerCaptions is included here too: EFX-type functions (Drift/
     #    Counter-Orbit) write no Scene FixtureVal at all, so which widgets are
     #    "layers, not poses" isn't structurally derivable from the qxw the way
-    #    dim-park or pose/colour detection is (see resolve_movement_and_color())
+    #    dim-park or pose/color detection is (see resolve_movement_and_color())
     #    -- it stays a hand-kept list, but linted here so a rename fails
     #    preflight instead of silently going stale.
     for cap in sorted(item_captions | dim_park | dim_park_exempt | layer_captions):
@@ -751,7 +751,7 @@ def main():
     # Structural replacement for app.js's hand-kept POSE_CAPTIONS/
     # COLOR_CAPTIONS -- see resolve_movement_and_color()'s docstring.
     pose_captions, color_captions = resolve_movement_and_color(ws, widgets, channel_groups)
-    print(f"Pose-bearing widgets: {len(pose_captions)}  Colour-look widgets: {len(color_captions)}")
+    print(f"Pose-bearing widgets: {len(pose_captions)}  Color-look widgets: {len(color_captions)}")
 
     # aim_calc.py's pose-reachability report -- advisory only, never fails
     # --check (see resolve_aim_warnings()'s docstring): a missing or stale

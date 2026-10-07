@@ -301,7 +301,7 @@ LOOK_A, LOOK_B = MOVE_A, MOVE_B
 
 def loaded(state, slot):
     """Slot selections as a flat set of names -- selection is per fixture GROUP
-    now (a pinspot colour and a mover colour are held separately), and most of
+    now (a pinspot color and a mover color are held separately), and most of
     these assertions only care about which looks are up."""
     return set(state["selection"][slot].values())
 
@@ -319,16 +319,16 @@ check("and it is held, so auto cannot steal it", after["auto"]["held"] is True)
 
 # -- the three slots do not overwrite each other -----------------------------
 # This is the bug the slot model exists to fix: while one selection replaced the
-# whole show, picking a colour discarded the move you had running.
+# whole show, picking a color discarded the move you had running.
 client.send({"type": "select_look", "name": COLOR_A})
 after = client.wait_for(lambda s: COLOR_A in loaded(s, "color"))
-check("picking a colour keeps the movement",
+check("picking a color keeps the movement",
       loaded(after, "movement") == {MOVE_A} and loaded(after, "color") == {COLOR_A},
       f"{after['selection']}")
 
 client.send({"type": "select_look", "name": MOVE_B})
 after = client.wait_for(lambda s: MOVE_B in loaded(s, "movement"))
-check("changing the movement keeps the colour",
+check("changing the movement keeps the color",
       loaded(after, "color") == {COLOR_A}, f"{after['selection']}")
 
 client.send({"type": "select_look", "name": LEVEL_A})
@@ -339,8 +339,8 @@ check("and a level chase sits alongside both",
 
 # -- and looks scoped to different fixture types coexist ----------------------
 # "Pin Ball Glow" writes only the two pinspots in the workspace. It used to port
-# as an untagged uniform colour, so selecting it repainted the four movers as
-# well -- and one colour slot for the whole rig meant it also discarded whatever
+# as an untagged uniform color, so selecting it repainted the four movers as
+# well -- and one color slot for the whole rig meant it also discarded whatever
 # the movers were on.
 MOVER_COLOR = next(e.name for e in controller.library
                    if e.is_color and "pinspots" not in e.groups)
@@ -349,7 +349,7 @@ PIN_COLOR = next(e.name for e in controller.library
 client.send({"type": "select_look", "name": MOVER_COLOR})
 client.send({"type": "select_look", "name": PIN_COLOR})
 after = client.wait_for(lambda s: PIN_COLOR in loaded(s, "color"))
-check("a pinspot colour and a mover colour are up at the same time",
+check("a pinspot color and a mover color are up at the same time",
       loaded(after, "color") == {MOVER_COLOR, PIN_COLOR}, f"{after['selection']['color']}")
 
 movers = [f for f in after["fixtures"] if f["is_mover"]]
@@ -360,7 +360,7 @@ check("and neither repaints the other's fixtures",
 
 client.send({"type": "clear_slot", "slot": "color", "group": "pinspots"})
 after = client.wait_for(lambda s: PIN_COLOR not in loaded(s, "color"))
-check("one group's colour clears without touching the other",
+check("one group's color clears without touching the other",
       loaded(after, "color") == {MOVER_COLOR}, f"{after['selection']['color']}")
 
 client.send({"type": "clear_slot", "slot": "level"})
@@ -529,7 +529,7 @@ check("auto axes toggle independently",
 client.send({"type": "color", "target": "pinspots", "color": [0.0, 1.0, 0.0]})
 after = client.wait_for(lambda s: "pinspots" in s["color_overrides"])
 pins = [f for f in after["fixtures"] if "pinspots" in f["tags"]]
-check("a colour override reaches the fixtures",
+check("a color override reaches the fixtures",
       all(f["color"][1] > f["color"][0] for f in pins),
       f"{[f['color'] for f in pins]}")
 
@@ -565,7 +565,7 @@ check("a GROUP can be dimmed on its own",
 
 # Per-FIXTURE targeting silently did nothing before: `_targets` matched tags
 # only, so a fixture name selected an empty set and the layer was a no-op --
-# which also meant every per-fixture colour in the UI did nothing.
+# which also meant every per-fixture color in the UI did nothing.
 client.send({"type": "level", "target": HEAD, "value": 0.1})
 after = client.wait_for(lambda s: levels(s)[HEAD] < 0.2)
 others = [v for k, v in levels(after).items()
@@ -578,7 +578,7 @@ client.send({"type": "color", "target": PIN, "color": [1.0, 0.0, 1.0]})
 after = client.wait_for(lambda s: any(
     f["name"] == PIN and f["color"] == [1.0, 0.0, 1.0] for f in s["fixtures"]))
 pins = [f for f in after["fixtures"] if not f["is_mover"]]
-check("and a single fixture can be coloured -- the same fix",
+check("and a single fixture can be colored -- the same fix",
       pins[0]["color"] != pins[1]["color"],
       f"{pins[0]['name']} {pins[0]['color']}, {pins[1]['name']} {pins[1]['color']}")
 client.send({"type": "color", "target": PIN, "clear": True})
@@ -1173,7 +1173,7 @@ controller.apply({"type": "level", "target": "corner movers", "clear": True}, No
 # -- 11c. per-slot rate, end to end -------------------------------------------
 #
 # The three slots were independent everywhere except in time: one shared motion
-# phase meant a colour chase and a move could not run at different speeds, which
+# phase meant a color chase and a move could not run at different speeds, which
 # is a large part of why the old library needed a stored chase per combination.
 print("\n11c. per-slot rate")
 phases = controller.director.phases
@@ -1188,9 +1188,9 @@ check("the command reaches the phases", phases.rate["color"] == 0.25,
 start = dict(phases.bars)
 time.sleep(0.6)
 after = {slot: phases.bars[slot] - start[slot] for slot in start}
-check("colour falls behind movement while the show runs",
+check("color falls behind movement while the show runs",
       after["movement"] > 0 and after["color"] < after["movement"] / 2,
-      f"movement {after['movement']:.3f} vs colour {after['color']:.3f} bars")
+      f"movement {after['movement']:.3f} vs color {after['color']:.3f} bars")
 check("and the context the layers read agrees with it",
       (controller.ctx.motion_bar, controller.ctx.color_bar,
        controller.ctx.level_bar)
@@ -1466,10 +1466,10 @@ for label, message, expect_in in (
         '{"type": "modulate", "param": "size", "bars": Infinity}'), "finite"),
     ("a NaN vary amount", json.loads(
         '{"type": "vary", "name": "Ball Orbit", "amount": NaN}'), "finite"),
-    # `Param` passes a colour string through -- whether it means anything is a
+    # `Param` passes a color string through -- whether it means anything is a
     # question for the rig -- and `blocks.make` answers a bad one with an empty
     # block. Accepted, it turned the duo plain palette white with no word said.
-    ("a colour this rig cannot resolve",
+    ("a color this rig cannot resolve",
      {"type": "look_params", "name": "Duo Pink/Cyan",
       "values": {"color_a": "nonsense"}}, "not a palette role"),
 ):
@@ -1498,7 +1498,7 @@ check("nothing refused above was stored, and every macro is still a number",
                                          *controller.ctx.move_center)),
       f"{controller.look_params} size={controller.ctx.move_size}")
 
-# A preset or a cue is file-sourced, so a colour it carries that this rig cannot
+# A preset or a cue is file-sourced, so a color it carries that this rig cannot
 # resolve is DROPPED on its own -- the good tuning beside it still lands, and
 # the console is told which key went.
 # (The newest notice, not a slice from a length taken before: the list is capped
@@ -1506,7 +1506,7 @@ check("nothing refused above was stored, and every macro is still a number",
 controller.apply_look_params(
     {"Duo Pink/Cyan": {"color_a": "nonsense", "bars": 8}},
     ["Duo Pink/Cyan"], "preset 'probe'")
-check("a preset's unusable colour is dropped and its good tuning kept",
+check("a preset's unusable color is dropped and its good tuning kept",
       controller.look_params.get("Duo Pink/Cyan") == {"bars": 8.0}
       and "Duo Pink/Cyan.color_a" in controller.notices[-1],
       f"{controller.look_params.get('Duo Pink/Cyan')} "
@@ -1547,7 +1547,7 @@ check("and reaches the targeted fixtures' state",
       statemod.evaluate(controller.ctx, show)[mover.fid].white == 0.6)
 controller.apply({"type": "color", "target": "movers", "color": [0, 1, 0]},
                  None)
-check("a colour with no white leaves the white alone",
+check("a color with no white leaves the white alone",
       controller.white_overrides == {"movers": 0.6})
 controller.apply({"type": "color", "target": "movers", "color": [0, 1, 0],
                   "white": None}, None)
@@ -1670,7 +1670,7 @@ check("removing the stack restores the base route exactly",
 for label, message, expect in (
     ("stacking the base route on itself",
      {"type": "movement_add", "name": "Ball Orbit"}, "already the base"),
-    ("stacking a colour look",
+    ("stacking a color look",
      {"type": "movement_add", "name": "MH Pink"}, "only movement looks stack"),
     ("stacking an unknown look",
      {"type": "movement_add", "name": "Nope"}, "no look named"),
@@ -2297,7 +2297,7 @@ with tempfile.TemporaryDirectory() as tmp:
               and all(0.0 <= v <= bound for v in seeded),
               f"bound {bound:.3f}, values {sorted(set(round(v, 3) for v in seeded))}")
 
-        # Everything the reload clears is keyed by fixture ID. Trims, colours,
+        # Everything the reload clears is keyed by fixture ID. Trims, colors,
         # flashes, jogs and captures are keyed by NAME, and a patch edit can
         # delete the thing they name -- leaving a trim with no row to reset it
         # and a jog entry that would re-bypass the safety taper if that name

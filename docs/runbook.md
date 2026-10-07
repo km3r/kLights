@@ -126,7 +126,7 @@ guarantee.
 | one group too bright | **Bright** tab, pull its dimmer. It is a trim over the pattern, not a replacement. |
 | a bump | **Flash**, held not latched. It sets rather than multiplies, so it works from a group you pulled to zero. |
 | the whole night, hands-off-ish | **Show** tab, GO down the cue list. |
-| the colours to crawl under a fast move | **Rate** on the Color tab. |
+| the colors to crawl under a fast move | **Rate** on the Color tab. |
 
 **Blackout is the one you reach for.** Panic is for when the engine itself is
 wrong.

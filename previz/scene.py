@@ -139,7 +139,7 @@ class FixtureSpec:
     mount_facing: Optional[float]
     # role -> 0-based index into this fixture's universe frame buffer.
     channels: dict[str, int] = field(default_factory=dict)
-    # Mechanical colour wheel slots, as [lo, hi, r, g, b]. Empty on a mixing
+    # Mechanical color wheel slots, as [lo, hi, r, g, b]. Empty on a mixing
     # fixture, which takes red/green/blue directly instead.
     color_slots: list[list[int]] = field(default_factory=list)
     notes: str = ""
@@ -228,10 +228,10 @@ def build_scene(event_dir: Path) -> SceneSpec:
             cd = f.profile.channels[name]
             if cd.role == rigmod.COLOR_WHEEL:
                 # [lo, hi, r, g, b, r1, g1, b1, r2, g2, b2]: the slot's single
-                # averaged colour, then the two halves actually in the aperture.
+                # averaged color, then the two halves actually in the aperture.
                 # A wheel's in-between positions are split, not blended, so the
                 # pair is the only honest way to draw one; the two halves repeat
-                # the average for an ordinary single-colour slot.
+                # the average for an ordinary single-color slot.
                 slots = [[c.lo, c.hi, *c.rgb, *(c.pair[0] if c.pair else c.rgb),
                           *(c.pair[1] if c.pair else c.rgb)]
                          for c in cd.color_slots]

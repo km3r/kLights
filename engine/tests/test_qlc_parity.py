@@ -2,7 +2,7 @@
 Frame-level parity between QLC+ and the engine.
 
 `test_library.py` checks that a ported pose encodes to the workspace's pan/tilt
-and that a ported colour renders its colour bytes. Both look only at channels
+and that a ported color renders its color bytes. Both look only at channels
 somebody thought to name. This asks the complementary question over all 512:
 where do the two stacks differ, and does every difference have a reason?
 
@@ -145,7 +145,7 @@ check("no gap beyond the two documented families", not surprises,
 #     the fourth head's aim would put a beam somewhere nobody asked for -- so
 #     the chase keeps its levels and loses its cascade of positions.
 #   * "Drop" is a two-step chase: a white bump, then a spotlight. Only one step
-#     carries colour, and `port_color_chaser` needs two, so it ported as a level
+#     carries color, and `port_color_chaser` needs two, so it ported as a level
 #     chase and the white bump lost its white.
 check("the engine never contradicts a channel it does model",
       all(d.engine == parity.engine_frames(rig, None)[d.universe][d.channel - 1]

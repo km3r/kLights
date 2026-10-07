@@ -20,7 +20,7 @@ import { groupLabel } from "../groups";
  *
  *     pattern  x  this trim  x  master  x  safety taper
  *
- * Like the colour picker, a trim is an override layer, so it survives an
+ * Like the color picker, a trim is an override layer, so it survives an
  * auto-mode look change — a level set by hand should not be undone by the
  * timer.
  */
@@ -107,9 +107,9 @@ function Dimmers({ state, send }: { state: EngineState; send: (c: Command) => vo
  * Bright: brightness patterns, as a multiplier over whatever else is running.
  *
  * Its own tab because it is its own slot. A level pattern does not replace the
- * colour or the position — it scales them, and is then scaled itself by the
+ * color or the position — it scales them, and is then scaled itself by the
  * master and the safety taper. That is why "Spotlight" can rotate a bright head
- * around the room while the colour you picked stays exactly as you picked it.
+ * around the room while the color you picked stays exactly as you picked it.
  *
  * The chases here were unreachable until the porter learned about intensity
  * chasers: "Spotlight", "Dim Chase" and "Crowd Cascade" were skipped and only
@@ -135,7 +135,7 @@ export function BrightTab({ state, send }: {
       <RateCard state={state} send={send} slot="level" hint={
         <>
           How fast a level chase steps, independently of the move and the
-          colour. A dark move keeps its <b>own</b> timing whatever this says —
+          color. A dark move keeps its <b>own</b> timing whatever this says —
           its dimmer is part of the routine, not a level look, and letting this
           desync the two would make the head light before it had arrived.
         </>
