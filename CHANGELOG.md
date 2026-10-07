@@ -17,6 +17,13 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — explaining a colour lane that has a wave
+
+- `python -m engine.showfiles explain TRACK BEAT` and MCP's `explain_position`
+  ended in a traceback for any timeline with a wave on a colour lane: the wave
+  adds two values to the lane's three and the explanation unpacked three. It
+  now reports them as `toward` and `pull` beside `from`, `to` and `t`.
+
 ### Changed — in Studio's editors, Space is always play/pause
 
 - In the timeline and routine editors **Space** plays and stops wherever the

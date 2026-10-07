@@ -713,8 +713,11 @@ class Timeline:
         auto = {}
         for target, value in frame.automation.items():
             if isinstance(value, tuple):
-                a, b, t = value
+                a, b, t = value[:3]
                 auto[target] = {"from": a, "to": b, "t": round(t, 3)}
+                if len(value) > 3:               # a wave swings it
+                    toward, pull = value[3:]
+                    auto[target].update(toward=toward, pull=round(pull, 3))
             else:
                 auto[target] = round(value, 4)
         out = {"beat": beat,

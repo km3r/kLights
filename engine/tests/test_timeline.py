@@ -226,6 +226,23 @@ check("a colour lane's wave is in what the timeline explains: the points' blend,
       "then what it swings toward and how far",
       waved.automation("param.c", 3) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.5)
       and waved.automation("param.c", 1) == ("#ff0000", "#ff0000", 0.0, "#0000ff", 0.0))
+e = waved.explain(3)["automation"]
+check("and explain() says it as plain data: from, to and t, then toward and pull",
+      e == {"size": 1.5,
+            "param.c": {"from": "#ff0000", "to": "#ff0000", "t": 0.0,
+                        "toward": "#0000ff", "pull": 0.5}}
+      and waved.explain(1)["automation"]["param.c"]["pull"] == 0.0, json.dumps(e))
+blend = [[0, "#ff0000"], [8, "#00ff00", "ease"]]
+e = tl.Timeline.from_rows([
+    {"id": "c", "type": "automation", "target": "param.c", "points": blend,
+     "wave": {"shape": "sine", "bars": 1, "toward": "#0000ff", "depth": 0.5}},
+    {"id": "d", "type": "automation", "target": "param.d", "points": blend},
+]).explain(1.5)["automation"]
+check("pull is rounded as t is, and a colour lane with no wave explains neither",
+      e == {"param.c": {"from": "#ff0000", "to": "#00ff00", "t": 0.092,
+                        "toward": "#0000ff", "pull": 0.427},
+            "param.d": {"from": "#ff0000", "to": "#00ff00", "t": 0.092}},
+      json.dumps(e))
 try:
     tl.Timeline.from_rows([{"id": "s", "type": "automation", "target": "size",
                             "points": [[0, 1.0]], "wave": {"shape": "wobble", "bars": 1}}])
