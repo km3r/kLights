@@ -604,7 +604,8 @@ python -m engine.tests
 ```
 
 Each runs in its own subprocess so one crash cannot take the rest with it, and
-exit codes aggregate. The suites deliberately assert **failure paths** — a
+exit codes aggregate. [`testing.md`](testing.md) covers every layer -- these,
+the fuzz suite, the UI's and the browser end-to-end suite. The suites deliberately assert **failure paths** — a
 refused command, a corrupt config, a crash mid-write, a rig that cannot load —
 because a test that only proves the happy path is a test that passes when the
 feature is deleted.
