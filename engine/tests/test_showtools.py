@@ -125,7 +125,7 @@ try:
                         {"op": "add_row", "row": {"id": "new2", "type": "hits"}, "index": 99})
     check("an index past either end is clamped, not an error",
           not pr and doc["rows"][0]["id"] == "new" and doc["rows"][-1]["id"] == "new2")
-    for bad in ("top", None, True, [1]):
+    for bad in ("top", None, True, [1], float("nan"), float("inf"), float("-inf")):
         doc, ch, pr = apply({"op": "add_row", "row": {"id": "new"}, "index": bad})
         check(f"an index of {bad!r} is a problem it reports, not an exception",
               pr and "index must be a number" in pr[0] and row_of(doc, "new") is None, f"{pr}")

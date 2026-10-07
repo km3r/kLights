@@ -39,7 +39,9 @@
           },
           "speed": {
             "type": "number",
-            "minimum": 0
+            "minimum": 0.015625,
+            "maximum": 64.0,
+            "description": "a speed multiplier: 1 is the music's own tempo, 0.5 half, 2 double"
           },
           "master": {
             "type": "number",

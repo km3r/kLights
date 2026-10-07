@@ -106,7 +106,8 @@ def _type_name(value: Any) -> str:
     return type(value).__name__
 
 
-def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
+def _check(value: Any, spec: Spec, where: str, out: list[str],
+           drop: bool = False) -> None:
     if spec.choices is not None and value not in spec.choices:
         out.append(f"{where} must be {spec.describe()}, got {value!r}"
                    + (f"\n      fix: {spec.fix}" if spec.fix else ""))
@@ -130,8 +131,15 @@ def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
         # NaN passes every range test (each comparison is false), and a NaN or
         # an infinity written back out is a bare token no strict JSON reader
         # -- a browser among them -- will parse.
-        if not math.isfinite(value):
-            out.append(f"{where} must be a finite number, got {value!r}"
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            # An int too big for a float -- every number here ends up as one.
+            # isfinite raised on it, and a validator must never raise.
+            finite = False
+        if not finite:
+            out.append(f"{where} must be a finite number, got "
+                       f"{value!r:.60}"
                        + (f"\n      fix: {spec.fix}" if spec.fix else ""))
             return
         if spec.min is not None and value < spec.min:
@@ -146,7 +154,7 @@ def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
                    + (f"\n      fix: {spec.fix}" if spec.fix else ""))
 
     if spec.of is not None and isinstance(value, dict):
-        _check_object(value, spec.of, where, out)
+        _check_object(value, spec.of, where, out, drop)
 
     if spec.variants is not None and isinstance(value, dict):
         key, table = spec.variants
@@ -159,28 +167,36 @@ def _check(value: Any, spec: Spec, where: str, out: list[str]) -> None:
                        + f", got {tag!r}"
                        + (f"\n      fix: {spec.fix}" if spec.fix else ""))
         else:
-            _check_object(value, table[tag], where, out)
+            _check_object(value, table[tag], where, out, drop)
 
     if spec.each is not None and isinstance(value, list):
         for i, item in enumerate(value):
-            _check(item, spec.each, f"{where}[{i}]", out)
+            _check(item, spec.each, f"{where}[{i}]", out, drop)
 
 
 def _check_object(cfg: dict, schema: dict[str, Spec], prefix: str,
-                  out: list[str]) -> None:
+                  out: list[str], drop: bool = False) -> None:
     for key, spec in schema.items():
         where = f"{prefix}.{key}" if prefix else key
         if key not in cfg or cfg[key] is None:
             if spec.required:
                 out.append(f"{where} is required but missing"
                            + (f"\n      fix: {spec.fix}" if spec.fix else ""))
+            elif drop and key in cfg:
+                # Read as absent, so made absent: a loader's
+                # `entry.get("hold", {})` only defaults a MISSING key, and a
+                # null this check had passed reached dict(None) at load-in.
+                del cfg[key]
             continue
-        _check(cfg[key], spec, where, out)
+        _check(cfg[key], spec, where, out, drop)
 
 
 def validate(cfg: Any, schema: dict[str, Spec], path: Path,
-             current: int = CURRENT_VERSION) -> None:
+             current: int = CURRENT_VERSION, *, drop: bool = False) -> None:
     """Raise ConfigError listing everything wrong with `cfg`.
+
+    With `drop`, an optional key set to null -- which this reads as absent --
+    is removed from `cfg` as well, so the caller sees what was validated.
 
     Unknown keys are allowed on purpose. Every one of these files carries
     `_comment` arrays, and several carry keys read by tools rather than by the
@@ -204,7 +220,7 @@ def validate(cfg: Any, schema: dict[str, Spec], path: Path,
             f"({current})\n      fix: update the engine, or remove the "
             f"key if the file was hand-copied from a newer checkout")
 
-    _check_object(cfg, schema, "", problems)
+    _check_object(cfg, schema, "", problems, drop)
     if problems:
         raise ConfigError(path, problems)
 
@@ -225,44 +241,8 @@ def load(path: Path, schema: dict[str, Spec]) -> dict:
             f"is not valid JSON: {exc.msg} at line {exc.lineno}, "
             f"column {exc.colno}\n      fix: a trailing comma after the last "
             f"item in a list or object is the usual cause"]) from None
-    validate(cfg, schema, path)
-    drop_absent(cfg, schema)
+    validate(cfg, schema, path, drop=True)
     return cfg
-
-
-def drop_absent(cfg: Any, schema: dict[str, Spec]) -> None:
-    """Remove every optional key set to null, in place, as `validate` read it.
-
-    The validator treats `"hold": null` exactly like a missing "hold". Loaders
-    written as `entry.get("hold", {})` do not -- the default only applies to a
-    MISSING key -- so a file the validator passed reached `dict(None)` or
-    `int(None)` and became a traceback at load-in. Dropping the keys here makes
-    every loader see what the validator saw, without each one having to know.
-    """
-    if not isinstance(cfg, dict):
-        return
-    for key, spec in schema.items():
-        if key not in cfg:
-            continue
-        if cfg[key] is None:
-            if not spec.required:
-                del cfg[key]
-            continue
-        _drop_within(cfg[key], spec)
-
-
-def _drop_within(value: Any, spec: Spec) -> None:
-    if isinstance(value, dict):
-        if spec.of is not None:
-            drop_absent(value, spec.of)
-        if spec.variants is not None:
-            key, table = spec.variants
-            tag = value.get(key)
-            if isinstance(tag, (str, int, float)) and tag in table:
-                drop_absent(value, table[tag])
-    elif isinstance(value, list) and spec.each is not None:
-        for item in value:
-            _drop_within(item, spec.each)
 
 
 # ------------------------------------------------------------------ writing --

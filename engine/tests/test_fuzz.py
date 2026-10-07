@@ -512,6 +512,14 @@ def snapshot_problem() -> str:
     return raised or find_non_finite(snap) or strict_json_problem(snap)
 
 
+def raises_value_error(fn, *args) -> bool:
+    try:
+        fn(*args)
+    except ValueError:
+        return True
+    return False
+
+
 def wait_frames(n: int = 3) -> None:
     target = sc.runner.stats.frames + n
     deadline = time.monotonic() + 5
@@ -666,6 +674,51 @@ except Exception as exc:  # noqa: BLE001
 check("cues: \"color\": null, \"fade\": null load as no colour and the default fade",
       not cue_ok and cuesmod.load(TMP / "cues.json").cues[0].fade == 8.0, cue_ok)
 
+# From the code review of this suite's own fixes: each a way the first round
+# of fixes was incomplete or created a new door.
+cue_doc = load_json(EVENT / "cues.json")
+for speed in (100, 0.001):
+    cue_doc["cues"][0]["speed"] = speed
+    try:
+        loads_cues(cue_doc)
+        refused = ""
+    except configmod.ConfigError as exc:
+        refused = "\n".join(exc.problems)
+    check(f"review: a cue speed the clock would refuse ({speed}) is refused at load, "
+          f"not halfway through GO", "speed must be" in refused, refused or "accepted")
+try:
+    configmod.validate({"width": 10 ** 400, "depth": 1, "height": 1}, configmod.VENUE,
+                       Path("v.json"))
+    huge = "accepted"
+except configmod.ConfigError as exc:
+    huge = "ConfigError" if any("finite" in p_ for p_ in exc.problems) else str(exc)
+except Exception as exc:  # noqa: BLE001
+    huge = f"{type(exc).__name__}: {exc}"
+check("review: a 400-digit integer is a ConfigError, not an OverflowError", huge == "ConfigError",
+      huge)
+check("review: an absolute beat from the sync port is bounded (1e17 froze the clock)",
+      sync.clean({"beat": 1e17, "bpm": 128}) == {"bpm": 128.0}
+      and sync.clean({"beat": 5000.0}) == {"beat": 5000.0})
+check("review: the socket refuses NaN, Infinity and 1e999 before any handler sees them",
+      all(raises_value_error(servermod.strict_json, t) for t in
+          ('{"type":"master","value":NaN}', '{"value":Infinity}', '{"value":-Infinity}',
+           '{"value":1e999}'))
+      and servermod.strict_json('{"value":1e308}') == {"value": 1e308})
+
+venue_file = CTRL_TMP / "venues" / "despacio-room.json"
+venue_text = venue_file.read_text(encoding="utf-8")
+nulled = json.loads(venue_text)
+nulled["taper"], nulled["strobe"] = None, None
+venue_file.write_text(json.dumps(nulled), encoding="utf-8")
+try:
+    servermod.ShowController(CTRL_TMP / "despacio")
+    started = ""
+except Exception as exc:  # noqa: BLE001
+    started = f"{type(exc).__name__}: {exc}"
+venue_file.write_text(venue_text, encoding="utf-8")
+check("review: venue.json with \"taper\": null and \"strobe\": null starts the engine",
+      not started, started)
+
 sc = servermod.ShowController(CTRL_TMP / "despacio")
 sc.start()
 try:
@@ -701,6 +754,33 @@ try:
     check("command: a NaN level or colour channel is refused, not clamped to full",
           "movers" not in sc.level_overrides and "pinspots" not in sc.color_overrides,
           f"{sc.level_overrides} {sc.color_overrides}")
+
+    # A preset the clock would refuse changes nothing at all.
+    looks_before = {k: dict(v) for k, v in sc.slots.items()}
+    sc.presets.append({"name": "too fast", "speed": 100,
+                       "color": {"pinspots": looks[0]}})
+    sc.presets.append({"name": "nan master", "master": float("nan"),
+                       "color": {"pinspots": looks[0]}})
+    master_before = sc.master
+    sc.submit({"type": "preset_apply", "name": "too fast"}, None)
+    sc.submit({"type": "preset_apply", "name": "nan master"}, None)
+    wait_frames(3)
+    check("review: a preset with a speed the clock refuses, or a NaN master, changes "
+          "nothing -- not half the rig, not the master to full",
+          {k: dict(v) for k, v in sc.slots.items()} == looks_before
+          and sc.master == master_before
+          and sum("preset" in n and "failed" in n for n in sc.notices) >= 2,
+          f"{sc.master} {sc.notices[-2:]}")
+    sc.presets = sc.presets[:-2]
+
+    sc.submit({"type": "venue", "canopy": {"radius": -500}}, None)
+    sc.submit({"type": "venue", "crowd": {"head_band_min": -100}}, None)
+    wait_frames(3)
+    canopy, crowd = sc.rig.venue.canopy, sc.rig.venue.crowd_zone
+    check("review: a live venue edit below the schema's 0 is refused, so venue_save "
+          "can always write what is live",
+          canopy.radius >= 0 and crowd.head_band_min >= 0,
+          f"radius {canopy.radius}, head band {crowd.head_band_min}")
 
     sc.submit({"type": "taper", "margin_deg": 2 ** 63}, None)
     wait_frames(2)

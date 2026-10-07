@@ -22,6 +22,7 @@ Positions are beats from the track's first downbeat; bar n starts at beat
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -223,7 +224,8 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                 problems.append(f"{at}: there is already a row {new['id']!r}")
                 continue
             index = op.get("index", len(rows))
-            if isinstance(index, bool) or not isinstance(index, (int, float)):
+            if (isinstance(index, bool) or not isinstance(index, (int, float))
+                    or not math.isfinite(index)):
                 problems.append(f"{at}: index must be a number, 0 for the top "
                                 f"-- got {index!r}")
                 continue

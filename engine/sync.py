@@ -81,7 +81,10 @@ LOADED_FIELDS = tuple(f"loaded_{k}" for k in (
     "deck", "title", "artist", "album", "duration", "rekordbox_id", "signature"))
 FIELDS = CLOCK_FIELDS + TRACK_FIELDS + LOADED_FIELDS
 
-_FLOATS = {"bpm": (40.0, 250.0), "beat": (None, None),
+# `beat` is the deck's absolute beat count, as `beat_number` is. Bounded like
+# it: unbounded, one datagram of 1e17 made each frame's fraction of a beat
+# vanish in rounding, and the musical clock -- every look -- stood still.
+_FLOATS = {"bpm": (40.0, 250.0), "beat": (-64.0, 200000.0),
            "beat_in_bar": (0.0, 64.0), "phrase_ends_in": (None, None),
            # Position in the audio, in seconds. A little negative is real: a
            # cue set before the first sample. Four hours is longer than any

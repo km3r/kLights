@@ -273,9 +273,11 @@ class ShowController:
         # shared/venues/ and be shared with another show, and reading the taper
         # from a path this class derives itself would silently pick up a stale
         # per-event file that nothing else is using.
-        taper_cfg = json.loads(
-            self.rig.venue_file.read_text(encoding="utf-8")
-        ).get("taper", {})
+        # Through configmod.load, not json.loads: the same file load_rig has
+        # already validated, read the same way, so `"taper": null` (or a null
+        # inside it) is absent here too rather than None.get() at startup.
+        venue_cfg = configmod.load(self.rig.venue_file, configmod.VENUE)
+        taper_cfg = venue_cfg.get("taper", {})
         taper = safetymod.TaperConfig(
             crowd_level=float(taper_cfg.get("crowd_level", 0.5)),
             margin_deg=float(taper_cfg.get("margin_deg", 6.0)),
@@ -286,8 +288,7 @@ class ShowController:
         # epilepsy) and nothing used to limit it. Policy lives beside the taper
         # because it is the same kind of thing: a property of the room and the
         # crowd in it, not of the rig.
-        strobe_cfg = json.loads(
-            self.rig.venue_file.read_text(encoding="utf-8")).get("strobe", {})
+        strobe_cfg = venue_cfg.get("strobe", {})
         strobe_policy = safetymod.StrobeConfig(
             enabled=bool(strobe_cfg.get("enabled", True)),
             ceiling=float(strobe_cfg.get("ceiling", 1.0)),
@@ -1456,10 +1457,7 @@ class ShowController:
         if not entry.is_parametric:
             raise ValueError(
                 f"{name!r} is a ported look -- it has no parameters to vary")
-        amount = float(m.get("amount", 0.3))
-        if not math.isfinite(amount):
-            raise ValueError(f"vary amount must be a finite number, got {amount}")
-        amount = max(0.0, min(1.0, amount))
+        amount = max(0.0, min(1.0, _finite(m.get("amount", 0.3), "vary amount")))
         if m.get("seed") is not None:
             seed = int(m["seed"])
         else:
@@ -1643,6 +1641,7 @@ class ShowController:
         preset = next((p for p in self.presets if p["name"] == name), None)
         if preset is None:
             raise KeyError(f"no preset named {name!r}")
+        self._preset_numbers(preset)               # refused before anything changes
         self._clear_pad()
         routine = preset.get("routine")
         if routine and self.show_library is not None:
@@ -1660,8 +1659,28 @@ class ShowController:
                       f"applying its looks")
         self._apply_preset_looks(preset, now)
 
+    @staticmethod
+    def _preset_numbers(preset: dict) -> tuple[Optional[float], Optional[float]]:
+        """A preset's speed and master, refused if the clock or the master
+        would refuse them.
+
+        presets.json is hand-editable and not schema-checked. Checked before
+        anything changes: a speed the clock refuses used to raise with the
+        slots already replaced, leaving the rig half on the new preset; and a
+        NaN master clamped to full.
+        """
+        name = preset["name"]
+        speed = float(preset["speed"]) if preset.get("speed") else None
+        if speed is not None and not clockmod.MIN_SPEED <= speed <= clockmod.MAX_SPEED:
+            raise ValueError(f"preset {name!r}: speed {speed!r} is outside "
+                             f"{clockmod.MIN_SPEED:g}-{clockmod.MAX_SPEED:g}")
+        master = (None if preset.get("master") is None
+                  else _finite(preset["master"], f"the master of preset {name!r}"))
+        return speed, master
+
     def _apply_preset_looks(self, preset: dict, now: float) -> None:
         name = preset["name"]
+        speed, master = self._preset_numbers(preset)
         # A preset naming a look that has since been re-ported away applies the
         # rest rather than failing whole -- a preset is a shortcut, and half a
         # shortcut beats an error message mid-set.
@@ -1684,10 +1703,10 @@ class ShowController:
                                f"preset {name!r}")
         if preset.get("rates"):
             self.apply_rates(preset["rates"])
-        if preset.get("speed"):
-            self.clock.set_speed(float(preset["speed"]), now)
-        if preset.get("master") is not None:
-            self.master = max(0.0, min(1.0, float(preset["master"])))
+        if speed is not None:
+            self.clock.set_speed(speed, now)
+        if master is not None:
+            self.master = max(0.0, min(1.0, master))
         self.director.held = True
         self._grab(statemod.SLOTS)
         self._recompose()
@@ -2054,12 +2073,13 @@ class ShowController:
 
         # Finite or refused. Every comparison with NaN is false, so a NaN edge
         # on the crowd zone would put no beam "over the crowd" ever again --
-        # the taper switched off, silently, by a slider.
+        # the taper switched off, silently, by a slider. And within the venue
+        # schema's bounds, so the live venue is always one venue_save can write.
         if "crowd" in m and crowd is not None:
             c = m["crowd"]
             box = crowd.footprint
-            band_min = _finite(c.get("head_band_min", crowd.head_band_min), "head_band_min")
-            band_max = _finite(c.get("head_band_max", crowd.head_band_max), "head_band_max")
+            band_min = _finite(c.get("head_band_min", crowd.head_band_min), "head_band_min", 0)
+            band_max = _finite(c.get("head_band_max", crowd.head_band_max), "head_band_max", 0)
             if band_min >= band_max:
                 raise ValueError("head band min must be below max")
             crowd = venuemod.CrowdZone(
@@ -2075,8 +2095,8 @@ class ShowController:
             k = m["canopy"]
             canopy = replace(canopy,
                              enabled=bool(k.get("enabled", canopy.enabled)),
-                             height=_finite(k.get("height", canopy.height), "height"),
-                             radius=_finite(k.get("radius", canopy.radius), "radius"))
+                             height=_finite(k.get("height", canopy.height), "height", 0),
+                             radius=_finite(k.get("radius", canopy.radius), "radius", 0))
 
         self.rig.venue = replace(venue, crowd_zone=crowd, canopy=canopy)
         self.ctx.venue = self.rig.venue
@@ -3631,8 +3651,31 @@ def venue_summary(venue) -> dict:
                 "radius": venue.canopy.radius}}
 
 
-def _finite(value: Any, what: str) -> float:
-    """A number off the socket, refused if it is not a finite one.
+def _no_constant(name: str) -> float:
+    raise ValueError(f"{name} is not a number")
+
+
+def _finite_literal(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):           # 1e999 parses as infinity
+        raise ValueError(f"{text} is not a finite number")
+    return value
+
+
+def strict_json(text: str) -> Any:
+    """A message off the socket, as JSON a browser could have sent.
+
+    Python's json.loads also accepts NaN, Infinity and -Infinity, and reads
+    1e999 as infinity; JSON.stringify never writes any of them. Refused here,
+    once, for every command -- the per-handler `_finite` checks still catch a
+    number sent as a string ("nan"), which float() reads all the same.
+    """
+    return json.loads(text, parse_constant=_no_constant, parse_float=_finite_literal)
+
+
+def _finite(value: Any, what: str, minimum: Optional[float] = None) -> float:
+    """A number off the socket, refused if it is not a finite one -- or, given
+    `minimum`, if it is below it.
 
     Python's json.loads accepts NaN and Infinity, so a client can send what a
     browser never would -- and clamping does not catch NaN: min(1.0, nan) is
@@ -3640,7 +3683,9 @@ def _finite(value: Any, what: str) -> float:
     """
     number = float(value)
     if not math.isfinite(number):
-        raise ValueError(f"{what} must be a number, got {value!r}")
+        raise ValueError(f"{what} must be a finite number, got {value!r}")
+    if minimum is not None and number < minimum:
+        raise ValueError(f"{what} must be at least {minimum:g}, got {number:g}")
     return number
 
 
@@ -3933,8 +3978,8 @@ class ShowServer:
                 if text is None:
                     continue
                 try:
-                    message = json.loads(text)
-                except json.JSONDecodeError:
+                    message = strict_json(text)
+                except ValueError:                 # JSONDecodeError is one too
                     continue
                 # Valid JSON that is not an object -- `[1, 2]`, `"go"`, `7` --
                 # used to reach `.get` below and end this client's connection.

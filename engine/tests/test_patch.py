@@ -548,6 +548,13 @@ check_cli("and the next step, adding its first fixture, works on the scaffold",
 code, out = run_cli("--event", "pop-up", "remove", "--name", "MH")
 check_cli("removing the last fixture is refused: an edit must leave a runnable rig",
       code == 1 and "must not be empty" in out, out)
+scaffold = patchmod.new_event("draft", "despacio-room").config
+res = patchmod.set_venue(scaffold, "despacio-room", lib=LIB)
+check("a draft (no fixtures yet) can still be pointed at a room, and is told it is a draft",
+      res.ok and any_has(res.warnings, "no fixtures yet"), f"{res.errors}")
+res = patchmod.autopatch(scaffold, lib=LIB)
+check("and autopatched (nothing to move), without an empty-rig refusal",
+      res.ok and "nothing moved" in res.warnings, f"{res.errors}")
 
 
 print("\n13. every event's rig.json agrees with its patch sheet")

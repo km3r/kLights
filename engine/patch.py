@@ -138,10 +138,12 @@ def event_dir(event: str) -> Path:
     return EVENTS / event
 
 
-# What an edit may START from. A rig with no fixtures cannot run, and
-# configmod.RIG says so -- but it is exactly what new_event scaffolds, and a
-# loader that refused it left add_fixture no way in. Edits still leave through
-# _validated, so what gets written is held to the full rule.
+# A draft: a rig with no fixtures. It cannot run, and configmod.RIG says so --
+# but it is exactly what new_event scaffolds. A loader that refused it left
+# add_fixture no way in, and an exit check that refused it let add_fixture be
+# the only edit a fresh event accepted. So a draft may be loaded and edited
+# (`_validated(draft=True)`), while an edit to a RUNNABLE rig must leave it
+# runnable: removing the last fixture is still refused.
 RIG_DRAFT = {**configmod.RIG,
              "fixtures": replace(configmod.RIG["fixtures"], non_empty=False)}
 
@@ -202,15 +204,19 @@ def check_addresses(cfg: dict, lib: rigmod.ProfileLibrary) -> list[str]:
 
 
 def _validated(cfg: dict, lib: rigmod.ProfileLibrary,
-               warnings: Optional[list[str]] = None) -> Result:
+               warnings: Optional[list[str]] = None, draft: bool = False) -> Result:
     """Shared exit path: schema, then addresses, then inventory.
 
     Schema first because an address check on a config with a string where a
-    number belongs reports nonsense about the address.
+    number belongs reports nonsense about the address. `draft` is for an edit
+    to a rig that was already empty: it may stay empty, and is told so.
     """
     problems: list[str] = []
+    if draft and not cfg.get("fixtures"):
+        warnings = [*(warnings or []), "no fixtures yet -- the engine will not run "
+                                       "this rig until one is added"]
     try:
-        configmod.validate(cfg, configmod.RIG, Path("rig.json"))
+        configmod.validate(cfg, RIG_DRAFT if draft else configmod.RIG, Path("rig.json"))
     except configmod.ConfigError as exc:
         problems.extend(exc.problems)
     if problems:
@@ -441,6 +447,7 @@ def autopatch(cfg: dict, universe: Optional[int] = None, start: int = 1,
     """
     lib = lib or library()
     cfg = _copy(cfg)
+    draft = not cfg.get("fixtures")
     moved: list[str] = []
     next_free: dict[int, int] = {}
     for entry in cfg.get("fixtures", []):
@@ -463,7 +470,7 @@ def autopatch(cfg: dict, universe: Optional[int] = None, start: int = 1,
         next_free[u] = at + count
     warnings = ([f"{len(moved)} fixture(s) re-addressed -- re-dial the units to "
                  f"match:"] + moved) if moved else ["nothing moved"]
-    return _validated(cfg, lib, warnings)
+    return _validated(cfg, lib, warnings, draft=draft)
 
 
 # ------------------------------------------------------------------- venues --
@@ -476,10 +483,11 @@ def set_venue(cfg: dict, venue: str,
     if not (VENUES / f"{venue}.json").exists():
         return Result(cfg, [f"no room called {venue!r} in {VENUES}. "
                             f"Available: {[v['name'] for v in list_venues()]}"])
+    draft = not cfg.get("fixtures")
     cfg["venue"] = venue
     return _validated(cfg, lib, [
         "the room changed, so every head's calibration now describes a "
-        "different space. Re-calibrate before the show"])
+        "different space. Re-calibrate before the show"], draft=draft)
 
 
 # ------------------------------------------------------------------ profiles --
