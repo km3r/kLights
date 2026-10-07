@@ -66,7 +66,8 @@ export function Phrases({ track, x, width, picked, onPick }: {
                aria-label={onPick ? `select ${label}, bars ${barNo(start)} to ${barNo(end) - 1}` : undefined}
                onClick={() => onPick?.(start, end, label)}
                onKeyDown={(e) => {
-                 if (onPick && (e.key === "Enter" || e.key === " ")) {
+                 // Enter only: Space is the transport's, here as everywhere.
+                 if (onPick && e.key === "Enter") {
                    e.preventDefault();
                    onPick(start, end, label);
                  }

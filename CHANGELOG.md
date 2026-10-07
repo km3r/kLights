@@ -17,6 +17,15 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — in Studio's editors, Space is always play/pause
+
+- In the timeline and routine editors **Space** plays and stops wherever the
+  focus is. It used to go to whatever was last clicked: a button was pressed
+  again, a menu opened, a tick box flipped, and the transport did not move.
+  Only a field that takes text keeps the key, where it types a space.
+- **Enter** is now the one key that presses the focused button or picks the
+  focused phrase. Holding Space down is a single press.
+
 ### Added — tests at every layer, and a browser suite that checks the wire
 
 - **A browser end-to-end suite** (`cd ui && npm run e2e`): the real engine,
