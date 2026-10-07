@@ -77,3 +77,8 @@ previz/unreal/Content/Previz/
 # with no Node toolchain at the venue. Rebuild with `cd ui && npm run build`.
 ui/node_modules/
 ui/tsconfig.tsbuildinfo
+# What the browser e2e suite leaves behind: traces and screenshots of a failed
+# run, and the HTML report CI uploads. Regenerated on every run.
+ui/test-results/
+ui/playwright-report/
+ui/blob-report/
