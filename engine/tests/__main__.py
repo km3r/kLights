@@ -26,6 +26,7 @@ script call.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -51,20 +52,32 @@ def suites() -> list[Path]:
     return sorted(HERE.glob("test_*.py"))
 
 
+# UTF-8 on every suite's pipes, as launcher/core.py does for the engine. On
+# Windows a child writing to a pipe otherwise encodes as cp1252, and the first
+# check whose label or detail holds a character outside it -- a replacement
+# character, an emoji in a hostile input -- crashes the suite on Windows only.
+CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+
 def run(label: str, cmd: list[str], verbose: bool) -> tuple[bool, float, str]:
     started = time.monotonic()
     if verbose:
         print(f"\n----- {label} " + "-" * max(0, 60 - len(label)))
-        result = subprocess.run(cmd, cwd=REPO)
+        result = subprocess.run(cmd, cwd=REPO, env=CHILD_ENV)
         output = ""
     else:
         result = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True,
-                                errors="replace")
+                                encoding="utf-8", errors="replace", env=CHILD_ENV)
         output = (result.stdout or "") + (result.stderr or "")
     return result.returncode == 0, time.monotonic() - started, output
 
 
 def main(argv: list[str] | None = None) -> int:
+    # This process's own stdout is a cp1252 pipe under CI on Windows too, and
+    # it reprints the tail of a failing suite: replace, rather than crash on,
+    # what it cannot encode.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description="Run every engine test suite")
     parser.add_argument("-k", metavar="SUBSTRING",
                         help="only run suites whose name contains this")

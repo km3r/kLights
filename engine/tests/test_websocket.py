@@ -180,7 +180,7 @@ p = Pair()
 p.send(client_frame(b"\xff\xfe broken \xc3"))
 got = p.ws.receive()
 check("invalid UTF-8 is replaced, not raised (a junk message must not drop a client)",
-      got is not None and "broken" in got and "�" in got, repr(got))
+      got is not None and "broken" in got and "\ufffd" in got, ascii(got))
 p.close()
 
 p = Pair()

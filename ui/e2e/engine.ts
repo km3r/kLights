@@ -61,6 +61,17 @@ export async function freePort(): Promise<number> {
   });
 }
 
+/** A UDP port nothing holds, for --sync-port. Probed over UDP, not TCP: a free
+ *  TCP port says nothing about the same number over UDP, and on Windows the
+ *  engine's bind was refused ("access forbidden") on one that was not. */
+export async function freeUdpPort(): Promise<number> {
+  const socket = createSocket("udp4");
+  await new Promise<void>((ok) => socket.bind(0, "127.0.0.1", ok));
+  const { port } = socket.address();
+  await new Promise<void>((ok) => socket.close(() => ok()));
+  return port;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -93,8 +104,10 @@ export class ArtNet {
     return this.latest.get(universe);
   }
 
-  /** The first frame (from now) that satisfies `predicate`. Fails with what the
-   *  wire last said, so a red test reads as "dimmers were [230, 0, ...]". */
+  /** The latest frame, as soon as it satisfies `predicate` -- which may be one
+   *  that arrived before the call: wait for a state the previous frame could
+   *  not already be in. Fails with what the wire last said, so a red test
+   *  reads as "dimmers were [230, 0, ...]". */
   async waitFor(what: string, predicate: (dmx: Uint8Array) => boolean,
                 { timeout = 5000, universe = 0 } = {}): Promise<Uint8Array> {
     const deadline = Date.now() + timeout;
@@ -173,7 +186,7 @@ export class Engine {
     }
     const engine = new Engine(root, await freePort(), options.artnetPort,
                               options.token === undefined ? "e2e" : options.token,
-                              eventDir, showDir, options.syncPort ? await freePort() : null);
+                              eventDir, showDir, options.syncPort ? await freeUdpPort() : null);
     await engine.launch();
     return engine;
   }

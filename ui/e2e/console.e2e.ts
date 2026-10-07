@@ -202,7 +202,11 @@ test.describe("when the engine restarts", () => {
       await artnet.waitFor("every mover lit", lit);
       await engine.halt();
       await expect(page.locator(".banners")).toContainText("Disconnected — the rig is holding its last frame");
+      // The old engine's last packet was its shutdown blackout, so every
+      // check below needs a frame the NEW engine sent: it starts lit.
+      expect(dark(artnet.frame()!)).toBe(true);
       await engine.restart();
+      await artnet.waitFor("the restarted engine lighting the rig", lit);
       await expect(page.locator(".status-dot.open")).toBeVisible({ timeout: 10_000 });
       await expect(page.locator(".banners")).toHaveCount(0);
       // Not a stale page: it drives the new engine.
