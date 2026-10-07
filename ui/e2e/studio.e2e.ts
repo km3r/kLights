@@ -113,3 +113,32 @@ test("Studio can drive the rig, every console is told, and a console can take it
       await phone.close();
     }
   });
+
+test("Space plays and pauses wherever the focus is, and types in a text field",
+  async ({ page, engine }) => {
+    await openTimeline(page, engine.url("studio"));
+    const play = page.getByRole("button", { name: "Play", exact: true });
+    const pause = page.getByRole("button", { name: "Pause", exact: true });
+    const owning = page.getByRole("button", { name: "owns track" });
+
+    // A button really clicked keeps the focus, and a browser presses the
+    // focused button on Space. Here it must not: the lane keeps its mode.
+    await page.getByRole("button", { name: "fills gaps" }).first().click();
+    const flipped = await owning.count();
+    await page.keyboard.press("Space");
+    await expect(pause).toBeVisible();
+    await expect(owning).toHaveCount(flipped);
+
+    // A menu does not open on it either.
+    await page.getByLabel("zoom").focus();
+    await page.keyboard.press("Space");
+    await expect(play).toBeVisible();
+
+    // In a field that takes text, it is a space.
+    const address = page.getByLabel("vj-opacity address");
+    await address.focus();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Space");
+    await expect(address).toHaveValue("/composition/layers/1/video/opacity ");
+    await expect(play).toBeVisible();
+  });
