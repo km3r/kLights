@@ -6,19 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
-  BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES, blocksFor, curveValue,
-  decodeWave, draftFromTemplate, freeName, hexColor, laneValue, newTimeline, phraseMatch,
-  templateFromTimeline, waveUnit, whoDrives,
+  AUDIO_BANDS, AUDIO_STEP, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES,
+  TrackAudio, blocksFor, curveValue, decodeWave, draftFromTemplate, freeName, hexColor, laneValue,
+  newTimeline, phraseMatch, templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultWave, gapStart, paramSpec, pasteBoard,
-  routineLaneSpecs, snapDown, splitAt, timelineLaneSpecs,
+  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultAudio, defaultWave, gapStart,
+  paramSpec, pasteBoard, routineLaneSpecs, snapDown, splitAt, swing, timelineLaneSpecs,
 } from "../designer/edit";
+import { WAVE_HEIGHT } from "../designer/lanes";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import waveVectors from "../designer/__fixtures__/wave-vectors.json";
-import type { Point, RoutineDoc, TemplateSetDoc, TimelineDoc } from "../designer/model";
+import audioVectors from "../designer/__fixtures__/audio-vectors.json";
+import type {
+  AudioBand, Point, RoutineDoc, TemplateSetDoc, TimelineDoc, WaveformDoc,
+} from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
 import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
@@ -369,8 +373,106 @@ describe("designer model", () => {
     const wave = decodeWave({ detail: { format: "pwv5", rate: 150, data } })!;
     expect(wave.heights[0]).toBe(1);
     expect(wave.colors![0]).toEqual([1, 0, 0]);
+    // with no three-band analysis, a band is its color times the height
+    expect(Array.from(wave.bands!.low!)).toEqual([7 * 31]);
+    expect(Array.from(wave.bands!.mid!)).toEqual([0]);
+    expect(wave.exact).toBe(false);
+  });
+
+  it("decodes rekordbox's three-band waveform: low, mid and high a column", () => {
+    const bands = { format: "pwv7", rate: 150, data: btoa(String.fromCharCode(10, 20, 30, 127, 0, 5)) };
+    const alone = decodeWave({ bands })!;
+    expect(Array.from(alone.bands!.low!)).toEqual([10, 127]);
+    expect(Array.from(alone.bands!.mid!)).toEqual([20, 0]);
+    expect(Array.from(alone.bands!.high!)).toEqual([30, 5]);
+    expect(Array.from(alone.bands!.all!)).toEqual([30, 127]);
+    expect(alone.exact).toBe(true);
+    expect(alone.heights).toEqual([30 / 127, 1]);
+    // beside the color waveform, the colors are still what is drawn, and the
+    // three bands -- not an estimate from them -- are what a lane follows
+    const v = (7 << 13) | (31 << 2);
+    const detail = { format: "pwv5", rate: 150, data: btoa(String.fromCharCode(v >> 8, v & 0xff, 0, 0)) };
+    const both = decodeWave({ detail, bands })!;
+    expect(both.colors![0]).toEqual([1, 0, 0]);
+    expect(Array.from(both.bands!.low!)).toEqual([10, 127]);
+    expect(both.exact).toBe(true);
+    // the preview alone is too coarse to follow
+    expect(decodeWave({ preview: btoa("abc") })!.bands).toBeUndefined();
+  });
+
+  it("lays a track's audio on its beats exactly as the engine does", () => {
+    expect(AUDIO_STEP).toBe(audioVectors.step);
+    expect([...AUDIO_BANDS]).toEqual(audioVectors.bands);
+    for (const c of audioVectors.cases) {
+      const audio = TrackAudio.from(decodeWave(c.doc as WaveformDoc), new Grid(c.segments))!;
+      expect(audio.bands, c.name).toEqual(c.bands);
+      expect(audio.exact, c.name).toBe(c.exact);
+      expect(audio.first, c.name).toBe(c.first);
+      for (const [band, want] of Object.entries(c.pooled) as [AudioBand, number[]][]) {
+        const got = audio.pooled(band);
+        expect(got.length, `${c.name}: ${band}`).toBe(want.length);
+        want.forEach((v, j) => expect(got[j], `${c.name}: ${band} cell ${j}`).toBeCloseTo(v, 10));
+      }
+      for (const e of c.envelopes) {
+        const got = audio.envelope(e.band as AudioBand, e.floor, e.ceiling, e.release);
+        e.cells.forEach((v, j) => expect(
+          got[j], `${c.name}: ${e.band} ${e.floor}-${e.ceiling} release ${e.release} cell ${j}`,
+        ).toBeCloseTo(v, 10));
+      }
+    }
+  });
+
+  it("adds the band a lane follows to its points, where the track has it", () => {
+    const audio = TrackAudio.from(decodeWave(KICKS), new Grid([[0, 0, 128]]))!;
+    const row = { id: "m", type: "automation" as const, target: "master",
+                  points: [[0, 0.2]] as Point[],
+                  audio: { band: "low", depth: 0.6 } };
+    expect(laneValue(row, 4, audio)).toBeCloseTo(0.8);       // on the kick
+    expect(laneValue(row, 4.5, audio)).toBeCloseTo(0.2);     // between
+    expect(laneValue(row, 4)).toBe(0.2);                     // no track: the points alone
+    expect(laneValue(row, 4, null)).toBe(0.2);
+    expect(audio.level({ band: "sub", depth: 1 }, 4)).toBe(0);
+    expect(audio.level({ band: "low", depth: 1, floor: 0.5, ceiling: 0.5 }, 4)).toBe(0);
+    expect(audio.level({ band: "low", depth: 1, release: 1 }, 4.5)).toBeCloseTo(0.5, 1);
+  });
+
+  it("starts a band that stays inside its lane's range, its wave counted", () => {
+    const master = paramSpec("x", { type: "number", min: 0, max: 1 })!;
+    const row = (points: Point[], wave?: { depth: number }) => ({
+      id: "m", type: "automation" as const, points,
+      wave: wave && { shape: "sine", bars: 4, ...wave } });
+    // resting at full, the only room is down: the kick ducks it
+    expect(defaultAudio(row([[0, 1]]), master)).toEqual({ band: "low", depth: -0.5, release: 0.5 });
+    expect(defaultAudio(row([[0, 0.2]]), master).depth).toBe(0.5);
+    // a wave already lifting it 0.5 leaves 0.3 above
+    expect(defaultAudio(row([[0, 0.2]], { depth: 0.5 }), master).depth).toBe(0.3);
+    // the blue waveform has only the overall level to follow
+    expect(defaultAudio(row([[0, 0.2]]), master, ["all"]).band).toBe("all");
+    expect(swing({ wave: { shape: "sine", bars: 4, depth: 0.3 }, audio: { band: "low", depth: -0.2 } }))
+      .toEqual([-0.2, 0.3]);
   });
 });
+
+/** Bytes as the base64 a waveform document carries. */
+function b64(bytes: number[]): string {
+  let text = "";
+  for (const b of bytes) text += String.fromCharCode(b);
+  return btoa(text);
+}
+
+/** A waveform for the example track (128 bpm from 0 s, so a beat is 70.3125
+ *  columns): thirty seconds, a kick on every beat and hats between. */
+const KICKS: WaveformDoc = (() => {
+  const columns = 150 * 30;
+  const bytes = new Array<number>(columns * 3).fill(0);
+  for (let beat = 0; beat < 64; beat++) {
+    const kick = Math.floor(beat * 60 / 128 * 150);
+    const hat = Math.floor((beat + 0.5) * 60 / 128 * 150);
+    bytes[3 * kick] = bytes[3 * kick + 3] = 120;
+    bytes[3 * hat + 2] = 60;
+  }
+  return { bands: { format: "pwv7", rate: 150, data: b64(bytes) } };
+})();
 
 function itemNameOf(i: { routine?: string; palette?: string; hit?: string }): string {
   return i.routine ?? i.palette ?? i.hit ?? "";
@@ -417,6 +519,8 @@ const CATALOGUE = {
   ],
 };
 let rekordbox: [number, unknown] = [200, CATALOGUE];
+/** The example track's waveform, for the tests that give it one. */
+let waveform: WaveformDoc | null = null;
 
 const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
 /** The library: Hot, copied into the timeline (with older colors) and Club
@@ -476,6 +580,7 @@ function serve(path: string): [number, unknown] {
   }
   if (path === "/api/rekordbox") return rekordbox;
   if (path === "/api/tracks/synth-128") return [200, { doc: trackDoc, rev: "r:t" }];
+  if (path === "/api/waveforms/synth-128" && waveform) return [200, { doc: waveform }];
   if (path === "/api/timelines/synth-128") return [200, { doc: timelineDoc, rev: TIMELINE_REV }];
   if (path === "/api/routines") return [200, { routines: ROUTINES }];
   if (path === "/api/routines/fan-drop") return [200, { doc: fanDrop, rev: ROUTINE_REV }];
@@ -499,6 +604,7 @@ beforeEach(() => {
   sessionStorage.clear();
   resetCatalogue();
   rekordbox = [200, CATALOGUE];
+  waveform = null;
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -1095,6 +1201,118 @@ describe("designer", () => {
     expect(within(radius).getByLabelText("point at bar 1.1: 10")).toBeInTheDocument();
   });
 
+  it("drags the waveform taller, shows its bands, and remembers both", async () => {
+    waveform = KICKS;
+    const rects: { y: number; h: number; style: string }[] = [];
+    const ctx = { fillStyle: "", clearRect() { rects.length = 0; },
+                  fillRect(_x: number, y: number, _w: number, h: number) {
+                    rects.push({ y, h, style: String(ctx.fillStyle) });
+                  } };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const canvas = await within(lanes).findByLabelText("waveform") as HTMLCanvasElement;
+    expect(canvas.height).toBe(WAVE_HEIGHT.start);
+    // drawn about its middle, and no taller than the lane
+    await waitFor(() => expect(rects.length).toBeGreaterThan(0));
+    expect(Math.max(...rects.map((r) => r.y + r.h))).toBeLessThanOrEqual(WAVE_HEIGHT.start);
+
+    // the bottom edge is a grip: dragged down 80 px, the lane is 80 px taller
+    const grip = within(lanes).getByRole("separator", { name: "waveform height" });
+    fireEvent.pointerDown(grip, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientY: 180, pointerId: 1 });
+    expect(canvas.height).toBe(WAVE_HEIGHT.start + 80);
+    fireEvent.pointerUp(grip, { clientY: 180, pointerId: 1 });
+    expect(canvas.style.height).toBe(`${WAVE_HEIGHT.start + 80}px`);
+    expect(grip).toHaveAttribute("aria-valuenow", String(WAVE_HEIGHT.start + 80));
+    // and the waveform is drawn to the new height
+    expect(Math.max(...rects.map((r) => r.y + r.h))).toBeGreaterThan(WAVE_HEIGHT.start);
+    // never past its limits, by drag or by key
+    fireEvent.pointerDown(grip, { clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(grip, { clientY: 5000, pointerId: 1 });
+    fireEvent.pointerUp(grip, { clientY: 5000, pointerId: 1 });
+    expect(canvas.height).toBe(WAVE_HEIGHT.max);
+    fireEvent.keyDown(grip, { key: "Home" });
+    expect(canvas.height).toBe(WAVE_HEIGHT.min);
+    fireEvent.keyDown(grip, { key: "ArrowDown" });
+    fireEvent.keyDown(grip, { key: "ArrowDown", shiftKey: true });
+    expect(canvas.height).toBe(WAVE_HEIGHT.min + 5 * WAVE_HEIGHT.step);
+
+    // Bands: low, mid and high one above another, each in its own color
+    await user.click(within(lanes).getByRole("button", { name: "Bands" }));
+    expect(within(lanes).getByLabelText("waveform, by band")).toBe(canvas);
+    const third = canvas.height / 3;
+    const kicks = rects.filter((r) => r.style === "#3b82f6");
+    const hats = rects.filter((r) => r.style === "#e8edf5");
+    expect(kicks.length).toBeGreaterThan(0);
+    expect(hats.length).toBeGreaterThan(0);
+    expect(Math.min(...kicks.map((r) => r.y))).toBeGreaterThanOrEqual(2 * third);
+    expect(Math.max(...hats.map((r) => r.y + r.h))).toBeLessThanOrEqual(third + 0.001);
+
+    // both are this browser's, kept for the next track opened
+    cleanup();
+    await open();
+    const again = await screen.findByLabelText("waveform, by band") as HTMLCanvasElement;
+    expect(again.height).toBe(WAVE_HEIGHT.min + 5 * WAVE_HEIGHT.step);
+    // a double click puts the height back
+    fireEvent.doubleClick(screen.getByRole("separator", { name: "waveform height" }));
+    expect(again.height).toBe(WAVE_HEIGHT.start);
+  });
+
+  it("has a lane follow a band of the track's audio, held to the lane's range", async () => {
+    waveform = KICKS;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    await within(lanes).findByLabelText("waveform");
+    // the lane's own button adds a band that fits, and opens it
+    await user.click(within(lanes).getByRole("button", { name: "audio on size" }));
+    const inspector = screen.getByRole("contentinfo", { name: "inspector" });
+    expect(within(inspector).getByText(/follows the audio on size/)).toBeInTheDocument();
+    const bands = within(inspector).getByRole("group", { name: "audio band" });
+    expect(within(bands).getByRole("button", { name: "low" })).toHaveClass("on");
+    // where it carries the lane to is drawn on the lane
+    const size = within(lanes).getByLabelText("automation size");
+    expect(within(size).getByLabelText("audio")).toBeInTheDocument();
+
+    await user.click(within(bands).getByRole("button", { name: "high" }));
+    fireEvent.change(within(inspector).getByLabelText("audio depth"), { target: { value: "2" } });
+    // size rests at 1.8 at its highest: 1.8 + 2 is past its 3, said before the engine does
+    expect(within(inspector).getByRole("alert")).toHaveTextContent(/reaches 3.8/);
+    fireEvent.change(within(inspector).getByLabelText("audio depth"), { target: { value: "0.6" } });
+    expect(within(inspector).queryByRole("alert")).toBeNull();
+    fireEvent.change(within(inspector).getByLabelText("audio floor"), { target: { value: "0.2" } });
+    fireEvent.change(within(inspector).getByLabelText("audio release"), { target: { value: "1" } });
+    // a ceiling under the floor is not taken
+    fireEvent.change(within(inspector).getByLabelText("audio ceiling"), { target: { value: "0.1" } });
+    expect(within(inspector).getByLabelText("audio ceiling")).toHaveValue(1);
+
+    await waitFor(() => {
+      const draft = [...socket.sent].reverse().find((c) => c.type === "timeline_draft") as
+        unknown as { doc: TimelineDoc } | undefined;
+      expect(draft?.doc.rows.find((r) => r.id === "size")?.audio)
+        .toEqual({ band: "high", depth: 0.6, release: 1, floor: 0.2 });
+    }, { timeout: 2000 });
+
+    // Delete stops it following; the points are as they were
+    fireEvent.keyDown(document.body, { key: "Delete" });
+    expect(screen.queryByText(/follows the audio on size/)).toBeNull();
+    expect(within(size).queryByLabelText("audio")).toBeNull();
+    // a color lane has no number for a band to move
+    expect(within(lanes).queryByRole("button", { name: /^audio on param/ })).toBeNull();
+  });
+
+  it("says a track with no waveform has no audio to follow", async () => {
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const follow = within(lanes).getByRole("button", { name: "audio on size" });
+    expect(follow).toBeDisabled();
+    expect(follow).toHaveAttribute("title", expect.stringMatching(/no waveform to follow/));
+  });
+
   it("answers the editing keys: Space plays, Ctrl+S saves, Escape lets go", async () => {
     const socket = await open();
     const lanes = await screen.findByRole("region", { name: "lanes" });
@@ -1408,6 +1626,8 @@ describe("routine editor", () => {
     const spread = within(lanes).getByLabelText("automation arg.fan.spread");
     expect(within(spread).getByLabelText("point at bar 1.1: 0.5")).toBeInTheDocument();
 
+    // a routine plays on any track, so its lanes are not offered one's audio
+    expect(within(lanes).queryByRole("button", { name: /^audio on/ })).toBeNull();
     // a wave on it: the lane's ∿ adds one in range and opens it
     await user.click(within(lanes).getByRole("button", { name: /^wave on arg[.-]fan[.-]spread/ }));
     const inspector = screen.getByRole("contentinfo", { name: "inspector" });

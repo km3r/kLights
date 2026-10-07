@@ -295,6 +295,19 @@ with tempfile.TemporaryDirectory() as tmp:
                                   "wave": {"shape": "sine", "bars": 4, "depth": 0.5}}])
     check("and one that swings master past 1 is refused, saying where",
           err and any("it reaches" in e for e in over["errors"]), f"{over.get('errors')}")
+    heard, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                             ops=[{"op": "set_audio", "row": "size",
+                                   "audio": {"band": "low", "depth": 0.5}}])
+    check("set_audio has a lane follow a band of the track, checked like any edit",
+          not err and heard["ok"] and any("low band" in c for c in heard["changes"])
+          and next(r for r in heard["doc"]["rows"] if r["id"] == "size")["audio"]["band"]
+          == "low", f"{heard.get('errors')}")
+    over, err = server.tool("edit_timeline", show_dir=sd, track="synth-128",
+                            ops=[{"op": "set_audio", "row": "master",
+                                  "audio": {"band": "low", "depth": 0.5}}])
+    check("and a band that lifts master past 1 is refused, saying where",
+          err and any("audio: at point" in e for e in over["errors"]),
+          f"{over.get('errors')}")
 
     routine, _ = server.tool("get_routine", show_dir=sd, id="fan-drop")
     doc = routine["doc"]

@@ -6,8 +6,9 @@ This is the core every output shares. It knows rows, items, curves and hits; it
 does not know what a mover is. The lights compiler (F19h) asks it "what is on
 the movement channel at beat 161.5" and turns the answer into layers; a VJ
 adapter (milestone 3) will ask the same question of its own rows. So it imports
-nothing from the lights -- nothing from the engine but `waves.py`, which is
-standard-library-only itself -- and a test holds both to that.
+nothing from the lights -- nothing from the engine but `waves.py` and
+`bands.py`, which are standard-library-only themselves -- and a test holds all
+three to that.
 
 **Positions are beats** on the track's grid (`tracktime.py` turns audio
 seconds into them). Every query is a pure function of the beat, so whatever the
@@ -53,6 +54,13 @@ lane can breathe without a point per bar. Its integral is exact too, which is
 why the shapes live in `waves.py` with their areas, and why that module is as
 standard-library-only as this one.
 
+A track's timeline row may carry `audio` too (`bands.Follow`): `depth` times
+the level of one frequency band of the track itself -- rekordbox's analysis of
+it, so still a pure function of the beat -- added the same way. It is the
+caller that knows the track: `from_rows` is handed its `bands.Audio`, and
+without one (a routine's rows, a track with no waveform) the row plays its
+points alone.
+
 **Hits** (flash, strobe, blackout) are windows: on from `at` for `len` beats.
 Jump into the middle of one and it shows from there; jump over one and it never
 fires. A hit shorter than a frame would fall between two frames, so in forward
@@ -75,6 +83,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Union
 
+from .bands import Audio, Follow
 from .waves import Wave
 
 CURVES = ("linear", "step", "ease")
@@ -299,17 +308,20 @@ def _shape_area(curve: str, x: float) -> float:
 @dataclass(frozen=True)
 class Curve:
     """Automation: values at beats, shaped between them, plus an optional wave
-    on top (`waves.Wave`). Values are numbers, or anything else (a color) for
-    `segment` and `pull` alone."""
+    (`waves.Wave`) and an optional band of the track's audio (`bands.Follow`)
+    on top. Values are numbers, or anything else (a color) for `segment` and
+    `pull` alone."""
     beats: tuple[float, ...]
     values: tuple[Any, ...]
     shapes: tuple[str, ...]          # shapes[i] shapes the segment INTO point i
     areas: Optional[tuple[float, ...]]   # integral up to each point; numeric only
     wave: Optional[Wave] = None
+    audio: Optional[Follow] = None       # numeric only
 
     @classmethod
     def from_points(cls, points: Sequence, where: str = "curve",
-                    wave: Optional[Wave] = None) -> "Curve":
+                    wave: Optional[Wave] = None,
+                    audio: Optional[Follow] = None) -> "Curve":
         if not points:
             raise TimelineError(f"{where} has no points")
         beats, values, shapes = [], [], []
@@ -339,7 +351,8 @@ class Curve:
                 a, b = values[i - 1], values[i]
                 acc.append(acc[-1] + w * (a + (b - a) * _shape_area(shapes[i], 1.0)))
             areas = tuple(acc)
-        return cls(tuple(beats), tuple(values), tuple(shapes), areas, wave)
+        return cls(tuple(beats), tuple(values), tuple(shapes), areas, wave,
+                   audio if numeric else None)
 
     @property
     def numeric(self) -> bool:
@@ -362,7 +375,11 @@ class Curve:
             raise TimelineError("value() needs a numeric curve; use segment()")
         a, b, t = self.segment(beat)
         base = a + (b - a) * t
-        return base if self.wave is None else base + self.wave.level(beat)
+        if self.wave is not None:
+            base += self.wave.level(beat)
+        if self.audio is not None:
+            base += self.audio.level(beat)
+        return base
 
     def pull(self, beat: float) -> Optional[tuple[Any, float]]:
         """A color curve's wave at `beat`: (the color it swings toward, how
@@ -373,21 +390,25 @@ class Curve:
 
     def integral(self, beat: float) -> float:
         """The area under the curve to `beat`, from a fixed origin -- only
-        differences of it mean anything. Exact, wave included (`waves.area`)."""
+        differences of it mean anything. Exact, the wave (`waves.area`) and the
+        audio (`bands.Envelope`, a prefix sum) included."""
         if self.areas is None:
             raise TimelineError("only a numeric curve has an integral")
-        wave = self.wave.integral(beat) if self.wave is not None else 0.0
+        # What rides on the points: the wave's area, and the audio's.
+        riding = self.wave.integral(beat) if self.wave is not None else 0.0
+        if self.audio is not None:
+            riding += self.audio.integral(beat)
         beats, values = self.beats, self.values
         if beat <= beats[0]:
-            return values[0] * (beat - beats[0]) + wave
+            return values[0] * (beat - beats[0]) + riding
         if beat >= beats[-1]:
-            return self.areas[-1] + values[-1] * (beat - beats[-1]) + wave
+            return self.areas[-1] + values[-1] * (beat - beats[-1]) + riding
         i = bisect.bisect_right(beats, beat)
         w = beats[i] - beats[i - 1]
         x = (beat - beats[i - 1]) / w
         a, b = values[i - 1], values[i]
         return (self.areas[i - 1] + w * (a * x + (b - a) * _shape_area(self.shapes[i], x))
-                + wave)
+                + riding)
 
 
 # -- hits ---------------------------------------------------------------------
@@ -540,10 +561,12 @@ class Timeline:
     @classmethod
     def from_rows(cls, rows: Iterable[Mapping],
                   channels: Optional[Callable[[Mapping], Iterable[str]]] = None,
-                  meta: Optional[Mapping] = None) -> "Timeline":
+                  meta: Optional[Mapping] = None,
+                  audio: Optional[Audio] = None) -> "Timeline":
         """From rows as authored -- a timeline's, or a routine's in its own
         beats. `channels(row)` names what a clips row drives; by default, its
-        target."""
+        target. `audio` is the track's, for the rows that follow a band of it;
+        without it they play their points alone."""
         channels = channels or _own_target
         clip_rows: list[ClipRow] = []
         hit_rows: list[HitRow] = []
@@ -576,7 +599,14 @@ class Timeline:
                         wave = Wave.from_spec(row["wave"], f"{where} wave")
                     except ValueError as exc:
                         raise TimelineError(str(exc)) from None
-                curve = Curve.from_points(row.get("points") or (), where, wave)
+                follow = None
+                if row.get("audio") is not None and audio is not None:
+                    try:
+                        follow = audio.follow(row["audio"], f"{where} audio")
+                    except ValueError as exc:
+                        raise TimelineError(str(exc)) from None
+                curve = Curve.from_points(row.get("points") or (), where, wave,
+                                          follow)
                 curves.setdefault(target, (rid, curve))  # the higher row wins
             elif kind == "external":
                 _external_row(row)              # refuse what cannot be built
@@ -587,14 +617,14 @@ class Timeline:
 
     @classmethod
     def from_doc(cls, doc: Mapping,
-                 channels: Optional[Callable[[Mapping], Iterable[str]]] = None
-                 ) -> "Timeline":
+                 channels: Optional[Callable[[Mapping], Iterable[str]]] = None,
+                 audio: Optional[Audio] = None) -> "Timeline":
         """From a whole timeline document. Everything but its rows -- track,
         palettes, default palette -- is kept in `meta`."""
         if not isinstance(doc, Mapping) or not isinstance(doc.get("rows"), list):
             raise TimelineError("a timeline needs a list of rows")
         meta = {k: v for k, v in doc.items() if k != "rows"}
-        return cls.from_rows(doc["rows"], channels, meta)
+        return cls.from_rows(doc["rows"], channels, meta, audio)
 
     # -- asking ------------------------------------------------------------
 

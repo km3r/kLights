@@ -157,6 +157,9 @@ def edit_timeline(track: str, ops: Sequence[Mapping], base_rev: Optional[str] = 
       set_points   {row: id, points: [[beat, value, curve?], ...]}
       set_wave     {row: id, wave: {shape, bars, depth, ...} | null}
                                                   a wave on top of the points
+      set_audio    {row: id, audio: {band, depth, floor, ceiling, release} | null}
+                                                  a band of the track's audio
+                                                  on top of the points
       set          {key: "palette" | "palettes" | "grid_rev", value}
     """
     root = _root(show_dir)
@@ -289,6 +292,20 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                 changes.append(f"set a {op['wave'].get('shape', 'sine')} wave on "
                                f"{r['id']!r}" if isinstance(op["wave"], dict)
                                else f"set a wave on {r['id']!r}")
+        elif kind == "set_audio":
+            r = row(op.get("row"))
+            if r is None or r.get("type") != "automation":
+                problems.append(f"{at}: needs an existing automation row")
+                continue
+            if op.get("audio") is None:
+                r.pop("audio", None)
+                changes.append(f"{r['id']!r} no longer follows the audio")
+            else:
+                r["audio"] = op["audio"]
+                changes.append(f"{r['id']!r} follows the audio's "
+                               f"{op['audio'].get('band')} band"
+                               if isinstance(op["audio"], dict)
+                               else f"set audio on {r['id']!r}")
         elif kind == "set":
             key = op.get("key")
             if key not in ("palette", "palettes", "grid_rev"):
@@ -298,7 +315,8 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
             changes.append(f"set {key}")
         else:
             problems.append(f"{at}: unknown op; one of add_row, remove_row, "
-                            f"add_item, update_item, remove_item, set_points, set_wave, set")
+                            f"add_item, update_item, remove_item, set_points, set_wave, "
+                            f"set_audio, set")
     return changes, problems
 
 
@@ -334,10 +352,16 @@ def lint(show_dir: Optional[str] = None, event: Optional[str] = None) -> dict:
     folder = showfiles.load_folder(root)
     out = {"ok": not folder.errors, "errors": folder.errors,
            "warnings": folder.warnings, "rig_problems": {}}
+    audio = {}
+    for tid, doc in sorted(folder.timelines.items()):
+        audio[tid], missing = showfiles.timeline_audio(root, doc,
+                                                      folder.tracks.get(tid))
+        folder.warnings.extend(f"timelines/{tid}.json: {m}" for m in missing)
     if event:
         rigging = programmod.load_rigging(_event_dir(event))
         for tid, doc in sorted(folder.timelines.items()):
-            timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
+            timeline = timelinemod.Timeline.from_doc(
+                doc, showfiles.timeline_channels, audio[tid])
             prog = programmod.compile(timeline, folder.routines, rigging,
                                       f"timelines/{tid}.json")
             if prog.problems:
@@ -357,9 +381,13 @@ def explain(track: str, beat: float, show_dir: Optional[str] = None,
     if doc is None:
         return _error(f"no valid timeline for {track!r}",
                       folder_errors=folder.errors[:5])
-    timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels)
+    audio, missing = showfiles.timeline_audio(root, doc, folder.tracks.get(track))
+    timeline = timelinemod.Timeline.from_doc(doc, showfiles.timeline_channels,
+                                             audio)
     out = {"ok": True, "track": track, "bar": int(beat // 4) + 1,
            **timeline.explain(beat)}
+    if missing:
+        out["warnings"] = missing
     if event:
         from . import library as libmod
         from . import state as statemod

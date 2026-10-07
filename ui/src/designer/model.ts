@@ -94,6 +94,19 @@ export interface WaveSpec {
   toward?: PointValue;
 }
 
+/** One frequency band of the track's own audio added on top of an automation
+ *  row's points (`bands.Follow`): `depth` times the band's level, 0-1 of its
+ *  loudest in the track. `floor` and `ceiling` pick the part of that range the
+ *  lane listens to; `release` is the beats a full level takes to fall away. A
+ *  track's timeline only -- a routine plays on any track. */
+export interface AudioSpec {
+  band: string;
+  depth?: number;
+  floor?: number;
+  ceiling?: number;
+  release?: number;
+}
+
 export interface Row {
   id: string;
   type: "clips" | "hits" | "automation" | "external";
@@ -104,6 +117,7 @@ export interface Row {
   items?: Item[];
   points?: Point[];
   wave?: WaveSpec;
+  audio?: AudioSpec;
   /** An external row's output: osc, midi, visuals (`vj` is read as visuals). */
   output?: string;
   /** OSC: where a curve's value goes, and what it sends (default `$value`). */
@@ -732,11 +746,13 @@ export function waveLevel(wave: WaveSpec, beat: number): number {
   return (wave.depth ?? 1) * waveUnit(wave.shape, cycles, wave.seed ?? 0);
 }
 
-/** A numeric lane's value at a beat: its points, plus its wave. */
-export function laneValue(row: Row, beat: number): number | null {
+/** A numeric lane's value at a beat: its points, plus its wave, plus -- given
+ *  the track's audio -- the band it follows. */
+export function laneValue(row: Row, beat: number, audio?: TrackAudio | null): number | null {
   const base = curveValue(row.points ?? [], beat);
-  if (base == null || !row.wave) return base;
-  return base + waveLevel(row.wave, beat);
+  if (base == null) return base;
+  return base + (row.wave ? waveLevel(row.wave, beat) : 0)
+    + (row.audio && audio ? audio.level(row.audio, beat) : 0);
 }
 
 /** What a row drives: a scene lane drives every slot. */
@@ -893,7 +909,18 @@ export interface Wave {
   colors?: [number, number, number][];
   /** Columns per second, or null when the columns span the whole track. */
   rate: number | null;
+  /** A level per column for each frequency band the analysis has, on whatever
+   *  scale its format used: what a lane follows, and the lane's band view.
+   *  Absent for the preview alone, which is too coarse for either. */
+  bands?: Partial<Record<AudioBand, Uint8Array>>;
+  /** The bands are rekordbox's three-band analysis, not read off its colors. */
+  exact?: boolean;
 }
+
+/** The bands a lane can follow (`bands.BANDS`): three of the spectrum, and the
+ *  track's overall level. */
+export const AUDIO_BANDS = ["low", "mid", "high", "all"] as const;
+export type AudioBand = (typeof AUDIO_BANDS)[number];
 
 function b64(text: string): Uint8Array {
   const raw = atob(text);
@@ -902,31 +929,177 @@ function b64(text: string): Uint8Array {
   return out;
 }
 
+export interface WaveformDoc {
+  preview?: string;
+  detail?: { format: string; rate?: number; data: string };
+  bands?: { format: string; rate?: number; data: string };
+}
+
+/** rekordbox's three-band analysis (PWV7): a byte each for low, mid and high
+ *  per column, 0-127. `bands.decode`, for the same bytes. */
+function threeBands(doc: WaveformDoc): Wave["bands"] | null {
+  if (doc.bands?.format !== "pwv7") return null;
+  const bytes = b64(doc.bands.data);
+  const n = Math.floor(bytes.length / 3);
+  if (!n) return null;
+  const low = new Uint8Array(n);
+  const mid = new Uint8Array(n);
+  const high = new Uint8Array(n);
+  const all = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    low[i] = bytes[3 * i]!;
+    mid[i] = bytes[3 * i + 1]!;
+    high[i] = bytes[3 * i + 2]!;
+    all[i] = Math.max(low[i]!, mid[i]!, high[i]!);
+  }
+  return { low, mid, high, all };
+}
+
 /** rekordbox's waveforms, as the prep tool stored them: the 400-column
- *  preview (PWAV) or the scrolling detail (PWV3: a byte per column, PWV5: two,
- *  with color). */
-export function decodeWave(doc: { preview?: string;
-                                   detail?: { format: string; rate?: number; data: string } }
-                           ): Wave | null {
+ *  preview (PWAV), the scrolling detail (PWV3: a byte per column, PWV5: two,
+ *  with color) and the three-band detail (PWV7). What is DRAWN is the detail;
+ *  the bands are what a lane follows -- the three-band analysis where the
+ *  track has it, else the color waveform's colors times its height (red is
+ *  low, green mid, blue high), else the height alone. */
+export function decodeWave(doc: WaveformDoc): Wave | null {
+  const exact = threeBands(doc);
   if (doc.detail) {
     const bytes = b64(doc.detail.data);
     const rate = doc.detail.rate ?? 150;
     if (doc.detail.format === "pwv5") {
+      const n = bytes.length >> 1;
       const heights: number[] = [];
       const colors: [number, number, number][] = [];
-      for (let i = 0; i + 1 < bytes.length; i += 2) {
-        const v = (bytes[i]! << 8) | bytes[i + 1]!;
-        colors.push([((v >> 13) & 7) / 7, ((v >> 10) & 7) / 7, ((v >> 7) & 7) / 7]);
-        heights.push(((v >> 2) & 31) / 31);
+      const est = { low: new Uint8Array(n), mid: new Uint8Array(n), high: new Uint8Array(n),
+                    all: new Uint8Array(n) };
+      for (let i = 0; i < n; i++) {
+        const v = (bytes[2 * i]! << 8) | bytes[2 * i + 1]!;
+        const [r, g, b, h] = [(v >> 13) & 7, (v >> 10) & 7, (v >> 7) & 7, (v >> 2) & 31];
+        colors.push([r / 7, g / 7, b / 7]);
+        heights.push(h / 31);
+        est.low[i] = r * h;
+        est.mid[i] = g * h;
+        est.high[i] = b * h;
+        est.all[i] = h;
       }
-      return { heights, colors, rate };
+      return { heights, colors, rate, bands: exact ?? est, exact: !!exact };
     }
-    return { heights: Array.from(bytes, (b) => (b & 31) / 31), rate };
+    const heights = Array.from(bytes, (b) => (b & 31) / 31);
+    if (doc.detail.format === "pwv3") {
+      return { heights, rate, bands: exact ?? { all: Uint8Array.from(bytes, (b) => b & 31) },
+               exact: true };
+    }
+    return { heights, rate, ...(exact ? { bands: exact, exact: true } : {}) };
+  }
+  if (exact) {
+    return { heights: Array.from(exact.all!, (v) => v / 127), rate: doc.bands!.rate ?? 150,
+             bands: exact, exact: true };
   }
   if (doc.preview) {
     return { heights: Array.from(b64(doc.preview), (b) => (b & 31) / 31), rate: null };
   }
   return null;
+}
+
+// -- a track's audio, on its beats ---------------------------------------------
+//
+// The engine's `bands.py`, copied because the designer draws a lane that
+// follows the audio as it is edited. `audio-vectors.json`, written from the
+// engine, holds the copy to the original: the same cells, from the same bytes.
+
+/** Beats to a cell (`bands.STEP`). */
+export const AUDIO_STEP = 1 / 32;
+
+/** One track's levels laid on its beats (`bands.Audio`): for each band, a cell
+ *  every 1/32 of a beat holding its loudest column, as a fraction of the
+ *  band's loudest in the whole track. */
+export class TrackAudio {
+  readonly bands: AudioBand[];
+  readonly exact: boolean;
+  /** The cell the audio's first column falls in: negative for a pickup. */
+  readonly first: number;
+  private readonly edges: number[];
+  private readonly cache = new Map<string, Float64Array>();
+
+  /** Null for a waveform with nothing to follow -- the preview alone. */
+  static from(wave: Wave | null, grid: Grid): TrackAudio | null {
+    return wave?.bands && wave.rate ? new TrackAudio(wave.bands, wave.rate, !!wave.exact, grid)
+      : null;
+  }
+
+  private constructor(private readonly columns: NonNullable<Wave["bands"]>, rate: number,
+                      exact: boolean, grid: Grid) {
+    this.bands = AUDIO_BANDS.filter((b) => columns[b]);
+    this.exact = exact;
+    const n = Math.max(0, ...this.bands.map((b) => columns[b]!.length));
+    this.first = Math.floor(grid.beatAt(0) / AUDIO_STEP);
+    const last = Math.max(this.first, Math.ceil(grid.beatAt(n / rate) / AUDIO_STEP));
+    // Each cell's first column; one more, for where the last cell ends.
+    this.edges = [];
+    for (let j = 0; j <= last - this.first; j++) {
+      this.edges.push(Math.min(n, Math.max(0, Math.trunc(
+        grid.timeAt((this.first + j) * AUDIO_STEP) * rate))));
+    }
+  }
+
+  /** A band on the beats, before any shaping. */
+  pooled(band: AudioBand): Float64Array {
+    const key = band;
+    let got = this.cache.get(key);
+    if (!got) {
+      const raw = this.columns[band] ?? new Uint8Array(0);
+      let peak = 0;
+      for (const v of raw) if (v > peak) peak = v;
+      got = new Float64Array(Math.max(0, this.edges.length - 1));
+      for (let j = 0; j < got.length; j++) {
+        const a = this.edges[j]!;
+        const b = this.edges[j + 1]!;
+        // A cell narrower than a column still has the column it is in.
+        let top = b > a ? 0 : a < raw.length ? raw[a]! : 0;
+        for (let i = a; i < b; i++) if (raw[i]! > top) top = raw[i]!;
+        got[j] = peak ? top / peak : 0;
+      }
+      this.cache.set(key, got);
+    }
+    return got;
+  }
+
+  /** A band shaped as a lane listens to it: 0-1 per cell (`Audio.envelope`). */
+  envelope(band: AudioBand, floor = 0, ceiling = 1, release = 0): Float64Array {
+    const key = `${band}/${floor}/${ceiling}/${release}`;
+    let got = this.cache.get(key);
+    if (!got) {
+      const pooled = this.pooled(band);
+      const span = ceiling - floor;
+      const fall = release > 0 ? AUDIO_STEP / release : Infinity;
+      got = new Float64Array(pooled.length);
+      let held = 0;
+      for (let j = 0; j < pooled.length; j++) {
+        held = Math.max(Math.min(1, Math.max(0, (pooled[j]! - floor) / span)), held - fall);
+        got[j] = held;
+      }
+      this.cache.set(key, got);
+    }
+    return got;
+  }
+
+  /** The cells a row's `audio` listens to, or null for a band this track's
+   *  analysis does not have (or one that is no band at all). */
+  cells(spec: AudioSpec): Float64Array | null {
+    const band = spec.band as AudioBand;
+    if (!this.bands.includes(band)) return null;
+    const floor = spec.floor ?? 0;
+    const ceiling = spec.ceiling ?? 1;
+    if (!(floor < ceiling)) return null;
+    return this.envelope(band, floor, ceiling, spec.release ?? 0);
+  }
+
+  /** What a row's `audio` adds at a beat: depth times the band's level. */
+  level(spec: AudioSpec, beat: number): number {
+    const cells = this.cells(spec);
+    const j = Math.floor(beat / AUDIO_STEP) - this.first;
+    return cells && j >= 0 && j < cells.length ? (spec.depth ?? 0) * cells[j]! : 0;
+  }
 }
 
 // -- blocks --------------------------------------------------------------------

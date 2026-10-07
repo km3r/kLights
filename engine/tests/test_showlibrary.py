@@ -161,6 +161,44 @@ try:
           kept_show.folder.show is fixed.folder.show
           and "show.json" in kept_show.folder.failed, f"{kept_show.folder.failed}")
 
+    # -- 3b. the audio a lane follows ----------------------------------------
+    print("\n3b. a lane that follows the track's audio")
+    import base64
+    root = fresh("audio")
+
+    def follow_bass(d):
+        next(r for r in d["rows"] if r["id"] == "size")["audio"] = {
+            "band": "low", "depth": 0.5}
+    touch_json(root / "timelines" / "synth-128.json", follow_bass)
+    deaf = sl.load(root)
+    check("with no waveform the timeline still loads, playing the lane's "
+          "points alone -- and the folder says what is missing",
+          deaf.timelines["synth-128"].curves["size"][1].audio is None
+          and deaf.folder.errors == []
+          and any(w.startswith("timelines/synth-128.json: row 'size' follows")
+                  and "prep the track" in w for w in deaf.folder.warnings),
+          f"{deaf.folder.warnings}")
+    # synth-128 is 128 bpm from 0 s: a kick on every beat, 70.3125 columns apart.
+    kick = bytearray(3 * 150 * 30)
+    for beat in range(64):
+        at = int(beat * 60 / 128 * 150)
+        kick[3 * at] = kick[3 * at + 3] = 120
+    (root / "waveforms").mkdir(exist_ok=True)
+    showfiles.write_doc(
+        showfiles.path_for(root, "waveform", "synth-128"),
+        showfiles.new_doc("waveform", track="synth-128", bands={
+            "format": "pwv7", "rate": 150,
+            "data": base64.b64encode(bytes(kick)).decode("ascii")}), "waveform")
+    heard = sl.load(root, deaf)
+    size = heard.timelines["synth-128"].curves["size"][1]
+    check("once the track has one, the lane rides the bass: up on the beat, "
+          "back between",
+          heard.folder.warnings == [] and size.audio is not None
+          and abs(size.value(8.0) - size.value(8.5) - 0.5) < 1e-9,
+          f"{heard.folder.warnings} {size.value(8.0)} {size.value(8.5)}")
+    check("the waveform is one of the files a reload watches",
+          any(rel == "waveforms/synth-128.json" for rel, _, _ in sl.scan(root)))
+
     # -- 4. conflict copies --------------------------------------------------
     print("\n4. sync conflict copies are never loaded")
     root = fresh("conflict")

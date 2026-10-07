@@ -10,6 +10,8 @@ repo and the event directory, and the engine is pointed at it:
     <show-dir>/show.json               which template set, pause policy, sources
     <show-dir>/tracks/<id>.json        one prepped track: identity, grid, phrases
     <show-dir>/waveforms/<id>.json     its waveform, read on demand, never pushed
+                                       -- and what a lane follows when its row
+                                       carries `audio` (`bands.py`)
     <show-dir>/timelines/<track>.json  the hand-built show for one track
     <show-dir>/routines/<id>.json      reusable routines
     <show-dir>/templates/<id>.json     template sets: rekordbox phrase -> routine
@@ -54,6 +56,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
+from . import bands as bandsmod
 from . import blocks as blocksmod
 from . import config as configmod
 from . import timeline as timelinemod
@@ -365,6 +368,24 @@ _WAVE = S(dict, of={
     "toward": S(fix="a color lane's wave: the color it swings toward"),
 }, fix='{"shape": "sine", "bars": 4, "depth": 0.5}')
 
+# One frequency band of the track's own audio, added on top of an automation
+# row's points (`bands.Follow`): rekordbox's analysis, so as repeatable as a
+# point. A timeline's rows only -- a routine plays on any track.
+_AUDIO = S(dict, of={
+    "band": S(str, required=True, choices=bandsmod.BANDS,
+              fix="low (the kick and bass), mid, high (hats and cymbals), or "
+                  "all: the track's overall level"),
+    "depth": S(N, fix="how far above the points the lane goes at the band's "
+                      "loudest, in the lane's own units; negative goes below"),
+    "floor": S(N, min=0, max=1, fix="levels under this count as silence, "
+                                    "0-1 of the band's loudest; default 0"),
+    "ceiling": S(N, min=0, max=1, fix="the level that is all the way there, "
+                                      "0-1 of the band's loudest; default 1"),
+    "release": S(N, min=0, max=bandsmod.RELEASE_MAX,
+                 fix="beats a full level takes to fall away; 0 follows every "
+                     "transient"),
+}, fix='{"band": "low", "depth": 0.5, "release": 0.5}')
+
 _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "clips": {"target": S(str, required=True, choices=CLIP_TARGETS),
               "gap": S(str, choices=("fill", "exclusive"),
@@ -377,7 +398,7 @@ _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True,
                                fix='[[beat, value], [beat, value, "ease"], ...]'),
-                   "wave": _WAVE},
+                   "wave": _WAVE, "audio": _AUDIO},
     "external": _EXTERNAL_ROW,
 }))
 
@@ -469,6 +490,9 @@ WAVEFORM = {
     "preview": S(str, fix="base64 of rekordbox's PWAV preview"),
     "detail": S(dict, of={"format": S(str, required=True), "rate": S(N, min=1),
                           "data": S(str, required=True)}),
+    # rekordbox's three-band analysis (PWV7): low, mid and high per column.
+    "bands": S(dict, of={"format": S(str, required=True), "rate": S(N, min=1),
+                         "data": S(str, required=True)}),
 }
 
 # The show's palette library: one palette a file, `palettes/<id>.json`.
@@ -941,10 +965,19 @@ def _check_points(row: dict, result: Result, where: str,
         result.errors.append(f"{where}: {target} mixes numbers and colors; one "
                              f"lane drives one parameter, which is one or the "
                              f"other")
+    if kind is None and len(kinds) == 1:
+        kind = next(iter(kinds))
     if row.get("wave") is not None:
-        if kind is None and len(kinds) == 1:
-            kind = next(iter(kinds))
         _check_wave(row, kind, check, label, report, result, where)
+    if row.get("audio") is not None:
+        if params is not None:
+            result.errors.append(
+                f"{where} audio: a routine plays on any track, so it has no "
+                f"audio of its own to follow; put the band on the track's "
+                f"timeline -- a param.<name> lane there drives this routine's "
+                f"parameter")
+        else:
+            _check_audio(row, kind, check, label, report, result, where)
 
 
 def _check_wave(row: dict, kind: Optional[str],
@@ -992,6 +1025,59 @@ def _check_wave(row: dict, kind: Optional[str],
             return
 
 
+def swing(row: Mapping) -> tuple[float, float]:
+    """How far a row's wave and audio band can lower its points, and how far
+    they can lift them: (down, up), down <= 0 <= up. Each is one-sided -- it
+    adds between nothing and its depth -- so together they reach the sum of
+    the depths on each side."""
+    down = up = 0.0
+    for key in ("wave", "audio"):
+        part = row.get(key)
+        depth = part.get("depth") if isinstance(part, dict) else None
+        if _num(depth):
+            down, up = down + min(0.0, depth), up + max(0.0, depth)
+    return down, up
+
+
+def _check_audio(row: dict, kind: Optional[str],
+                 check: Optional[Callable[[Any], Optional[str]]], label: str,
+                 report: Callable[[str], None], result: Result,
+                 where: str) -> None:
+    """A row's audio band, against what its lane is. As for a wave, the swing
+    is checked at every point, exactly -- with the wave's on top when the row
+    has both, since both can be all the way out on the same beat."""
+    audio = row["audio"]
+    at = f"{where} audio"
+    if kind == "color":
+        result.errors.append(f"{at}: a band moves a number, and this lane is a "
+                             f"color")
+        return
+    depth = audio.get("depth")
+    if depth is None:
+        result.errors.append(f"{at} needs a depth: how far above its points the "
+                             f"lane goes at the band's loudest (negative for "
+                             f"below)")
+        return
+    floor, ceiling = audio.get("floor", 0.0), audio.get("ceiling", 1.0)
+    if floor >= ceiling:
+        result.errors.append(f"{at}: its floor ({floor:g}) must be under its "
+                             f"ceiling ({ceiling:g}) -- between them is what "
+                             f"the lane listens to")
+    if check is None:
+        return                       # a timeline's param lane: see below
+    waved = isinstance(row.get("wave"), dict) and _num(row["wave"].get("depth"))
+    for i, point in enumerate(row["points"]):
+        if not isinstance(point, list) or len(point) < 2 or not _num(point[1]):
+            continue
+        for reach in swing(row):
+            problem = check(point[1] + reach) if reach else None
+            if problem:
+                report(f"{at}: at point {i} it reaches {point[1] + reach:g}"
+                       f"{' with the wave' if waved else ''}, and {label} "
+                       f"{problem}")
+                return
+
+
 def param_lane_problems(timeline: Mapping,
                         routines: Mapping[str, Mapping]) -> list[str]:
     """A timeline's `param.<name>` lanes against the routines it places: each
@@ -1032,7 +1118,10 @@ def param_lane_problems(timeline: Mapping,
                            f"{LOOK_NOT_AUTOMATABLE}")
                 continue
             wave = row.get("wave") if isinstance(row.get("wave"), dict) else {}
-            depth = wave.get("depth")
+            audio = isinstance(row.get("audio"), dict)
+            # What swings it, for the message: the wave, the band, or both.
+            what = ("wave and audio" if audio and wave else
+                    "audio" if audio else "wave")
             for i, point in enumerate(row.get("points") or []):
                 if not isinstance(point, list) or len(point) < 2:
                     continue
@@ -1040,14 +1129,20 @@ def param_lane_problems(timeline: Mapping,
                 if problem:
                     out.append(f"{where} point {i}: routine {rid!r} ${name} "
                                f"{problem}")
-                elif (param.get("type") != "color" and _num(depth)
-                      and _num(point[1])):
-                    # The swing, as `_check_wave` checks a routine's own lane.
-                    problem = _param_value_problem(param, point[1] + depth)
-                    if problem:
-                        out.append(f"{where} wave: at point {i} it reaches "
-                                   f"{point[1] + depth:g}, and routine {rid!r} "
-                                   f"${name} {problem}")
+                elif param.get("type") != "color" and _num(point[1]):
+                    # The swing, as `_check_wave` and `_check_audio` check a
+                    # lane whose range is in the same file.
+                    for reach in swing(row):
+                        problem = (_param_value_problem(param, point[1] + reach)
+                                   if reach else None)
+                        if problem:
+                            out.append(f"{where} {what}: at point {i} it reaches "
+                                       f"{point[1] + reach:g}, and routine "
+                                       f"{rid!r} ${name} {problem}")
+                            break
+            if param.get("type") == "color" and audio:
+                out.append(f"{where} audio: ${name} in routine {rid!r} is a "
+                           f"color, and a band moves a number")
             if param.get("type") == "color" and wave and wave.get("toward") is None:
                 out.append(f"{where} wave: ${name} in routine {rid!r} is a "
                            f"color, so the wave needs toward: the color it "
@@ -1659,6 +1754,77 @@ def _check_use(folder: Folder, where: str, use: dict) -> None:
                                    f"{use['routine']!r} does not have")
 
 
+# -- a track's audio ----------------------------------------------------------
+
+def audio_rows(doc: Mapping) -> list[Mapping]:
+    """A timeline's rows that follow a band of the track's audio."""
+    return [r for r in doc.get("rows") or ()
+            if isinstance(r, Mapping) and r.get("type") == "automation"
+            and isinstance(r.get("audio"), Mapping)]
+
+
+# A waveform decoded and laid on its track's beats, kept for as long as its
+# file and the track's grid stay as they were. A folder reload rebuilds every
+# timeline, and a draft is checked on every edit; neither should decode the
+# same hundred kilobytes again to find the same levels.
+_AUDIO_CACHE: dict[tuple, bandsmod.Audio] = {}
+_AUDIO_CACHE_MAX = 64
+
+
+def timeline_audio(root: Path, doc: Mapping, track: Optional[Mapping]
+                   ) -> tuple[Optional[bandsmod.Audio], list[str]]:
+    """The audio a timeline's lanes follow -- for `Timeline.from_doc` -- and
+    what stands in the way, in words.
+
+    None, without touching the disk, unless a row carries `audio`. What
+    stands in the way is a WARNING for whoever loads the timeline, never an
+    error: the waveform is another file, in a folder that syncs one file at a
+    time, and a lane whose band is not there yet plays its points alone.
+
+    Reads and decodes the waveform the first time: call it on the worker."""
+    rows = audio_rows(doc)
+    if not rows or not isinstance(track, Mapping):
+        return None, []
+    ids = ", ".join(repr(r.get("id")) for r in rows)
+    lanes = f"row {ids} follows" if len(rows) == 1 else f"rows {ids} follow"
+    path = path_for(Path(root), "waveform", str(track.get("id")))
+    alone = "until then the lane plays its points alone"
+    try:
+        grid = tracktime.Grid.from_segments(track["grid"]["segments"])
+        st = path.stat()
+    except (tracktime.GridError, KeyError, TypeError):
+        return None, []                 # a broken track is said where it is read
+    except OSError:
+        return None, [f"{lanes} the track's audio, but there is no "
+                      f"{SUBDIR['waveform']}/{path.name} to read it from -- prep "
+                      f"the track from rekordbox; {alone}"]
+    key = (str(path), st.st_mtime_ns, st.st_size, grid.rev)
+    audio = _AUDIO_CACHE.get(key)
+    if audio is None:
+        result, _ = read_doc(path, "waveform")
+        levels = bandsmod.decode(result.doc) if result.ok else None
+        if levels is None:
+            return None, [f"{lanes} the track's audio, but "
+                          f"{SUBDIR['waveform']}/{path.name} "
+                          + (f"does not load ({result.errors[0]})"
+                             if result.errors else
+                             "has only the overview, too coarse to follow")
+                          + f" -- prep the track from rekordbox again; {alone}"]
+        audio = bandsmod.Audio(levels, grid.time_at, grid.beat_at)
+        while len(_AUDIO_CACHE) >= _AUDIO_CACHE_MAX:
+            _AUDIO_CACHE.pop(next(iter(_AUDIO_CACHE)))
+        _AUDIO_CACHE[key] = audio
+    problems = [
+        f"row {r.get('id')!r} follows the {r['audio'].get('band')} band, but "
+        f"this track's analysis has only its overall level -- follow \"all\", "
+        f"or analyse it in rekordbox with the color waveform and prep it "
+        f"again; {alone}"
+        for r in rows
+        if r["audio"].get("band") in bandsmod.BANDS
+        and r["audio"].get("band") not in audio.bands]
+    return audio, problems
+
+
 # -- writing ------------------------------------------------------------------
 
 # -- where a routine is used, and renaming one everywhere ---------------------
@@ -2119,7 +2285,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             for e in folder.errors:
                 print(f"  ERROR  {e}", file=sys.stderr)
             return 1
-        timeline = timelinemod.Timeline.from_doc(doc, timeline_channels)
+        audio, missing = timeline_audio(root, doc, folder.tracks.get(args.track))
+        for m in missing:
+            print(f"  warn   {m}", file=sys.stderr)
+        timeline = timelinemod.Timeline.from_doc(doc, timeline_channels, audio)
         print(json.dumps(timeline.explain(args.beat), indent=2))
         return 0
     print(f"{root}: {len(folder.tracks)} tracks, {len(folder.timelines)} "

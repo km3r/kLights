@@ -449,6 +449,49 @@ warned("routine: a wave whose cycle does not fit the loop jumps every pass",
                            wave={"shape": "sine", "bars": 3, "depth": 10})),
        "does not fit")
 
+# A band of the track's own audio, on top of a timeline lane's points.
+def with_audio(doc, rid, audio):
+    return edit(doc, lambda d: row(d, rid).update(audio=audio))
+
+
+check("timeline: a lane following a band that stays in range is accepted",
+      sf.validate("timeline", with_audio(TIMELINE, "size", {
+          "band": "low", "depth": 0.5, "floor": 0.2, "ceiling": 0.9, "release": 0.5})).ok)
+check("timeline: and one that goes below its points",
+      sf.validate("timeline", with_audio(TIMELINE, "master",
+                                         {"band": "high", "depth": -0.4})).ok)
+refused("timeline: a band that lifts master past 1 at some point (0.6 + 0.5)",
+        "timeline", with_audio(TIMELINE, "master", {"band": "low", "depth": 0.5}),
+        "audio: at point 0 it reaches 1.1")
+refused("timeline: a wave and a band that fit apart, and not on the same beat",
+        "timeline", with_wave(with_audio(TIMELINE, "size", {"band": "low", "depth": 0.7}),
+                              "size", {"shape": "sine", "bars": 4, "depth": 0.7}),
+        "it reaches 3.2 with the wave")
+refused("timeline: a band with no depth",
+        "timeline", with_audio(TIMELINE, "size", {"band": "low"}), "needs a depth")
+refused("timeline: a band that does not exist",
+        "timeline", with_audio(TIMELINE, "size", {"band": "sub", "depth": 0.2}), "band")
+refused("timeline: a floor at or above its ceiling",
+        "timeline", with_audio(TIMELINE, "size", {"band": "low", "depth": 0.2,
+                                                  "floor": 0.6, "ceiling": 0.6}),
+        "must be under its ceiling")
+refused("timeline: a release of a thousand beats",
+        "timeline", with_audio(TIMELINE, "size", {"band": "low", "depth": 0.2,
+                                                  "release": 1000}), "release")
+refused("timeline: a band on a color lane -- it moves a number",
+        "timeline", edit(TIMELINE, lambda d: d["rows"].append(
+            lane("param.color", [[0, "@primary"]])
+            | {"audio": {"band": "low", "depth": 0.5}})), "this lane is a color")
+refused("routine: a band on a routine's own lane -- it plays on any track",
+        "routine", edit(with_lane("param.width", [[0, 20]]),
+                        lambda d: row(d, "lane").update(
+                            audio={"band": "low", "depth": 10})),
+        "a routine plays on any track")
+check("swing: a wave and a band reach the sum of their depths on each side",
+      sf.swing({"wave": {"depth": 0.3}, "audio": {"depth": -0.2}}) == (-0.2, 0.3)
+      and sf.swing({"wave": {"depth": 0.3}, "audio": {"depth": 0.2}}) == (0.0, 0.5)
+      and sf.swing({"points": []}) == (0.0, 0.0))
+
 # A timeline's param lanes, against the routines it places (fan-drop, idle-orbit,
 # verse-sweep, build-rise). Warnings: the routine is another file.
 ROUTINES = {r: load(f"routines/{r}.json")
@@ -471,6 +514,18 @@ w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
     ROUTINES)
 check("timeline: a param lane's wave that swings past a placed routine's max",
       any("it reaches 130" in x and "'fan-drop'" in x for x in w), f"{w}")
+w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
+    lane("param.width", [[0, 100]]) | {"audio": {"band": "low", "depth": 30}})),
+    ROUTINES)
+check("timeline: a param lane's band that swings past a placed routine's max",
+      any("audio: at point 0 it reaches 130" in x and "'fan-drop'" in x for x in w),
+      f"{w}")
+w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
+    lane("param.width", [[0, 100]]) | {"audio": {"band": "low", "depth": 15},
+                                       "wave": {"shape": "sine", "bars": 4, "depth": 15}})),
+    ROUTINES)
+check("timeline: or with its wave, when the two together do",
+      any("wave and audio: at point 0 it reaches 130" in x for x in w), f"{w}")
 w = lane_warnings("param.color", [[0, 0.5]])
 check("timeline: a number lane for a param every routine has as a color",
       sum("not a color" in x for x in w) >= 2, f"{w}")
@@ -657,6 +712,50 @@ try:
           json.loads((fresh / "show.json").read_text())["fallback"] == "operator")
     check("a new document's $schema resolves from its subfolder",
           (fresh / "routines" / sf.schema_ref("routine")).resolve().is_file())
+
+    # -------------------------------------------------------------------------
+    print("\n6b. the audio a lane follows")
+    import base64
+
+    def waveform(**parts):
+        wave = sf.new_doc("waveform", track="synth-128", **{
+            k: {"format": fmt, "rate": 150,
+                "data": base64.b64encode(data).decode("ascii")}
+            for k, (fmt, data) in parts.items()})
+        sf.write_doc(sf.path_for(root, "waveform", "synth-128"), wave, "waveform")
+
+    wave_path = sf.path_for(root, "waveform", "synth-128")
+    wave_path.unlink(missing_ok=True)
+    check("a timeline with no lane following the audio asks for nothing -- no "
+          "waveform is read, and none is missed",
+          sf.timeline_audio(root, TIMELINE, TRACK) == (None, []))
+    bass = with_audio(TIMELINE, "size", {"band": "low", "depth": 0.5})
+    audio, said = sf.timeline_audio(root, bass, TRACK)
+    check("a lane following a track with no waveform is a warning, with the "
+          "way out: the lane plays its points alone",
+          audio is None and len(said) == 1 and "row 'size' follows" in said[0]
+          and "prep the track" in said[0] and "points alone" in said[0], f"{said}")
+    waveform(detail=("pwv3", bytes([20]) * 600))
+    audio, said = sf.timeline_audio(root, bass, TRACK)
+    check("an analysis with only the overall level cannot give the bass, and "
+          "says to follow \"all\"",
+          audio is not None and audio.bands == ("all",) and len(said) == 1
+          and "only its overall level" in said[0], f"{said}")
+    waveform(bands=("pwv7", bytes([90, 40, 10]) * 900))
+    audio, said = sf.timeline_audio(root, bass, TRACK)
+    check("the three-band analysis gives every band, with nothing to say",
+          audio is not None and audio.bands == ("low", "mid", "high", "all")
+          and said == [] and audio.exact)
+    check("and is decoded once: the same audio for as long as the file stands",
+          sf.timeline_audio(root, bass, TRACK)[0] is audio)
+    waveform(bands=("pwv7", bytes([90, 40, 10]) * 1200))
+    check("a waveform prepped again is read again",
+          sf.timeline_audio(root, bass, TRACK)[0] is not audio)
+    wave_path.write_text("{not json", encoding="utf-8")
+    audio, said = sf.timeline_audio(root, bass, TRACK)
+    check("a waveform that does not load is a warning too, never an error",
+          audio is None and len(said) == 1 and "does not load" in said[0], f"{said}")
+    wave_path.unlink()
 
     # -------------------------------------------------------------------------
     print("\n7. finding the folder")

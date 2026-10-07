@@ -14,6 +14,10 @@ than against numbers and names written by hand:
                                      automation targets, param types
     __fixtures__/wave-vectors.json   every wave shape at sample positions,
                                      `hold`'s hashed levels included
+    __fixtures__/audio-vectors.json  three small waveforms, one in each of
+                                     rekordbox's formats, laid on a grid and
+                                     shaped: the levels a lane following a
+                                     band of the audio is drawn from
 
 And one file that is not a fixture but the UI's own source of truth for what a
 block takes, read by the routine editor AND the console's Tweak card:
@@ -33,6 +37,7 @@ Commit the result. `test_api` fails if a fixture is stale, so a change to the
 engine's lists cannot land without the designer's test seeing it.
 """
 
+import base64
 import json
 import sys
 from pathlib import Path
@@ -40,7 +45,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from engine import blocks, library, modulate, params, showfiles, tracktime, waves  # noqa: E402
+from engine import bands, blocks, library, modulate, params, showfiles, tracktime, waves  # noqa: E402
 
 FIXTURES = REPO / "ui" / "src" / "designer" / "__fixtures__"
 UI_SRC = REPO / "ui" / "src"
@@ -90,11 +95,73 @@ def wave_vectors() -> dict:
             for shape in waves.SHAPES}
 
 
+def _noise(seed: int, i: int, top: int) -> int:
+    """A stable byte 0..top for column `i`: mostly quiet, with peaks."""
+    x = (waves.sampled(seed, i) + 1.0) * 0.5
+    return int(x * x * x * (top + 0.999))
+
+
+def _waveform(fmt: str, columns: int) -> dict:
+    if fmt == "pwv7":
+        data = bytes(_noise(k, i, 127) for i in range(columns) for k in (1, 2, 3))
+        return {"bands": {"format": fmt, "rate": 150,
+                          "data": base64.b64encode(data).decode("ascii")}}
+    if fmt == "pwv5":
+        raw = bytearray()
+        for i in range(columns):
+            v = ((_noise(1, i, 7) << 13) | (_noise(2, i, 7) << 10)
+                 | (_noise(3, i, 7) << 7) | (_noise(4, i, 31) << 2))
+            raw += bytes([v >> 8, v & 0xFF])
+        data = bytes(raw)
+    else:
+        data = bytes((_noise(5, i, 7) << 5) | _noise(4, i, 31) for i in range(columns))
+    return {"detail": {"format": fmt, "rate": 150,
+                       "data": base64.b64encode(data).decode("ascii")}}
+
+
+AUDIO_CASES = (
+    ("three bands, with a pickup before the first downbeat", "pwv7", 330,
+     [[0, 250.0, 128.0]]),
+    ("the color waveform, through a tempo change", "pwv5", 300,
+     [[0, 0.0, 120.0], [2, 1000.0, 174.0]]),
+    ("the blue waveform: the overall level alone", "pwv3", 240,
+     [[-2, 0.0, 100.0]]),
+)
+AUDIO_SHAPES = ((0.0, 1.0, 0.0), (0.25, 0.8, 0.0), (0.0, 1.0, 0.5), (0.1, 0.6, 2.0))
+
+
+def audio_vectors() -> dict:
+    """The designer draws a lane that follows the audio from its own copy of
+    `bands.py` -- the decoding, the pooling onto beats and the shaping. These
+    are what both must give. Only + - * / and max, so the numbers are the same
+    on every platform; rounded only to keep the file short."""
+    cases = []
+    for name, fmt, columns, segments in AUDIO_CASES:
+        doc = _waveform(fmt, columns)
+        grid = tracktime.Grid.from_segments(segments)
+        audio = bands.Audio(bands.decode(doc), grid.time_at, grid.beat_at)
+        cases.append({
+            "name": name, "doc": doc, "segments": segments,
+            "exact": audio.exact, "bands": list(audio.bands), "first": audio.first,
+            "pooled": {b: [round(v, 12) for v in audio.pooled(b)] for b in audio.bands},
+            "envelopes": [
+                {"band": b, "floor": floor, "ceiling": ceiling, "release": release,
+                 "cells": [round(v, 12) for v in
+                           audio.envelope(b, floor, ceiling, release).cells]}
+                for b in audio.bands[:1] + audio.bands[-1:]
+                for floor, ceiling, release in AUDIO_SHAPES],
+        })
+    return {"step": bands.STEP, "bands": list(bands.BANDS), "cases": cases}
+
+
 def render() -> dict[str, str]:
     """Each fixture's file name and exact contents."""
     return {name: json.dumps(data, indent=1) + "\n" for name, data in (
         ("grid-vectors.json", grid_vectors()), ("blocks.json", block_lists()),
-        ("wave-vectors.json", wave_vectors()))}
+        ("wave-vectors.json", wave_vectors()))} | {
+        # One line a case: a thousand numbers down the page help nobody.
+        "audio-vectors.json": json.dumps(audio_vectors(), separators=(",", ":"))
+        .replace('{"name"', '\n{"name"') + "\n"}
 
 
 def block_table() -> dict:
@@ -116,7 +183,8 @@ def render_ui() -> dict[str, str]:
 def main() -> int:
     FIXTURES.mkdir(parents=True, exist_ok=True)
     for name, text in render().items():
-        (FIXTURES / name).write_text(text, encoding="utf-8")
+        # LF, as .gitattributes pins everything under ui/src.
+        (FIXTURES / name).write_text(text, encoding="utf-8", newline="\n")
         print(f"wrote {(FIXTURES / name).relative_to(REPO)}")
     for name, text in render_ui().items():
         (UI_SRC / name).write_text(text, encoding="utf-8", newline="\n")

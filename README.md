@@ -16,10 +16,11 @@ Three places to work, one engine underneath:
 - **Studio — design the show.** A show-making app for a computer. Tracks come
   in from rekordbox with their beat grid, phrases and waveform, and each gets a
   timeline drawn bar by bar against them: scene, movement, color and palette
-  lanes, hits, automation with waves on it, and cues for a VJ app, MIDI gear or
-  a projector. Shows are built from reusable **routines** written against roles
-  (movers, pinspots) rather than fixtures, and **template sets** light any track
-  nobody drew, phrase by phrase.
+  lanes, hits, automation with waves on it or following the track's bass, mids
+  or highs, and cues for a VJ app, MIDI gear or a projector. Shows are built
+  from reusable **routines** written against roles (movers, pinspots) rather
+  than fixtures, and **template sets** light any track nobody drew, phrase by
+  phrase.
   → [Timecoded shows](#timecoded-shows)
 - **Setup — describe the rig and the room.** The patch, where each fixture
   hangs, calibration, and the room in three dimensions. Because the engine
@@ -263,7 +264,12 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    - hits (flash, strobe, blackout);
    - automation of master, size, spread, centre, rate and any parameter of the
      routines on it. Any automation lane can carry a **wave** (sine, triangle,
-     ramp, saw, square, hold) on top of its points.
+     ramp, saw, square, hold) on top of its points, and a number lane can
+     **follow the audio**: the track's low, mid or high band, or all of it,
+     read from rekordbox's analysis, so it plays the same on every pass.
+
+   The waveform's bottom edge drags to make it taller, and **Bands** shows
+   its low, mid and high one above another.
 
    A browser on the left places routines, palettes and hits. A phrase is a
    section you can fill, copy and paste, and clips copy, cut, duplicate and

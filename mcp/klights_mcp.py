@@ -116,7 +116,11 @@ SHOW_TOOLS = [
                     "set_points {row, points}, set_wave {row, wave: {shape: "
                     "sine|triangle|ramp|saw|square|hold, bars, depth, phase?, "
                     "seed?, toward? (color lanes)} or null -- a wave added on "
-                    "top of the points}, set {key: palette|palettes|"
+                    "top of the points}, set_audio {row, audio: {band: "
+                    "low|mid|high|all, depth, floor?, ceiling?, release? "
+                    "(beats)} or null -- a frequency band of the track's own "
+                    "audio added on top of a number lane's points; the track "
+                    "needs a waveform}, set {key: palette|palettes|"
                     "grid_rev, value}. Rows are lanes, top first; the higher "
                     "lane wins.",
      "inputSchema": _schema({**_SHOW, "track": _STR,
