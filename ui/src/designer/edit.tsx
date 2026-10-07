@@ -364,15 +364,35 @@ export function typing(e: KeyboardEvent): boolean {
     || el.isContentEditable;
 }
 
-/** A keydown listener on the page that always runs the latest `handler`. */
-export function useKeys(handler: (e: KeyboardEvent) => void): void {
+/** The inputs that take no text: a button, a tick box, a slider. */
+const NOT_TEXT = new Set(["button", "checkbox", "color", "file", "image", "radio", "range",
+                          "reset", "submit"]);
+
+/** Whether a key went to a field that takes text. Narrower than `typing`: a
+ *  menu, a tick box or a slider is something to operate, not to type in. */
+export function inText(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  if (el.tagName === "INPUT") return !NOT_TEXT.has((el as HTMLInputElement).type);
+  return el.tagName === "TEXTAREA" || el.isContentEditable;
+}
+
+/** Whether a key is the one that plays and stops: Space on its own, anywhere
+ *  but in a field that takes text. */
+function playKey(e: KeyboardEvent): boolean {
+  return e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey && !inText(e);
+}
+
+/** A key listener on the page that always runs the latest `handler`. */
+export function useKeys(handler: (e: KeyboardEvent) => void,
+                        type: "keydown" | "keyup" = "keydown"): void {
   const ref = useRef(handler);
   ref.current = handler;
   useEffect(() => {
     const on = (e: KeyboardEvent) => ref.current(e);
-    addEventListener("keydown", on);
-    return () => removeEventListener("keydown", on);
-  }, []);
+    addEventListener(type, on);
+    return () => removeEventListener(type, on);
+  }, [type]);
 }
 
 /** The designer's plain keys, the same in both editors: Space plays and
@@ -384,6 +404,17 @@ export function useEditorKeys({ history, selected, setSelected, playPause, clip 
    *  playhead (S): what kind of document this is, and where the playhead is. */
   clip?: { kind: ClipKind; beat: () => number };
 }): void {
+  // Space is the transport's wherever the focus is, short of a text field:
+  // the button just clicked, a menu or a tick box does not take it instead.
+  // Held down, it is still one press.
+  useKeys((e) => {
+    if (!playKey(e)) return;
+    e.preventDefault();
+    if (!e.repeat) playPause();
+  });
+  // A button is pressed as the key comes back up, and in Firefox whether or
+  // not the way down was refused -- so the way up is refused too.
+  useKeys((e) => { if (playKey(e)) e.preventDefault(); }, "keyup");
   useKeys((e) => {
     if (typing(e) || e.altKey) return;
     const item = selected && !parsePointId(selected) ? selected : null;
@@ -407,11 +438,7 @@ export function useEditorKeys({ history, selected, setSelected, playPause, clip 
       clipOps.split(history, item, history.snapBeat(clip.beat()));
       return;
     }
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (e.key === " " && tag !== "BUTTON" && tag !== "A") {
-      e.preventDefault();
-      playPause();
-    } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+    if ((e.key === "Delete" || e.key === "Backspace") && selected) {
       e.preventDefault();
       const id = selected;
       history.apply((d) => removeSelected(d, id));

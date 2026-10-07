@@ -34,8 +34,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             in the same step.</>,
           <>Open its timeline. Under <b>Draft from template</b>, pick a set. It
             fills the scene lane with one routine per phrase.</>,
-          <>Press <b>Play</b> or Space. If there's no audio, open the file from
-            this computer. It isn't uploaded.</>,
+          <>Press <b>Play</b> or Space. Space plays and pauses wherever you last
+            clicked, except in a text box. If there's no audio, open the file
+            from this computer. It isn't uploaded.</>,
           <>Drag a clip to move it, or drag its right edge to resize it. Clips
             snap to the <b>Snap</b> setting. Click one to edit it in the panel
             below.</>,
