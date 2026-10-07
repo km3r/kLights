@@ -573,6 +573,27 @@ describe("designer", () => {
     expect(socket.sent.some((c) => c.type === "preview_release")).toBe(true);
   });
 
+  it("hands the engine its working copy as it takes the rig, not only on the next edit", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const tight = (c: Command) => c.type === "timeline_draft"
+      && (c as Command & { doc: TimelineDoc }).doc.rows.find((r) => r.id === "scene")!
+        .items!.find((i) => i.id === "chorus1")!.variation === "tight";
+    // An edit the engine has already checked, before this page has the rig:
+    // the engine arms on the saved file, so that check put nothing on stage.
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    await user.click(within(screen.getByRole("contentinfo", { name: "inspector" }))
+      .getByRole("button", { name: "tight" }));
+    await waitFor(() => expect(socket.sent.some(tight)).toBe(true), { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+
+    await user.click(screen.getByRole("button", { name: "Drive the rig" }));
+    const before = socket.sent.length;
+    reply(socket, "preview_arm", true, { track_id: "synth-128" });
+    await waitFor(() => expect(socket.sent.slice(before).some(tight)).toBe(true));
+  });
+
   it("stops driving when the engine lets go of its preview, or another console takes it", async () => {
     const user = userEvent.setup();
     const socket = await open();

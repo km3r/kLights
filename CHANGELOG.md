@@ -24,6 +24,18 @@ the commit messages keep those labels.
   adds two values to the lane's three and the explanation unpacked three. It
   now reports them as `toward` and `pull` beside `from`, `to` and `t`.
 
+### Fixed — Drive the rig plays what is on Studio's screen
+
+- **Studio's rig preview stayed on the saved file, or on nothing.** The engine
+  arms a preview on the timeline as saved, and lets a draft replace it only
+  for a page that is already driving. Studio sent its draft when the timeline
+  was edited, which is before **Drive the rig** is pressed, and not again. So
+  the rig played the file as saved until the next edit, while the lanes showed
+  the working copy. For a timeline not saved yet (a new track, or a draft from
+  a template set) there was no file, and the rig preview stayed on the live
+  show however the playhead moved. Studio now sends its working copy as it
+  takes the rig.
+
 ### Changed — in Studio's editors, Space is always play/pause
 
 - In the timeline and routine editors **Space** plays and stops wherever the
