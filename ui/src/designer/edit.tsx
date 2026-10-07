@@ -8,7 +8,7 @@ import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
 import { SideSection } from "./detail";
 import {
-  AUDIO_BANDS, AUDIO_STEP, BEATS_PER_BAR, BLOCK_ARGS, NEW_COLOURS, VISUAL_PARAMS, VISUAL_SCENES,
+  AUDIO_BANDS, AUDIO_STEP, BEATS_PER_BAR, BLOCK_ARGS, NEW_COLORS, VISUAL_PARAMS, VISUAL_SCENES,
   barBeat, curveValue, draftFromTemplate, hexColor, itemName, itemSub, laneValue, normalizeName,
   oscArgsText, parseOscArgs, uniqueId, waveLevel,
 } from "./model";
@@ -140,7 +140,7 @@ const LANE_ARG_KINDS = new Set(["number", "color"]);
 
 /**
  * `arg.<item>.<argument>`: one item's argument, moved without declaring a
- * parameter. Offered for each number and colour argument of each block item,
+ * parameter. Offered for each number and color argument of each block item,
  * except one already fed by a `$param` -- that parameter's lane is the way to
  * move it. Ranged by the block's own declaration; an absolute angle's range is
  * only the fallback for a rig the editor does not know, so it is drawn but not
@@ -193,7 +193,7 @@ export function timelineLaneSpecs(doc: { rows: Row[] },
     for (const [name, def] of Object.entries(r.params ?? {})) {
       const had = byName[name];
       if (!had) { byName[name] = { def: { ...def }, from: [r.id] }; continue; }
-      // A name that is a colour in one routine and a number in another: the
+      // A name that is a color in one routine and a number in another: the
       // first routine decides what the lane is, and the engine's check warns
       // about the rest.
       if (had.def.type === "color" ? def.type !== "color" : def.type === "color") continue;
@@ -227,11 +227,11 @@ export function laneSpec(target: string, params: LaneSpecs, points: Point[] = []
   const known = params[target];
   if (known) return known;
   const nums = points.map((p) => p[1]).filter((v): v is number => typeof v === "number");
-  const colour = points.length > 0 && nums.length === 0;
+  const color = points.length > 0 && nums.length === 0;
   const lo = Math.min(0, ...nums);
   const hi = Math.max(lo + 1, ...nums);
   return { label: target.startsWith(PARAM_TARGET) ? target.slice(PARAM_TARGET.length) : target, unit: "",
-           kind: colour ? "color" : "number", lo, hi, start: colour ? "@primary" : lo };
+           kind: color ? "color" : "number", lo, hi, start: color ? "@primary" : lo };
 }
 
 /** Another output's curve (an OSC or MIDI lane): sent as 0-1 -- MIDI scales it
@@ -369,15 +369,35 @@ export function typing(e: KeyboardEvent): boolean {
     || el.isContentEditable;
 }
 
-/** A keydown listener on the page that always runs the latest `handler`. */
-export function useKeys(handler: (e: KeyboardEvent) => void): void {
+/** The inputs that take no text: a button, a tick box, a slider. */
+const NOT_TEXT = new Set(["button", "checkbox", "color", "file", "image", "radio", "range",
+                          "reset", "submit"]);
+
+/** Whether a key went to a field that takes text. Narrower than `typing`: a
+ *  menu, a tick box or a slider is something to operate, not to type in. */
+export function inText(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  if (el.tagName === "INPUT") return !NOT_TEXT.has((el as HTMLInputElement).type);
+  return el.tagName === "TEXTAREA" || el.isContentEditable;
+}
+
+/** Whether a key is the one that plays and stops: Space on its own, anywhere
+ *  but in a field that takes text. */
+function playKey(e: KeyboardEvent): boolean {
+  return e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey && !inText(e);
+}
+
+/** A key listener on the page that always runs the latest `handler`. */
+export function useKeys(handler: (e: KeyboardEvent) => void,
+                        type: "keydown" | "keyup" = "keydown"): void {
   const ref = useRef(handler);
   ref.current = handler;
   useEffect(() => {
     const on = (e: KeyboardEvent) => ref.current(e);
-    addEventListener("keydown", on);
-    return () => removeEventListener("keydown", on);
-  }, []);
+    addEventListener(type, on);
+    return () => removeEventListener(type, on);
+  }, [type]);
 }
 
 /** The designer's plain keys, the same in both editors: Space plays and
@@ -389,6 +409,17 @@ export function useEditorKeys({ history, selected, setSelected, playPause, clip 
    *  playhead (S): what kind of document this is, and where the playhead is. */
   clip?: { kind: ClipKind; beat: () => number };
 }): void {
+  // Space is the transport's wherever the focus is, short of a text field:
+  // the button just clicked, a menu or a tick box does not take it instead.
+  // Held down, it is still one press.
+  useKeys((e) => {
+    if (!playKey(e)) return;
+    e.preventDefault();
+    if (!e.repeat) playPause();
+  });
+  // A button is pressed as the key comes back up, and in Firefox whether or
+  // not the way down was refused -- so the way up is refused too.
+  useKeys((e) => { if (playKey(e)) e.preventDefault(); }, "keyup");
   useKeys((e) => {
     if (typing(e) || e.altKey) return;
     const item = selected && !parsePointId(selected) ? selected : null;
@@ -412,11 +443,7 @@ export function useEditorKeys({ history, selected, setSelected, playPause, clip 
       clipOps.split(history, item, history.snapBeat(clip.beat()));
       return;
     }
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (e.key === " " && tag !== "BUTTON" && tag !== "A") {
-      e.preventDefault();
-      playPause();
-    } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+    if ((e.key === "Delete" || e.key === "Backspace") && selected) {
       e.preventDefault();
       const id = selected;
       history.apply((d) => removeSelected(d, id));
@@ -647,7 +674,7 @@ function placeable(raw: string): Placeable | null {
 }
 export type Placeable =
   | { kind: "routine"; id: string }
-  | { kind: "palette"; name: string; colours?: Record<"primary" | "secondary" | "accent", string> }
+  | { kind: "palette"; name: string; colors?: Record<"primary" | "secondary" | "accent", string> }
   | { kind: "hit"; hit: "flash" | "strobe" | "blackout" }
   /** This rig's own: a look from its library, or a preset as a snapshot. */
   | { kind: "look"; name: string }
@@ -1219,7 +1246,7 @@ export function parseWaveId(id: string | null): string | null {
  * A new wave for a lane, sized to stay in range: a number lane's swings a
  * quarter of its drawn range, upward if its points leave more room above
  * than below, else downward -- and no further than that room, so the engine
- * accepts it as drawn. A colour lane's swings all the way to the accent.
+ * accepts it as drawn. A color lane's swings all the way to the accent.
  */
 export function defaultWave(row: Row, spec: LaneSpec): WaveSpec {
   if (spec.kind === "color") return { shape: "sine", bars: 4, toward: "@accent", depth: 1 };
@@ -1277,9 +1304,9 @@ export function defaultAudio(row: Row, spec: LaneSpec,
 
 const CURVES = ["linear", "step", "ease"] as const;
 
-/** A colour value as CSS, or null for one only the show can resolve -- a
- *  palette role, a colour look -- which the lane names instead of painting. */
-export function cssColour(v: unknown): string | null {
+/** A color value as CSS, or null for one only the show can resolve -- a
+ *  palette role, a color look -- which the lane names instead of painting. */
+export function cssColor(v: unknown): string | null {
   if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
   if (Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === "number")) {
     return `rgb(${v.map((c) => Math.round(Math.max(0, Math.min(1, c as number)) * 255)).join(",")})`;
@@ -1296,12 +1323,12 @@ function pointBefore(points: Point[], beat: number): Point | undefined {
 }
 
 /**
- * A colour parameter's lane: a band of what it is at each beat. A colour is
+ * A color parameter's lane: a band of what it is at each beat. A color is
  * not a height, so there is no curve -- each segment is painted from the point
  * it leaves to the point it arrives at (a step holds, then jumps), and a value
  * only the show can resolve, like "@primary", is written rather than painted.
  */
-function ColourBand({ points, x, width, id }: {
+function ColorBand({ points, x, width, id }: {
   points: Point[]; x: (b: number) => number; width: number; id: string;
 }) {
   if (!points.length) return null;
@@ -1320,8 +1347,8 @@ function ColourBand({ points, x, width, id }: {
   return (
     <g pointerEvents="none">
       {spans.map((s, i) => {
-        const ca = cssColour(s.a);
-        const cb = cssColour(s.b);
+        const ca = cssColor(s.a);
+        const cb = cssColor(s.b);
         const w = Math.max(0, s.x1 - s.x0);
         if (!ca || (!s.step && !cb)) {
           return (
@@ -1351,14 +1378,14 @@ function ColourBand({ points, x, width, id }: {
   );
 }
 
-/** A colour lane's wave: the colour it swings toward, laid over the band as
+/** A color lane's wave: the color it swings toward, laid over the band as
  *  strongly as the wave pulls at each beat. One it cannot paint (a palette
- *  role) is drawn in the band's own named-colour grey. */
-function ColourWave({ wave, x, width }: { wave: WaveSpec; x: (b: number) => number; width: number }) {
+ *  role) is drawn in the band's own named-color grey. */
+function ColorWave({ wave, x, width }: { wave: WaveSpec; x: (b: number) => number; width: number }) {
   const perBeat = x(1) - x(0);
   const end = width / perBeat;
   const step = Math.max(end / 2000, Math.min(0.5, (wave.bars * BEATS_PER_BAR) / 16));
-  const fill = cssColour(wave.toward);
+  const fill = cssColor(wave.toward);
   const strips: React.ReactNode[] = [];
   for (let b = 0, i = 0; b < end; b += step, i++) {
     const pull = Math.max(0, Math.min(1, waveLevel(wave, b + step / 2)));
@@ -1375,8 +1402,8 @@ function ColourWave({ wave, x, width }: { wave: WaveSpec; x: (b: number) => numb
  * An automation lane. Click empty space to add a point there; click a point to
  * select it (the inspector edits its value and the curve that arrives at it);
  * drag a point to move it -- across to another beat, up and down to another
- * value -- as one edit when it is let go. A colour lane's points move only
- * across: up and down means nothing for a colour, which the inspector picks.
+ * value -- as one edit when it is let go. A color lane's points move only
+ * across: up and down means nothing for a color, which the inspector picks.
  */
 function AutoSvg({ row, x, width, history, selected, onSelect }: {
   row: Row; x: (b: number) => number; width: number; history: Edits;
@@ -1384,7 +1411,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
 }) {
   const spec = useLaneSpec(row);
   const { lo, hi } = spec;
-  const colour = spec.kind === "color";
+  const color = spec.kind === "color";
   const points = row.points ?? [];
   const perBeat = x(1) - x(0);
   const y = (v: number) => LANE_H - 3 - ((v - lo) / (hi - lo)) * (LANE_H - 6);
@@ -1402,7 +1429,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
   // each pixel. A cell is a thirty-second of a beat -- far finer than a pixel
   // -- so a line through every cell would be a smear; the reach is what reads.
   const audio = useContext(LaneAudio);
-  const cells = !colour && row.audio && audio ? audio.cells(row.audio) : null;
+  const cells = !color && row.audio && audio ? audio.cells(row.audio) : null;
   const depth = row.audio?.depth ?? 0;
   const { wave } = row;
   const heard = useMemo(() => {
@@ -1427,7 +1454,7 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
     return { line: reach.join(" "), area: [...reach, ...rest.reverse()].join(" ") };
   }, [cells, audio, shown, wave, depth, width, perBeat, lo, hi]);
   const samples: string[] = [];
-  if (shown.length && row.wave && !colour) {
+  if (shown.length && row.wave && !color) {
     // A wave never settles, so the whole lane is sampled, finely enough to
     // show its shape and no more finely than a few thousand points.
     const end = width / perBeat;
@@ -1491,9 +1518,9 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
            const beat = history.snapBeat((e.clientX - r.left) / perBeat);
            const frac = 1 - (e.clientY - r.top - 3) / (LANE_H - 6);
-           // A colour lane's new point starts as the colour it lands on, so
+           // A color lane's new point starts as the color it lands on, so
            // adding one changes nothing until the inspector picks another.
-           const value: PointValue = colour
+           const value: PointValue = color
              ? pointBefore(points, beat)?.[1] ?? spec.start
              : Math.round((lo + Math.max(0, Math.min(1, frac)) * (hi - lo)) * 100) / 100;
            history.apply((d) => {
@@ -1511,17 +1538,17 @@ function AutoSvg({ row, x, width, history, selected, onSelect }: {
           <polygon points={heard.area} className="d-heard" />
           <polyline points={heard.line} className="d-heard-line" />
         </g>)}
-      {colour
-        ? <ColourBand points={shown} x={x} width={width} id={row.id} />
+      {color
+        ? <ColorBand points={shown} x={x} width={width} id={row.id} />
         : <polyline points={samples.join(" ")} className="d-curve" pointerEvents="none" />}
-      {colour && row.wave && <ColourWave wave={row.wave} x={x} width={width} />}
+      {color && row.wave && <ColorWave wave={row.wave} x={x} width={width} />}
       {shown.map((p, i) => {
         const id = pointId(row.id, drag && p[0] === drag.beat + drag.dBeat ? drag.beat : p[0]);
         return (
           <circle key={i} cx={x(p[0])} cy={typeof p[1] === "number" ? y(p[1]) : LANE_H / 2}
                   r={selected === id ? 6 : 4}
-                  style={colour ? { fill: cssColour(p[1]) ?? undefined } : undefined}
-                  className={`d-point${colour ? " d-point-colour" : ""}${selected === id ? " sel" : ""}`}
+                  style={color ? { fill: cssColor(p[1]) ?? undefined } : undefined}
+                  className={`d-point${color ? " d-point-color" : ""}${selected === id ? " sel" : ""}`}
                   role="button"
                   aria-label={`point at bar ${barBeat(p[0])}: ${String(p[1])}`}
                   onPointerDown={(e) => begin(e, p)}
@@ -1581,13 +1608,13 @@ function PointInspector({ row, beat, history, onSelect }: {
         </label>
         {spec.kind === "color" ? (
           <div>
-            <span className="small muted">Colour{" "}
+            <span className="small muted">Color{" "}
               <span className="mono">{Array.isArray(pt[1]) ? `[${pt[1].join(", ")}]` : String(pt[1])}</span></span>
-            <div className="d-chips" role="group" aria-label="point colour">
+            <div className="d-chips" role="group" aria-label="point color">
               {ROLES.map((r) => (
                 <button key={r} className={role === r ? "on" : ""}
                         onClick={() => set(withCurve(beat, `@${r}`, curve))}>{r}</button>))}
-              <input type="color" aria-label="point direct colour"
+              <input type="color" aria-label="point direct color"
                      value={typeof pt[1] === "string" && pt[1].startsWith("#") ? pt[1] : "#ffffff"}
                      onChange={(e) => set(withCurve(beat, e.target.value, curve))} />
             </div>
@@ -1702,7 +1729,7 @@ function WaveInspector({ row, history, onSelect }: {
               {ROLES.map((r) => (
                 <button key={r} className={towardRole === r ? "on" : ""}
                         onClick={() => set({ toward: `@${r}` })}>{r}</button>))}
-              <input type="color" aria-label="wave toward direct colour"
+              <input type="color" aria-label="wave toward direct color"
                      value={typeof wave.toward === "string" && wave.toward.startsWith("#")
                        ? wave.toward : "#ffffff"}
                      onChange={(e) => set({ toward: e.target.value })} />
@@ -1822,10 +1849,10 @@ function AudioInspector({ row, history, onSelect }: {
         {missing && (
           <div className="small d-error" role="status">
             This track's analysis has only its overall level: follow "all", or analyse it in
-            rekordbox with the colour waveform and prep it again.</div>)}
+            rekordbox with the color waveform and prep it again.</div>)}
         {track && !track.exact && !missing && audio.band !== "all" && (
           <div className="small muted" role="status">
-            Estimated from the colour waveform. Prep the track again to follow rekordbox's own
+            Estimated from the color waveform. Prep the track again to follow rekordbox's own
             three-band analysis.</div>)}
       </div>
     </footer>
@@ -1869,7 +1896,7 @@ function LaneMenu({ row, index, history }: { row: Row; index: number; history: E
 }
 
 const NEW_LANES: [string, string][] = [
-  ["scene", "Scene"], ["movement", "Movement"], ["color", "Colour"], ["level", "Level"],
+  ["scene", "Scene"], ["movement", "Movement"], ["color", "Color"], ["level", "Level"],
   ["palette", "Palette"], ["hits", "Hits"], ["osc", "OSC cues"], ["osc-curve", "OSC curve"],
   ["midi", "MIDI cues"], ["midi-curve", "MIDI curve"], ["visuals", "Visuals"],
 ];
@@ -2093,24 +2120,24 @@ function RecordPads({ history, beat }: { history: History; beat: number }) {
 /** Where a document's palette came from, said beside it: a copy of the
  *  library's (and whether it still matches), or one that lives only here.
  *  Editing it here never changes the library -- this says so, in place. */
-export function PaletteOrigin({ library, name, colours, here, onUseLibrary }: {
-  library: PaletteSummary[]; name: string; colours: Record<string, unknown>;
+export function PaletteOrigin({ library, name, colors, here, onUseLibrary }: {
+  library: PaletteSummary[]; name: string; colors: Record<string, unknown>;
   /** "track" or "set": whose copy this is. */
   here: string;
-  onUseLibrary: (colours: { primary: string; secondary: string; accent: string }) => void;
+  onUseLibrary: (colors: { primary: string; secondary: string; accent: string }) => void;
 }) {
   const lib = library.find((p) => p.name === name);
   if (!lib) {
     return <span className="d-origin" title={`Made in this ${here}: no library palette is called ${name}`}>
       only here</span>;
   }
-  const same = ROLES.every((r) => hexColor(colours[r]) != null
-    && hexColor(colours[r]) === hexColor(lib[r]));
+  const same = ROLES.every((r) => hexColor(colors[r]) != null
+    && hexColor(colors[r]) === hexColor(lib[r]));
   const tip = `A copy of the library's ${name}. Changing it here changes this ${here} only; `
     + "the library's is changed on Studio's Palettes page.";
   return same ? <span className="d-origin lib" title={tip}>copy of library</span> : (
     <span className="d-origin differs" title={tip}>differs from library
-      <button className="small" aria-label={`use the library's colours for ${name}`}
+      <button className="small" aria-label={`use the library's colors for ${name}`}
               onClick={() => onUseLibrary({ primary: lib.primary, secondary: lib.secondary,
                                             accent: lib.accent })}>use library's</button>
     </span>
@@ -2131,16 +2158,16 @@ function Palettes({ history }: { history: History }) {
   return (
     <SideSection id="timeline-palettes" title="This track's palettes" topic="Palettes"
                  count={Object.keys(palettes).length} help={<>
-      <p>Each palette has three colours: primary, secondary and accent.
-        Routines use these roles instead of fixed colours, so they change with
+      <p>Each palette has three colors: primary, secondary and accent.
+        Routines use these roles instead of fixed colors, so they change with
         the palette.</p>
       <p>The selected palette plays wherever the palette lane is empty. A
         palette clip switches it for its length.</p>
-      <p>These are this track's own copies. Changing a colour here changes
+      <p>These are this track's own copies. Changing a color here changes
         this track only; the library's palettes are on Studio's Palettes
         page, which can bring copies up to date.</p>
     </>} aside={<a className="small d-link" href="#studio/palettes"
-                   title="The show's palette library: changing a colour here changes this track only">
+                   title="The show's palette library: changing a color here changes this track only">
       Library</a>}>
       {Object.entries(palettes).map(([name, pal]) => (
         <div key={name} className="d-palette">
@@ -2149,7 +2176,7 @@ function Palettes({ history }: { history: History }) {
                    onChange={() => history.apply((d) => { d.palette = name; })} />
             {name}
           </label>
-          <PaletteOrigin library={library} name={name} colours={pal as Record<string, unknown>}
+          <PaletteOrigin library={library} name={name} colors={pal as Record<string, unknown>}
                          here="track"
                          onUseLibrary={(c) => history.apply((d) => { d.palettes![name] = c; })} />
           {ROLES.map((role) => (
@@ -2163,14 +2190,14 @@ function Palettes({ history }: { history: History }) {
       ))}
       <div className="d-form">
         <FromLibrary library={library} has={Object.keys(palettes)}
-                     onPick={(name, colours) => history.apply((d) => {
-                       d.palettes = { ...(d.palettes ?? {}), [name]: colours };
+                     onPick={(name, colors) => history.apply((d) => {
+                       d.palettes = { ...(d.palettes ?? {}), [name]: colors };
                        if (!d.palette) d.palette = name;
                      })} />
         <button className="small" onClick={() => history.apply((d) => {
           const name = `Palette ${Object.keys(d.palettes ?? {}).length + 1}`;
           d.palettes = { ...(d.palettes ?? {}),
-                         [name]: { ...NEW_COLOURS } };
+                         [name]: { ...NEW_COLORS } };
           if (!d.palette) d.palette = name;
         })}>+ palette</button>
       </div>
@@ -2182,7 +2209,7 @@ function Palettes({ history }: { history: History }) {
  *  picked one is copied in under its library name. */
 export function FromLibrary({ library, has, onPick }: {
   library: PaletteSummary[]; has: string[];
-  onPick: (name: string, colours: { primary: string; secondary: string; accent: string }) => void;
+  onPick: (name: string, colors: { primary: string; secondary: string; accent: string }) => void;
 }) {
   const offer = library.filter((p) => !has.includes(p.name));
   if (!library.length) return null;
@@ -2462,10 +2489,10 @@ function VisualCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => 
                         ? "#ffffff" : e.target.value || undefined)}>
                 <option value="">(default)</option>
                 {ROLE_COLORS.map((r) => <option key={r} value={r}>{r}</option>)}
-                <option value="hex">a colour…</option>
+                <option value="hex">a color…</option>
               </select>
               {typeof value === "string" && value.startsWith("#") && (
-                <input type="color" aria-label={`${label} colour`} value={value}
+                <input type="color" aria-label={`${label} color`} value={value}
                        onChange={(e) => setParam(name, e.target.value)} />)}
             </label>
           );
@@ -2598,7 +2625,7 @@ function Param({ name, param, value, onChange }: {
           {ROLES.map((r) => (
             <button key={r} className={role === r ? "on" : ""}
                     onClick={() => onChange(`@${r}`)}>{r}</button>))}
-          <input type="color" aria-label={`${name} direct colour`}
+          <input type="color" aria-label={`${name} direct color`}
                  value={typeof shown === "string" && shown.startsWith("#") ? shown : "#ffffff"}
                  onChange={(e) => onChange(e.target.value)} />
           {value !== undefined && <button onClick={() => onChange(undefined)}>default</button>}

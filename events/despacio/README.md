@@ -9,8 +9,8 @@ Minimal slow-disco show: 4× MingJie MJ-OS-018 60W beam moving heads **mounted s
 in the 4 corners of a 30 ft square room, 10 ft up** (the disco ball hangs center, also
 10 ft up — same height as the heads), aimed at the ball. 2× UKing ZQ-B93 RGBW pinspots
 are also aimed at the ball — they are the **only fixtures in this rig that can do a
-genuine smooth colour crossfade** (the heads have a mechanical 14-slot wheel and can only
-jump between colours), so they carry the slow colour drift the heads physically cannot.
+genuine smooth color crossfade** (the heads have a mechanical 14-slot wheel and can only
+jump between colors), so they carry the slow color drift the heads physically cannot.
 Controlled from the APC40 mkII, same physical layout conventions as `comsosLightsYear3.qxw`.
 
 **Haze is running for this show**, which makes mid-air beams visible and is why the
@@ -195,7 +195,7 @@ floor sweeps' 2500 because the canopy is closer to the heads).
    `C:\Users\maxti\QLC+\Fixtures\`. QLC+ reads user fixtures **at startup only** →
    restart QLC+ before opening the workspace.
 2. Open `despacio.qxw`. Fixture manager should show 6 fixtures with named presets
-   (Pan/Tilt/Colour groups) — if the moving heads show as "Generic", the .qxf didn't load.
+   (Pan/Tilt/Color groups) — if the moving heads show as "Generic", the .qxf didn't load.
 3. **I/O**: Universe 1 output = DMX USB (re-pick your interface). Universe 3 input =
    APC40 mkII with profile `Akai APC40 mkII`; re-pick the device and tick **Feedback**
    so pad LEDs work.
@@ -249,14 +249,14 @@ Still unverified — generic guesses in the .qxf:
   wheel, specifically to find out whether there's a **frost/diffusion** slot.
 - **P/T speed direction** (ch 9) — fast→slow vs slow→fast.
 - **Ch 10 auto/sound ranges**.
-- **Pinspot colours weren't triggering at all (found 2026-08-01, reported as "colours
+- **Pinspot colors weren't triggering at all (found 2026-08-01, reported as "colors
   never change").** Root cause: channel 0 isn't a plain dimmer, it's a **mode selector**
   (per the shipped `UKing-ZQB93-Pinspot-RGBW.qxf`): 0–8 off, **9–134 = "White Dimmer"**,
   135–239 = RGBW strobe, **240–255 = "RGBW On"**. **Pin Dim** was ranged to `LowLimit="9"
-  HighLimit="134"` — the White Dimmer band — while every colour scene (Pin Amber/Rose/
+  HighLimit="134"` — the White Dimmer band — while every color scene (Pin Amber/Rose/
   Magenta/Indigo/Teal/Sea/Split) only ever writes channels 1–4 (R/G/B/W) and never touches
   channel 0. The moment Pin Dim was touched, ch0 sat in White Dimmer mode and the fixture
-  stopped honouring the R/G/B/W values entirely — every colour pick looked identical
+  stopped honouring the R/G/B/W values entirely — every color pick looked identical
   regardless of which button was pressed. Fixed by reranging Pin Dim to `LowLimit="240"
   HighLimit="255"` (the RGBW On band), matching **Pin Breathe**'s boost value (250), which
   was already correctly inside that band. **Not yet confirmed on real hardware** — same
@@ -266,8 +266,8 @@ Still unverified — generic guesses in the .qxf:
   Dim is now effectively a narrow on/near-off toggle at the very top of its fader throw
   rather than a smooth dimmer — this fixture appears to have no true continuous master
   dimmer over its RGBW output at all (only the earlier White Dimmer band was continuous,
-  and that band ignores colour). If finer brightness control over the pins is wanted later,
-  it'll need to come from scaling each colour scene's own R/G/B/W values down directly,
+  and that band ignores color). If finer brightness control over the pins is wanted later,
+  it'll need to come from scaling each color scene's own R/G/B/W values down directly,
   not from channel 0.
 - **Pin ch0 is LTP, not HTP — the "boost over a low fader" trick may not actually hold
   for Pin Breathe.** Found 2026-07-29 while building the mobile web UI, tracing
@@ -282,7 +282,7 @@ Still unverified — generic guesses in the .qxf:
   heads. Worth a second look: **"Pin Breathe Off" (function 145) has zero `FixtureVal`
   entries — it writes nothing at all**, so whether the pulse actually fades back down
   each cycle, or just latches at 250 the first time "On" fires and stays there until
-  something else (a colour pick, or nudging Pin Dim) overwrites ch0, depends on
+  something else (a color pick, or nudging Pin Dim) overwrites ch0, depends on
   Chaser step-transition internals not confirmed here. Watch a full Pin Breathe cycle
   on real hardware before trusting the "breathing" description above.
 - **The aerial poses have never been run on hardware.** Apex / Zenith / Cathedral are the

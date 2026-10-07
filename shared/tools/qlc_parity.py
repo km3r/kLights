@@ -4,7 +4,7 @@ Frame-level parity between QLC+ and the engine.
 The plan's verification list asks for one thing this repo did not have: drive the
 same look on both stacks and diff the DMX frames. `test_library.py` already
 checks that a ported pose encodes to the workspace's pan/tilt and that a ported
-colour renders the workspace's colour bytes -- but both of those look only at
+color renders the workspace's color bytes -- but both of those look only at
 channels somebody thought to name. Parity is the opposite question, asked over
 all 512: **where do the two stacks differ, and does every difference have a
 reason?**
@@ -68,8 +68,8 @@ from engine import state as statemod
 from shared.tools.artnet_listener import parse_artdmx
 from shared.tools.port_library import NS, Porter, parse_values
 
-# A colour no look in the library uses. If a look silently falls through to the
-# palette instead of setting its own colour, its bytes will not match the
+# A color no look in the library uses. If a look silently falls through to the
+# palette instead of setting its own color, its bytes will not match the
 # workspace's and we want to hear about it rather than have a plausible default
 # cover for it.
 PALETTE = (0.13, 0.29, 0.71)
@@ -180,7 +180,7 @@ def classify(look: str, rig: rigmod.Rig,
                 # Rendering the same look with the taper off gives a HIGHER
                 # value, so the taper is what pulled this one down. Derived
                 # rather than inferred from "it is a dimmer" -- on a fixture
-                # with no dimmer channel the level lands on the colour channels
+                # with no dimmer channel the level lands on the color channels
                 # instead, and hardcoding a role would miss those.
                 #
                 # The comparison is one-sided deliberately. `!=` would have been

@@ -84,7 +84,7 @@ def pwv3(data: bytes) -> bytes:
 
 
 def pwv5(data: bytes) -> bytes:
-    """Colour detail: two bytes an entry."""
+    """Color detail: two bytes an entry."""
     return tag(b"PWV5", struct.pack(">III", 2, len(data) // 2, 0x960305), data)
 
 
@@ -382,7 +382,7 @@ try:
           prep.blt_signature("T", None, 400, analysis)
           == expected_signature(b"T", b"[no artist]", 400, DETAIL, BEATS))
     blue = anlz.read_files(*anlz.siblings(share / ANLZ_BLUE.lstrip("/")))
-    check("no signature without the colour waveform it hashes, rather than a wrong one",
+    check("no signature without the color waveform it hashes, rather than a wrong one",
           prep.blt_signature("Blue Only", "Streamer", 400, blue) is None)
     check("and none without a length", prep.blt_signature("T", "A", None, analysis) is None)
 
@@ -472,7 +472,7 @@ try:
           "audio" not in streamed and any("streaming" in n for n in by_id[103]["notes"]),
           f"{by_id[103]}")
     blue_doc = folder.tracks[by_id[107]["track_id"]]
-    check("a track with no colour waveform gets no signature, and says so",
+    check("a track with no color waveform gets no signature, and says so",
           blue_doc["ids"]["blt_signatures"] == []
           and any("signature" in n for n in by_id[107]["notes"]), f"{by_id[107]}")
 

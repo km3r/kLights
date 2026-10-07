@@ -2,13 +2,13 @@
 The parameter store and the layered evaluation that turns it into a DMX frame.
 
 The engine holds **parameters**, not stored DMX values. That single difference
-is why QLC+ is being retired: a per-fixture colour picker, phrase-aware
+is why QLC+ is being retired: a per-fixture color picker, phrase-aware
 automation, smooth interpolated motion and one show running in two rooms are
 each combinatorially explosive as stored scenes, and all four were wanted.
 
 Layers evaluate in a fixed order, every frame:
 
-    base look -> colour -> movement -> FX -> master -> SAFETY
+    base look -> color -> movement -> FX -> master -> SAFETY
 
 Later layers see what earlier ones produced and may replace or modulate it.
 Two properties fall out of that ordering, both of which the old rig had to fake:
@@ -92,7 +92,7 @@ class EvalContext:
     # versus speed on the clock.
     #
     # Three instead of one because the slots are independent everywhere else and
-    # were not here: a colour chase at half speed under a move at double is a
+    # were not here: a color chase at half speed under a move at double is a
     # combination the old console needed a separate stored chase for, and with a
     # single shared phase the engine could not express it either.
     #
@@ -221,7 +221,7 @@ class SlotPhases:
     def set_rate(self, slot: str, value: float) -> None:
         if slot not in self.rate:
             raise ValueError(f"no slot {slot!r} -- one of {', '.join(SLOTS)}")
-        # 0 freezes that slot, which is a real thing to want: a colour chase
+        # 0 freezes that slot, which is a real thing to want: a color chase
         # parked on its current frame under a move that keeps running.
         #
         # Negative is NOT allowed, and the reason is the cued chases. Those
@@ -285,7 +285,7 @@ def _targets(ctx: EvalContext, tags: Optional[Sequence[str]]) -> list[rigmod.Pat
     A fixture NAME also matches, and only for the operator's sake: soloing one
     head or dimming one pinspot from the phone is inherently about that unit,
     and there is no tag for "this one". Matching names here rather than adding a
-    parallel mechanism is what makes the colour and level overrides work at all
+    parallel mechanism is what makes the color and level overrides work at all
     -- before it, every per-fixture target in the UI silently did nothing,
     because the name matched no tag and the layer applied to an empty set.
     """
@@ -365,7 +365,7 @@ def raw_pose_layer(values: dict, intensity: float = 1.0,
 def color_layer(color: tuple[float, float, float],
                 tags: Optional[Sequence[str]] = None,
                 white: Optional[float] = None) -> Layer:
-    """Set colour. Separate from the pose layer on purpose: colour and position
+    """Set color. Separate from the pose layer on purpose: color and position
     were entangled in the old workspace because both lived in the same Scene,
     which is why changing one meant authoring a new scene for every value of the
     other.
@@ -486,7 +486,7 @@ def apply_safety(ctx: EvalContext, out: dict[int, FixtureState]) -> None:
 # ------------------------------------------------------------------- render --
 
 def _nearest_slot(slots, rgb: tuple[float, float, float]) -> int:
-    """The colour-wheel slot closest to a requested RGB.
+    """The color-wheel slot closest to a requested RGB.
 
     Plain Euclidean distance in RGB. Not perceptually correct, but a 14-slot
     mechanical wheel of saturated primaries has no near-ties for it to get
@@ -530,9 +530,9 @@ def render(ctx: EvalContext, states: dict[int, FixtureState]) -> dict[int, bytea
                 if idx is not None:
                     frame[idx] = value
 
-        # Intensity and colour. A fixture with a real dimmer takes the level
-        # there and keeps its colour at full; an RGBW fixture with no dimmer
-        # channel scales its colour by the level instead, which is the only
+        # Intensity and color. A fixture with a real dimmer takes the level
+        # there and keeps its color at full; an RGBW fixture with no dimmer
+        # channel scales its color by the level instead, which is the only
         # place brightness can live on the pinspot.
         dim_idx = f.index_of(rigmod.DIMMER)
         has_dimmer = dim_idx is not None
@@ -583,7 +583,7 @@ class Show:
     movement: list[Layer] = field(default_factory=list)
     fx: list[Layer] = field(default_factory=list)
     master: float = 1.0
-    # Live operator overrides -- a colour picked on a phone, a head soloed.
+    # Live operator overrides -- a color picked on a phone, a head soloed.
     # A separate list because auto mode rebuilds the other four whenever the
     # look changes, and an override typed in by a human must survive that;
     # the controller keeps one list and re-attaches it to each new Show.
@@ -659,7 +659,7 @@ def blend(a: dict[int, FixtureState], b: dict[int, FixtureState],
     """Interpolate two evaluated frames. `t` 0 is all `a`, 1 is all `b`.
 
     In PARAMETER space, which is the whole reason the engine holds parameters.
-    Blending the rendered DMX instead would interpolate a colour-wheel slot
+    Blending the rendered DMX instead would interpolate a color-wheel slot
     index -- halfway between "red" and "blue" being "orange" because those slots
     happen to be adjacent on the disc -- and would quantise the aim to 8 bits
     before smoothing it, which is what makes a fade look steppy.
@@ -687,7 +687,7 @@ def blend(a: dict[int, FixtureState], b: dict[int, FixtureState],
                 first.aim.elev_deg
                 + (second.aim.elev_deg - first.aim.elev_deg) * t)
         else:
-            # One side has no aim at all -- a colour-only look, or a fixture
+            # One side has no aim at all -- a color-only look, or a fixture
             # that is not a mover. Holding the side that HAS one keeps the head
             # where it is instead of snapping it to a default.
             aim = second.aim if second.aim is not None else first.aim

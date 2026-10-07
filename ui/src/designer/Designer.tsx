@@ -97,7 +97,7 @@ function copyNote(from: TrackDoc, to: TrackDoc): string {
 /**
  * What a track's lane can hold, offered where its empty space was clicked --
  * the browser's click only ever reaches the first lane of a kind, and a drag
- * needs a mouse. A scene, movement, colour or level lane takes routines and
+ * needs a mouse. A scene, movement, color or level lane takes routines and
  * this rig's looks (on a slot's lane, the looks for that slot), a scene lane
  * its presets as snapshots too; a palette lane takes palettes, this track's
  * or a copy of the library's; a hits lane, hits.
@@ -125,7 +125,7 @@ function TrackAddMenu({ row, at, x, y, routines, palettes, library, state, onPic
           <i style={{ background: p.primary }} /><i style={{ background: p.secondary }} />
           <i style={{ background: p.accent }} /></span></>,
         add: pick({ kind: "palette", name: p.name,
-                    colours: { primary: p.primary, secondary: p.secondary, accent: p.accent } }),
+                    colors: { primary: p.primary, secondary: p.secondary, accent: p.accent } }),
       })),
     ];
   } else {
@@ -330,11 +330,21 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [driveError, setDriveError] = useState<string | null>(null);
   const preview = engine.state?.preview ?? null;
 
+  const docRef = useRef(doc);
+  docRef.current = doc;
   const arm = async (force = false) => {
     setDriveError(null);
     const reply = await engine.request({ type: "preview_arm", track_id: trackId, force });
-    if (reply.ok) setDriving(true);
-    else setDriveError(reply.error ?? "the engine refused");
+    if (!reply.ok) {
+      setDriveError(reply.error ?? "the engine refused");
+      return;
+    }
+    setDriving(true);
+    // The engine arms on the file as saved, and a draft only replaces that
+    // for a page already driving -- the check this copy went through when it
+    // was last edited came before. Sent again, or the rig plays the saved
+    // file (nothing at all, for a timeline not saved yet) until the next edit.
+    if (docRef.current) void engine.request({ type: "timeline_draft", doc: docRef.current });
   };
   const release = () => {
     setDriving(false);
@@ -462,7 +472,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       const r = routines.find((x) => x.id === what.id);
       if (!r) return;
       if (onto && !(onto.type === "clips" && onto.target !== "palette")) {
-        setNotice("A routine goes on a scene, movement, colour or level lane.");
+        setNotice("A routine goes on a scene, movement, color or level lane.");
         return;
       }
       made = edit((d) => {
@@ -480,7 +490,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
         return;
       }
       if (onto && !(onto.type === "clips" && onto.target !== "palette")) {
-        setNotice("A look goes on a scene, movement, colour or level lane.");
+        setNotice("A look goes on a scene, movement, color or level lane.");
         return;
       }
       made = edit((d) => {
@@ -500,9 +510,9 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
       made = edit((d) => {
         const tl = d as unknown as TimelineDoc;
         if (!(tl.palettes ?? {})[what.name]) {
-          if (!what.colours) return null;
+          if (!what.colors) return null;
           // From the library: this track gets its own copy, under its name.
-          tl.palettes = { ...(tl.palettes ?? {}), [what.name]: { ...what.colours } };
+          tl.palettes = { ...(tl.palettes ?? {}), [what.name]: { ...what.colors } };
         }
         const lane = onto ? d.rows.find((x) => x.id === onto.id)!
           : laneFor(d, "palette", () => ({ id: uniqueId(d, "palette"), type: "clips",
@@ -729,7 +739,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
               <tbody>
                 {drivers.map((d) => (
                   <tr key={d.lane}>
-                    <th>{d.lane === "color" ? "colour" : d.lane}</th>
+                    <th>{d.lane === "color" ? "color" : d.lane}</th>
                     <td>{d.source === "clip" && d.item
                       ? <><b>{itemName(d.item)}</b> <span className="muted">· {d.row}</span></>
                       : d.source === "blank"

@@ -183,7 +183,7 @@ refused("timeline: a curve that does not exist",
 refused("timeline: a palette change to a palette it never defined",
         "timeline", edit(TIMELINE, lambda d: row(d, "palette")["items"][0].update(
             palette="Ultraviolet")), "not defined")
-refused("timeline: a palette whose colour is itself a role",
+refused("timeline: a palette whose color is itself a role",
         "timeline", edit(TIMELINE, lambda d: d["palettes"]["Hot"].update(
             primary="@accent")), "cannot name one")
 refused("timeline: a palette missing a role",
@@ -304,9 +304,9 @@ refused("routine: a variation setting a param it does not have",
 refused("routine: a variation out of the param's range",
         "routine", edit(FAN, lambda d: d["variations"]["wide"].update(width=500)),
         "above the maximum")
-refused("routine: a colour param whose default is not a colour",
+refused("routine: a color param whose default is not a color",
         "routine", edit(FAN, lambda d: d["params"]["color"].update(default=[2, 0, 0])),
-        "not a colour")
+        "not a color")
 refused("routine: a param with no type",
         "routine", edit(FAN, lambda d: d["params"]["width"].pop("type")), "needs a type")
 refused("routine: a role with no default tag",
@@ -330,7 +330,7 @@ def with_lane(target, points, doc=FAN):
 
 
 # A routine's own param lanes, held to the routine's declaration of the param
-# exactly as a variation is (fan-drop: width 0-120, rate a rate, color a colour).
+# exactly as a variation is (fan-drop: width 0-120, rate a rate, color a color).
 check("routine: a lane for each kind of param it can automate is accepted",
       sf.validate("routine", edit(FAN, lambda d: d["rows"].extend([
           lane("param.width", [[0, 20], [16, 120, "ease"]], "lane-w"),
@@ -345,11 +345,11 @@ refused("routine: a lane point below the param's min",
         "routine", with_lane("param.width", [[0, -5]]), "below the minimum 0")
 refused("routine: a rate lane past the 0-8 every rate is held to, even unstated",
         "routine", with_lane("param.rate", [[0, 9]]), "above the maximum 8")
-refused("routine: a number on a colour param's lane",
-        "routine", with_lane("param.color", [[0, "@primary"], [4, 0.5]]), "not a colour")
-refused("routine: a colour on a number param's lane",
+refused("routine: a number on a color param's lane",
+        "routine", with_lane("param.color", [[0, "@primary"], [4, 0.5]]), "not a color")
+refused("routine: a color on a number param's lane",
         "routine", with_lane("param.width", [[0, 10], [4, "#ff0000"]]), "must be a number")
-refused("routine: a palette role that does not exist, on a colour lane",
+refused("routine: a palette role that does not exist, on a color lane",
         "routine", with_lane("param.color", [[0, "@tertiary"]]), "not a palette role")
 refused("routine: a look param's lane -- the look is chosen when the routine is "
         "built, so a lane could never change it",
@@ -358,16 +358,16 @@ refused("routine: a look param's lane -- the look is chosen when the routine is 
         "is a look")
 warned("routine: a variation setting a param the routine's own lane drives warns",
        "routine", with_lane("param.width", [[0, 20]]), "never heard")
-refused("timeline: a param lane mixing numbers and colours",
+refused("timeline: a param lane mixing numbers and colors",
         "timeline", edit(TIMELINE, lambda d: d["rows"].append(
-            lane("param.color", [[0, "#ff0000"], [8, 0.5]]))), "mixes numbers and colours")
+            lane("param.color", [[0, "#ff0000"], [8, 0.5]]))), "mixes numbers and colors")
 refused("timeline: a param lane value that is neither",
         "timeline", edit(TIMELINE, lambda d: d["rows"].append(
-            lane("param.color", [[0, True]]))), "a number or a colour")
+            lane("param.color", [[0, True]]))), "a number or a color")
 
 # Argument lanes: arg.<item>.<argument>, a routine's only, ranged by the
 # block's own declaration of the argument (blocks.PARAMS).
-check("routine: lanes on a number argument and a colour argument are accepted",
+check("routine: lanes on a number argument and a color argument are accepted",
       sf.validate("routine", edit(FAN, lambda d: (
           row(d, "c")["items"][0]["args"].update(color="#ff0000"),
           d["rows"].extend([
@@ -385,10 +385,10 @@ refused("routine: an argument already fed by a $param -- automate the param",
         "routine", with_lane("arg.fan.width", [[0, 30]]), "automate param.width")
 refused("routine: an argument lane past the block's declared range",
         "routine", with_lane("arg.fan.spread", [[0, 0.5], [8, 2]]), "above the maximum 1")
-refused("routine: a number on a colour argument's lane",
+refused("routine: a number on a color argument's lane",
         "routine", edit(with_lane("arg.solid.color", [[0, 0.5]]),
                         lambda d: row(d, "c")["items"][0]["args"].update(color="#ff0000")),
-        "not a colour")
+        "not a color")
 with_offset = edit(FAN, lambda d: row(d, "m")["items"].append(
     {"id": "off", "at": 0, "len": 4, "block": "offset", "args": {"bearing": 0}}))
 warned("routine: an absolute angle past the fallback range only warns -- its "
@@ -416,27 +416,27 @@ refused("timeline: a wave that lifts master past 1 at some point (0.6 + 0.5)",
         "at point 0 it reaches 1.1")
 refused("timeline: a number lane's wave with no depth",
         "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 4}), "needs a depth")
-refused("timeline: a number lane's wave swinging toward a colour",
+refused("timeline: a number lane's wave swinging toward a color",
         "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 4, "depth": 0.2,
-                                                 "toward": "#ff0000"}), "has a toward colour")
+                                                 "toward": "#ff0000"}), "has a toward color")
 refused("timeline: a wave shape that does not exist",
         "timeline", with_wave(TIMELINE, "size", {"shape": "wobble", "bars": 4, "depth": 0.2}),
         "wobble")
 refused("timeline: a wave with no cycle length",
         "timeline", with_wave(TIMELINE, "size", {"shape": "sine", "bars": 0, "depth": 0.2}),
         "bars must be at least")
-colour_lane = lambda w: edit(FAN, lambda d: d["rows"].append(  # noqa: E731
+color_lane = lambda w: edit(FAN, lambda d: d["rows"].append(  # noqa: E731
     lane("param.color", [[0, "@primary"]]) | {"wave": w}))
-check("routine: a colour lane's wave toward another colour is accepted",
-      sf.validate("routine", colour_lane({"shape": "square", "bars": 1,
+check("routine: a color lane's wave toward another color is accepted",
+      sf.validate("routine", color_lane({"shape": "square", "bars": 1,
                                           "toward": "@accent", "depth": 0.5})).ok)
-refused("routine: a colour lane's wave with nowhere to swing to",
-        "routine", colour_lane({"shape": "sine", "bars": 1}), "needs toward")
-refused("routine: a colour lane's wave toward a role that does not exist",
-        "routine", colour_lane({"shape": "sine", "bars": 1, "toward": "@tertiary"}),
+refused("routine: a color lane's wave with nowhere to swing to",
+        "routine", color_lane({"shape": "sine", "bars": 1}), "needs toward")
+refused("routine: a color lane's wave toward a role that does not exist",
+        "routine", color_lane({"shape": "sine", "bars": 1, "toward": "@tertiary"}),
         "not a palette role")
-refused("routine: a colour lane's wave more than all the way there",
-        "routine", colour_lane({"shape": "sine", "bars": 1, "toward": "#ffffff",
+refused("routine: a color lane's wave more than all the way there",
+        "routine", color_lane({"shape": "sine", "bars": 1, "toward": "#ffffff",
                                 "depth": 1.5}), "0 to 1")
 refused("routine: a wave on a param lane that swings past the param's max",
         "routine", edit(with_lane("param.width", [[0, 100]]),
@@ -478,10 +478,10 @@ refused("timeline: a floor at or above its ceiling",
 refused("timeline: a release of a thousand beats",
         "timeline", with_audio(TIMELINE, "size", {"band": "low", "depth": 0.2,
                                                   "release": 1000}), "release")
-refused("timeline: a band on a colour lane -- it moves a number",
+refused("timeline: a band on a color lane -- it moves a number",
         "timeline", edit(TIMELINE, lambda d: d["rows"].append(
             lane("param.color", [[0, "@primary"]])
-            | {"audio": {"band": "low", "depth": 0.5}})), "this lane is a colour")
+            | {"audio": {"band": "low", "depth": 0.5}})), "this lane is a color")
 refused("routine: a band on a routine's own lane -- it plays on any track",
         "routine", edit(with_lane("param.width", [[0, 20]]),
                         lambda d: row(d, "lane").update(
@@ -527,8 +527,8 @@ w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
 check("timeline: or with its wave, when the two together do",
       any("wave and audio: at point 0 it reaches 130" in x for x in w), f"{w}")
 w = lane_warnings("param.color", [[0, 0.5]])
-check("timeline: a number lane for a param every routine has as a colour",
-      sum("not a colour" in x for x in w) >= 2, f"{w}")
+check("timeline: a number lane for a param every routine has as a color",
+      sum("not a color" in x for x in w) >= 2, f"{w}")
 w = lane_warnings("param.wdith", [[0, 40]])
 check("timeline: a lane no placed routine has does nothing, and says so",
       any("does nothing" in x for x in w), f"{w}")
@@ -825,11 +825,11 @@ check(f"validate returned for all {tried} mutated documents",
 
 
 # -----------------------------------------------------------------------------
-print("\n9. colours")
+print("\n9. colors")
 for good in ("@primary", "@accent", "#ff2d6f", [1, 0, 0.5], "MH Pink"):
-    check(f"a colour: {good!r}", sf.color_problem(good) is None)
+    check(f"a color: {good!r}", sf.color_problem(good) is None)
 for bad in ("@tertiary", "#ff2d6", [1, 0], [2, 0, 0], [True, 0, 0], "", 7):
-    check(f"not a colour: {bad!r}", sf.color_problem(bad) is not None)
+    check(f"not a color: {bad!r}", sf.color_problem(bad) is not None)
 
 print()
 if failures:

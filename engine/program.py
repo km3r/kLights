@@ -10,8 +10,8 @@ under the track, and `finish()` (safety, then the strobe policy) still runs
 after everything here, exactly as it does for any other show.
 
 **Per fixture, per slot** (decided with the user, F19h). A lane's clip drives
-only the fixtures it actually uses -- a routine that colours the movers says
-nothing about the pinspots' colour -- so each fixture walks the lanes on its
+only the fixtures it actually uses -- a routine that colors the movers says
+nothing about the pinspots' color -- so each fixture walks the lanes on its
 own, top first:
 
 - a clip that drives it: that clip's content;
@@ -22,11 +22,11 @@ own, top first:
   lanes below;
 - a gap on a lane that owns the track: rest;
 - under every lane: the fallback show -- the template in milestone 2, today the
-  operator's or auto mode's show -- slot for slot (colour, movement, and the
+  operator's or auto mode's show -- slot for slot (color, movement, and the
   level slot's `fx`).
 
 **Rest** is: movers on the venue's rest point (its `rest_point`, else the
-ball), colour white, level DARK.
+ball), color white, level DARK.
 
 Each source evaluates ONCE per slot per frame into its own scratch copy of the
 states, and only the fixtures it claims are taken from it. That is what keeps
@@ -474,7 +474,7 @@ class Program:
 
     def _blank(self, ctx, slot, f, incoming) -> statemod.FixtureState:
         """Nothing drives this slot here: the rest state (decided with the
-        user, F19h) -- movers on the rest point, colour white, level dark."""
+        user, F19h) -- movers on the rest point, color white, level dark."""
         st = replace(incoming[f.fid])
         if slot == "movement":
             aim = self._rest_aim(ctx, f)

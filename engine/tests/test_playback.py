@@ -173,10 +173,10 @@ try:
     sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)
     s = play(161, 0.2)
     st = status()
-    check("picking a colour look takes the colour lane from the timeline",
+    check("picking a color look takes the color lane from the timeline",
           st["lanes"]["color"] == "operator" and st["grabbed"] == ["color"]
           and all(s[f.fid].color == (0.0, 0.0, 1.0) for f in MOVERS), f"{st}")
-    check("and only the colour lane: movement is still the timeline's",
+    check("and only the color lane: movement is still the timeline's",
           st["lanes"]["movement"] == "timeline")
     t += 2.5
     blt(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2)
@@ -186,7 +186,7 @@ try:
           "with no phrase from the deck, the bar-count cycle on the clock",
           status()["mode"] == "template" and status()["template"]["label"] == "bars"
           and status()["lanes"]["movement"] == "template", f"{status()}")
-    check("and the grab still holds the colour lane",
+    check("and the grab still holds the color lane",
           status()["lanes"]["color"] == "operator")
     t += 2.5
     synth()
@@ -344,7 +344,7 @@ try:
                                        "waiting": False}, f"{sc.pad and sc.pad['start']}")
     check("the routine drives the movement it claims -- the heads orbit",
           any(a[f.fid].aim != b[f.fid].aim for f in MOVERS))
-    check("and colour, which it does not claim, is the pad's own look (red)",
+    check("and color, which it does not claim, is the pad's own look (red)",
           all(abs(b[f.fid].color[0] - 1.0) < 1e-6 and b[f.fid].color[2] == 0.0
               for f in MOVERS), f"{b[MOVERS[0].fid].color}")
     sc.apply({"type": "select_look", "name": "MH Blue"}, None, t)

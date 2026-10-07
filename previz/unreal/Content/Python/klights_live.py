@@ -60,7 +60,7 @@ BEAM_EXTINCTION_PER_M = 0.09
 
 # Emissive multiplier on the beam shaft. Additive blending over a near-black
 # room saturates fast, so this is well under 1: it is the difference between a
-# beam whose colour you can judge and a white stripe.
+# beam whose color you can judge and a white stripe.
 BEAM_GAIN = 1.4
 
 # Reflection dots read against a near-black wall, and each is only a few
@@ -184,8 +184,8 @@ def split_plane(direction):
     """A unit normal perpendicular to `direction`, pointing UP.
 
     The plane through the beam's axis separating its top half from its bottom
-    half, which is what a colour wheel sitting between two segments actually
-    produces: half the aperture is one colour and half is the next.
+    half, which is what a color wheel sitting between two segments actually
+    produces: half the aperture is one color and half is the next.
 
     World up projected off the beam axis and renormalised, so it stays the TOP
     half however the head is aimed. A beam pointing straight up or down has no
@@ -421,7 +421,7 @@ class Live:
         # everything below this line does the same job for both and three
         # parallel sets of dicts is three chances for them to disagree.
         self.lights = self._find_tagged(world, "unit:")
-        # The other half of the aperture, on fixtures with a split colour
+        # The other half of the aperture, on fixtures with a split color
         # wheel. Absent for everything else -- see build_level._has_split_slot.
         self.lights2 = self._find_tagged(world, "unit2:")
         self.beams = self._find_tagged(world, "beam:")
@@ -439,7 +439,7 @@ class Live:
 
         # The ball's reflections off each fixture: two instanced meshes, the
         # dots and the shafts that reach them, plus ONE shared material instance
-        # per component. Every reflection of one fixture is the same colour by
+        # per component. Every reflection of one fixture is the same color by
         # definition, so sharing turns a couple of hundred material writes a
         # frame into two.
         self.reflections = {}
@@ -459,7 +459,7 @@ class Live:
             materials = {n: self._shared_material(c) for n, c in pools.items()}
             if any(m is None for m in materials.values()):
                 print(f"[kLights] WARNING: {key}'s reflections have no "
-                      f"material to instance; they will not take colour.")
+                      f"material to instance; they will not take color.")
                 continue
             # The reflected shafts all leave the same place, and the ball does
             # not move, so their taper is fixed for the life of this binding --
@@ -646,12 +646,12 @@ class Live:
 
     @staticmethod
     def _color_for(fixture, frame):
-        """(r, g, b) 0-1 for a fixture, from whichever colour system it has.
+        """(r, g, b) 0-1 for a fixture, from whichever color system it has.
 
         A mixing fixture takes its channels directly. A mover has a mechanical
         wheel with 14 discrete slots and no mixing at all, so its value is
         looked up against the slot table the `.qxf` declares -- which is what
-        lets one colour concept drive both kinds of hardware.
+        lets one color concept drive both kinds of hardware.
         """
         idx = fixture.index_of(rigmod.RED)
         if idx is not None:
@@ -674,22 +674,22 @@ class Live:
                 if slot.lo <= raw <= slot.hi:
                     return tuple(c / 255.0 for c in slot.rgb)
             break
-        # Above the last colour slot the wheel is spinning ("auto colour
-        # change"). White is an honest stand-in for "some colour, changing".
+        # Above the last color slot the wheel is spinning ("auto color
+        # change"). White is an honest stand-in for "some color, changing".
         return (1.0, 1.0, 1.0)
 
     @staticmethod
     def _split_for(fixture, frame):
-        """The two colours in the aperture, or None if this slot is one colour.
+        """The two colors in the aperture, or None if this slot is one color.
 
-        A colour wheel is a disc of segments and its in-between positions put
+        A color wheel is a disc of segments and its in-between positions put
         half of one and half of the next in front of the lens, so the beam
         leaves two-toned across its width rather than blended. The MingJie wheel
         declares seven of these and the show uses them, and previz drew every
         one as a single muddy average until 2026-08-08.
 
         The pair comes from `engine.rig`, resolved out of the profile's own
-        single-colour slots -- see `_resolve_split_slots`. A mixing fixture has
+        single-color slots -- see `_resolve_split_slots`. A mixing fixture has
         no wheel and therefore never splits.
         """
         idx = fixture.index_of(rigmod.COLOR_WHEEL)
@@ -770,7 +770,7 @@ class Live:
             # material's blend a no-op and costs one parameter write.
             # `SplitNormal` points UP and the material lerps Color -> ColorB as
             # the dot product with it rises, so ColorB is the TOP half. The
-            # first-named colour of a slot ("Green + Blue") goes on top, which
+            # first-named color of a slot ("Green + Blue") goes on top, which
             # is the convention the show describes them by.
             top, bottom = split if split else (color, color)
             material.set_vector_parameter_value(
@@ -798,19 +798,19 @@ class Live:
 
     def _light_up(self, key, light, level, color, lumens, split=None,
                   beam_deg=3.0):
-        """Set one fixture's actual light to its level and colour.
+        """Set one fixture's actual light to its level and color.
 
         A split wheel position needs TWO lights and this is why: an Unreal spot
-        light has one colour, and its volumetric fog is what makes a beam read
+        light has one color, and its volumetric fog is what makes a beam read
         as a beam at all. Splitting only the shaft mesh left the fog a single
-        average and the beam still looked one colour, which is exactly what was
+        average and the beam still looked one color, which is exactly what was
         reported.
 
         So the two halves of the aperture become two lights at half intensity,
         tipped a quarter of the cone apart in ELEVATION -- which is up and down
         in the room, since the previz's rotator carries elevation as pitch. They
         overlap down the middle, as the real halves do. The primary keeps the
-        bottom colour so a fixture with no second light still looks sane.
+        bottom color so a fixture with no second light still looks sane.
         """
         spot = light.spot_light_component
         second = self.lights2.get(key)
@@ -1019,11 +1019,11 @@ class Live:
                 # The rays share the beam material, which blends toward `ColorB`
                 # for a split beam. Both ends the same here, so the blend is a
                 # no-op -- and the ball's spray of a split beam is drawn in the
-                # slot's AVERAGED colour, deliberately. Each facet really does
+                # slot's AVERAGED color, deliberately. Each facet really does
                 # reflect whichever half struck it, but every reflection of one
                 # fixture shares a single material instance (that sharing is
                 # what makes a couple of hundred of them affordable), so drawing
-                # them individually would need per-instance colour and a
+                # them individually would need per-instance color and a
                 # per-instance write. Left as a known simplification rather than
                 # a silent one -- the shaft carries the split, the spray averages
                 # it, and a mirror ball's spray really is a mix of both halves.
@@ -1112,8 +1112,8 @@ class Live:
                     continue
                 # No pan, no tilt, and no dimmer either: this fixture's mode
                 # selector sits where a dimmer would be and brightness comes
-                # entirely from the colour channels (see its note in rig.json).
-                # So the level IS the colour's own magnitude.
+                # entirely from the color channels (see its note in rig.json).
+                # So the level IS the color's own magnitude.
                 color = self._color_for(fixture, frame)
                 level = max(color)
                 color = (1.0, 1.0, 1.0) if level <= 0.0 else tuple(

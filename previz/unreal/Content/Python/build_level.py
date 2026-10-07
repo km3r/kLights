@@ -56,12 +56,12 @@ OWN_MATERIALS = ("M_PrevizRoom", "M_PrevizBallCore", "M_PrevizBallTile", "M_Prev
 # 1.8 keeps a bright core with the fade in the outer third.
 DOT_SHOULDER = 1.8
 
-# How abruptly a split beam changes colour across its width, per Unreal cm.
+# How abruptly a split beam changes color across its width, per Unreal cm.
 # The two halves of the aperture meet at a hard mechanical edge, so this is
 # deliberately steep -- large enough that the transition is a couple of
 # centimetres wide and therefore antialiases rather than stair-steps, small
 # enough that it is not a jagged line. It is NOT a soft blend: a wheel sitting
-# between two segments throws two colours, it does not mix them.
+# between two segments throws two colors, it does not mix them.
 SPLIT_SHARPNESS = 0.4
 
 # The basic shapes are 100 cm across at scale 1, so a scale is a size in metres.
@@ -166,7 +166,7 @@ def make_material(name, color, roughness=0.9, metallic=0.0, emissive=0.0):
 
     Built node by node rather than by instancing BasicShapeMaterial, because
     that material's parameter names are an engine detail we would be guessing
-    at -- and a wrong guess yields a silently unchanged default colour.
+    at -- and a wrong guess yields a silently unchanged default color.
     """
     path = f"{MATERIAL_DIR}/{name}"
     if unreal.EditorAssetLibrary.does_asset_exist(path):
@@ -364,7 +364,7 @@ def make_emissive_material(name, round_off, taper=False, soft_edge=0.0,
 
     shade = color
     if split:
-        # A colour wheel's in-between positions put half of one segment and half
+        # A color wheel's in-between positions put half of one segment and half
         # of the next in front of the lens, so the beam leaves TWO-TONED, split
         # down its middle -- not blended. Seven of the MingJie wheel's fourteen
         # slots are these, and previz drew every one of them as a single muddy
@@ -668,7 +668,7 @@ def build_room(spec):
     # ambient the room rendered as pure void and there was no way to tell an
     # unlit wall from no wall at all. A little emissive is a floor that cannot
     # be captured away.
-    # 2.5x the base colour, so the walls sit around 0.12 emissive. Auto-exposure
+    # 2.5x the base color, so the walls sit around 0.12 emissive. Auto-exposure
     # is off (a previz whose exposure drifts cannot be compared shot to shot),
     # so this is an absolute brightness, not something the eye adapts to -- at
     # 0.02 it was indistinguishable from black.
@@ -944,7 +944,7 @@ def build_atmosphere(spec):
 def _configure_spot(spot, fixture, spec):
     """Every property one previz spot light needs.
 
-    Factored out because a fixture with a split colour wheel gets TWO of
+    Factored out because a fixture with a split color wheel gets TWO of
     them -- see the note in `build_fixtures` -- and two lights configured
     from two copies of this list is two lights that quietly diverge.
     """
@@ -981,10 +981,10 @@ def _configure_spot(spot, fixture, spec):
 
 
 def _has_split_slot(fixture):
-    """Does this fixture's colour wheel have any two-colour position?
+    """Does this fixture's color wheel have any two-color position?
 
     `previz.scene` emits each slot as [lo, hi, r,g,b, r1,g1,b1, r2,g2,b2] -- the
-    averaged colour, then the two halves. They differ only on a split.
+    averaged color, then the two halves. They differ only on a split.
     """
     for slot in fixture.get("color_slots") or ():
         if len(slot) >= 11 and slot[5:8] != slot[8:11]:
@@ -1073,19 +1073,19 @@ def build_fixtures(spec):
                                   BALL_GLOW_SCATTER)
         point.set_editor_property("visible", False)
 
-        # A SECOND spot light, for fixtures whose colour wheel has split slots.
+        # A SECOND spot light, for fixtures whose color wheel has split slots.
         #
         # A wheel position between two segments throws half the aperture in one
-        # colour and half in the next, and an Unreal spot light has exactly one
-        # colour -- so the shaft mesh could be split all it liked while the
+        # color and half in the next, and an Unreal spot light has exactly one
+        # color -- so the shaft mesh could be split all it liked while the
         # volumetric fog around it, which is what actually makes a beam read as
-        # a beam, stayed a single average. That is what "duo colours are not
+        # a beam, stayed a single average. That is what "duo colors are not
         # working" looked like.
         #
         # Two lights at half intensity, tipped a quarter of the cone apart in
         # elevation, is the model: each carries one half of the aperture, they
         # overlap down the middle the way the real halves do, and the fog picks
-        # up both colours. Only built where the profile actually has split
+        # up both colors. Only built where the profile actually has split
         # slots, because a shadow-casting spot light is not free.
         if _has_split_slot(fixture):
             second = actors.spawn_actor_from_class(
@@ -1218,7 +1218,7 @@ def main(event="despacio", restart_hint=True):
         f"({placed - static} steerable, {static} fixed), "
         f"mount mode {spec['mount_mode']!r}")
     if split_lights:
-        log(f"  {split_lights} fixture(s) have a split colour wheel and carry a "
+        log(f"  {split_lights} fixture(s) have a split color wheel and carry a "
             f"second spot light for the other half of the aperture")
     if bars:
         truss = spec["truss"]

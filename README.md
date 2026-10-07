@@ -15,11 +15,12 @@ Three places to work, one engine underneath:
 
 - **Studio — design the show.** A show-making app for a computer. Tracks come
   in from rekordbox with their beat grid, phrases and waveform, and each gets a
-  timeline drawn bar by bar against them: scene, movement, colour and palette
+  timeline drawn bar by bar against them: scene, movement, color and palette
   lanes, hits, automation with waves on it or following the track's bass, mids
-  or highs, and cues for a VJ app, MIDI gear or a projector. Shows are built from reusable **routines** written against roles
-  (movers, pinspots) rather than fixtures, and **template sets** light any track
-  nobody drew, phrase by phrase.
+  or highs, and cues for a VJ app, MIDI gear or a projector. Shows are built
+  from reusable **routines** written against roles (movers, pinspots) rather
+  than fixtures, and **template sets** light any track nobody drew, phrase by
+  phrase.
   → [Timecoded shows](#timecoded-shows)
 - **Setup — describe the rig and the room.** The patch, where each fixture
   hangs, calibration, and the room in three dimensions. Because the engine
@@ -30,7 +31,7 @@ Three places to work, one engine underneath:
   → [Editing the rig](#editing-the-rig)
 - **Show — run the night.** The engine serves its own web console, built for a
   phone in one hand: a cue list behind one GO button, pages of preset pads,
-  independent movement, colour and level, and tempo from a tap or the DJ's
+  independent movement, color and level, and tempo from a tap or the DJ's
   decks. Arm **Follow** and each track's timeline plays itself as the DJ mixes
   it in. Several people can be on it at once.
   → [Using the console](#using-the-console)
@@ -116,7 +117,7 @@ bar becomes a side rail and the panels widen.
 <table>
 <tr>
 <td width="50%"><img src="docs/images/console-show.png" alt="Show tab: the Night cue list on cue 3 of 9, Deep, with GO for Spiral next; the Track card with Follow safe and the Club template set; the four independent slots that are up now"></td>
-<td width="50%"><img src="docs/images/console-color.png" alt="Color tab: the colour look list, filterable by fixture group, with Duo Cyan/Pink up on the movers and Pin Ball Glow on the pinspots"></td>
+<td width="50%"><img src="docs/images/console-color.png" alt="Color tab: the color look list, filterable by fixture group, with Duo Cyan/Pink up on the movers and Pin Ball Glow on the pinspots"></td>
 </tr>
 <tr align="center"><td><b>Show</b></td><td><b>Color</b></td></tr>
 <tr>
@@ -131,7 +132,7 @@ Five tabs, all driven by the same live state.
 | tab | what it is for |
 |---|---|
 | **Show** | the cue list, the Track card (Follow and the template set), preset banks, tempo and tap, auto mode, DJ sync, panic |
-| **Color** | colour looks, a quick palette, a per-fixture picker, colour rate |
+| **Color** | color looks, a quick palette, a per-fixture picker, color rate |
 | **Move** | the plan view, movement routes, shape macros, movement rate |
 | **Bright** | level patterns, hand dimming, momentary flash, strobe policy |
 | **Setup** | the rig, the room, calibration and the patch editor |
@@ -156,8 +157,8 @@ about screen space, **not** a permission — access is what `--token` decides.
 
 Three ideas make the rest make sense:
 
-- **Movement, colour and level are independent slots.** Picking a colour does
-  not disturb the move. Each has its own rate, so a colour chase can crawl under
+- **Movement, color and level are independent slots.** Picking a color does
+  not disturb the move. Each has its own rate, so a color chase can crawl under
   a move running flat out.
 - **Presets are pages of eight pads**, and a pad is a *place*. Saving over a
   preset keeps its pad; adding or deleting neighbours does not shuffle it.
@@ -258,7 +259,7 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    on a **library** of every track in the show: what lights it on the night,
    its phrases, and what needs attention. A track's **timeline** is a set of
    lanes against its waveform and phrases:
-   - scene, movement, colour, level and palette lanes, holding routines, looks
+   - scene, movement, color, level and palette lanes, holding routines, looks
      and presets;
    - hits (flash, strobe, blackout);
    - automation of master, size, spread, centre, rate and any parameter of the
@@ -363,7 +364,7 @@ Only needed if you change it — `ui/dist/` is committed so a venue needs no Nod
 cd ui
 npm ci
 npm run dev      # live-reloading dev server
-npm test         # 377 tests: the console against a fixture captured from a
+npm test         # 380 tests: the console against a fixture captured from a
                  # real engine, Studio against the example show folder
 npm run e2e      # the real engine, this bundle, Chromium -- see Tests below
 npm run build    # writes ui/dist/
@@ -390,7 +391,7 @@ afterwards.
 
 The browser suite starts the real engine, serving the committed `ui/dist`, and
 checks what a tap does on the Art-Net the rig would receive: Blackout, Master,
-Panic, cues, colour, tempo, two consoles at once, a view-only phone, an engine
+Panic, cues, color, tempo, two consoles at once, a view-only phone, an engine
 restart, and Studio saving through the engine. It needs Node and a Chromium
 (`npx playwright install chromium`), so it runs in CI rather than in preflight.
 [`docs/testing.md`](docs/testing.md) has the whole map and how to add to each

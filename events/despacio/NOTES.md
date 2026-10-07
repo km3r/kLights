@@ -319,8 +319,8 @@ picture of the controller.
 | Frame | Pads | Fader |
 |---|---|---|
 | **Aerial** | Apex / Cathedral / Zenith / Rise / Iris / **Canopy Ring** (movement family) — grid pads c3r5, c6r5, c7r5, c3r4, c7r4 + track-row col7 Select | — |
-| **Split Color** | Split Warm/Cool / Split Red/Cyan / Split Pink/Green / Split Yellow/Blue / Split White/Orange / Split Red/Green / Duo Cyan/Pink / Duo Green/Blue (colour family) — pad c7r3 + wide 3–6 + track-row col6 R/S/Activator | — |
-| **Color Extras** | **Yellow / Green / Cyan** (the three wheel slots that had no static) / **Quad Spectrum** / **Wheel Walk** (colour family) — track-row col3 S/Activator/Select + col4 Select + col6 Select | — |
+| **Split Color** | Split Warm/Cool / Split Red/Cyan / Split Pink/Green / Split Yellow/Blue / Split White/Orange / Split Red/Green / Duo Cyan/Pink / Duo Green/Blue (color family) — pad c7r3 + wide 3–6 + track-row col6 R/S/Activator | — |
+| **Color Extras** | **Yellow / Green / Cyan** (the three wheel slots that had no static) / **Quad Spectrum** / **Wheel Walk** (color family) — track-row col3 S/Activator/Select + col4 Select + col6 Select | — |
 | **Layer + FX** | Drift / Counter-Orbit / Shiver / Figure Eight / Diamond Weave (relative EFX layers — see below); Build / Drop (one-shots, non-solo) | Drift Width |
 | **Pinspots** | Pin Glow / Pin Drift / Pin Amber / Pin Rose / Pin Magenta / Pin Indigo / Pin Teal / Pin Sea / Pin Rainbow / **Pin Split** (local group, one at a time); below them **Pin Breathe / Pin Strobe** (a second local group — both drive the pins' banded channel 0, so they exclude each other) | Pin Dim |
 | **Dark Moves (MH Dim low)** | Teleport / Apparition / Freeze Frame / Stutter (movement + dimmer family — see below) | — |
@@ -589,7 +589,7 @@ it never touches DMX or QLC+ itself. QLC+ must already be running with `--web`/`
 button still fires the whole hidden SoloFrame exclusivity mesh QLC+ already built.
 `webui/ui_config.js` is generated from the live workspace by `webui/gen_webui_config.py`
 (regenerated automatically by `serve.py` if `despacio.qxw` is newer); `webui/ui_layout.js`
-is the hand-curated phone layout (tabs, dim-park classification, swatch colours) — see
+is the hand-curated phone layout (tabs, dim-park classification, swatch colors) — see
 that generator's module docstring for the add-a-routine workflow and what it lints.
 
 **Protocol facts below came from reading the vendored QLC+ source
@@ -639,14 +639,14 @@ to verify on hardware".**
 - **A button's `127` value means "Monitoring"** — running because a *different* widget
   bound to the same function fired it (the SoloFrame mirror mesh again), not because this
   widget was pressed. Treated as active (`v !== 0`) everywhere in `app.js`, same as `255`.
-- **Pose/colour detection is structural, not a hand-kept caption list.**
+- **Pose/color detection is structural, not a hand-kept caption list.**
   `gen_webui_config.py`'s `resolve_movement_and_color()` walks the same Chaser/Collection →
   Scene flattening the HTP dim-conflict scan already does, and flags a widget as a "pose"
-  if any step it can reach writes a `Position`-group channel (Pan/Tilt), or a "colour look"
-  if any step writes a `Colour`-group channel (this show's moving heads expose colour as a
-  single Colour-Wheel-preset channel — see `MingJie-MJ-OS-018-60W-Beam.qxf` — not RGB
+  if any step it can reach writes a `Position`-group channel (Pan/Tilt), or a "color look"
+  if any step writes a `Color`-group channel (this show's moving heads expose color as a
+  single Color-Wheel-preset channel — see `MingJie-MJ-OS-018-60W-Beam.qxf` — not RGB
   intensities). Emitted as `VC.poseCaptions`/`VC.colorCaptions` and consumed by `app.js`'s
-  "layer running with no pose under it" / "MH Dim up but no colour look active" banners.
+  "layer running with no pose under it" / "MH Dim up but no color look active" banners.
   This replaced a hand-kept caption list that had already gone stale in practice: it
   excluded **Build** on the claim that it "writes no pan/tilt at all", which
   `despacio.qxw`'s actual Build Chaser steps (Walls → Iris Out → Ball → Apex → Zenith)
@@ -706,21 +706,21 @@ sign-*tolerant*: the bearing-channel invert is uniform across heads within a mod
 "Pan direction / inter-head geometry" above), so either sign gives a valid symmetric iris,
 just mirrored.
 
-**Split colour (row 2) — what a mirror ball is actually for.** Every colour scene before
+**Split color (row 2) — what a mirror ball is actually for.** Every color scene before
 these wrote the *same* wheel slot to all 4 heads. Two heads on the ball in different
-colours throw two interleaved speck fields sweeping in opposite directions.
+colors throw two interleaved speck fields sweeping in opposite directions.
 - **Split Warm/Cool** (orange ↔ blue), **Split Red/Cyan**, **Split Pink/Green**,
   **Split Yellow/Blue**, **Split White/Orange**, **Split Red/Green** — the two diagonal
   pairs (ID 0+2 and ID 1+3) get complementary slots.
-- **Duo Cyan/Pink**, **Duo Green/Blue** — the wheel's two-colour slots, which are
-  physically half-and-half in the beam, so a *single* head throws bicolour specks.
+- **Duo Cyan/Pink**, **Duo Green/Blue** — the wheel's two-color slots, which are
+  physically half-and-half in the beam, so a *single* head throws bicolor specks.
 - **Quad Spectrum** (new 2026-07-30) — one slot per head: Red / Green / Yellow / Blue in
   fixture-ID order, which is already rotational around the room, so adjacent corners get
   contrasting hues and each diagonal pair gets a temperature. Four interleaved speck
   fields off the ball where a Split gives two. Everything before this was either
   all-four-the-same or two-by-diagonal; nothing used four.
 
-**Colour statics that were missing** (new 2026-07-30, "Color Extras" frame in row 2):
+**Color statics that were missing** (new 2026-07-30, "Color Extras" frame in row 2):
 **Yellow** (slot 25), **Green** (45) and **Cyan** (75). The wheel has had confirmed slots
 for all three since the 2026-07-18 hardware check, but they only ever appeared *inside*
 Split scenes — so there was no way to put all four heads on green short of dragging the
@@ -730,11 +730,11 @@ positions nothing uses.
 **Wheel Walk** (new 2026-07-30, col 3's Loops) — an 8-step chase that advances every head
 by exactly **one physical wheel slot** per step, with the heads two slots apart:
 White → Red → Yellow → Blue → Green → Orange → Pink → Cyan and around. A one-slot hop is
-the shortest move this stepper wheel can make, so it is the smoothest colour motion the
+the shortest move this stepper wheel can make, so it is the smoothest color motion the
 heads are capable of, and the beam passes through the boundary blend on the way. Fade =
 duration, so the wheel never sits still. This is the logical end of the same
 even-wheel-travel reasoning behind Rainbow Wheel's step order (below) — Rainbow Wheel hops
-3–4 slots by design and reads as distinct colour changes; Wheel Walk reads as a drift.
+3–4 slots by design and reads as distinct color changes; Wheel Walk reads as a drift.
 
 **Dynamics (row 2, Layer + FX).**
 - **Build** — an accelerating one-shot: walls → ±45 → ball → apex → ball → zenith →
@@ -744,35 +744,35 @@ even-wheel-travel reasoning behind Rainbow Wheel's step order (below) — Rainbo
 - **Drop** — snap to white, then one head alone on the ball, held indefinitely. Pull MH
   Dim under it.
 
-**Pinspots (row 2).** The heads' colour wheel can only *jump*; any "fade" is the wheel
+**Pinspots (row 2).** The heads' color wheel can only *jump*; any "fade" is the wheel
 spinning through the slots in between. The RGBW pins are the only fixtures here that can
-crossfade for real. Colour/pattern picks are one at a time (`pin-solo`); **Pin Breathe** is
+crossfade for real. Color/pattern picks are one at a time (`pin-solo`); **Pin Breathe** is
 a separate standalone toggle that layers on top of whichever one is running.
 - **Pin Glow** — a warm always-on base so the ball keeps some sparkle whenever the heads
   are pointed elsewhere.
 - **Pin Amber / Pin Rose / Pin Magenta / Pin Indigo / Pin Teal / Pin Sea** — the six fixed
-  colours that used to only exist as `Pin Drift`'s hidden steps, now each individually
+  colors that used to only exist as `Pin Drift`'s hidden steps, now each individually
   selectable. Each still carries its original 30 s fade-in when picked directly (matching
-  this show's unhurried pace, not a snappy colour-picker feel).
-- **Pin Drift** — the same six colours as a slow chase, 30 s fades, 45 s steps: four and a
+  this show's unhurried pace, not a snappy color-picker feel).
+- **Pin Drift** — the same six colors as a slow chase, 30 s fades, 45 s steps: four and a
   half minutes a cycle, never visibly moving. The most despacio thing in the file.
 - **Pin Rainbow** — a smooth 12-step crossfade around the full hue wheel (every 30°),
-  continuously flowing with no hold on any colour (its fade IS the full step — see the
+  continuously flowing with no hold on any color (its fade IS the full step — see the
   Tempo dial section for why that's the one routine that breaks the "fade one tier below"
-  rule). ~72 s per revolution at the dial's default tempo. Pure colour math — no direction
+  rule). ~72 s per revolution at the dial's default tempo. Pure color math — no direction
   sign or hardware calibration involved, unlike the moving-head routines.
-- **Pin Breathe** — a slow on/off pulse, independent of colour choice: boosts the pins'
+- **Pin Breathe** — a slow on/off pulse, independent of color choice: boosts the pins'
   dimmer (channel 0) to full and lets it fall back over roughly a 24 s cycle at the dial's
   default tempo. Uses the same HTP boost-over-a-low-fader-baseline trick as Dim
   Chase/Spotlight/Prowl/Crowd Cascade — **set Pin Dim low first**, then Pin Breathe pulses
-  on top of it. This is also why the fixed-colour scenes above no longer write channel 0
+  on top of it. This is also why the fixed-color scenes above no longer write channel 0
   themselves (they used to bake in `0,250`): stripped out so Pin Dim owns dimmer
   exclusively, the same "scenes never touch the dimmer, the fader does" convention already
-  used for the moving heads' MH Dim fader. Combine it with any colour pick, or with Pin
+  used for the moving heads' MH Dim fader. Combine it with any color pick, or with Pin
   Rainbow, for a breathing rainbow ball.
 - **Pin Split** (new 2026-07-30) — the first pin look where the two fixtures get *different*
   values. They aim at the ball from opposite sides, so a warm one and a cool one throw two
-  counter-coloured speck fields sweeping in opposite directions. Every pin scene before this
+  counter-colored speck fields sweeping in opposite directions. Every pin scene before this
   wrote both fixtures byte-identically: two fixtures, one voice.
 - **Pin Strobe** (new 2026-07-30) — and this needs the channel map spelled out, because it
   is not where you'd guess. **Channel 5 is Auto FX, not strobe** (built-in programs +

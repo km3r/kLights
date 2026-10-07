@@ -8,8 +8,8 @@ emissive beam cones, a faint cool ambient so geometry reads, punchy exposure, an
 Bloom glow so fixture emitters glow.
 
 Run AFTER go_live.py (Scripting workspace -> Open -> Run Script). Idempotent.
-Tip: the view pops MUCH more once you program COLOURS in QLC+ — flat white blooms to
-a washed glow, but coloured beams in haze look like a real rig. For a truly cinematic
+Tip: the view pops MUCH more once you program COLORS in QLC+ — flat white blooms to
+a washed glow, but colored beams in haze look like a real rig. For a truly cinematic
 "beams hitting everything" picture, render a frozen look in CYCLES instead (live +
 Cycles can't coexist: the 24 fps DMX timer restarts Cycles' sampling every frame).
 """
@@ -62,7 +62,7 @@ def main():
     ee.use_volumetric_shadows = True
 
     # Brighter emissive beam cones (BlenderDMX's own display beams). Keep moderate —
-    # too high and coloured light clips to white-hot and you lose the colour.
+    # too high and colored light clips to white-hot and you lose the color.
     sc.dmx.beam_intensity_multiplier = 2.0
 
     # Soft fill lamp up & behind the stage (out of audience-POV frame), no volume orb.
@@ -74,8 +74,8 @@ def main():
             lamp.data.volume_factor = 0.0
         lamp.visible_camera = False
 
-    # Standard keeps beam colours saturated (AgX desaturates them). Keep exposure LOW
-    # — high exposure clips coloured light to white so fixtures look colourless.
+    # Standard keeps beam colors saturated (AgX desaturates them). Keep exposure LOW
+    # — high exposure clips colored light to white so fixtures look colorless.
     sc.view_settings.view_transform = "Standard"
     sc.view_settings.exposure = 0.3
 
@@ -92,7 +92,7 @@ def main():
     glare.inputs["Type"].default_value = "Bloom"        # menu socket uses display names
     glare.inputs["Threshold"].default_value = 0.7        # only the brightest bloom...
     glare.inputs["Size"].default_value = 0.7
-    glare.inputs["Strength"].default_value = 0.5         # ...softly, so colour survives
+    glare.inputs["Strength"].default_value = 0.5         # ...softly, so color survives
     ng.links.new(rl.outputs["Image"], glare.inputs["Image"])
     ng.links.new(glare.outputs["Image"], gout.inputs[0])
     sc.compositing_node_group = ng
@@ -114,7 +114,7 @@ def main():
 
     print("── live look tuned ──")
     print(f" engine EEVEE | floors matte | haze 0.025 | beams x3.5 | bloom on | {vp} viewport(s)")
-    print(" Program COLOURS in QLC+ to see beams pop. For a cinematic still, render in Cycles.")
+    print(" Program COLORS in QLC+ to see beams pop. For a cinematic still, render in Cycles.")
 
 
 if __name__ == "__main__":

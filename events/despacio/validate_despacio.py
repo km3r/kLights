@@ -266,18 +266,18 @@ COL4 = [19, 44, 49, 50, 60, 121, 126, 129, 173, 176]
 # mirror family (mutual mirrors with COL2/COL4/SHOW) even though their real
 # buttons aren't physically in either of those columns.
 COL_EXTRA_MOVE = [67, 78, 81, 86, 91]
-# Aerial poses (col9) and split/bicolour statics (col10), added 2026-07-25.
-# Aerial writes Pan/Tilt only -> MOVEMENT family; split writes the colour wheel
-# + shutter only -> COLOUR family. Neither crosses into the other.
+# Aerial poses (col9) and split/bicolor statics (col10), added 2026-07-25.
+# Aerial writes Pan/Tilt only -> MOVEMENT family; split writes the color wheel
+# + shutter only -> COLOR family. Neither crosses into the other.
 # 204 = Canopy Ring (2026-07-30), Floor Ring's mirror drawn on the canopy plane
 # at apex_height -- an aerial pose, so it lives with the other aerials.
 # 95 (Rise) / 98 (Iris) deliberately excluded -- see the 2026-08-01 self-stop
 # note above; they live in their own isolated mh-aerial-extra-solo now.
 COL_AERIAL = [92, 93, 94, 204]
 COL_SPLIT = [103, 104, 105, 106, 107, 167, 168, 169]
-# "Color Extras" frame (row 2, added 2026-07-30): the three colour-wheel slots
+# "Color Extras" frame (row 2, added 2026-07-30): the three color-wheel slots
 # that had no static (Yellow / Green / Cyan), the 4-way Quad Spectrum, and Wheel
-# Walk. COLOUR family like the splits -- they write the wheel + shutter only.
+# Walk. COLOR family like the splits -- they write the wheel + shutter only.
 # They live outside columns 1-8 because every APC grid/clip/scene pad in those
 # physical columns is already consumed; their real buttons are on the remaining
 # free track-row slots.
@@ -334,13 +334,13 @@ EXPECTED = {
     "mh-layer-solo": ([99, 100, 223, 224, 225], []),
     # Pinspots (col12) are on their own DMX channels (45/51) and share nothing
     # with the 4 heads, so they need no cross-family mesh at all -- only mutual
-    # exclusivity between the colour/pattern picks (static glow, the 6 fixed
-    # colours, the drifting chaser, the smooth rainbow chase). Pin Breathe is
+    # exclusivity between the color/pattern picks (static glow, the 6 fixed
+    # colors, the drifting chaser, the smooth rainbow chase). Pin Breathe is
     # deliberately OUTSIDE this group -- it only writes channel 0 (dimmer),
-    # which none of these colour scenes touch anymore, so it can run
+    # which none of these color scenes touch anymore, so it can run
     # underneath any of them without a channel conflict.
     # 221 = Pin Split (2026-07-30), the first pin scene where the two fixtures
-    # get different values -- a colour pick like the rest, so it belongs here.
+    # get different values -- a color pick like the rest, so it belongs here.
     # 115 (Pin Drift) deliberately excluded -- see the 2026-08-01 self-stop
     # note above; it lives in its own isolated pin-drift-solo now.
     "pin-solo": ([108, 109, 110, 111, 112, 113, 114, 143, 221], []),

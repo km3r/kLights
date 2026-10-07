@@ -307,7 +307,7 @@ describe("designer model", () => {
     expect(templateFromTimeline("x", "X", trackDoc as never, bare as never)).toBeNull();
   });
 
-  it("gives a copy a name of its own, and compares colours as the engine does", () => {
+  it("gives a copy a name of its own, and compares colors as the engine does", () => {
     // Copies are found by name, so a library palette's name must be its own.
     expect(freeName(["Hot", "Hot copy"], "Hot copy")).toBe("Hot copy 2");
     expect(freeName(["Hot"], "Hot copy")).toBe("Hot copy");
@@ -366,14 +366,14 @@ describe("designer model", () => {
     expect(scene.find((i) => i.id === tail)).toMatchObject({ at: 192, len: 32, routine: "fan-drop" });
   });
 
-  it("decodes rekordbox's colour waveform", () => {
+  it("decodes rekordbox's color waveform", () => {
     // rrrgggbbbhhhhh-- : full red, height 31
     const v = (7 << 13) | (31 << 2);
     const data = btoa(String.fromCharCode(v >> 8, v & 0xff));
     const wave = decodeWave({ detail: { format: "pwv5", rate: 150, data } })!;
     expect(wave.heights[0]).toBe(1);
     expect(wave.colors![0]).toEqual([1, 0, 0]);
-    // with no three-band analysis, a band is its colour times the height
+    // with no three-band analysis, a band is its color times the height
     expect(Array.from(wave.bands!.low!)).toEqual([7 * 31]);
     expect(Array.from(wave.bands!.mid!)).toEqual([0]);
     expect(wave.exact).toBe(false);
@@ -388,7 +388,7 @@ describe("designer model", () => {
     expect(Array.from(alone.bands!.all!)).toEqual([30, 127]);
     expect(alone.exact).toBe(true);
     expect(alone.heights).toEqual([30 / 127, 1]);
-    // beside the colour waveform, the colours are still what is drawn, and the
+    // beside the color waveform, the colors are still what is drawn, and the
     // three bands -- not an estimate from them -- are what a lane follows
     const v = (7 << 13) | (31 << 2);
     const detail = { format: "pwv5", rate: 150, data: btoa(String.fromCharCode(v >> 8, v & 0xff, 0, 0)) };
@@ -523,21 +523,21 @@ let rekordbox: [number, unknown] = [200, CATALOGUE];
 let waveform: WaveformDoc | null = null;
 
 const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
-/** The library: Hot, copied into the timeline (with older colours) and Club
+/** The library: Hot, copied into the timeline (with older colors) and Club
  *  (the same); Ice, in nothing yet. Cool lives only in Club. */
 const PALETTES = {
   palettes: [
     { id: "hot", name: "Hot", ...HOT, rev: "r:p", copies: [
       { file: "timelines/synth-128.json", kind: "timeline", id: "synth-128",
-        title: "synthetic 128", colours: { ...HOT, primary: "#ff0000" }, same: false },
+        title: "synthetic 128", colors: { ...HOT, primary: "#ff0000" }, same: false },
       { file: "templates/club.json", kind: "template_set", id: "club", title: "Club",
-        colours: HOT, same: true }] },
+        colors: HOT, same: true }] },
     { id: "ice", name: "Ice", primary: "#bae6fd", secondary: "#ffffff", accent: "#38bdf8",
       rev: "r:i", copies: [] },
   ],
   found: [{ name: "Cool", places: [{ file: "templates/club.json", kind: "template_set",
                                      id: "club", title: "Club",
-                                     colours: { primary: "#3b82f6", secondary: "#14b8a6",
+                                     colors: { primary: "#3b82f6", secondary: "#14b8a6",
                                                 accent: "#e2e8f0" } }] }],
 };
 
@@ -677,6 +677,27 @@ describe("designer", () => {
     await waitFor(() => expect(socket.sent.some((c) => c.type === "preview_transport")).toBe(true));
     await user.click(screen.getByRole("button", { name: "Release the rig" }));
     expect(socket.sent.some((c) => c.type === "preview_release")).toBe(true);
+  });
+
+  it("hands the engine its working copy as it takes the rig, not only on the next edit", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const tight = (c: Command) => c.type === "timeline_draft"
+      && (c as Command & { doc: TimelineDoc }).doc.rows.find((r) => r.id === "scene")!
+        .items!.find((i) => i.id === "chorus1")!.variation === "tight";
+    // An edit the engine has already checked, before this page has the rig:
+    // the engine arms on the saved file, so that check put nothing on stage.
+    fireEvent.pointerDown(within(lanes).getByLabelText("fan-drop at bar 41.1").querySelector("rect")!);
+    await user.click(within(screen.getByRole("contentinfo", { name: "inspector" }))
+      .getByRole("button", { name: "tight" }));
+    await waitFor(() => expect(socket.sent.some(tight)).toBe(true), { timeout: 2000 });
+    reply(socket, "timeline_draft", true, { errors: [], warnings: [], problems: [] });
+
+    await user.click(screen.getByRole("button", { name: "Drive the rig" }));
+    const before = socket.sent.length;
+    reply(socket, "preview_arm", true, { track_id: "synth-128" });
+    await waitFor(() => expect(socket.sent.slice(before).some(tight)).toBe(true));
   });
 
   it("stops driving when the engine lets go of its preview, or another console takes it", async () => {
@@ -963,7 +984,7 @@ describe("designer", () => {
     const lanes = await screen.findByRole("region", { name: "lanes" });
 
     // The movement lane: the browser's click only reaches the scene lane.
-    // Its menu has the routines and this rig's MOVEMENT looks -- no colour
+    // Its menu has the routines and this rig's MOVEMENT looks -- no color
     // looks, no snapshots -- and, being long, a search box it starts in.
     const move = within(lanes).getByLabelText("lane move");
     fireEvent.click(move, { clientX: 6 * 34, clientY: 20 });         // inside bar 9
@@ -1219,7 +1240,7 @@ describe("designer", () => {
     fireEvent.keyDown(grip, { key: "ArrowDown", shiftKey: true });
     expect(canvas.height).toBe(WAVE_HEIGHT.min + 5 * WAVE_HEIGHT.step);
 
-    // Bands: low, mid and high one above another, each in its own colour
+    // Bands: low, mid and high one above another, each in its own color
     await user.click(within(lanes).getByRole("button", { name: "Bands" }));
     expect(within(lanes).getByLabelText("waveform, by band")).toBe(canvas);
     const third = canvas.height / 3;
@@ -1280,7 +1301,7 @@ describe("designer", () => {
     fireEvent.keyDown(document.body, { key: "Delete" });
     expect(screen.queryByText(/follows the audio on size/)).toBeNull();
     expect(within(size).queryByLabelText("audio")).toBeNull();
-    // a colour lane has no number for a band to move
+    // a color lane has no number for a band to move
     expect(within(lanes).queryByRole("button", { name: /^audio on param/ })).toBeNull();
   });
 
@@ -1313,6 +1334,57 @@ describe("designer", () => {
       { doc: TimelineDoc; base_rev: string };
     expect(save.doc.rows.find((r) => r.id === "scene")!.items!.some((i) => i.id === "chorus1"))
       .toBe(false);
+  });
+
+  it("plays on Space wherever the focus is, short of a text field", async () => {
+    const user = userEvent.setup();
+    await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const playing = () => screen.queryByRole("button", { name: "Pause" }) != null;
+
+    // The button just clicked is not pressed again: the lane keeps its mode.
+    await user.click(screen.getAllByRole("button", { name: "fills gaps" })[0]!);
+    const flipped = screen.getAllByRole("button", { name: "owns track" })[0]!;
+    const owning = screen.getAllByRole("button", { name: "owns track" }).length;
+    expect(flipped).toHaveFocus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+    expect(screen.getAllByRole("button", { name: "owns track" }).length).toBe(owning);
+    // ...nor as the key comes back up, where Firefox presses it regardless.
+    expect(fireEvent.keyUp(flipped, { key: " " })).toBe(false);
+
+    // A menu the same, and the page's own link.
+    screen.getByLabelText("zoom").focus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(false);
+    screen.getByTitle("Back to Studio's library").focus();
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+
+    // A phrase is picked with Enter; Space on it is still the transport's.
+    const chorus = within(lanes).getByRole("button", { name: "select Chorus, bars 41 to 56" });
+    fireEvent.keyDown(chorus, { key: " " });
+    expect(playing()).toBe(false);
+    expect(screen.queryByRole("toolbar", { name: "section" })).toBeNull();
+    fireEvent.keyDown(chorus, { key: "Enter" });
+    expect(screen.getByRole("toolbar", { name: "section" })).toHaveTextContent("Chorus");
+
+    // Held down, it is one press.
+    fireEvent.keyDown(document.body, { key: " " });
+    fireEvent.keyDown(document.body, { key: " ", repeat: true });
+    expect(playing()).toBe(true);
+
+    // In a field that takes text it is a space, and the field's.
+    const address = within(lanes).getByLabelText("vj-opacity address");
+    await user.click(address);
+    await user.keyboard(" ");
+    expect(playing()).toBe(true);
+    expect(address).toHaveValue("/composition/layers/1/video/opacity ");
+    expect(fireEvent.keyUp(address, { key: " " })).toBe(true);
+    // ...and with Ctrl or Alt it is the browser's or the system's.
+    fireEvent.keyDown(document.body, { key: " ", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: " ", altKey: true });
+    expect(playing()).toBe(true);
   });
 
   it("flips a lane between filling gaps and owning the track", async () => {
@@ -1351,6 +1423,23 @@ describe("routine editor", () => {
     expect(within(lanes).getByLabelText("p role")).toHaveValue("pins");
     expect(screen.queryByRole("button", { name: "fills gaps" })).toBeNull();
     expect(screen.getByLabelText("position")).toHaveTextContent("bar 1.1 of 8");
+  });
+
+  it("plays its loop on Space from a focused button, but not from the tempo box", async () => {
+    const user = userEvent.setup();
+    await open("#studio/routine/fan-drop");
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    // On a block's button Space plays, and adds no block.
+    screen.getByRole("button", { name: "pulse" }).focus();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("pulse at bar 1.1")).toBeNull();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    // A number is typed, so its box keeps the key.
+    screen.getByLabelText("tempo").focus();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
 
   it("edits a block's arguments -- a value or a parameter -- and saves with the rev", async () => {
@@ -1415,7 +1504,7 @@ describe("routine editor", () => {
     const user = userEvent.setup();
     const socket = await open("#studio/routine/fan-drop");
     const lanes = await screen.findByRole("region", { name: "lanes" });
-    // a second colour lane, for the pinspots: the shelf only reaches the first
+    // a second color lane, for the pinspots: the shelf only reaches the first
     await user.selectOptions(within(lanes).getByLabelText("add lane"), "color");
     await user.selectOptions(within(lanes).getByLabelText("color role"), "pins");
     const lane = within(lanes).getByLabelText("lane color");
@@ -1424,7 +1513,7 @@ describe("routine editor", () => {
     fireEvent.click(lane, { clientX: 8 * 16, clientY: 20 });          // bar 3
     let menu = screen.getByRole("menu", { name: "add to color" });
     expect(menu).toHaveTextContent("Add at bar 3.1, for pins");
-    // the colour blocks, and the rig's own; no movement or level blocks
+    // the color blocks, and the rig's own; no movement or level blocks
     expect(within(menu).getByRole("menuitem", { name: "solid" })).toHaveFocus();
     expect(within(menu).getByRole("menuitem", { name: /look/ })).toBeInTheDocument();
     expect(within(menu).queryByRole("menuitem", { name: "orbit" })).toBeNull();
@@ -1509,14 +1598,14 @@ describe("routine editor", () => {
     expect(within(width).getByLabelText("point at bar 5.1: 120")).toBeInTheDocument();
     fireEvent.change(within(inspector).getByLabelText("point value"), { target: { value: "90" } });
 
-    // a colour parameter's lane takes colours, picked in the inspector
+    // a color parameter's lane takes colors, picked in the inspector
     await user.selectOptions(menu, "param.color");
-    const colour = within(lanes).getByLabelText("automation param.color");
-    fireEvent.click(colour, { clientX: 8 * 16, clientY: 20 });
-    expect(within(colour).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
-    await user.click(within(screen.getByRole("group", { name: "point colour" }))
+    const color = within(lanes).getByLabelText("automation param.color");
+    fireEvent.click(color, { clientX: 8 * 16, clientY: 20 });
+    expect(within(color).getByLabelText("point at bar 3.1: @primary")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "point color" }))
       .getByRole("button", { name: "accent" }));
-    expect(within(colour).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
+    expect(within(color).getByLabelText("point at bar 3.1: @accent")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Save" }));
     const { doc } = reply(socket, "routine_save", true, { rev: "r:f" }) as unknown as Saved;
@@ -1966,7 +2055,7 @@ describe("timeline editing", () => {
     drop("lane scene", { kind: "routine", id: "idle-orbit" }, 6 * 96);
     expect(within(lanes).getByLabelText("idle-orbit at bar 25.1")).toBeInTheDocument();
     drop("lane palette", { kind: "routine", id: "idle-orbit" }, 6 * 96);
-    expect(screen.getByText("A routine goes on a scene, movement, colour or level lane."))
+    expect(screen.getByText("A routine goes on a scene, movement, color or level lane."))
       .toBeInTheDocument();
     // A drag can come from another window: what is not something to place is ignored.
     const scene = within(lanes).getByLabelText("lane scene");
@@ -1994,7 +2083,7 @@ describe("timeline editing", () => {
     expect(row("Cool")).toHaveTextContent("only here");
     fireEvent.input(within(side).getByLabelText("Hot primary"), { target: { value: "#00ff00" } });
     expect(row("Hot")).toHaveTextContent("differs from library");
-    await user.click(within(side).getByRole("button", { name: "use the library's colours for Hot" }));
+    await user.click(within(side).getByRole("button", { name: "use the library's colors for Hot" }));
     expect(within(side).getByLabelText("Hot primary")).toHaveValue("#ff2d6f");
     expect(row("Hot")).toHaveTextContent("copy of library");
   });
@@ -2358,14 +2447,14 @@ describe("palette library", () => {
     expect(found).toHaveTextContent(/Cool.*Club \(set\)/);
   });
 
-  it("gives the copies that differ the library's colours, and only those", async () => {
+  it("gives the copies that differ the library's colors, and only those", async () => {
     const { user, socket } = await library();
     // It says whose palette this is: the library's, not any track's.
     expect(within(aside()).getByText("Library palette")).toBeInTheDocument();
-    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colours" }));
+    await user.click(within(aside()).getByRole("button", { name: "Give 1 copy the library's colors" }));
     const sent = reply(socket, "palette_sync", true, { written: ["timelines/synth-128.json"] });
     expect(sent).toMatchObject({ palette: "hot", files: ["timelines/synth-128.json"] });
-    expect(await screen.findByText("Gave 1 copy of Hot the library's colours.")).toBeInTheDocument();
+    expect(await screen.findByText("Gave 1 copy of Hot the library's colors.")).toBeInTheDocument();
   });
 
   it("saves an edit with the rev it read, and copies wait for the save", async () => {
@@ -2381,7 +2470,7 @@ describe("palette library", () => {
                                      primary: "#00ff00", secondary: "#ff8a00" });
   });
 
-  it("is not unsaved for a colour typed in capitals that is the one saved", async () => {
+  it("is not unsaved for a color typed in capitals that is the one saved", async () => {
     const { user } = await library();
     const hex = within(aside()).getByLabelText("primary hex");
     await user.clear(hex);

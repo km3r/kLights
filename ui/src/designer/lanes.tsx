@@ -66,7 +66,8 @@ export function Phrases({ track, x, width, picked, onPick }: {
                aria-label={onPick ? `select ${label}, bars ${barNo(start)} to ${barNo(end) - 1}` : undefined}
                onClick={() => onPick?.(start, end, label)}
                onKeyDown={(e) => {
-                 if (onPick && (e.key === "Enter" || e.key === " ")) {
+                 // Enter only: Space is the transport's, here as everywhere.
+                 if (onPick && e.key === "Enter") {
                    e.preventDefault();
                    onPick(start, end, label);
                  }
@@ -110,7 +111,7 @@ function storedWave(): { height: number; view: WaveView } {
 }
 
 /** The three bands as the lane stacks them: the highs on top, the bass at the
- *  bottom, in rekordbox's own three-band colours. */
+ *  bottom, in rekordbox's own three-band colors. */
 const BAND_STRIPS: { band: AudioBand; label: string; fill: string }[] = [
   { band: "high", label: "high", fill: "#e8edf5" },
   { band: "mid", label: "mid", fill: "#f59e0b" },
@@ -250,7 +251,7 @@ export function WaveLane({ wave, grid, duration, x, width }: {
 // -- the lanes ------------------------------------------------------------------
 
 const TARGET_LABEL: Record<string, string> = {
-  scene: "Scene", movement: "Movement", color: "Colour", level: "Level",
+  scene: "Scene", movement: "Movement", color: "Color", level: "Level",
   palette: "Palette",
 };
 
@@ -424,7 +425,7 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
   const spec = useLaneSpec(row);
   const audio = useContext(LaneAudio);
   const points = row.points ?? [];
-  // A colour lane has no number to show; it says the colour it last passed.
+  // A color lane has no number to show; it says the color it last passed.
   const now = spec.kind === "color"
     ? [...points].reverse().find((p) => p[0] <= beat)?.[1] ?? points[0]?.[1] ?? null
     : laneValue(row, beat, audio);

@@ -77,14 +77,14 @@ export interface Item {
   [key: string]: unknown;
 }
 
-/** A number, or a colour for a colour parameter's lane: a palette role, a
- *  hex colour, `[r, g, b]` from 0 to 1, or a colour look's name. */
+/** A number, or a color for a color parameter's lane: a palette role, a
+ *  hex color, `[r, g, b]` from 0 to 1, or a color look's name. */
 export type PointValue = number | string | number[];
 export type Point = [number, PointValue] | [number, PointValue, string];
 
 /** A musical shape added on top of an automation row's points (`waves.Wave`):
- *  `depth` times the shape over `bars`, or for a colour lane a swing `toward`
- *  a colour, `depth` (0-1) of the way. */
+ *  `depth` times the shape over `bars`, or for a color lane a swing `toward`
+ *  a color, `depth` (0-1) of the way. */
 export interface WaveSpec {
   shape: string;
   bars: number;
@@ -278,13 +278,13 @@ export interface PaletteDoc {
   [key: string]: unknown;
 }
 
-/** A timeline or set that carries a palette of a given name, and its colours there. */
+/** A timeline or set that carries a palette of a given name, and its colors there. */
 export interface PalettePlace {
   file: string;
   kind: "timeline" | "template_set";
   id: string;
   title?: string | null;
-  colours: Partial<Record<"primary" | "secondary" | "accent", string | null>>;
+  colors: Partial<Record<"primary" | "secondary" | "accent", string | null>>;
 }
 
 /** A line of `GET /api/palettes`: a library palette and its copies. */
@@ -325,7 +325,7 @@ export function pickFor(ts: Pick<TemplateSetDoc, "phrases">, label: string): Tem
   return ts.phrases[label] ?? ts.phrases[phraseFamily(label)] ?? ts.phrases["*"];
 }
 
-/** rekordbox's phrase colours, by family. */
+/** rekordbox's phrase colors, by family. */
 export const PHRASE_HUE: Record<string, string> = {
   Intro: "#3b82f6", Verse: "#14b8a6", Up: "#f59e0b", Chorus: "#ef4444",
   Down: "#8b5cf6", Bridge: "#ec4899", Outro: "#64748b",
@@ -435,11 +435,11 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
 /** The engine's rule for an id, which is also the file's name (showfiles.ID_RE). */
 export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-/** A new palette's colours, until they are changed. */
-export const NEW_COLOURS: Readonly<Record<"primary" | "secondary" | "accent", string>> =
+/** A new palette's colors, until they are changed. */
+export const NEW_COLORS: Readonly<Record<"primary" | "secondary" | "accent", string>> =
   { primary: "#ffffff", secondary: "#888888", accent: "#ff0000" };
 
-/** A palette colour as lower-case #rrggbb, compared the way the engine
+/** A palette color as lower-case #rrggbb, compared the way the engine
  *  compares copies (showfiles.hex_color): a hex string, or [r, g, b] of 0..1.
  *  Null for anything else. */
 export function hexColor(v: unknown): string | null {
@@ -905,7 +905,7 @@ export function clock(seconds: number): string {
 export interface Wave {
   /** Column heights 0..1. */
   heights: number[];
-  /** Per column [r, g, b] 0..1, when the analysis has colour. */
+  /** Per column [r, g, b] 0..1, when the analysis has color. */
   colors?: [number, number, number][];
   /** Columns per second, or null when the columns span the whole track. */
   rate: number | null;
@@ -913,7 +913,7 @@ export interface Wave {
    *  scale its format used: what a lane follows, and the lane's band view.
    *  Absent for the preview alone, which is too coarse for either. */
   bands?: Partial<Record<AudioBand, Uint8Array>>;
-  /** The bands are rekordbox's three-band analysis, not read off its colours. */
+  /** The bands are rekordbox's three-band analysis, not read off its colors. */
   exact?: boolean;
 }
 
@@ -957,9 +957,9 @@ function threeBands(doc: WaveformDoc): Wave["bands"] | null {
 
 /** rekordbox's waveforms, as the prep tool stored them: the 400-column
  *  preview (PWAV), the scrolling detail (PWV3: a byte per column, PWV5: two,
- *  with colour) and the three-band detail (PWV7). What is DRAWN is the detail;
+ *  with color) and the three-band detail (PWV7). What is DRAWN is the detail;
  *  the bands are what a lane follows -- the three-band analysis where the
- *  track has it, else the colour waveform's colours times its height (red is
+ *  track has it, else the color waveform's colors times its height (red is
  *  low, green mid, blue high), else the height alone. */
 export function decodeWave(doc: WaveformDoc): Wave | null {
   const exact = threeBands(doc);

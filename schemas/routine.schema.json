@@ -263,7 +263,7 @@
                   },
                   "depth": {
                     "type": "number",
-                    "description": "how far above the points it swings, in the lane's own units; negative swings below. On a colour lane, 0-1: how far toward `toward`"
+                    "description": "how far above the points it swings, in the lane's own units; negative swings below. On a color lane, 0-1: how far toward `toward`"
                   },
                   "phase": {
                     "type": "number",
@@ -276,7 +276,7 @@
                     "description": "which run of levels a hold wave picks"
                   },
                   "toward": {
-                    "description": "a colour lane's wave: the colour it swings toward"
+                    "description": "a color lane's wave: the color it swings toward"
                   }
                 },
                 "required": [

@@ -209,7 +209,7 @@ bool FKLightsParityColor::RunTest(const FString&)
 		const TSharedPtr<FJsonObject> Fixture = E->GetObjectField(TEXT("fixture"));
 		const KLights::FChannels Channels = ParseKLightsChannels(Fixture->GetObjectField(TEXT("channels")));
 		TArray<KLights::FColorSlot> Slots;
-		TestTrue(TEXT("colour slots parse"), ParseKLightsColorSlots(Fixture->GetArrayField(TEXT("color_slots")), Slots));
+		TestTrue(TEXT("color slots parse"), ParseKLightsColorSlots(Fixture->GetArrayField(TEXT("color_slots")), Slots));
 		for (const TSharedPtr<FJsonValue>& Case : E->GetArrayField(TEXT("cases")))
 		{
 			const TArray<TSharedPtr<FJsonValue>>& C = Case->AsArray();
@@ -237,9 +237,9 @@ bool FKLightsParityColor::RunTest(const FString&)
 			++Cases;
 		}
 	}
-	TestTrue(TEXT("the parity file has colour cases"), Cases > 1000);
+	TestTrue(TEXT("the parity file has color cases"), Cases > 1000);
 	TestEqual(TEXT("split / not split agrees in every case"), SplitWrong, 0);
-	Worst.Check(*this, TEXT("level and colour"), 1e-9);
+	Worst.Check(*this, TEXT("level and color"), 1e-9);
 	return true;
 }
 

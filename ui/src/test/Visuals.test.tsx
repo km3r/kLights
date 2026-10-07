@@ -88,7 +88,7 @@ function vis(items: Partial<VisualsState["items"][number]>[], extra: Partial<Vis
 }
 
 describe("visuals: a frame", () => {
-  it("paints each scene on, in the palette's colours", () => {
+  it("paints each scene on, in the palette's colors", () => {
     const { ctx, calls } = recorder();
     const live = { vis: vis([{ scene: "wash", params: { color: "@primary" } }]),
                    policy: ON, snapBeat: 160 };

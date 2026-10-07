@@ -61,14 +61,14 @@ try:
 except ParamError as exc:
     check("an unlisted choice is refused", "sine" in str(exc))
 
-colour = Param("tint", "Tint", (1.0, 0.0, 0.0), kind="color")
+color = Param("tint", "Tint", (1.0, 0.0, 0.0), kind="color")
 try:
-    colour.coerce([1.0, 0.0])
-    check("a two-component colour is refused", False, "accepted")
+    color.coerce([1.0, 0.0])
+    check("a two-component color is refused", False, "accepted")
 except ParamError as exc:
-    check("a two-component colour is refused", "r, g, b" in str(exc))
-check("a colour clamps each component",
-      colour.coerce([2.0, -1.0, 0.5]) == (1.0, 0.0, 0.5))
+    check("a two-component color is refused", "r, g, b" in str(exc))
+check("a color clamps each component",
+      color.coerce([2.0, -1.0, 0.5]) == (1.0, 0.0, 0.5))
 
 print("\n3. an integer parameter really is whole")
 count = Param("count", "Count", 4, kind="integer", min=1, max=16)

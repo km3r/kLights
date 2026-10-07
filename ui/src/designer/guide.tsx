@@ -34,8 +34,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             in the same step.</>,
           <>Open its timeline. Under <b>Draft from template</b>, pick a set. It
             fills the scene lane with one routine per phrase.</>,
-          <>Press <b>Play</b> or Space. If there's no audio, open the file from
-            this computer. It isn't uploaded.</>,
+          <>Press <b>Play</b> or Space. Space plays and pauses wherever you last
+            clicked, except in a text box. If there's no audio, open the file
+            from this computer. It isn't uploaded.</>,
           <>Drag a clip to move it, or drag its right edge to resize it. Clips
             snap to the <b>Snap</b> setting. Click one to edit it in the panel
             below.</>,
@@ -50,7 +51,7 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
         title: "Adding to it",
         notes: [
           <>Click an empty spot on any lane to choose what goes there: routines
-            and this rig's looks on a scene, movement, colour or level lane (and
+            and this rig's looks on a scene, movement, color or level lane (and
             presets, as snapshots, on a scene lane), palettes on the palette
             lane, hits on a hits lane, a cue on a cue lane.</>,
           <>Or click a routine in the <b>browser</b> on the left to place it at
@@ -158,11 +159,11 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <><b>+ automation</b> also lists each parameter, so it can change
             over the routine on its own lane. A lane overrides the clip's or
             variation's value. Look parameters can't be automated.</>,
-          <>It lists each block's number and colour arguments too, like{" "}
+          <>It lists each block's number and color arguments too, like{" "}
             <code>orbit.radius</code>, so one item can move without making a
             parameter. A lane on a cycle length makes the block jump: use a{" "}
             rate lane to change speed.</>,
-          <>A colour can be a palette role, a fixed colour or a parameter. Use
+          <>A color can be a palette role, a fixed color or a parameter. Use
             roles and the routine follows the track's palette.</>,
           <>Blocks under <b>This rig only</b> use this event's own looks or
             presets, so the routine only works here.</>,

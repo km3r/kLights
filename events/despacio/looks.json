@@ -569,7 +569,7 @@
       "bars": 32,
       "source": "Chaser 21",
       "notes": [
-        "4 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+        "4 color steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
       ]
     },
     {
@@ -1489,7 +1489,7 @@
       },
       "source": "Scene 56",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -1523,7 +1523,7 @@
       },
       "source": "Scene 57",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -1557,7 +1557,7 @@
       },
       "source": "Scene 58",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -1591,7 +1591,7 @@
       },
       "source": "Scene 59",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -1789,7 +1789,7 @@
       "bars": 16,
       "source": "Chaser 61",
       "notes": [
-        "4 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+        "4 color steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
       ]
     },
     {
@@ -2108,7 +2108,7 @@
       "source": "Chaser 72",
       "notes": [
         "4 level steps, 4500 ms each = 9.30 bars, snapped to 8",
-        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+        "applied as a MULTIPLIER, so it composes with whatever color and position are running rather than replacing them"
       ]
     },
     {
@@ -2220,7 +2220,7 @@
       "source": "Chaser 77",
       "notes": [
         "4 level steps, 4000 ms each = 8.27 bars, snapped to 8",
-        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+        "applied as a MULTIPLIER, so it composes with whatever color and position are running rather than replacing them"
       ]
     },
     {
@@ -2254,7 +2254,7 @@
       "source": "Chaser 220",
       "notes": [
         "2 level steps, 8000 ms each = 8.27 bars, snapped to 8",
-        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+        "applied as a MULTIPLIER, so it composes with whatever color and position are running rather than replacing them"
       ]
     },
     {
@@ -2773,7 +2773,7 @@
       "source": "Chaser 91",
       "notes": [
         "4 level steps, 4500 ms each = 9.30 bars, snapped to 8",
-        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+        "applied as a MULTIPLIER, so it composes with whatever color and position are running rather than replacing them"
       ]
     },
     {
@@ -3335,7 +3335,7 @@
       "source": "Chaser 102",
       "notes": [
         "2 level steps, 400 ms each = 0.41 bars, snapped to 0.5",
-        "applied as a MULTIPLIER, so it composes with whatever colour and position are running rather than replacing them"
+        "applied as a MULTIPLIER, so it composes with whatever color and position are running rather than replacing them"
       ]
     },
     {
@@ -3369,7 +3369,7 @@
       },
       "source": "Scene 103",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3403,7 +3403,7 @@
       },
       "source": "Scene 104",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3437,7 +3437,7 @@
       },
       "source": "Scene 105",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3499,7 +3499,7 @@
       },
       "source": "Scene 167",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3533,7 +3533,7 @@
       },
       "source": "Scene 168",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3567,7 +3567,7 @@
       },
       "source": "Scene 169",
       "notes": [
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3643,7 +3643,7 @@
       },
       "source": "Scene 208",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3678,7 +3678,7 @@
       },
       "source": "Scene 209",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3713,7 +3713,7 @@
       },
       "source": "Scene 210",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3748,7 +3748,7 @@
       },
       "source": "Scene 211",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3783,7 +3783,7 @@
       },
       "source": "Scene 212",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3818,7 +3818,7 @@
       },
       "source": "Scene 213",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3853,7 +3853,7 @@
       },
       "source": "Scene 214",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3888,7 +3888,7 @@
       },
       "source": "Scene 215",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -3923,7 +3923,7 @@
       },
       "source": "Scene 216",
       "notes": [
-        "per-fixture colour (4 distinct) -- a split, duo or quad"
+        "per-fixture color (4 distinct) -- a split, duo or quad"
       ]
     },
     {
@@ -4114,7 +4114,7 @@
       "bars": 16,
       "source": "Chaser 217",
       "notes": [
-        "8 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+        "8 color steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
       ]
     },
     {
@@ -4135,7 +4135,7 @@
       },
       "source": "Scene 108",
       "notes": [
-        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the color"
       ]
     },
     {
@@ -4156,7 +4156,7 @@
       },
       "source": "Scene 109",
       "notes": [
-        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the color"
       ]
     },
     {
@@ -4177,7 +4177,7 @@
       },
       "source": "Scene 110",
       "notes": [
-        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the color"
       ]
     },
     {
@@ -4240,7 +4240,7 @@
       },
       "source": "Scene 114",
       "notes": [
-        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the colour"
+        "white channel on Pinspot #1, Pinspot #2 -- these are RGBW, and the W is part of the color"
       ]
     },
     {
@@ -4333,7 +4333,7 @@
       "bars": 32,
       "source": "Chaser 115",
       "notes": [
-        "6 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+        "6 color steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
       ]
     },
     {
@@ -4672,7 +4672,7 @@
       "bars": 32,
       "source": "Chaser 143",
       "notes": [
-        "12 colour steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
+        "12 color steps; stepped, not interpolated -- a mechanical wheel has no in-between slots"
       ]
     },
     {
@@ -4699,8 +4699,8 @@
       },
       "source": "Scene 221",
       "notes": [
-        "white channel on Pinspot #1 -- these are RGBW, and the W is part of the colour",
-        "per-fixture colour (2 distinct) -- a split, duo or quad"
+        "white channel on Pinspot #1 -- these are RGBW, and the W is part of the color",
+        "per-fixture color (2 distinct) -- a split, duo or quad"
       ]
     },
     {

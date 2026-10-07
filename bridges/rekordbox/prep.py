@@ -255,7 +255,7 @@ def _waveform_note(root: Path, tid: str, waveform: dict) -> Optional[str]:
         return None
     if "bands" in waveform and "bands" not in stored:
         # Prepped before lanes could follow the audio: the same analysis, now
-        # with the three bands rekordbox measured rather than its colours.
+        # with the three bands rekordbox measured rather than its colors.
         return "waveform rewritten with rekordbox's three-band analysis"
     return "waveform changed in rekordbox; rewritten"
 
@@ -270,7 +270,7 @@ def blt_signature(title: str, artist: Optional[str], duration_s: Optional[float]
 
     beat-link 8's `SignatureFinder.computeTrackSignature`, byte for byte: SHA-1
     over the title in UTF-8, a zero byte, the artist (or "[no artist]" for a
-    track with none), a zero byte, the duration in whole seconds, the colour
+    track with none), a zero byte, the duration in whole seconds, the color
     detail waveform's entries (`PWV5`, which beat-link 8 always uses whatever
     style it displays), then each beat of the grid as its position in the bar
     and its time in milliseconds -- integers four bytes big-endian.
@@ -525,7 +525,7 @@ def prepare_db_track(t: masterdb.Track, coll: masterdb.Collection, db: str,
         notes.append("a streaming track: there is no file for the designer to play")
     signatures = blt_signatures(t.title, t.artist, t.duration_s, analysis)
     if not signatures:
-        notes.append("no colour waveform in its analysis, so no beat-link "
+        notes.append("no color waveform in its analysis, so no beat-link "
                      "signature: a CDJ playing it from a stick matches it by name")
     return Prepared(identity=identity, segments=segments, phrases=phrases,
                     cues=cues, audio=audio,

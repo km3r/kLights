@@ -14,11 +14,11 @@ nothing here needs a sound card.
 - `bands` (`PWV7`, the CDJ-3000's three-band waveform): a byte each for LOW,
   MID and HIGH per column, 0-127. The order was read off real files rather
   than the documentation, two ways that agree across a 6,455-track collection:
-  byte 0 follows the colour waveform's red times its height (r 0.82-0.91),
+  byte 0 follows the color waveform's red times its height (r 0.82-0.91),
   byte 1 its green, byte 2 its blue -- and byte 2 peaks between the beats,
   where the hi-hats are, while bytes 0 and 1 peak on them.
-- `detail` in `pwv5` (the colour waveform): one height and one colour per
-  column. Red, green and blue are low, mid and high, so a band is its colour
+- `detail` in `pwv5` (the color waveform): one height and one color per
+  column. Red, green and blue are low, mid and high, so a band is its color
   times the height -- an estimate, and `Levels.exact` says so.
 - `detail` in `pwv3` (the blue waveform): a height alone, so only the overall
   level, `all`.
@@ -60,7 +60,7 @@ class Levels:
     own peak when it is laid on the beats."""
     rate: float
     columns: Mapping[str, bytes]
-    exact: bool               # a real three-band analysis, not read off colours
+    exact: bool               # a real three-band analysis, not read off colors
 
 
 def _data(part: Any) -> Optional[bytes]:

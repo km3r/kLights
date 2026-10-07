@@ -152,8 +152,8 @@ class Wave:
     validator can bound the whole swing from the points alone, and an existing
     lane gains a wave without its resting values moving.
 
-    For a colour lane, `toward` is the colour it swings to and `depth` (0..1)
-    how far: at the top of the cycle the lane's colour is blended that far
+    For a color lane, `toward` is the color it swings to and `depth` (0..1)
+    how far: at the top of the cycle the lane's color is blended that far
     towards it.
     """
     shape: str

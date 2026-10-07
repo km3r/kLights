@@ -53,7 +53,7 @@ class Cue:
     # cue list does not fight an operator mid-set.
     macro: Optional[dict] = None
     # Per-slot chase rates, same rule as `macro`: absent leaves whatever is
-    # dialled in alone. A cue that wants the colours crawling while the movers
+    # dialled in alone. A cue that wants the colors crawling while the movers
     # run flat out says so here rather than needing a look stored at that rate.
     rates: Optional[dict] = None
     # Per-routine tuning, by look name: `{"Ball Orbit": {"radius_deg": 24}}`.

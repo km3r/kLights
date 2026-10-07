@@ -7,8 +7,8 @@ routine leaves open:
 
 - **params**: values for its open parameters. Lowest to highest: the
   parameter's default, then the use's `variation`, then the use's own
-  `params`. A colour parameter takes a palette role (`"@primary"`), a hex
-  colour, `[r, g, b]`, or a colour look's name. Above all three, per frame:
+  `params`. A color parameter takes a palette role (`"@primary"`), a hex
+  color, `[r, g, b]`, or a color look's name. Above all three, per frame:
   the routine's own `param.<name>` lane, read in its own beats, and above
   that the timeline's (`blocks.Env.param`). A routine's `arg.<item>.<arg>`
   lane moves one item's argument the same way, as a hidden parameter.

@@ -10,7 +10,7 @@ the 13 fixtures, but two runtime bits don't always come back wired up:
   2. The 24 fps "run_render" timer (pushes that buffer onto the fixtures).
 If #2 isn't registered, QLC+ packets arrive but NOTHING moves in the viewport.
 This script guarantees both, sets universe 0 to ARTNET, and switches the viewport
-to a shading mode where fixture colour/beams are actually visible.
+to a shading mode where fixture color/beams are actually visible.
 
 NOTE: it deliberately does NOT toggle Art-Net off→on in one go — rebinding the
 socket from a script blocks Blender's main thread and can crash it. If Art-Net is
@@ -55,7 +55,7 @@ def main():
         dmx.artnet_enabled = True
 
     # 5) Put every 3D viewport into a shading mode that shows the lights.
-    #    MATERIAL = fixture colours (fast).  RENDERED = colours + beams lighting the
+    #    MATERIAL = fixture colors (fast).  RENDERED = colors + beams lighting the
     #    scene (heavier).  Use RENDERED for the full look.
     SHADING = "MATERIAL"   # change to "RENDERED" to see beams
     vp = 0

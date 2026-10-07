@@ -289,7 +289,7 @@ class Runner:
 
         A show-evaluation bug must not take the rig down mid-set, so a failure
         re-sends the last good frame and is counted. The alternative -- letting
-        it propagate and stop the loop -- turns a wrong colour into a dead room.
+        it propagate and stop the loop -- turns a wrong color into a dead room.
         """
         if self._panic:
             return {u: self._blackout for u in self.ctx.rig.universes}

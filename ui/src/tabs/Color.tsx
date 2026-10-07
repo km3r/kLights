@@ -6,16 +6,16 @@ import { ModulationCard, TweakCard } from "../Params";
 import type { Command, EngineState, RGB } from "../types";
 
 /**
- * Colour: a global quick palette plus a per-fixture picker.
+ * Color: a global quick palette plus a per-fixture picker.
  *
  * Both were asked for, and they are the same command with a different target —
- * so a colour set here is an OVERRIDE layer, not a rewritten look. That is what
- * lets a colour picked by hand survive an auto-mode look change, which is the
+ * so a color set here is an OVERRIDE layer, not a rewritten look. That is what
+ * lets a color picked by hand survive an auto-mode look change, which is the
  * behaviour that makes "everyone controls everything" workable.
  *
- * The movers have a 14-slot mechanical wheel and no colour mixing, so the
- * engine snaps their colour to the nearest slot. The picker still shows the
- * exact colour you chose; the fixture card shows what it actually became.
+ * The movers have a 14-slot mechanical wheel and no color mixing, so the
+ * engine snaps their color to the nearest slot. The picker still shows the
+ * exact color you chose; the fixture card shows what it actually became.
  */
 export function ColorTab({ state, send }: {
   state: EngineState; send: (c: Command) => void;
@@ -34,7 +34,7 @@ export function ColorTab({ state, send }: {
 
   const applied = state.color_overrides[target];
   const appliedWhite = state.white_overrides[target];
-  // Opened by default when the current target IS a fixture, so a colour set on
+  // Opened by default when the current target IS a fixture, so a color set on
   // one head does not appear to have been forgotten after a reload.
   const single = !groups.includes(target);
 
@@ -64,8 +64,8 @@ export function ColorTab({ state, send }: {
 
   return (
     <>
-      <LookPicker state={state} send={send} slot="color" title="Colour look"
-                  empty="Nothing loaded — colour comes from the palette." />
+      <LookPicker state={state} send={send} slot="color" title="Color look"
+                  empty="Nothing loaded — color comes from the palette." />
 
       {/* The loaded routine's own knobs. Renders nothing when the slot
           holds only ported looks, which have no parameters to turn. */}
@@ -75,10 +75,10 @@ export function ColorTab({ state, send }: {
 
       <RateCard state={state} send={send} slot="color" hint={
         <>
-          How fast a colour chase steps, independently of the move underneath
-          it. A slow colour drift under a fast sweep is the combination the old
+          How fast a color chase steps, independently of the move underneath
+          it. A slow color drift under a fast sweep is the combination the old
           library needed a separately stored chase for. Only affects stepped
-          colour looks — a held colour has nothing to step.
+          color looks — a held color has nothing to step.
         </>
       } />
 
@@ -97,10 +97,10 @@ export function ColorTab({ state, send }: {
       {/* The long-press is the one gesture in the console with nothing on
           screen to suggest it exists, so it is the first thing the help says. */}
       <Card title="Quick palette" help={<>
-        <p>Tap a swatch to colour whatever's selected under <b>Applies to</b>.</p>
-        <p><b>Long-press</b> (or right-click) to set the palette's current colour
+        <p>Tap a swatch to color whatever's selected under <b>Applies to</b>.</p>
+        <p><b>Long-press</b> (or right-click) to set the palette's current color
           instead. Looks and auto rotation use that one; the dot marks it.</p>
-        <p><b>Clear</b> removes the hand-picked colour from the selected
+        <p><b>Clear</b> removes the hand-picked color from the selected
           target.</p>
       </>} right={
         // Present always, disabled with nothing overridden. Appearing the
@@ -117,7 +117,7 @@ export function ColorTab({ state, send }: {
                     className={state.palette_index === i ? "swatch on" : "swatch"}
                     style={{ background: rgbCss(c) }}
                     aria-label={`palette ${i}`}
-                    // Tap sets the target's colour; long-press makes it the
+                    // Tap sets the target's color; long-press makes it the
                     // palette's own current entry, which is what auto-rotation
                     // then advances from. `palette_select` had a handler since
                     // F7 and no sender, so the palette could only be advanced
@@ -133,7 +133,7 @@ export function ColorTab({ state, send }: {
         </div>
         <p className="small muted" style={{ marginBottom: 0 }}>
           Tap sets <b>{target}</b>. Auto palette rotation drives the look's own
-          colour; anything set here overrides it until cleared.
+          color; anything set here overrides it until cleared.
         </p>
       </Card>
 
@@ -155,7 +155,7 @@ export function ColorTab({ state, send }: {
                   }} />
                 </div>
                 <div className="small muted">
-                  {f.is_mover ? "colour wheel — snapped to nearest slot"
+                  {f.is_mover ? "color wheel — snapped to nearest slot"
                     : f.has_white ? "RGBW" : "RGB"}
                 </div>
               </div>

@@ -122,7 +122,7 @@ def _waveform(fmt: str, columns: int) -> dict:
 AUDIO_CASES = (
     ("three bands, with a pickup before the first downbeat", "pwv7", 330,
      [[0, 250.0, 128.0]]),
-    ("the colour waveform, through a tempo change", "pwv5", 300,
+    ("the color waveform, through a tempo change", "pwv5", 300,
      [[0, 0.0, 120.0], [2, 1000.0, 174.0]]),
     ("the blue waveform: the overall level alone", "pwv3", 240,
      [[-2, 0.0, 100.0]]),

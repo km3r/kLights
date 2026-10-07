@@ -18,7 +18,7 @@ are the lights at beat 161.5, however the deck got there.
 **Lanes and precedence** (decided with the user, F19g):
 
 - Each clips row drives one or more CHANNELS. Which ones is the caller's
-  business: for lights the scene lane drives movement, colour and level at
+  business: for lights the scene lane drives movement, color and level at
   once (`showfiles.timeline_channels`).
 - **The higher lane wins.** For a channel, the rows that drive it are asked
   top to bottom, scene lanes included; the first with something there wins.
@@ -309,7 +309,7 @@ def _shape_area(curve: str, x: float) -> float:
 class Curve:
     """Automation: values at beats, shaped between them, plus an optional wave
     (`waves.Wave`) and an optional band of the track's audio (`bands.Follow`)
-    on top. Values are numbers, or anything else (a colour) for `segment` and
+    on top. Values are numbers, or anything else (a color) for `segment` and
     `pull` alone."""
     beats: tuple[float, ...]
     values: tuple[Any, ...]
@@ -360,7 +360,7 @@ class Curve:
 
     def segment(self, beat: float) -> tuple[Any, Any, float]:
         """(from, to, t): the value is `from` blended towards `to` by `t`,
-        already shaped. For a colour the caller blends; for a number `value`
+        already shaped. For a color the caller blends; for a number `value`
         does it."""
         i = bisect.bisect_right(self.beats, beat)
         if i == 0:
@@ -382,7 +382,7 @@ class Curve:
         return base
 
     def pull(self, beat: float) -> Optional[tuple[Any, float]]:
-        """A colour curve's wave at `beat`: (the colour it swings toward, how
+        """A color curve's wave at `beat`: (the color it swings toward, how
         far, 0..1), or None without one. The caller blends, as for `segment`."""
         if self.wave is None or self.numeric:
             return None
@@ -634,7 +634,7 @@ class Timeline:
 
         `channel()` stops at the first opaque clip, which is the whole answer
         when a clip covers the whole channel. A caller whose clips cover only
-        PART of it -- the lights, where a routine may drive the movers' colour
+        PART of it -- the lights, where a routine may drive the movers' color
         and not the pinspots' -- needs the rows underneath too, for whatever
         the top one leaves uncovered. This is that list."""
         out: list[Entry] = []
@@ -671,7 +671,7 @@ class Timeline:
 
     def automation(self, target: str, beat: float) -> Any:
         """The value of an automated target, None if nothing automates it: a
-        number, or for a colour (from, to, t) -- and, when a wave swings it,
+        number, or for a color (from, to, t) -- and, when a wave swings it,
         (toward, pull) after those, so an explanation shows the whole value."""
         entry = self.curves.get(target)
         if entry is None:
@@ -743,8 +743,11 @@ class Timeline:
         auto = {}
         for target, value in frame.automation.items():
             if isinstance(value, tuple):
-                a, b, t = value
+                a, b, t = value[:3]
                 auto[target] = {"from": a, "to": b, "t": round(t, 3)}
+                if len(value) > 3:               # a wave swings it
+                    toward, pull = value[3:]
+                    auto[target].update(toward=toward, pull=round(pull, 3))
             else:
                 auto[target] = round(value, 4)
         out = {"beat": beat,

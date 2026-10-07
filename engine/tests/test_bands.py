@@ -65,7 +65,7 @@ check("the three-band waveform is low, mid, high per column",
 check("and the overall level is the loudest of the three",
       lv.columns["all"] == bytes([30, 127, 64]))
 lv = bands.decode(pwv5([(7, 1, 0, 31), (0, 3, 7, 10), (2, 2, 2, 0)]))
-check("the colour waveform gives a band as its colour times the height: red "
+check("the color waveform gives a band as its color times the height: red "
       "is low, green mid, blue high",
       lv is not None and lv.columns["low"] == bytes([7 * 31, 0, 0])
       and lv.columns["mid"] == bytes([31, 30, 0])
@@ -73,7 +73,7 @@ check("the colour waveform gives a band as its colour times the height: red "
 check("its overall level is the height, and it says the bands are an estimate",
       lv.columns["all"] == bytes([31, 10, 0]) and not lv.exact)
 both = {**pwv5([(7, 0, 0, 31)]), **pwv7([(1, 2, 3)])}
-check("the three-band analysis wins over the colours when a file has both",
+check("the three-band analysis wins over the colors when a file has both",
       bands.decode(both).columns["low"] == bytes([1]) and bands.decode(both).exact)
 lv = bands.decode({"detail": {"format": "pwv3", "rate": 150,
                               "data": b64(bytes([0xE0 | 31, 5, 0]))}})

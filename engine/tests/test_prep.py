@@ -161,7 +161,7 @@ check("the phrase end and the lighting bank are read",
 check("named cues from PCO2 replace PCOB's",
       [(c.hot, c.name, c.loop) for c in a.cues] == [(1, "drop!", False), (0, "", True)],
       f"{a.cues}")
-check("the colourless detail waveform is kept", a.detail_format == "pwv3"
+check("the colorless detail waveform is kept", a.detail_format == "pwv3"
       and len(a.detail) == 1024)
 
 BANDS = [(100, 20, 5), (0, 64, 127), (50, 50, 50)] * 40
