@@ -14,7 +14,7 @@ test.use({
   // The example track has no waveform and no audio, Studio asks for both,
   // and 404 is the engine's documented "not in the show folder" -- which
   // Studio shows as "No waveform" and an offer to open a file.
-  allowedFailures: [/\/api\/(waveforms|audio)\/synth-128\?/],
+  allowedFailures: /\/api\/(waveforms|audio)\/synth-128\?/,
 });
 
 async function openTimeline(page: Page, url: string): Promise<void> {

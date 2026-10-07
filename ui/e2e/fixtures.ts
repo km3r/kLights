@@ -12,11 +12,14 @@ import { ArtNet, Engine, type EngineOptions } from "./engine";
 type Fixtures = {
   /** How this test's engine runs; set with `test.use({ engineOptions })`. */
   engineOptions: EngineOptions;
-  /** Console errors this test expects (a reconnect test sees the socket fail). */
-  allowedErrors: RegExp[];
+  /** Console errors this test expects (a reconnect test sees the socket fail).
+   *  One RegExp, alternatives joined with |, never an array: Playwright reads
+   *  `[regexA, regexB]` in test.use as its [value, options] tuple, because the
+   *  second element is an object, and the option silently became regexA. */
+  allowedErrors: RegExp | null;
   /** URLs this test expects to fail (Studio asks for a waveform a track may
    *  not have). Any other 4xx or 5xx fails the test, named by its URL. */
-  allowedFailures: RegExp[];
+  allowedFailures: RegExp | null;
   /** Whether the first-visit welcome card has already been answered. */
   welcomed: boolean;
   artnet: ArtNet;
@@ -27,8 +30,8 @@ type Fixtures = {
 
 export const test = base.extend<Fixtures>({
   engineOptions: [{}, { option: true }],
-  allowedErrors: [[], { option: true }],
-  allowedFailures: [[], { option: true }],
+  allowedErrors: [null, { option: true }],
+  allowedFailures: [null, { option: true }],
   welcomed: [true, { option: true }],
 
   artnet: async ({}, use) => {
@@ -70,10 +73,10 @@ export const test = base.extend<Fixtures>({
       // The browser's own line for a failed request does not name the URL;
       // the response listener below does, so it reports those instead.
       if (m.type() !== "error" || text.startsWith("Failed to load resource")) return;
-      if (!allowedErrors.some((re) => re.test(text))) errors.push(`console.error: ${text}`);
+      if (!allowedErrors?.test(text)) errors.push(`console.error: ${text}`);
     });
     page.on("response", (r) => {
-      if (r.status() >= 400 && !allowedFailures.some((re) => re.test(r.url()))) {
+      if (r.status() >= 400 && !allowedFailures?.test(r.url())) {
         errors.push(`HTTP ${r.status()} ${r.url()}`);
       }
     });

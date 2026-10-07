@@ -4,10 +4,18 @@
  * receives. The unit suites check each half; this checks that the halves
  * still meet.
  */
+import type { Page } from "@playwright/test";
 import { DESPACIO, at, moverDimmers, pinspotRgbw } from "./engine";
 import { expect, test } from "./fixtures";
 
 const lit = (dmx: Uint8Array) => moverDimmers(dmx).every((v) => v > 0);
+
+/** The banner that means the engine itself went wrong. Checked by name rather
+ *  than by "no banners at all": a slow machine legitimately shows "N dropped
+ *  frame(s) -- the machine is struggling", and a cold CI runner is one. */
+async function expectNoShowError(page: Page): Promise<void> {
+  await expect(page.getByText("A show error occurred")).toHaveCount(0);
+}
 const dark = (dmx: Uint8Array) =>
   moverDimmers(dmx).every((v) => v === 0) && pinspotRgbw(dmx).flat().every((v) => v === 0);
 
@@ -42,7 +50,8 @@ test("Blackout takes every light to zero on the wire, and lets go where the show
 
     await page.getByRole("button", { name: "Blackout ON" }).click();
     await artnet.waitFor("every mover lit again", lit);
-    await expect(page.locator(".banners")).toHaveCount(0);
+    await expect(page.getByText("Blackout — master is at zero")).toHaveCount(0);
+    await expectNoShowError(page);
   });
 
 test("the Master fader scales what the rig receives", async ({ page, artnet, openConsole }) => {
@@ -194,7 +203,7 @@ test("without the token a console watches but cannot touch, and says so", async 
 test.describe("when the engine restarts", () => {
   // The browser logs the socket failing while the engine is down; that is the
   // event under test, not a fault in the console.
-  test.use({ allowedErrors: [/WebSocket/i, /ERR_CONNECTION_REFUSED/i] });
+  test.use({ allowedErrors: /WebSocket|ERR_CONNECTION_REFUSED/i });
 
   test("a connected console says the rig is holding, then picks the show back up by itself",
     async ({ page, engine, artnet, openConsole }) => {
@@ -208,7 +217,8 @@ test.describe("when the engine restarts", () => {
       await engine.restart();
       await artnet.waitFor("the restarted engine lighting the rig", lit);
       await expect(page.locator(".status-dot.open")).toBeVisible({ timeout: 10_000 });
-      await expect(page.locator(".banners")).toHaveCount(0);
+      await expect(page.getByText(/^Disconnected/)).toHaveCount(0);
+      await expectNoShowError(page);
       // Not a stale page: it drives the new engine.
       await page.getByRole("button", { name: "Blackout", exact: true }).click();
       await artnet.waitFor("the new engine's rig blacked out", dark);
