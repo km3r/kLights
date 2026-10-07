@@ -25,10 +25,13 @@ async function openTimeline(page: Page, url: string): Promise<void> {
   await expect(page.getByRole("region", { name: "lanes" })).toBeVisible();
   // The engine's verdict on the timeline as loaded: only a connected page
   // gets one. Loading the editor can hold a slow machine's page for over a
-  // second, and the engine drops a page that far behind its snapshots as one
-  // that stopped reading. The page reconnects by itself, but a Save or a
-  // Drive the rig pressed in that gap is refused as "not connected to the
-  // engine" -- which is what a test that pressed on at once ran into on CI.
+  // second, and the engine used to drop a page that far behind its snapshots
+  // as one that stopped reading. The page reconnected by itself, but a Save
+  // or a Drive the rig pressed in that gap was refused as "not connected to
+  // the engine" -- which is what a test that pressed on at once ran into on
+  // CI. A page that is only behind is no longer dropped (SEND_DEADLINE_S in
+  // engine/server.py); the wait stays, so each test starts from a timeline
+  // the engine has answered for.
   await expect(page.getByRole("button", { name: "valid" })).toBeVisible({ timeout: 15_000 });
 }
 

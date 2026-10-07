@@ -1946,10 +1946,224 @@ try:
           reply.split("\r\n")[0])
     hostile.close()
 
-    # The stall this section accidentally found. One client that stops reading
-    # used to block ws.send on the single broadcast thread, freezing the console
-    # for everyone else -- at a venue that reads as the engine hanging, and the
-    # cause (a phone that locked its screen) is nowhere near the symptom.
+    # -- 12b. behind is not gone ----------------------------------------------
+    #
+    # Two clients that look the same for the first second and must be treated
+    # differently. One is a browser whose main thread is busy -- loading
+    # Studio's editor, a long layout -- which reads nothing for a second or two
+    # and then reads everything. The other is a phone that locked its screen.
+    # The engine used to tell them apart by counting: three unread snapshots
+    # and the client was dropped. That dropped the busy browser too, and with
+    # it a Save pressed just then and a rig it was driving.
+    print("\n12b. a client that is behind, and one that has stopped reading")
+
+    # First on the sender alone, where it can be exact: nothing here depends on
+    # how much a kernel buffers. A socket pair with small buffers, and nobody
+    # reading the other end.
+    class Unread(Client):
+        """The far end of a `Connection`, read only when the test says."""
+
+        def __init__(self):
+            ours, self.sock = socket.socketpair()
+            for s in (ours, self.sock):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+            self.sock.settimeout(5)
+            self.buf = b""
+            self.conn = servermod.Connection(wsmod.WebSocket(ours))
+            self.sent = 0
+
+        def snapshot(self, n: int) -> str:
+            return json.dumps({"type": "state", "n": n, "pad": "x" * 60000})
+
+        def park(self) -> bool:
+            """Offer snapshots until the sender is stuck inside one."""
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                if self.conn.stuck_for(time.monotonic()) >= 0.2:
+                    return True
+                self.conn.offer_snapshot(self.snapshot(self.sent))
+                self.sent += 1
+                time.sleep(0.02)
+            return False
+
+    far = Unread()
+    check("unread, a client's sender ends up parked in its socket", far.park())
+    first = far.sent
+    burst = []                                  # what a plain queue would send
+    payloads = []
+    for i in range(40):
+        payloads.append(("state", far.snapshot(first + i)))
+        burst.append(("state", first + i))
+        if i in (5, 20, 39):
+            payloads.append(("reply", json.dumps({"type": "reply", "id": f"r{i}"})))
+            burst.append(("reply", f"r{i}"))
+    started = time.perf_counter()
+    for kind, text in payloads:
+        (far.conn.offer_snapshot if kind == "state" else far.conn.offer_reply)(text)
+    took = time.perf_counter() - started
+    check("handing a parked client 40 snapshots and 3 replies waits for nothing",
+          took < 0.25, f"{took * 1000:.1f} ms")
+    now = time.monotonic()
+    check("it is behind, and that alone is no reason to drop it",
+          far.conn.given_up(now) is None, f"{far.conn.given_up(now)}")
+    check("at the deadline it is, in the notice's words",
+          far.conn.given_up(now + servermod.SEND_DEADLINE_S)
+          == "5 seconds behind and not reading",
+          f"{far.conn.given_up(now + servermod.SEND_DEADLINE_S)}")
+
+    # Now it reads. Everything from before the burst is already in the socket;
+    # after it, the queue's own order with the superseded snapshots left out.
+    got = []
+    try:
+        while ("reply", "r39") not in got:
+            m = far.recv()
+            got.append((m["type"], m["n"] if m["type"] == "state" else m["id"]))
+    except (OSError, ConnectionError) as exc:
+        got.append(("error", repr(exc)))
+    tail = [g for g in got if g[0] != "state" or g[1] >= first]
+    last = first + 39
+    check("every reply arrives, once, in the order it was made",
+          [v for k, v in got if k == "reply"] == ["r5", "r20", "r39"], f"{tail}")
+    check("one snapshot of the 40 is sent: the newest",
+          [v for k, v in tail if k == "state"] == [last], f"{tail}")
+    check("and each reply keeps its place around it",
+          tail == [("reply", "r5"), ("reply", "r20"), ("state", last),
+                   ("reply", "r39")], f"{tail}")
+    check("which is the order they were handed over in, with snapshots left out",
+          [g for g in burst if g in tail] == tail)
+    time.sleep(0.1)
+    check("read, its sender is idle again",
+          far.conn.stuck_for(time.monotonic()) == 0.0
+          and far.conn.given_up(time.monotonic()) is None)
+
+    # Replies are kept, but not without limit: a client that sends commands and
+    # reads no answers must not be able to grow the engine.
+    check("parked again", far.park())
+    for i in range(servermod.REPLY_BACKLOG):
+        far.conn.offer_reply(json.dumps({"type": "reply", "id": i}))
+    check("a full backlog of replies is still only behind",
+          far.conn.given_up(time.monotonic()) is None)
+    far.conn.offer_reply(json.dumps({"type": "reply", "id": "one too many"}))
+    check("one past it is not reading",
+          far.conn.given_up(time.monotonic())
+          == f"{servermod.REPLY_BACKLOG} replies behind and not reading",
+          f"{far.conn.given_up(time.monotonic())}")
+    ids = []
+    try:
+        while len(ids) < servermod.REPLY_BACKLOG:
+            m = far.recv()
+            if m["type"] == "reply":
+                ids.append(m["id"])
+    except (OSError, ConnectionError):
+        pass
+    check("and none of the ones it kept was lost",
+          ids == list(range(servermod.REPLY_BACKLOG)), f"{len(ids)} arrived")
+
+    # Closing a parked one is the case `Connection.close` was written for.
+    check("parked a third time", far.park())
+    started = time.perf_counter()
+    far.conn.close()
+    took = time.perf_counter() - started
+    far.conn.thread.join(2.0)
+    check("closing a parked client does not wait on it", took < 1.0, f"{took:.2f}s")
+    check("and ends its sender", not far.conn.thread.is_alive())
+    far.close()
+    quiet = Unread()
+    quiet.conn.close()
+    quiet.conn.thread.join(2.0)
+    check("as it ends one with nothing to send", not quiet.conn.thread.is_alive())
+    quiet.close()
+
+    # And through the real server. This is the browser that was busy: it stops
+    # reading for two seconds, sends a command of its own meanwhile, and then
+    # reads again.
+    #
+    # It has to be genuinely backed up for this to test anything. Linux would
+    # absorb two seconds of snapshots in the server's send buffer and the client
+    # would never be behind at all, so that buffer is made small from this side
+    # -- and the check below that the sender really was parked is what stops
+    # this passing on a platform where that did not work.
+    busy = Client(guarded_port, path="/ws?token=secret123")
+    busy_id = busy.recv()["id"]
+    busy.recv()
+    busy_conn = guarded_server.sockets[busy_id]
+    busy_conn.ws.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192)
+    busy.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
+    live = Client(guarded_port, path="/ws?token=secret123")
+    live.recv()
+
+    STALL_S = 2.0
+    todo = [(0.5, lambda: busy.send({"type": "master", "value": 0.31,
+                                     "id": "while-behind"})),
+            (1.5, lambda: live.send({"type": "master", "value": 0.77}))]
+    arrivals = []                       # every snapshot `live` gets meanwhile
+    started = time.perf_counter()
+    while (at := time.perf_counter() - started) < STALL_S:
+        while todo and at >= todo[0][0]:
+            todo.pop(0)[1]()
+        if live.recv().get("type") == "state":
+            arrivals.append(time.perf_counter())
+    parked = busy_conn.stuck_for(time.monotonic())
+    check("two seconds unread parks its sender for longer than the old rule gave it",
+          parked > 1.0, f"parked for {parked:.2f}s")
+    check("and it is still connected", busy_id in guarded_server.sockets
+          and busy_id in guarded.clients)
+    # A broadcast waiting on this client would show as one gap the length of
+    # the stall; a second is far above a slow runner's jitter and below that.
+    gaps = [b - a for a, b in zip(arrivals, arrivals[1:])]
+    check("the broadcast to another client did not pause for it",
+          len(arrivals) >= 10 and max(gaps) < 1.0,
+          f"{len(arrivals)} snapshots, longest gap {max(gaps, default=9) * 1000:.0f} ms")
+
+    replies, stale, current = [], 0, None
+    try:
+        deadline = time.time() + 10.0
+        while current is None and time.time() < deadline:
+            m = busy.recv()
+            if m.get("type") == "reply":
+                replies.append(m)
+            elif m.get("type") == "state":
+                if abs(m["master"] - 0.77) < 1e-6:
+                    current = m
+                else:
+                    stale += 1
+        failure = None
+    except (OSError, ConnectionError) as exc:
+        failure = repr(exc)
+    check("reading again, it was not dropped", failure is None, f"{failure}")
+    check("the reply made while it was behind arrives, once, and first",
+          [(r["id"], r["ok"]) for r in replies] == [("while-behind", True)],
+          f"{replies}")
+    # What it reads first is what the kernel already held when it stopped --
+    # a few snapshots, how many is the platform's business -- and then the
+    # state as it is now, not the twenty that were broadcast while it was away.
+    check("it catches up in a frame, not by replaying what it missed",
+          current is not None and stale < len(arrivals) // 2,
+          f"{stale} stale snapshots first, of {len(arrivals)} broadcast")
+    check("and nobody was told it had been dropped", current is not None
+          and not any("dropped" in n for n in current["notices"])
+          and any(c["id"] == busy_id for c in current["presence"]),
+          f"{current['notices'] if current else None}")
+    busy.send({"type": "master", "value": 0.25, "id": "after"})
+    try:
+        after = None
+        while after is None:
+            m = busy.recv()
+            if m.get("type") == "reply" and m.get("id") == "after":
+                after = m
+    except (OSError, ConnectionError) as exc:
+        after = {"ok": False, "error": repr(exc)}
+    check("on the same socket, which still works", after.get("ok") is True,
+          f"{after}")
+    busy.close()
+    live.close()
+
+    # The one that has stopped reading, which is the stall this section found by
+    # accident. A client that stops reading used to block ws.send on the single
+    # broadcast thread, freezing the console for everyone else -- at a venue
+    # that reads as the engine hanging, and the cause (a phone that locked its
+    # screen) is nowhere near the symptom.
     # The idle client has to be genuinely backed up for this to test anything:
     # one 30 kB snapshot fits in a TCP window, so it takes a couple of seconds
     # of unread broadcasts before a send would actually have blocked. Without
@@ -1957,6 +2171,7 @@ try:
     # kind of test that is worse than none.
     idle = Client(guarded_port, path="/ws")
     idle.recv()                        # welcome, then never read again
+    idle_since = time.time()
     idle.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2048)
     time.sleep(2.5)                    # ~25 unread snapshots
 
@@ -1971,23 +2186,28 @@ try:
 
     # The drop is NOT on the same clock as the stall, and sampling one snapshot
     # at a fixed moment made this check mean different things on different
-    # platforms. The queue only fills once the kernel stops absorbing writes,
-    # and the buffer that has to fill first is the SERVER's send buffer, which
-    # Linux auto-tunes into the megabytes -- so the same stuck client is dropped
-    # in well under a second on Windows and around seven seconds on Linux. The
-    # guarantee is that it is dropped and said so, not that it happens inside
-    # the window the stall check happens to use, so wait for it.
+    # platforms. The deadline only starts once the kernel stops absorbing
+    # writes, and the buffer that has to fill first is the SERVER's send buffer,
+    # which Linux auto-tunes into the megabytes -- so the same stuck client is
+    # parked in well under a second on Windows and after around seven on Linux,
+    # and dropped SEND_DEADLINE_S after that. The guarantee is that it is
+    # dropped and said so, not that it happens inside the window the stall
+    # check happens to use, so wait for it.
     try:
         seen = live.wait_for(
             lambda s: len(s["presence"]) <= 1
             or any("not reading" in n for n in s["notices"]),
-            timeout=30.0)
-        dropped, why = True, f"dropped after {time.time() - started:.1f}s"
+            timeout=45.0)
+        dropped, why = True, f"dropped after {time.time() - idle_since:.1f}s"
     except AssertionError:
-        dropped, why = False, "still present after 30s"
-    check("and the stuck one was dropped, with a reason", dropped,
+        dropped, why = False, "still present after 45s"
+    lasted = time.time() - idle_since
+    check("and the stuck one was dropped, with a reason", dropped
+          and any("seconds behind and not reading" in n for n in seen["notices"]),
           f"{why}; presence={len(seen['presence'])}, "
           f"notices={seen['notices'][-1:]}")
+    check("on the deadline, not on a count of snapshots",
+          dropped and lasted >= servermod.SEND_DEADLINE_S, f"{why}")
     idle.close()
     live.close()
 finally:
