@@ -80,7 +80,17 @@ the commit messages keep those labels.
 - The projector's flash guard looped forever on an infinite rate, and a rig
   group tagged `constructor` or `toString` was labelled with a function.
 - A string argument on the DJ bridge's `/beat/subdiv/<n>` raised out of the
-  parser instead of being ignored.
+  parser instead of being ignored. The bridge's absolute `beat` was unbounded,
+  so one datagram of 1e17 froze the musical clock; it is now bounded like
+  `beat_number`.
+- `venue.json` with `"taper": null` or `"strobe": null` stopped the engine
+  starting, although the validator had accepted it.
+- NaN, Infinity and 1e999 in a console command (Python's JSON reader accepts
+  them; no browser sends them) are now refused as the message is read, for
+  every command at once.
+- A cue's `speed` must be within the clock's 1/64× to 64×, checked when
+  `cues.json` loads. A preset's speed and master are checked before it changes
+  anything.
 
 ### Changed — Studio's right-hand panels say each thing once
 
