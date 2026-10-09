@@ -56,8 +56,12 @@ EASINGS = {"linear": motion.linear, "ease_in_out": motion.ease_in_out,
 KIND_FOR_SLOT = {"movement": "path", "color": "color_path",
                  "level": "level_path"}
 # Except a block that holds still: an `offset` is a place, so it files under
-# "Positions" with the poses it replaces rather than under "Moves".
-KIND_FOR_BLOCK = {"offset": "pose"}
+# "Positions" with the poses it replaces rather than under "Moves" -- and a
+# `solid` is a color and a `dim` a level, not chases of either. It matters most
+# for a stored look remade as its block (`lookstore.block_version`): the new
+# look belongs under the heading the original was found under.
+KIND_FOR_BLOCK = {"offset": "pose", "solid": "color", "dim": "intensity",
+                  "strobe": "intensity"}
 
 
 @dataclass(frozen=True)
@@ -132,9 +136,19 @@ class LibraryEntry:
     # entry staying in it. This only says the operator has something better.
     retired: bool = False
     replaced_by: Optional[str] = None
+    # Why it was hidden, from the `retired` list. Apart from `notes`, which is
+    # what the look's own author said about the look: a hidden block look has
+    # both, and saving it must not write one over the other.
+    retired_note: str = ""
     notes: str = ""
     # Takes over the ported look of the same name -- see `merge`.
     supersedes: bool = False
+    # Whether a superseding look still REPRODUCES the look whose name it took.
+    # False once it has been changed away from it on purpose (Studio writes
+    # that as it saves the change -- `lookstore.save`): it keeps the name, and
+    # every cue that names it, but is no longer claimed, or tested, to be the
+    # original.
+    exact: bool = True
 
     @property
     def is_parametric(self) -> bool:
@@ -195,8 +209,20 @@ def load_entries(path: Path) -> list[LibraryEntry]:
             color=raw.get("color"),
             colors=raw.get("colors"), whites=raw.get("whites"),
             bars=raw.get("bars"), intensity=raw.get("intensity"),
-            intensities=raw.get("intensities"), source=raw.get("source", "")))
+            intensities=raw.get("intensities"), source=raw.get("source", ""),
+            # What the porter wrote down about it. Nothing plays from this; it
+            # is for whoever is deciding what to do with the look (Studio).
+            notes=_note(raw.get("notes"))))
     return out
+
+
+def _note(raw) -> str:
+    """A ported entry's notes as one string: the porter writes a list."""
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, (list, tuple)):
+        return " ".join(str(n) for n in raw if n)
+    return ""
 
 
 # ------------------------------------------------------------------ layers --
@@ -807,7 +833,18 @@ def load_parametric(path: Path) -> tuple[list[LibraryEntry], dict[str, dict]]:
     blocks exist not to have.
     """
     path = Path(path)
-    cfg = configmod.load(path, configmod.PARAMETRIC_LOOKS)
+    return parse_parametric(configmod.load(path, configmod.PARAMETRIC_LOOKS), path)
+
+
+def parse_parametric(cfg: dict, path: Path
+                     ) -> tuple[list[LibraryEntry], dict[str, dict]]:
+    """`load_parametric`, for a document already read and shape-checked.
+
+    Split out so a document about to be WRITTEN is held to exactly what one
+    being read is (`lookstore`): a save that passed a weaker check would write
+    a file the next start refuses.
+    """
+    path = Path(path)
     blocksmod = _blocks()
 
     out: list[LibraryEntry] = []
@@ -837,6 +874,7 @@ def load_parametric(path: Path) -> tuple[list[LibraryEntry], dict[str, dict]]:
             tags=(), groups=tuple(raw.get("groups", [])),
             block=block, args=args, notes=raw.get("notes", ""),
             supersedes=bool(raw.get("supersedes", False)),
+            exact=bool(raw.get("exact", True)),
             source=path.name))
 
     retired = {r["name"]: r for r in cfg.get("retired", [])}
@@ -898,7 +936,7 @@ def merge(ported: Sequence[LibraryEntry], parametric: Sequence[LibraryEntry],
         return entries
     return [replace(e, retired=True,
                     replaced_by=retired[e.name].get("replaced_by"),
-                    notes=retired[e.name].get("note", e.notes))
+                    retired_note=retired[e.name].get("note", ""))
             if e.name in retired else e
             for e in entries]
 
@@ -919,6 +957,34 @@ def load_setlist(path: Path, parametric_path: Optional[Path] = None
         parametric, retired = load_parametric(Path(parametric_path))
     entries = merge(entries, parametric, retired)
     return autom.SetList([build_look(e) for e in entries]), entries
+
+
+PORTED_FILE = "looks.json"
+PARAMETRIC_FILE = "parametric_looks.json"
+
+
+def load_library(event_dir: Path) -> list[LibraryEntry]:
+    """An event's whole library, from whichever of its two files it has.
+
+    `load_setlist` insists on `looks.json`, which is right for an event ported
+    from QLC+ and wrong for one that never was: an event started from nothing
+    has only the looks made here, in `parametric_looks.json`. Neither file is
+    an empty library, not an error -- the caller decides what an event with no
+    looks runs.
+    """
+    event_dir = Path(event_dir)
+    ported_path = event_dir / PORTED_FILE
+    parametric_path = event_dir / PARAMETRIC_FILE
+    ported = load_entries(ported_path) if ported_path.exists() else []
+    parametric: list[LibraryEntry] = []
+    retired: dict[str, dict] = {}
+    if parametric_path.exists():
+        parametric, retired = load_parametric(parametric_path)
+    return merge(ported, parametric, retired)
+
+
+def setlist_for(entries: Sequence[LibraryEntry]) -> autom.SetList:
+    return autom.SetList([build_look(e) for e in entries])
 
 
 def encode_entry(rig_geo: geo.RigGeometry, entry: LibraryEntry,

@@ -548,6 +548,43 @@ function trackAs(id: string, title: string, artist: string) {
   return { ...structuredClone(trackDoc), id, identity: { ...trackDoc.identity, title, artist } };
 }
 
+const NO_USE = { cues: [] as string[], presets: [] as string[],
+                 routines: [] as { id: string; name?: string }[],
+                 timelines: [] as { track: string; title?: string }[],
+                 templates: [] as { id: string; name?: string }[], hides: [] as string[] };
+const LOOK = { groups: ["corner movers"], retired: false, replaced_by: null, retired_note: "",
+               manual_only: false, cued: false, step_of: null, notes: "", used_by: NO_USE };
+/** This rig's looks, as /api/looks lists them: two stored (one of them a table
+ *  no block can state, and hidden), three made of a block. */
+const LOOKS = {
+  event: "despacio", file: "parametric_looks.json", rev: "r:looks", stale: false,
+  groups: ["corner movers", "pinspots"],
+  looks: [
+    { ...LOOK, name: "MH Red", slot: "color", kind: "color", source: "stored",
+      used_by: { ...NO_USE, cues: ["Peak"] },
+      stored: { what: "one color", swatches: [[1, 0, 0]], source: "Scene 1" },
+      block_version: { block: "solid", args: { color: [1, 0, 0] } } },
+    { ...LOOK, name: "Lazy Circle", slot: "movement", kind: "path", source: "stored",
+      retired: true, replaced_by: "Lazy Orbit", retired_note: "The orbit covers it.",
+      manual_only: true, notes: "8 steps, snapped to 16 bars",
+      used_by: { ...NO_USE, timelines: [{ track: "synth-128", title: "synthetic 128" }] },
+      stored: { what: "a route through stored positions", steps: 8, bars: 16, source: "Chaser 18" } },
+    { ...LOOK, name: "Lazy Orbit", slot: "movement", kind: "path", source: "block",
+      block: "orbit", args: { radius: 18.75, elongation: 0.925, bars: 16, spread: 1 },
+      supersedes: false, notes: "The ported Lazy Circle, as a block.",
+      used_by: { ...NO_USE, cues: ["Deep"], presets: ["Phase a"],
+                 routines: [{ id: "idle-orbit", name: "Idle orbit" }],
+                 templates: [{ id: "club", name: "Club" }], hides: ["Lazy Circle"] } },
+    { ...LOOK, name: "Heads - Ball", slot: "movement", kind: "pose", source: "block",
+      block: "offset", args: { bearing: 0, elevation: 0 }, supersedes: true, exact: true,
+      used_by: { ...NO_USE, cues: ["Warm Up", "Landing"] } },
+    { ...LOOK, name: "Duo Pink/Cyan", slot: "color", kind: "color_path", source: "block",
+      block: "duo", args: { color_a: [1, 0.2, 0.5], color_b: [0.2, 0.8, 1], blend: 0, bars: 8 },
+      supersedes: false },
+  ],
+};
+let looksList: Omit<typeof LOOKS, "looks"> & { looks: object[]; problem?: string } = LOOKS;
+
 function serve(path: string): [number, unknown] {
   if (path === "/api/tracks") {
     return [200, { tracks: [
@@ -592,6 +629,7 @@ function serve(path: string): [number, unknown] {
   }
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
   if (path === "/api/palettes") return [200, PALETTES];
+  if (path === "/api/looks") return [200, looksList];
   if (path === "/api/templates/warmup") {
     return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
   }
@@ -605,6 +643,7 @@ beforeEach(() => {
   resetCatalogue();
   rekordbox = [200, CATALOGUE];
   waveform = null;
+  looksList = LOOKS;
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -2590,8 +2629,9 @@ describe("+ New", () => {
     const { user } = await menu();
     const items = within(screen.getByRole("menu", { name: "New" })).getAllByRole("menuitem");
     expect(items.map((i) => i.querySelector("b")?.textContent)).toEqual([
-      "A timeline for a track", "A routine", "A template set", "A palette", "Tracks from rekordbox"]);
-    expect(items[4]).toHaveAttribute("href", "#studio/rekordbox");
+      "A timeline for a track", "A routine", "A template set", "A palette", "A look",
+      "Tracks from rekordbox"]);
+    expect(items[5]).toHaveAttribute("href", "#studio/rekordbox");
     await user.keyboard("r");
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.getByRole("dialog", { name: "New routine" })).toBeInTheDocument();
@@ -2942,5 +2982,447 @@ describe("rekordbox collection", () => {
     const table = await within(region).findByRole("table");
     expect(within(region).getByLabelText("search rekordbox")).toHaveValue("Night Drive");
     expect(within(table).getAllByRole("row")).toHaveLength(2);
+  });
+});
+
+describe("look library", () => {
+  type LookSent = { look: { name: string; block: string; args: Record<string, unknown>;
+                            groups: string[]; notes?: string };
+                    was?: string; base_rev: string };
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/looks");
+    const page = await screen.findByRole("region", { name: "looks" });
+    await within(page).findByRole("button", { name: "Lazy Orbit" });
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+  const pick = async (user: ReturnType<typeof userEvent.setup>, page: HTMLElement, name: string) => {
+    await user.click(within(page).getByRole("button", { name }));
+    return within(aside()).getByLabelText("selected look");
+  };
+
+  it("lists every look of the rig with what it is and what names it", async () => {
+    const { page } = await library();
+    expect(within(page).getByText(/5 looks on/)).toHaveTextContent(
+      "3 are built from a block and are edited here; 2 are stored tables from QLC+");
+    const row = (name: string) => within(page).getByRole("button", { name }).closest("tr")!;
+    expect(row("Lazy Orbit")).toHaveTextContent("orbit block");
+    expect(row("Lazy Orbit")).toHaveTextContent("1 cue · 1 preset · 1 routine · 1 set");
+    expect(row("Lazy Circle")).toHaveTextContent("a route through stored positions · 8 steps over 16 bars");
+    expect(row("Lazy Circle")).toHaveTextContent("Hidden");
+    expect(row("Lazy Circle")).toHaveTextContent("1 timeline");
+    expect(row("MH Red")).toHaveTextContent("stored");
+    expect(row("Heads - Ball")).toHaveTextContent("takes over");
+    expect(row("Duo Pink/Cyan")).toHaveTextContent("nothing");
+    // The nav counts them, under the rig rather than the show folder.
+    expect(within(screen.getByRole("navigation", { name: "Studio" }))
+      .getByRole("link", { name: /^Looks/ })).toHaveTextContent("5");
+  });
+
+  it("filters by slot, by kind and by name", async () => {
+    const { user, page } = await library();
+    const names = () => within(page).getAllByRole("row").slice(1)
+      .map((r) => within(r).getAllByRole("button")[0]!.textContent);
+    expect(names()).toEqual(["Duo Pink/Cyan", "Heads - Ball", "Lazy Circle", "Lazy Orbit", "MH Red"]);
+    await user.click(within(page).getByRole("button", { name: /^Color/ }));
+    expect(names()).toEqual(["Duo Pink/Cyan", "MH Red"]);
+    await user.click(within(page).getByRole("button", { name: /^Stored/ }));
+    expect(names()).toEqual(["MH Red"]);
+    await user.click(within(page).getByRole("button", { name: /^All/ }));
+    await user.click(within(page).getByRole("button", { name: /^Hidden/ }));
+    expect(names()).toEqual(["Lazy Circle"]);
+    await user.click(within(page).getByRole("button", { name: /^Every kind/ }));
+    await user.type(within(page).getByLabelText("filter looks"), "orbit");
+    expect(names()).toEqual(["Lazy Orbit"]);
+    await user.clear(within(page).getByLabelText("filter looks"));
+    await user.selectOptions(within(page).getByLabelText("sort looks"), "picker");
+    expect(names()[0]).toBe("MH Red");
+  });
+
+  it("files a chase's own steps away until they are asked for, or searched for", async () => {
+    looksList = { ...LOOKS, looks: [...LOOKS.looks,
+      { ...LOOK, name: "Lazy Circle Step 1", slot: "movement", kind: "pose", source: "stored",
+        step_of: "Lazy Circle", stored: { what: "a stored position for each head" } }] };
+    const { user, page } = await library();
+    expect(within(page).getByText(/6 looks on/)).toBeInTheDocument();
+    expect(within(page).queryByRole("button", { name: "Lazy Circle Step 1" })).toBeNull();
+    await user.type(within(page).getByLabelText("filter looks"), "step 1");
+    expect(within(page).getByRole("button", { name: "Lazy Circle Step 1" }).closest("tr")!)
+      .toHaveTextContent("a step of Lazy Circle");
+    await user.clear(within(page).getByLabelText("filter looks"));
+    await user.click(within(page).getByRole("checkbox", { name: /Chase steps/ }));
+    expect(within(page).getByRole("button", { name: "Lazy Circle Step 1" })).toBeInTheDocument();
+  });
+
+  it("changes a block look's argument and saves it with the rev it read", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    expect(within(panel).getByText(/Block look · Movement/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Save the look" })).toBeNull();
+    const radius = within(panel).getByLabelText("radius");
+    expect(radius).toHaveValue(18.75);
+    await user.clear(radius);
+    await user.type(radius, "30");
+    expect(within(panel).getByText("Unsaved")).toBeInTheDocument();
+    // The rig plays the saved look, so it is not offered half-changed.
+    expect(within(panel).getByRole("button", { name: "Play it on the rig" })).toBeDisabled();
+    await user.click(within(panel).getByRole("button", { name: "Save the look" }));
+    const sent = reply(socket, "look_save", true, { rev: "r:2", name: "Lazy Orbit", warnings: [],
+                                                    cues: 0, presets: 0 }) as unknown as LookSent;
+    expect(sent.was).toBe("Lazy Orbit");
+    expect(sent.base_rev).toBe("r:looks");
+    expect(sent.look).toEqual({ name: "Lazy Orbit", block: "orbit", groups: ["corner movers"],
+                                args: { radius: 30, elongation: 0.925, bars: 16, spread: 1 },
+                                notes: "The ported Lazy Circle, as a block." });
+    expect(await screen.findByText(/Saved Lazy Orbit/)).toBeInTheDocument();
+  });
+
+  it("renames a look with the save, and says what followed the name", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    await user.type(within(panel).getByLabelText("look name"), " Wide");
+    await user.click(within(panel).getByRole("button", { name: "Save and rename" }));
+    // Before it is done: what else the rename will rewrite.
+    expect(within(panel).getByText(
+      "Renaming also rewrites what names it: 1 cue · 1 preset · 1 routine · 1 set."))
+      .toBeInTheDocument();
+    const sent = reply(socket, "look_save", true, {
+      rev: "r:2", name: "Lazy Orbit Wide", warnings: [], cues: 1, presets: 1,
+      written: ["routines/idle-orbit.json", "templates/club.json"] }) as unknown as LookSent;
+    expect(sent).toMatchObject({ was: "Lazy Orbit", look: { name: "Lazy Orbit Wide" } });
+    expect(await screen.findByText("Renamed Lazy Orbit to Lazy Orbit Wide, and moved what named "
+      + "it: 1 cue, 1 preset, 2 show files.")).toBeInTheDocument();
+  });
+
+  it("refuses a name another look has, before the engine is asked", async () => {
+    const { user, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    const name = within(panel).getByLabelText("look name");
+    await user.clear(name);
+    await user.type(name, "MH Red");
+    expect(within(panel).getByText("There is already a look called MH Red.")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save and rename" })).toBeDisabled();
+  });
+
+  it("shows a look's color whichever way it is written, and stores a picked one as the console's sliders read it", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Duo Pink/Cyan");
+    const a = within(panel).getByLabelText("color_a direct color");
+    expect(a).toHaveValue("#ff3380");
+    fireEvent.change(a, { target: { value: "#00ff00" } });
+    await user.click(within(within(panel).getByRole("group", { name: "color_b" }))
+      .getByRole("button", { name: "accent" }));
+    await user.click(within(panel).getByRole("button", { name: "Save the look" }));
+    const sent = reply(socket, "look_save", true, { rev: "r:2" }) as unknown as LookSent;
+    expect(sent.look.args).toMatchObject({ color_a: [0, 1, 0], color_b: "@accent" });
+  });
+
+  it("picks the fixtures a look writes", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Duo Pink/Cyan");
+    const groups = within(panel).getByRole("group", { name: "fixture groups" });
+    expect(within(groups).getByRole("button", { name: "corner movers" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(groups).getByRole("button", { name: "pinspots" }));
+    await user.click(within(groups).getByRole("button", { name: "corner movers" }));
+    await user.click(within(panel).getByRole("button", { name: "Save the look" }));
+    const sent = reply(socket, "look_save", true, { rev: "r:2", warnings: ["nothing on this rig is tagged 'x'"] }) as
+      unknown as LookSent;
+    expect(sent.look.groups).toEqual(["pinspots"]);
+    // What the engine warns about a save is said, not dropped.
+    expect(await within(aside()).findByText(/nothing on this rig is tagged/)).toBeInTheDocument();
+  });
+
+  it("another block starts from that block's own defaults", async () => {
+    const { user, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    const block = within(panel).getByLabelText("block");
+    // Only blocks of its own slot: a look that changed slot would leave every
+    // cue naming it in the wrong one.
+    expect(within(block).queryByRole("option", { name: "solid" })).toBeNull();
+    await user.selectOptions(block, "pendulum");
+    expect(within(panel).getByLabelText("width")).toHaveValue(30);
+    expect(within(panel).queryByLabelText("radius")).toBeNull();
+  });
+
+  it("takes what the console has dialled in, to save as the look", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    act(() => socket.push(stateWith((s) => { s.look_params = { "Lazy Orbit": { radius: 12 } }; })));
+    expect(await within(panel).findByText("The console has it turned.")).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "Take the console's values" }));
+    expect(within(panel).getByLabelText("radius")).toHaveValue(12);
+    expect(within(panel).getByText("Unsaved")).toBeInTheDocument();
+  });
+
+  it("plays the selected look on the rig, and says when it is on stage", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    await user.click(within(panel).getByRole("button", { name: "Play it on the rig" }));
+    expect(socket.last()).toEqual({ type: "select_look", name: "Lazy Orbit" });
+    act(() => socket.push(stateWith((s) => {
+      s.selection = { ...s.selection, movement: { "corner movers": "Lazy Orbit" } };
+    })));
+    expect(await within(panel).findByRole("button", { name: "On stage now" })).toBeInTheDocument();
+    expect(within(page).getByRole("button", { name: "Lazy Orbit" }).closest("tr")!)
+      .toHaveTextContent("On stage");
+  });
+
+  it("a stored look is not edited: it is remade as the block that says the same, and hidden", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "MH Red");
+    expect(within(panel).getByText(/Stored look · Color/)).toBeInTheDocument();
+    expect(within(panel).queryByLabelText("look name")).toBeNull();
+    expect(within(panel).queryByLabelText("block")).toBeNull();
+    await user.click(within(panel).getByRole("button", { name: "Make a block look from it…" }));
+    const task = within(panel).getByRole("group", { name: "Make a block look from MH Red" });
+    expect(within(task).getByLabelText("name of the block look")).toHaveValue("MH Red 2");
+    await user.click(within(task).getByRole("button", { name: "Make it" }));
+    const made = reply(socket, "look_save", true, { rev: "r:2", name: "MH Red 2" }) as unknown as LookSent;
+    expect(made.was).toBeUndefined();
+    expect(made.base_rev).toBe("r:looks");
+    expect(made.look).toMatchObject({ name: "MH Red 2", block: "solid", args: { color: [1, 0, 0] },
+                                      groups: ["corner movers"] });
+    // The second write quotes the rev the first one answered with.
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "look_hide")).toBe(true));
+    const hidden = reply(socket, "look_hide", true, { rev: "r:3" });
+    expect(hidden).toMatchObject({ look: "MH Red", replaced_by: "MH Red 2", base_rev: "r:2" });
+    expect(await screen.findByText("Made MH Red 2 from MH Red, and hid MH Red from the picker."))
+      .toBeInTheDocument();
+  });
+
+  it("says a table has no block to be remade from", async () => {
+    const { user, page } = await library();
+    const panel = await pick(user, page, "Lazy Circle");
+    expect(within(panel).getByText(/No single block says the same thing/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /Make a block look/ })).toBeNull();
+    // Why it is hidden, and where it is still played.
+    expect(within(panel).getByText("Hidden from the picker, for Lazy Orbit.")).toBeInTheDocument();
+    expect(within(panel).getByText("The orbit covers it.")).toBeInTheDocument();
+    expect(within(within(panel).getByRole("region", { name: "where it is used" }))
+      .getByRole("link", { name: /synthetic 128/ })).toHaveAttribute("href", "#studio/track/synth-128");
+  });
+
+  it("hides a look from the picker with what covers it, and shows one again", async () => {
+    const { user, socket, page } = await library();
+    let panel = await pick(user, page, "MH Red");
+    await user.click(within(panel).getByRole("button", { name: "more for MH Red" }));
+    await user.click(screen.getByRole("menuitem", { name: "Hide from the picker…" }));
+    const task = within(panel).getByRole("group", { name: "Hide MH Red from the picker" });
+    // A hidden look is not offered as what covers another.
+    expect(within(task).queryByRole("option", { name: "Lazy Circle" })).toBeNull();
+    await user.selectOptions(within(task).getByLabelText("replaced by"), "Duo Pink/Cyan");
+    await user.type(within(task).getByLabelText("why it is hidden"), "the duo covers it");
+    await user.click(within(task).getByRole("button", { name: "Hide it" }));
+    expect(reply(socket, "look_hide", true, { rev: "r:2" })).toMatchObject(
+      { look: "MH Red", hidden: true, replaced_by: "Duo Pink/Cyan", note: "the duo covers it",
+        base_rev: "r:looks" });
+    panel = await pick(user, page, "Lazy Circle");
+    await user.click(within(panel).getByRole("button", { name: "Show it in the picker" }));
+    expect(reply(socket, "look_hide", true, { rev: "r:3" })).toMatchObject(
+      { look: "Lazy Circle", hidden: false });
+  });
+
+  it("duplicates a block look, and deletes one only when nothing names it", async () => {
+    const { user, socket, page } = await library();
+    let panel = await pick(user, page, "Lazy Orbit");
+    await user.click(within(panel).getByRole("button", { name: "more for Lazy Orbit" }));
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    expect(del).toBeDisabled();
+    expect(del).toHaveTextContent("Used in 4 places");
+    await user.click(screen.getByRole("menuitem", { name: "Duplicate…" }));
+    const task = within(panel).getByRole("group", { name: "Duplicate Lazy Orbit" });
+    expect(within(task).getByLabelText("name of the copy")).toHaveValue("Lazy Orbit copy");
+    await user.click(within(task).getByRole("button", { name: "Make the copy" }));
+    const copy = reply(socket, "look_save", true, { rev: "r:2" }) as unknown as LookSent;
+    expect(copy.was).toBeUndefined();
+    expect(copy.look).toMatchObject({ name: "Lazy Orbit copy", block: "orbit",
+                                      args: { radius: 18.75 } });
+
+    panel = await pick(user, page, "Duo Pink/Cyan");
+    await user.click(within(panel).getByRole("button", { name: "more for Duo Pink/Cyan" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    await user.click(within(within(panel).getByRole("group", { name: "confirm delete" }))
+      .getByRole("button", { name: "Delete it" }));
+    expect(reply(socket, "look_delete", true, { rev: "r:3", deleted: "Duo Pink/Cyan" }))
+      .toMatchObject({ look: "Duo Pink/Cyan", base_rev: "r:looks" });
+    expect(await screen.findByText("Deleted Duo Pink/Cyan.")).toBeInTheDocument();
+  });
+
+  it("a look that took over a stored one can be renamed and deleted, and says what each leaves behind", async () => {
+    const { user, socket, page } = await library();
+    let panel = await pick(user, page, "Heads - Ball");
+    expect(within(panel).getByText("Takes over the stored look of the same name.")).toBeInTheDocument();
+    expect(within(panel).getByText(/It still says exactly what the stored look says/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "more for Heads - Ball" }));
+    // Used by two cues, and still deletable: the stored look takes the name back.
+    await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    expect(within(panel).getByRole("group", { name: "confirm delete" }))
+      .toHaveTextContent("The stored look called Heads - Ball takes its place again");
+    await user.click(within(panel).getByRole("button", { name: "Keep it" }));
+
+    const name = within(panel).getByLabelText("look name");
+    await user.clear(name);
+    await user.type(name, "Ball Hold");
+    expect(within(panel).getByText(/The stored look Heads - Ball comes back under that name, hidden/))
+      .toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "Save and rename" }));
+    expect(reply(socket, "look_save", true, { rev: "r:2", name: "Ball Hold", warnings: [],
+                                              cues: 2, presets: 0, written: [] }))
+      .toMatchObject({ was: "Heads - Ball", look: { name: "Ball Hold", block: "offset" } });
+    expect(await screen.findByText("Renamed Heads - Ball to Ball Hold, and moved what named it: "
+      + "2 cues. The stored look Heads - Ball is back under that name, hidden in favour of "
+      + "Ball Hold.")).toBeInTheDocument();
+
+    // Deleted, the stored look it leaves behind stays on screen.
+    panel = await pick(user, page, "Heads - Ball");
+    await user.click(within(panel).getByRole("button", { name: "more for Heads - Ball" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    await user.click(within(within(panel).getByRole("group", { name: "confirm delete" }))
+      .getByRole("button", { name: "Delete it" }));
+    reply(socket, "look_delete", true, { rev: "r:3", deleted: "Heads - Ball" });
+    expect(await screen.findByText(/The stored look of that name is back in its place: hide it/))
+      .toBeInTheDocument();
+    expect(within(aside()).getByLabelText("look name")).toHaveValue("Heads - Ball");
+  });
+
+  it("says when a look that took over a stored one has been changed away from it", async () => {
+    looksList = { ...LOOKS, looks: LOOKS.looks.map((l) => l.name === "Heads - Ball"
+      ? { ...l, exact: false, args: { bearing: 0, elevation: 3 } } : l) };
+    const { user, page } = await library();
+    const panel = await pick(user, page, "Heads - Ball");
+    expect(within(panel).getByText(/changed since, on purpose: it no longer says what the stored look says/))
+      .toBeInTheDocument();
+  });
+
+  it("names every show file that plays a look, template sets too", async () => {
+    const { user, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    const used = within(panel).getByRole("region", { name: "where it is used" });
+    expect(within(used).getByRole("link", { name: /Idle orbit.*routine/ }))
+      .toHaveAttribute("href", "#studio/routine/idle-orbit");
+    expect(within(used).getByRole("link", { name: /Club.*template set/ }))
+      .toHaveAttribute("href", "#studio/templates/club");
+  });
+
+  it("shows what the engine refused beside the look", async () => {
+    const { user, socket, page } = await library();
+    const panel = await pick(user, page, "Lazy Orbit");
+    const radius = within(panel).getByLabelText("radius");
+    await user.clear(radius);
+    await user.type(radius, "30");
+    await user.click(within(panel).getByRole("button", { name: "Save the look" }));
+    reply(socket, "look_save", false, undefined,
+          "parametric_looks.json changed since you opened it");
+    expect(await within(panel).findByRole("alert"))
+      .toHaveTextContent("parametric_looks.json changed since you opened it");
+    // The edit is still there to save again.
+    expect(within(panel).getByLabelText("radius")).toHaveValue(30);
+  });
+
+  it("says why, when the file on disk does not load and the old library runs on", async () => {
+    looksList = { ...LOOKS, stale: true,
+                  problem: "parametric_looks.json is not usable:\n  'Nod' names block 'wobble'" };
+    const { page } = await library();
+    const alert = within(page).getByRole("alert");
+    expect(alert).toHaveTextContent("parametric_looks.json on disk does not load, so the engine is "
+      + "running the library it had.");
+    expect(alert).toHaveTextContent("'Nod' names block 'wobble'");
+  });
+
+  it("says when the file changed on disk, and reads it again before any edit", async () => {
+    looksList = { ...LOOKS, stale: true };
+    const { user, socket, page } = await library();
+    expect(within(page).getByRole("alert")).toHaveTextContent(
+      "parametric_looks.json changed on disk since the engine read it.");
+    expect(within(page).getByRole("alert")).toHaveTextContent("reads it again by itself");
+    const panel = await pick(user, page, "Lazy Orbit");
+    const radius = within(panel).getByLabelText("radius");
+    await user.clear(radius);
+    await user.type(radius, "30");
+    expect(within(panel).getByRole("button", { name: "Save the look" })).toBeDisabled();
+    await user.click(within(page).getByRole("button", { name: "Read the looks again" }));
+    expect(reply(socket, "looks_reload", true, { rev: "r:9" })).toMatchObject({ type: "looks_reload" });
+  });
+
+  it("reads the list again when the engine says the look file changed", async () => {
+    const { socket, page } = await library();
+    looksList = { ...LOOKS, rev: "r:next",
+                  looks: [...LOOKS.looks, { ...LOOK, name: "From The Console", slot: "level",
+                                            kind: "level_path", source: "block", block: "pulse",
+                                            args: { depth: 1, bars: 1 }, supersedes: false }] };
+    act(() => socket.push(stateWith((s) => { s.looks_rev = "r:next"; })));
+    expect(await within(page).findByRole("button", { name: "From The Console" })).toBeInTheDocument();
+  });
+
+  it("is read-only without the configure token", async () => {
+    const { user, socket, page } = await library();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "welcome", id: "c1", tier: "operate" }) }));
+    const panel = await pick(user, page, "Lazy Orbit");
+    const radius = within(panel).getByLabelText("radius");
+    await user.clear(radius);
+    await user.type(radius, "30");
+    expect(within(panel).getByRole("button", { name: "Save the look" })).toBeDisabled();
+    expect(within(panel).getByText(/Read only/)).toBeInTheDocument();
+  });
+
+  it("makes a look from + New: a block at its defaults, on the fixtures picked", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: "New look…" }));
+    const dialog = screen.getByRole("dialog", { name: "New look" });
+    const make = within(dialog).getByRole("button", { name: "Make it" });
+    expect(make).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("name"), "MH Red");
+    expect(within(dialog).getByText("there is already a look of that name")).toBeInTheDocument();
+    expect(make).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Slow Swing");
+    await user.selectOptions(within(dialog).getByLabelText("block"), "pendulum");
+    expect(within(dialog).getByText("None picked: it moves every moving head.")).toBeInTheDocument();
+    await user.click(within(within(dialog).getByRole("group", { name: "fixture groups" }))
+      .getByRole("button", { name: "corner movers" }));
+    await user.click(make);
+    const sent = reply(socket, "look_save", true, { rev: "r:2", name: "Slow Swing" }) as unknown as LookSent;
+    expect(sent.was).toBeUndefined();
+    expect(sent.base_rev).toBe("r:looks");
+    expect(sent.look).toEqual({ name: "Slow Swing", block: "pendulum", groups: ["corner movers"],
+                                args: { width: 30, bars: 4, vertical: false, spread: 0 } });
+    expect(await screen.findByText(/Made Slow Swing/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("makes a look from + New as a copy, or from a stored look a block can state", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    // (the looks are read on every Studio page: + New offers them from any)
+    await waitFor(() => expect(within(screen.getByRole("navigation", { name: "Studio" }))
+      .getByRole("link", { name: /^Looks/ })).toHaveTextContent("5"));
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.click(screen.getByRole("menuitem", { name: /A look/ }));
+    let dialog = screen.getByRole("dialog", { name: "New look" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a block look/ }));
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "Duo Pink/Cyan");
+    await user.type(within(dialog).getByLabelText("name"), "Duo Two");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    const copy = reply(socket, "look_save", true, { rev: "r:2" }) as unknown as LookSent;
+    expect(copy.look).toMatchObject({ name: "Duo Two", block: "duo", groups: ["corner movers"],
+                                      args: { color_a: [1, 0.2, 0.5], bars: 8 } });
+    // Made from another page, it is shown on its own.
+    await waitFor(() => expect(location.hash).toBe("#studio/looks"));
+    expect(await screen.findByText(/Made Duo Two/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.click(screen.getByRole("menuitem", { name: /A look/ }));
+    dialog = screen.getByRole("dialog", { name: "New look" });
+    await user.click(within(dialog).getByRole("radio", { name: /A stored look, as a block/ }));
+    // Only the stored looks a block states exactly; a route is not offered.
+    const from = within(dialog).getByLabelText("from the stored look");
+    expect(within(from).getAllByRole("option").map((o) => o.textContent)).toEqual(["MH Red (solid)"]);
+    expect(within(dialog).getByLabelText("name")).toHaveValue("MH Red 2");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    const remade = reply(socket, "look_save", true, { rev: "r:3" }) as unknown as LookSent;
+    expect(remade.look).toMatchObject({ name: "MH Red 2", block: "solid", args: { color: [1, 0, 0] },
+                                        notes: "Made from the stored look MH Red." });
   });
 });

@@ -361,6 +361,118 @@ with tempfile.TemporaryDirectory() as tmp:
     check("asking for something absent is an error that says so",
           err and "no track 'nope'" in missing["errors"][0])
 
+print("\n7. the look tools read and edit an event's looks")
+check("the look tools are listed",
+      {"list_looks", "get_look", "put_look", "delete_look", "hide_look"} <= names)
+with tempfile.TemporaryDirectory() as tmp:
+    ev = Path(tmp) / "despacio"
+    shutil.copytree(EVENT, ev, ignore=shutil.ignore_patterns(
+        "__pycache__", "*.bak", ".engine.lock", "backups"))
+    shows = Path(tmp) / "shows"
+    shutil.copytree(REPO / "shared" / "show-example", shows)
+    e, sd = str(ev), str(shows)
+    looks_file = ev / "parametric_looks.json"
+    untouched = looks_file.read_bytes()
+
+    listed, err = server.tool("list_looks", event=e, show_dir=sd)
+    by = {l["name"]: l for l in listed.get("looks", [])}
+    check("list_looks lists every look, stored and block, with the rev to quote",
+          not err and len(by) == 226 and listed["rev"].startswith("r:")
+          and by["Lazy Orbit"]["block"] == "orbit" and by["MH Red"]["source"] == "stored"
+          and by["MH Red"]["block_version"] == "solid", f"{len(by)} {listed.get('errors')}")
+    check("and what uses each: a cue, and a timeline in the show folder",
+          any("cues.json" in u for u in by["Heads - Ball"]["used_by"])
+          and by["Lazy Circle"]["used_by"] == ["timelines/synth-128.json"]
+          and by["Lazy Circle"]["hidden"] is True, f"{by['Lazy Circle']}")
+    got, err = server.tool("get_look", event=e, show_dir=sd, name="Lazy Orbit")
+    check("get_look gives one in full",
+          not err and got["look"]["args"]["radius"] == 18.75
+          and got["look"]["used_by"]["hides"] == ["Lazy Circle"], f"{got}")
+    nope, err = server.tool("get_look", event=e, name="Nope")
+    check("a look that is not there is an error that says so",
+          err and "no look named 'Nope'" in nope["errors"][0])
+    rev = listed["rev"]
+
+    new = {"name": "Chat Swing", "block": "pendulum", "groups": ["corner movers"],
+           "args": {"width": 40, "bars": 8}}
+    dry, err = server.tool("put_look", event=e, show_dir=sd, look=new)
+    check("put_look is a dry run first: checked, tidied, nothing written",
+          not err and dry["dry_run"] and not dry["written"] and dry["look"] == new
+          and rev in dry["hint"] and looks_file.read_bytes() == untouched, f"{dry}")
+    bad, err = server.tool("put_look", event=e, look={**new, "args": {"radius": 3}})
+    check("a look the engine would refuse is refused here, with why",
+          err and "no argument 'radius'" in bad["errors"][0], f"{bad}")
+    no_rev, err = server.tool("put_look", event=e, look=new, write=True)
+    check("writing needs the rev that was read", err and "base_rev" in no_rev["errors"][0])
+    stale, err = server.tool("put_look", event=e, look=new, write=True, base_rev="r:000000000000")
+    check("and a stale one is refused", err and "changed since" in stale["errors"][0]
+          and looks_file.read_bytes() == untouched)
+    done, err = server.tool("put_look", event=e, show_dir=sd, look=new, write=True, base_rev=rev)
+    saved = json.loads(looks_file.read_text(encoding="utf-8"))
+    check("with it, the look is saved -- the same file Studio writes, in its layout",
+          not err and done["written"] and saved["looks"][-1] == new
+          and done["rev"] != rev and saved["_comment"], f"{done}")
+    rev = done["rev"]
+    changed, err = server.tool("put_look", event=e, look={**new, "args": {"width": 55, "bars": 8}},
+                               was="Chat Swing", write=True, base_rev=rev)
+    check("`was` changes the look of that name",
+          not err and json.loads(looks_file.read_text(encoding="utf-8"))["looks"][-1]["args"]["width"] == 55)
+    rev = changed["rev"]
+    groups, err = server.tool("put_look", event=e, look={**new, "name": "Lasers", "groups": ["lasers"]})
+    check("a group nothing on the rig carries is a warning, not a refusal",
+          not err and any("'lasers'" in w for w in groups["warnings"]), f"{groups}")
+
+    tl = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    tl["rows"].append({"id": "sw", "type": "clips", "target": "movement",
+                       "items": [{"id": "sw1", "kind": "look", "look": "Chat Swing",
+                                  "at": 0, "len": 8}]})
+    (shows / "timelines" / "synth-128.json").write_text(json.dumps(tl, indent=2))
+    used, err = server.tool("delete_look", event=e, show_dir=sd, name="Chat Swing",
+                            write=True, base_rev=rev)
+    check("a look a timeline plays is not deleted: the refusal says where",
+          err and "timelines/synth-128.json" in used["errors"][0], f"{used}")
+    moved, err = server.tool("put_look", event=e, show_dir=sd, was="Chat Swing",
+                             look={**new, "name": "Chat Pendulum", "args": {"width": 55, "bars": 8}})
+    check("a rename's dry run says what it would move, and moves nothing",
+          not err and moved["dry_run"]
+          and moved["renamed"]["files"] == ["timelines/synth-128.json"]
+          and "Chat Swing" in (shows / "timelines" / "synth-128.json").read_text(), f"{moved}")
+    (ev / ".engine.lock").write_text("engine 0 since now\n")
+    held, err = server.tool("put_look", event=e, show_dir=sd, was="Chat Swing", write=True,
+                            base_rev=rev,
+                            look={**new, "name": "Chat Pendulum", "args": {"width": 55, "bars": 8}})
+    check("a rename is refused while an engine runs the event: it holds the "
+          "presets and the cue list",
+          err and "Studio's Looks page" in held["errors"][0], f"{held}")
+    hidden, err = server.tool("hide_look", event=e, name="MH Red", replaced_by="Chat Swing",
+                              note="from chat", write=True, base_rev=rev)
+    check("every other edit is allowed while it runs, and says the engine will read it",
+          not err and hidden["written"] and "watches the look files" in hidden["engine"]
+          and {"name": "MH Red", "replaced_by": "Chat Swing", "note": "from chat"}
+          in json.loads(looks_file.read_text(encoding="utf-8"))["retired"], f"{hidden}")
+    rev = hidden["rev"]
+    (ev / ".engine.lock").unlink()
+    moved, err = server.tool("put_look", event=e, show_dir=sd, was="Chat Swing", write=True,
+                             base_rev=rev,
+                             look={**new, "name": "Chat Pendulum", "args": {"width": 55, "bars": 8}})
+    after = json.loads(looks_file.read_text(encoding="utf-8"))
+    check("with no engine running, the rename moves the timeline and what was "
+          "hidden for the look",
+          not err and moved["written"] and "Chat Pendulum" in
+          (shows / "timelines" / "synth-128.json").read_text()
+          and not any(l["name"] == "Chat Swing" for l in after["looks"])
+          and {"name": "MH Red", "replaced_by": "Chat Pendulum", "note": "from chat"}
+          in after["retired"], f"{moved}")
+    rev = moved["rev"]
+    shown, err = server.tool("hide_look", event=e, name="MH Red", hidden=False,
+                             write=True, base_rev=rev)
+    check("hide_look with hidden=false shows a look again",
+          not err and not any(r["name"] == "MH Red" for r in
+                              json.loads(looks_file.read_text(encoding="utf-8"))["retired"]))
+    stored, err = server.tool("delete_look", event=e, name="MH Red", write=True,
+                              base_rev=shown["rev"])
+    check("a stored look cannot be deleted", err and "hide it instead" in stored["errors"][0])
+
 stderr = server.close()
 check("nothing was written to stdout that was not JSON-RPC", True)
 check("the server logged no tracebacks", "Traceback" not in stderr,

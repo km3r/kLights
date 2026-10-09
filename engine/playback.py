@@ -539,6 +539,19 @@ class TrackPlayer:
         if self._library is not None:
             self.compile_templates(self._library)
 
+    def refresh(self) -> None:
+        """What the programs are built FROM changed -- the look library -- and
+        the rig did not: build them again, and leave what is on stage there
+        until its replacement lands. `recompile` drops them at once, which a
+        new rig needs (they name fixtures that may be gone) and an edited look
+        does not: a save in Studio must not blink a playing timeline."""
+        self._riggen += 1
+        self._program_for, self._compiling_for, self._failed_for = None, None, None
+        self.drop_precompiled()
+        self.compile_for(self._pinned())
+        if self._library is not None:
+            self.compile_templates(self._library)
+
     # -- each frame, on the output thread ------------------------------------
 
     def choose(self, fallback: statemod.Show, sample: transportmod.TrackSample,

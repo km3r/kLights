@@ -4,7 +4,7 @@
  * drafts checked by the engine, saves that quote the rev they read -- proved
  * here with the engine doing the checking and the file on disk as the answer.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
@@ -44,6 +44,70 @@ test("opens on a library of the show folder, read through the engine", async ({ 
   // And the reasons it is not yet ready for a night, as the engine sees them.
   await expect(page.getByText("No CDJ signature")).toBeVisible();
 });
+
+test("a look made and changed in Studio is written to the event, and a console's picker has it at once",
+  async ({ page, browser, engine }) => {
+    const file = join(engine.eventDir, "parametric_looks.json");
+    const authored = JSON.parse(readFileSync(file, "utf8")).looks.length;
+    await page.goto(engine.url("studio/looks"));
+    await page.getByRole("button", { name: "Not now" }).click();
+    const looks = page.getByRole("region", { name: "looks" });
+    await expect(looks.getByRole("button", { name: "Lazy Orbit" })).toBeVisible();
+
+    // A new look: one block, written to the event as it is made.
+    await looks.getByRole("button", { name: "New look…" }).click();
+    const dialog = page.getByRole("dialog", { name: "New look" });
+    await dialog.getByLabel("name").fill("E2E Swing");
+    await dialog.getByLabel("block").selectOption("pendulum");
+    await dialog.getByRole("button", { name: "Make it" }).click();
+    await expect(page.getByText(/Made E2E Swing/)).toBeVisible();
+    let saved = JSON.parse(readFileSync(file, "utf8"));
+    expect(saved.looks).toHaveLength(authored + 1);
+    expect(saved.looks.at(-1)).toMatchObject({ name: "E2E Swing", block: "pendulum" });
+    // The file keeps what was in it by hand: its comments and its schema line.
+    expect(saved._comment.length).toBeGreaterThan(10);
+    expect(saved.$schema).toContain("parametric_looks.schema.json");
+
+    // Changed in its panel, saved quoting the rev the engine just answered with.
+    const panel = page.getByLabel("selected look");
+    await panel.getByLabel("width").fill("45");
+    await panel.getByRole("button", { name: "Save the look" }).click();
+    await expect(page.getByText(/Saved E2E Swing/)).toBeVisible();
+    saved = JSON.parse(readFileSync(file, "utf8"));
+    expect(saved.looks.at(-1).args.width).toBe(45);
+
+    // No restart: another console lists it, and can play it.
+    const phone = await browser.newContext();
+    await phone.addInitScript(() => localStorage.setItem("klights.guide.welcomed", "1"));
+    const console_ = await phone.newPage();
+    try {
+      await console_.goto(engine.url("move"));
+      await expect(console_.getByRole("button", { name: "E2E Swing" }).first()).toBeVisible();
+    } finally {
+      await phone.close();
+    }
+
+    // Renamed, with the cue that names it: Heads - Cathedral took over a
+    // stored look, so the stored look comes back, hidden for the new name.
+    await looks.getByLabel("filter looks").fill("cathedral");
+    await looks.getByRole("button", { name: "Heads - Cathedral" }).click();
+    await panel.getByLabel("look name").fill("Cathedral");
+    await panel.getByRole("button", { name: "Save and rename" }).click();
+    await expect(page.getByText(/Renamed Heads - Cathedral to Cathedral, and moved what named it: 1 cue/)).toBeVisible();
+    const cues = JSON.parse(readFileSync(join(engine.eventDir, "cues.json"), "utf8")).cues;
+    expect(cues.find((c: { name: string }) => c.name === "Cathedral").movement)
+      .toEqual({ "corner movers": "Cathedral" });
+    saved = JSON.parse(readFileSync(file, "utf8"));
+    expect(saved.retired.find((r: { name: string }) => r.name === "Heads - Cathedral").replaced_by)
+      .toBe("Cathedral");
+
+    // And an edit made OUTSIDE Studio -- by hand, by the MCP server -- is read
+    // by the engine itself: no button, no restart.
+    saved.looks.push({ name: "By Hand", block: "pulse", groups: ["pinspots"], args: { depth: 0.5 } });
+    writeFileSync(file, JSON.stringify(saved, null, 2));
+    await looks.getByLabel("filter looks").fill("by hand");
+    await expect(looks.getByRole("button", { name: "By Hand" })).toBeVisible({ timeout: 10_000 });
+  });
 
 test("a clip edited in the inspector is checked by the engine and saved to the file",
   async ({ page, engine }) => {

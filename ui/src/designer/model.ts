@@ -168,6 +168,74 @@ export interface RoutineUsage {
   show: string[];
 }
 
+// -- the look library (engine/lookstore.py, over /api/looks) ------------------------
+
+/** Everything that names a look: the cues and presets that put it in a slot,
+ *  the routines, timelines and template sets that play it, and the looks
+ *  hidden for it. */
+export interface LookUsage {
+  cues: string[];
+  presets: string[];
+  routines: { id: string; name?: string | null }[];
+  timelines: { track: string; title?: string | null }[];
+  templates: { id: string; name?: string | null }[];
+  hides: string[];
+}
+
+/** One look of this rig's library. A BLOCK look is one block and its
+ *  arguments, written in parametric_looks.json and edited here; a STORED look
+ *  is a table ported from QLC+ into looks.json, which is generated -- so it
+ *  can be hidden, or remade as a block where one says the same thing
+ *  (`block_version`), but not changed. */
+export interface LookSummary {
+  name: string;
+  slot: Slot;
+  kind: string;
+  groups: string[];
+  source: "block" | "stored";
+  /** Hidden from the picker; still plays for whatever names it. */
+  retired: boolean;
+  replaced_by: string | null;
+  retired_note: string;
+  manual_only: boolean;
+  cued: boolean;
+  step_of: string | null;
+  notes: string;
+  used_by: LookUsage;
+  block?: string;
+  args?: Record<string, unknown>;
+  /** Takes over the stored look of the same name, in place. */
+  supersedes?: boolean;
+  /** For a look that took over a stored one: whether it still says what the
+   *  stored look says. False once it was changed away from it on purpose. */
+  exact?: boolean;
+  stored?: { what: string; swatches?: number[][]; steps?: number; bars?: number;
+             source?: string };
+  block_version?: { block: string; args: Record<string, unknown> };
+}
+
+export interface LooksList {
+  event: string;
+  /** The file every edit is written to. */
+  file: string;
+  /** What a save must quote; null when the event has no file yet. */
+  rev: string | null;
+  /** The file on disk is not the library that is running. The engine watches
+   *  the file, so this lasts a second or two -- unless the file does not load,
+   *  and then `problem` says why. */
+  stale: boolean;
+  problem?: string | null;
+  /** The rig's fixture groups, biggest first. */
+  groups: string[];
+  looks: LookSummary[];
+}
+
+/** How many things play a look by name. Being hidden in its favour is not one. */
+export function lookUses(u: LookUsage): number {
+  return u.cues.length + u.presets.length + u.routines.length + u.timelines.length
+    + (u.templates?.length ?? 0);
+}
+
 /** How many places use a routine: each timeline, set and show setting once. */
 export function usageCount(u: RoutineUsage | undefined): number {
   return u ? u.timelines.length + u.templates.length + u.show.length : 0;

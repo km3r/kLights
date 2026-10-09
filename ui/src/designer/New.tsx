@@ -5,9 +5,11 @@ import {
   BEATS_PER_BAR, ID_RE, NEW_COLORS, freeId, phraseMatch, templateFromTimeline,
 } from "./model";
 import type {
-  FoundPalette, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, TemplateSetDoc,
-  TemplateSummary, TimelineDoc, TrackDoc, TrackLine,
+  FoundPalette, LooksList, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, Slot,
+  TemplateSetDoc, TemplateSummary, TimelineDoc, TrackDoc, TrackLine,
 } from "./model";
+import { BLOCK_SLOT, SLOTS, freeName } from "./model";
+import { lookBlocks, startingArgs } from "./Looks";
 import { offeredLooks } from "./edit";
 import { newRoutine } from "./RoutineEditor";
 import { newTemplateSet } from "./Templates";
@@ -15,22 +17,24 @@ import { putPending } from "./pending";
 
 /**
  * Studio's + New: one way in to making anything, from any library page -- a
- * timeline for a track, a routine, a template set, a palette -- each with
- * the starts that make sense for it.
+ * timeline for a track, a routine, a template set, a palette, a look -- each
+ * with the starts that make sense for it.
  *
  * A timeline, a routine or a set opens in its editor UNSAVED, its start
  * applied as an edit there: nothing is written until Save, as with any new
  * file. A palette has no editor page of its own, so it is written to the
- * library at once, the same as the Palettes page's own New.
+ * library at once, the same as the Palettes page's own New. So is a look: it
+ * is written to the event, and changed in the Looks page's panel from there.
  */
 
-export type NewKind = "timeline" | "routine" | "template" | "palette";
+export type NewKind = "timeline" | "routine" | "template" | "palette" | "look";
 
 const KINDS: { kind: NewKind; title: string; text: string; key: string }[] = [
   { kind: "timeline", title: "A timeline for a track", text: "For a track already in the show", key: "t" },
   { kind: "routine", title: "A routine", text: "A few bars for roles, to use anywhere", key: "r" },
   { kind: "template", title: "A template set", text: "Phrase to routine, to draft timelines from", key: "s" },
   { kind: "palette", title: "A palette", text: "Into the library: primary, secondary, accent", key: "p" },
+  { kind: "look", title: "A look", text: "For this rig's console: one block, to turn live", key: "l" },
 ];
 
 export function NewMenu({ onPick }: { onPick: (kind: NewKind) => void }) {
@@ -102,15 +106,19 @@ function Options({ options, value, onChange, children }: {
 }
 
 export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palettes, found,
-                           onClose, onPalette }: {
+                           looks, onClose, onPalette, onLook }: {
   engine: Engine; kind: NewKind;
   tracks: TrackLine[]; routines: RoutineSummary[]; sets: TemplateSummary[];
   /** show.json's set: the first choice for a draft. */
   showSet: string | null;
   palettes: PaletteSummary[]; found: FoundPalette[];
+  /** This rig's looks, once read. */
+  looks: LooksList | null;
   onClose: () => void;
   /** A palette was written to the library: show it. */
   onPalette: (id: string, said: string) => void;
+  /** A look was written to the event: show it. */
+  onLook: (name: string, said: string) => void;
 }) {
   const dialog = useRef<HTMLElement | null>(null);
   // The name field takes focus where there is one; else the dialog itself.
@@ -121,17 +129,18 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const [error, setError] = useState<string | null>(null);
   const canWrite = engine.tier === "configure";
   const title = { timeline: "New timeline", routine: "New routine", template: "New template set",
-                  palette: "New palette" }[kind];
+                  palette: "New palette", look: "New look" }[kind];
 
   // -- what each kind is started from
   const bare = tracks.filter((t) => !t.has_timeline).sort((a, b) => a.title.localeCompare(b.title));
   const drawn = tracks.filter((t) => t.has_timeline).sort((a, b) => a.title.localeCompare(b.title));
   const [trackId, setTrackId] = useState(bare[0]?.id ?? "");
   const [start, setStart] = useState<string>(
-    kind === "timeline" ? (sets.length ? "draft" : "empty") : "blank");
+    kind === "timeline" ? (sets.length ? "draft" : "empty") : kind === "look" ? "block" : "blank");
   const [setId, setSetId] = useState(showSet && sets.some((s) => s.id === showSet) ? showSet : sets[0]?.id ?? "");
   const [copyTrack, setCopyTrack] = useState(drawn[0]?.id ?? "");
-  const [name, setName] = useState(kind === "palette" ? "" : kind === "routine" ? "New routine" : "New set");
+  const [name, setName] = useState(kind === "palette" || kind === "look" ? ""
+    : kind === "routine" ? "New routine" : "New set");
   const [idEdited, setIdEdited] = useState<string | null>(null);
   const takenIds = kind === "routine" ? routines.map((r) => r.id)
     : kind === "template" ? sets.map((s) => s.id) : palettes.map((p) => p.id);
@@ -144,14 +153,29 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const folder = folderTyped
     ?? (start === "copy" ? routines.find((r) => r.id === copyRoutine)?.folder ?? "" : "");
   const allLooks = engine.state?.looks;
-  const looks = useMemo(() => offeredLooks(allLooks), [allLooks]);
-  const [look, setLook] = useState(looks[0]?.name ?? "");
+  const consoleLooks = useMemo(() => offeredLooks(allLooks), [allLooks]);
+  const [look, setLook] = useState(consoleLooks[0]?.name ?? "");
   // A rig has a couple of hundred looks: listed by the slot they play on.
   const lookSlots = useMemo(() => {
     const by = new Map<string, string[]>();
-    for (const l of looks) by.set(l.slot, [...(by.get(l.slot) ?? []), l.name]);
+    for (const l of consoleLooks) by.set(l.slot, [...(by.get(l.slot) ?? []), l.name]);
     return [...by];
-  }, [looks]);
+  }, [consoleLooks]);
+  // -- a new look: a block, a copy of a block look, or a stored look remade
+  const library = looks?.looks ?? [];
+  const lookNames = library.map((l) => l.name);
+  const blockLooks = library.filter((l) => l.source === "block");
+  const remakable = library.filter((l) => l.source === "stored" && l.block_version);
+  const [block, setBlock] = useState("orbit");
+  const [copyLook, setCopyLook] = useState(blockLooks[0]?.name ?? "");
+  const [fromStored, setFromStored] = useState(remakable[0]?.name ?? "");
+  const [lookGroups, setLookGroups] = useState<string[] | null>(null);
+  const lookSource = start === "copy" ? library.find((l) => l.name === copyLook)
+    : start === "stored" ? library.find((l) => l.name === fromStored) : undefined;
+  // A copy or a remake writes the fixtures its original does, unless changed.
+  const groupsPicked = lookGroups ?? lookSource?.groups ?? [];
+  const lookSlot: Slot | null = start === "block" ? BLOCK_SLOT[block] ?? null : lookSource?.slot ?? null;
+  const lookNameTaken = kind === "look" && lookNames.includes(name.trim());
   const [copySet, setCopySet] = useState(sets[0]?.id ?? "");
   const [fromTimeline, setFromTimeline] = useState(drawn[0]?.id ?? "");
   const [copyPalette, setCopyPalette] = useState(palettes[0]?.id ?? "");
@@ -182,7 +206,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
       const { doc: from } = await apiFetch<{ doc: RoutineDoc }>(`/api/routines/${copyRoutine}`);
       doc = { ...structuredClone(from), id, name: name.trim() || id };
     } else if (start === "look") {
-      const info = looks.find((l) => l.name === look);
+      const info = consoleLooks.find((l) => l.name === look);
       if (!info) throw new Error("pick a look");
       const role = info.groups[0] || "movers";
       doc = { ...newRoutine(id), name: name.trim() || id, bars, loop: loops,
@@ -217,6 +241,23 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     }
     putPending({ kind: "template", id, doc });
     location.hash = `#studio/templates/${id}`;
+    onClose();
+  });
+  const goLook = () => run(async () => {
+    const label = name.trim();
+    const made = start === "block" ? { block, args: startingArgs(block) }
+      : start === "copy" ? { block: lookSource?.block, args: lookSource?.args }
+        : lookSource?.block_version;
+    if (!made?.block) throw new Error("pick what to start from");
+    const reply = await engine.request({
+      type: "look_save", base_rev: looks?.rev ?? "",
+      look: { name: label, block: made.block, args: made.args ?? {}, groups: groupsPicked,
+              ...(start === "stored" ? { notes: `Made from the stored look ${fromStored}.` }
+                : start === "copy" && lookSource?.notes ? { notes: lookSource.notes } : {}) },
+    });
+    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
+    location.hash = "#studio/looks";
+    onLook(label, `Made ${label}. It is on the console's picker now; change it here.`);
     onClose();
   });
   const goPalette = () => run(async () => {
@@ -328,7 +369,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
           { id: "blank", title: "Blank", text: "A role, movers, and nothing on it: add blocks in the editor." },
           ...(routines.length ? [{ id: "copy", title: "A copy of a routine",
                                    text: "Everything, under the new name. The original is left alone." }] : []),
-          ...(looks.length ? [{ id: "look", title: "A look from the console",
+          ...(consoleLooks.length ? [{ id: "look", title: "A look from the console",
                                 text: "The look on its own lane, as a routine. It is this rig's own, so the routine is too." }] : []),
         ]}>{{
           copy: (
@@ -358,6 +399,84 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
             <datalist id="s-new-folders">{folders.map((f) => <option key={f} value={f} />)}</datalist>
           </label>
         </div>
+      </>
+    );
+  } else if (kind === "look") {
+    go = () => void goLook();
+    goLabel = "Make it";
+    ready = !!name.trim() && !lookNameTaken && looks != null && !looks.stale
+      && (start !== "copy" || !!lookSource) && (start !== "stored" || !!lookSource);
+    foot = looks?.stale ? `${looks.file} changed on disk: read the looks again on the Looks page first.`
+      : `Written to ${looks?.event ?? "the event"}'s ${looks?.file ?? "looks"} now, and on the `
+        + "console's picker at once. Its arguments are changed on the Looks page.";
+    const rigGroups = [...(looks?.groups ?? []), ...groupsPicked.filter((g) => !(looks?.groups ?? []).includes(g))];
+    body = (
+      <>
+        <div className="s-name-row">
+          <label className="s-field">Name
+            <input value={name} aria-label="name" autoFocus placeholder="As the picker will list it"
+                   onChange={(e) => setName(e.target.value)} />
+          </label>
+          {lookNameTaken && <span className="small d-error">there is already a look of that name</span>}
+        </div>
+        <b className="small">Start from</b>
+        <Options value={start} onChange={(v) => {
+          setStart(v);
+          setLookGroups(null);
+          if (v === "stored" && !name.trim() && fromStored) setName(freeName(lookNames, fromStored));
+        }} options={[
+          { id: "block", title: "A block", text: "One of the building blocks routines are made of, at its defaults." },
+          ...(blockLooks.length ? [{ id: "copy", title: "A copy of a block look",
+                                     text: "Its block and arguments, under the new name." }] : []),
+          ...(remakable.length ? [{ id: "stored", title: "A stored look, as a block",
+                                    text: "For the stored looks one block says exactly: a color, a level, one position." }] : []),
+        ]}>{{
+          block: (
+            <select value={block} aria-label="block" onChange={(e) => setBlock(e.target.value)}>
+              {SLOTS.map((slot) => (
+                <optgroup key={slot} label={slot}>
+                  {lookBlocks(slot).map((b) => <option key={b} value={b}>{b}</option>)}
+                </optgroup>))}
+            </select>),
+          copy: (
+            <select value={copyLook} aria-label="copy of"
+                    onChange={(e) => { setCopyLook(e.target.value); setLookGroups(null); }}>
+              {blockLooks.map((l) => <option key={l.name} value={l.name}>{l.name} ({l.block})</option>)}
+            </select>),
+          stored: (
+            <>
+              <select value={fromStored} aria-label="from the stored look"
+                      onChange={(e) => {
+                        if (!name.trim() || name === freeName(lookNames, fromStored)) {
+                          setName(freeName(lookNames, e.target.value));
+                        }
+                        setFromStored(e.target.value);
+                        setLookGroups(null);
+                      }}>
+                {remakable.map((l) => <option key={l.name} value={l.name}>{l.name} ({l.block_version!.block})</option>)}
+              </select>
+              <span className="muted small">The stored look stays as it is. Hide it from the
+                picker on the Looks page once the new one has taken its place.</span>
+            </>),
+        }}</Options>
+        {rigGroups.length > 0 && (
+          <>
+            <b className="small">Fixtures</b>
+            <div className="d-chips" role="group" aria-label="fixture groups">
+              {rigGroups.map((g) => {
+                const on = groupsPicked.includes(g);
+                return (
+                  <button key={g} className={`s-chip${on ? " on" : ""}`} aria-pressed={on}
+                          onClick={() => setLookGroups(on ? groupsPicked.filter((x) => x !== g)
+                            : [...groupsPicked, g])}>{g}</button>
+                );
+              })}
+            </div>
+            <span className="muted small">{groupsPicked.length ? "It writes these groups and leaves the rest alone."
+              : lookSlot === "movement" ? "None picked: it moves every moving head."
+                : "None picked: it writes every fixture."}</span>
+          </>
+        )}
       </>
     );
   } else if (kind === "template") {
@@ -423,6 +542,8 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     );
   }
 
+  // A palette and a look have no editor to open unsaved in: Go writes them.
+  const writesNow = kind === "palette" || kind === "look";
   return (
     <div className="s-modal" role="presentation"
          onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); onClose(); } }}>
@@ -437,10 +558,11 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
           {error && <p className="d-error" role="alert">{error}</p>}
         </div>
         <footer className="s-dialog-foot">
-          <span className="muted small grow">{kind === "palette" && !canWrite
-            ? "This writes the show folder: open Studio from the link the engine printed." : foot}</span>
+          <span className="muted small grow">{writesNow && !canWrite
+            ? `This writes the ${kind === "look" ? "event" : "show folder"}: open Studio from the link `
+              + "the engine printed." : foot}</span>
           <button onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="d-primary" disabled={!go || !ready || busy || (kind === "palette" && !canWrite)}
+          <button className="d-primary" disabled={!go || !ready || busy || (writesNow && !canWrite)}
                   onClick={() => go?.()}>{busy ? "Working…" : goLabel}</button>
         </footer>
       </section>

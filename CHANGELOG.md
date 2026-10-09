@@ -17,6 +17,62 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — the rig's looks, in Studio
+
+- **Studio has a Looks page** (`#studio/looks`, under *This rig*): every look
+  of the event's library in one table -- what it is, which slot and fixtures
+  it writes, and every cue, preset, routine and timeline that names it -- with
+  filters by slot, by kind, by fixture group and by name.
+- **A block look is made and changed there.** Its block, its arguments (the
+  same fields the routine editor has), the fixture groups it writes, its notes
+  and its name; duplicate, download, delete. **+ New** makes one from a block,
+  from a copy, or from a stored look. A save is on the console's picker at
+  once: the engine reloads the library as it writes, with no restart, and a
+  timeline that is playing plays on until its rebuild lands.
+- **A stored look is not edited -- `looks.json` is still the port's -- but it
+  is no longer a dead end.** It can be hidden from the picker, with the look
+  that covers it and why, and shown again. Where one block says exactly what
+  it does (one color, one level, every head at the same offset), **Make a
+  block look from it** makes that block look and hides the original.
+- **A rename takes everything that names the look with it**: the show
+  folder's routines, timelines and template sets, the cues and presets, what
+  is tuned or on stage under the old name, and whatever was hidden in its
+  favour. The look is written under both names until every reference has
+  moved, so a rename stopped part-way leaves nothing naming a look that is
+  gone -- the order `routine_rename` uses, for the same reason.
+- **A look that took over a stored look** (`supersedes`) can be renamed like
+  any other: the stored look comes back under the old name, hidden in favour
+  of the new one. Deleting one gives the stored look back, and leaves it on
+  screen to hide. Changing one is recorded: the engine writes `exact: false`
+  on a superseding look the moment a save makes it differ from the stored
+  look (and takes it off again if it is changed back), and `test_library`
+  holds only the exact ones to their originals -- so a deliberate edit in
+  Studio no longer fails a test that was guarding against an accidental one.
+- **The engine watches the look files.** An edit to `parametric_looks.json`
+  or `looks.json` made outside Studio -- by hand, by the MCP server, by the
+  porter -- is read within a second or two, with no restart and no button. A
+  file that does not load is said once, with why, on the Looks page and in
+  the notices, and the library that was running runs on.
+- **The console's tuning can be kept.** When a look's knobs have been turned
+  on the console, its panel offers to take those values, to save as the look.
+- New commands, all `configure`: `look_save {look, was?, base_rev}`,
+  `look_delete {look, base_rev}`, `look_hide {look, hidden?, replaced_by?,
+  note?, base_rev}` and `looks_reload`. `GET /api/looks` lists the library
+  (it answers with no show folder: looks are the event's), and the snapshot
+  carries `looks_rev`. Every write quotes the rev it read.
+- **The same edits in conversation**: the MCP server has `list_looks`,
+  `get_look`, `put_look`, `delete_look` and `hide_look`
+  ([`engine/looktools.py`](engine/looktools.py)), running the same checks and
+  writing the same file. Dry runs unless asked, and a running engine reads
+  what they write by itself; only a rename is refused while one runs, since
+  it has the engine's presets and cue list to move.
+- `parametric_looks.json` is written in the layout it has by hand -- a look's
+  arguments on one line, a blank line between one picker heading and the next
+  -- and the file as committed comes back byte for byte, so a save changes
+  only the lines that changed.
+  An event that was never ported (no `looks.json`) now loads the looks made
+  for it; before, `parametric_looks.json` was read only beside a port.
+
 ### Added — a taller waveform, and lanes that follow the track's audio
 
 - **The waveform lane resizes.** Drag its bottom edge (or focus it and use the
