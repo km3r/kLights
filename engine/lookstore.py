@@ -53,8 +53,28 @@ from . import library as libmod
 from . import showfiles
 
 FILE = libmod.PARAMETRIC_FILE
+CUES_FILE = "cues.json"
+PRESETS_FILE = "presets.json"
+SLOTS = showfiles.SLOTS
+
 MAX_NAME = 80
 MAX_NOTES = 2000
+# What one look may carry. Generous for anything a person would author -- a
+# chase of colors, a path of room points -- and small enough that no save can
+# make the file, or the snapshot every console receives ten times a second
+# (it carries each look's arguments), a megabyte.
+MAX_GROUPS = 32
+MAX_LIST = 64
+MAX_TEXT = 200
+
+# How a string says it is NOT a look's name, wherever a look can be named: a
+# palette role, a hex color, a routine's parameter. A look may not be called
+# like one -- `usage` and `rename` find a look by its name, and would take
+# every "@primary" in the show folder for a look called that.
+REFERENCE_MARKS = ("@", "#", "$")
+
+# The blocks that state a stored look exactly (`block_version`).
+_SOLID, _DIM, _OFFSET = "solid", "dim", "offset"
 
 # The keys of a block look this module writes, in the order the file has
 # always had them. Anything else on an entry (a hand-added comment) is kept.
@@ -157,6 +177,66 @@ def _kind_of(look: Any) -> Any:
     return libmod.KIND_FOR_BLOCK.get(block, libmod.KIND_FOR_SLOT[slot])
 
 
+def _text(value: Any) -> str:
+    """One JSON scalar or key. Not escaped to ASCII: the file is UTF-8 and is
+    read by people, and "45\\u00b0" for a note that says 45 degrees is not
+    something anyone should have to read."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _inline(value: Any) -> str:
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        return "{ " + ", ".join(f"{_text(k)}: {_inline(v)}"
+                                for k, v in value.items()) + " }"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_inline(v) for v in value) + "]"
+    return _text(value)
+
+
+def _block(value: Any, depth: int) -> str:
+    """A value over as many lines as it needs: a container nested deep enough
+    (an entry's own fields) goes on one line when it fits."""
+    pad, inner = "  " * depth, "  " * (depth + 1)
+    if isinstance(value, (dict, list, tuple)) and value:
+        if depth >= _INLINE_DEPTH:
+            flat = _inline(value)
+            if len(flat) <= _INLINE_WIDTH:
+                return flat
+        if isinstance(value, dict):
+            rows = [f"{inner}{_text(k)}: {_block(v, depth + 1)}"
+                    for k, v in value.items()]
+            return "{\n" + ",\n".join(rows) + f"\n{pad}}}"
+        rows = [f"{inner}{_block(v, depth + 1)}" for v in value]
+        return "[\n" + ",\n".join(rows) + f"\n{pad}]"
+    return _inline(value)
+
+
+def relaid(original: str, before: Any, after: Any) -> Optional[str]:
+    """`after` as text in the layout `original` has, or None if that cannot be
+    done honestly -- for a hand-laid-out file (cues.json) that an edit here
+    changes a few strings of.
+
+    Only when two things hold: `before`, the document `original` parses to,
+    renders back to exactly `original`'s own lines once its blank lines are
+    set aside; and `after` renders to the same number of lines. Then each of
+    the original's lines is replaced by its counterpart and every blank line
+    stays where it was. Anything else -- a file laid out some other way, an
+    edit that adds a line -- and the caller writes the plain dump instead,
+    which is always correct and merely noisier to diff."""
+    lines = original.replace("\r\n", "\n").split("\n")
+    kept = [line for line in lines if line.strip()]
+    if kept != [line for line in _block(before, 0).split("\n") if line.strip()]:
+        return None
+    fresh = [line for line in _block(after, 0).split("\n") if line.strip()]
+    if len(fresh) != len(kept):
+        return None
+    replacement = iter(fresh)
+    return "\n".join(next(replacement) if line.strip() else line
+                     for line in lines)
+
+
 def render(cfg: dict) -> str:
     """The file's text, in the layout it has always been written by hand in:
     a look to a block of lines, its `groups` and `args` each on one, a blank
@@ -168,31 +248,7 @@ def render(cfg: dict) -> str:
     turn a one-number change into a diff of the whole library, and nobody
     reviewing it could see what was changed. Rendered this way, the file as it
     was written by hand comes back byte for byte (`test_looks`)."""
-    def inline(value: Any) -> str:
-        if isinstance(value, dict):
-            if not value:
-                return "{}"
-            return "{ " + ", ".join(f"{json.dumps(k)}: {inline(v)}"
-                                    for k, v in value.items()) + " }"
-        if isinstance(value, (list, tuple)):
-            return "[" + ", ".join(inline(v) for v in value) + "]"
-        return json.dumps(value)
-
-    def block(value: Any, depth: int) -> str:
-        pad, inner = "  " * depth, "  " * (depth + 1)
-        if isinstance(value, (dict, list, tuple)) and value:
-            if depth >= _INLINE_DEPTH:
-                flat = inline(value)
-                if len(flat) <= _INLINE_WIDTH:
-                    return flat
-            if isinstance(value, dict):
-                rows = [f"{inner}{json.dumps(k)}: {block(v, depth + 1)}"
-                        for k, v in value.items()]
-                return "{\n" + ",\n".join(rows) + f"\n{pad}}}"
-            rows = [f"{inner}{block(v, depth + 1)}" for v in value]
-            return "[\n" + ",\n".join(rows) + f"\n{pad}]"
-        return inline(value)
-
+    block = _block
     if not isinstance(cfg, dict) or not cfg:
         return block(cfg, 0) + "\n"
     entries: list[str] = []
@@ -200,7 +256,7 @@ def render(cfg: dict) -> str:
         listed = (isinstance(value, list) and value
                   and all(isinstance(v, dict) for v in value))
         if not listed:
-            entries.append(f"  {json.dumps(key)}: {block(value, 1)}")
+            entries.append(f"  {_text(key)}: {block(value, 1)}")
             continue
         rows: list[str] = []
         before: Any = None
@@ -210,7 +266,7 @@ def render(cfg: dict) -> str:
             rows.append(f"{gap}    {block(item, 2)}")
             before = heading
         gap = "\n" if entries else ""
-        entries.append(f"{gap}  {json.dumps(key)}: [\n" + ",\n".join(rows) + "\n  ]")
+        entries.append(f"{gap}  {_text(key)}: [\n" + ",\n".join(rows) + "\n  ]")
     return "{\n" + ",\n".join(entries) + "\n}\n"
 
 
@@ -224,6 +280,11 @@ def clean_name(raw: Any, what: str = "a look") -> str:
         raise ValueError(f"a look's name is at most {MAX_NAME} characters")
     if any(ord(c) < 32 for c in name):
         raise ValueError("a look's name cannot hold control characters")
+    if name.startswith(REFERENCE_MARKS):
+        raise ValueError(
+            f"a look's name cannot start with {', '.join(REFERENCE_MARKS)}: "
+            f"wherever a look can be named, those begin a palette role, a "
+            f"color and a parameter, and {name!r} could not be told from one")
     return name
 
 
@@ -278,6 +339,11 @@ def clean_look(raw: Any) -> dict:
             value = int(round(value)) if param.kind == "integer" else value
         elif param.kind == "bool" and not isinstance(value, bool):
             raise ValueError(f"{name!r}: {key} must be true or false, got {value!r}")
+        if _oversize(value):
+            raise ValueError(f"{name!r}: {key} is more than a look can carry -- "
+                             f"at most {MAX_LIST} entries in a list, "
+                             f"{MAX_TEXT} characters in a text, and nothing "
+                             f"nested deeper than a list of lists")
         args[key] = value
     if _non_finite(args):
         # A color or a point is a list, and a NaN inside one passes every
@@ -293,6 +359,9 @@ def clean_look(raw: Any) -> dict:
         raise ValueError(f"{name!r}: groups is a list of rig tags, e.g. "
                          f'["movers"]')
     groups = list(dict.fromkeys(g.strip() for g in groups_in))
+    if len(groups) > MAX_GROUPS or any(len(g) > MAX_NAME for g in groups):
+        raise ValueError(f"{name!r}: at most {MAX_GROUPS} groups, each a rig "
+                         f"tag of at most {MAX_NAME} characters")
     notes = raw.get("notes") or ""
     if not isinstance(notes, str):
         raise ValueError(f"{name!r}: notes must be text")
@@ -315,6 +384,17 @@ def clean_look(raw: Any) -> dict:
     return out
 
 
+def _oversize(value: Any, depth: int = 0) -> bool:
+    """A list longer, a text longer or a value nested deeper than any block's
+    argument is. Checked before anything walks the value."""
+    if isinstance(value, str):
+        return len(value) > MAX_TEXT
+    if isinstance(value, (list, tuple)):
+        return (depth >= 2 or len(value) > MAX_LIST
+                or any(_oversize(v, depth + 1) for v in value))
+    return isinstance(value, dict)
+
+
 def _non_finite(value: Any) -> bool:
     if isinstance(value, float):
         return not math.isfinite(value)
@@ -333,6 +413,16 @@ def unknown_groups(look: Mapping, rig) -> list[str]:
     return [g for g in look.get("groups") or () if g not in have]
 
 
+def group_warnings(look: Mapping, rig) -> list[str]:
+    """`unknown_groups`, in words, for whoever just saved the look."""
+    missing = unknown_groups(look, rig)
+    if not missing:
+        return []
+    return [f"nothing on this rig is tagged "
+            f"{', '.join(repr(g) for g in missing)}: until something is, "
+            f"{look['name']!r} moves and lights nothing"]
+
+
 def _ordered(look: Mapping) -> dict:
     """A look with this module's keys first, in the file's order."""
     return {**{k: look[k] for k in _LOOK_KEYS if k in look},
@@ -342,12 +432,18 @@ def _ordered(look: Mapping) -> dict:
 # -- the edits -------------------------------------------------------------------
 
 def save(event_dir: Path, look: dict, was: Optional[str], base_rev: Any,
-         dry_run: bool = False) -> Optional[str]:
+         dry_run: bool = False, *, hides: Optional[Mapping] = None
+         ) -> Optional[str]:
     """Write one block look (already through `clean_look`). Returns the rev.
 
     `was` None makes a NEW look, refused if the name is taken -- by a block
     look or by a stored one. `was` names the look being changed, under the
     same name: a change of name is `rename`, which has more to move.
+
+    A new look may hide another as it arrives (`hides`: `{look, note?}`): a
+    stored look remade as a block look, and the original taken off the picker
+    in its favour, is ONE write -- so it cannot be half done, with the look
+    made and the original still beside it.
 
     A look that took over a stored look (`supersedes`) stays that through an
     edit -- the flag is what the look IS, decided where it was made -- but
@@ -375,8 +471,22 @@ def save(event_dir: Path, look: dict, was: Optional[str], base_rev: Any,
                 and not reproduces(fresh, stored[name]):
             fresh["exact"] = False
         looks.append(_ordered(fresh))
+        if hides is not None:
+            target = hides.get("look")
+            if not isinstance(target, str) or (target not in stored
+                                               and target not in block_names):
+                raise ValueError(f"no look named {target!r} to hide")
+            row: dict[str, Any] = {"name": target, "replaced_by": name}
+            note = hides.get("note")
+            if isinstance(note, str) and note.strip():
+                row["note"] = note.strip()[:MAX_NOTES]
+            cfg["retired"] = [r for r in cfg.get("retired") or ()
+                              if r.get("name") != target] + [row]
         return _write(event_dir, cfg, dry_run)
 
+    if hides is not None:
+        raise ValueError("only a new look can hide another as it is made: "
+                         "hide it with look_hide")
     if name != was:
         raise ValueError(f"{was!r} to {name!r} is a rename: it has more to "
                          f"move than this file (lookstore.rename)")
@@ -488,11 +598,23 @@ def rename(event_dir: Path, look: dict, was: str, base_rev: Any, *,
         if result.errors:
             raise ValueError(f"{rel} names {was!r} and would not be valid "
                              f"rewritten: {result.errors[0]}")
-    cue_doc, cue_count = _renamed_file(Path(event_dir) / "cues.json", "cues",
-                                       was, name)
-    preset_doc, preset_count = (
-        _renamed_file(Path(event_dir) / "presets.json", "presets", was, name)
-        if presets else (None, 0))
+        # And that it is still the file the folder was read from. A folder
+        # keeps the last good version of a file that no longer loads, so this
+        # is where a timeline someone is half-way through editing by hand is
+        # met: refused HERE, with nothing written, rather than after the look
+        # is already under both names.
+        on_disk = showfiles.doc_rev(showfiles.path_for(show[0], kind, ident))
+        if on_disk != show[1].revs.get(rel):
+            raise showfiles.StaleEdit(
+                f"{rel} names {was!r}, and on disk it is not the file that "
+                f"last loaded cleanly -- it is being edited, or does not "
+                f"load. Nothing has been renamed: save or mend that file, "
+                f"then rename again")
+    cue_doc, cue_count, cue_text = _renamed_file(
+        Path(event_dir) / CUES_FILE, "cues", was, name)
+    preset_doc, preset_count, preset_text = (
+        _renamed_file(Path(event_dir) / PRESETS_FILE, "presets", was, name)
+        if presets else (None, 0, None))
     out = {"written": [rel for _, _, _, rel in docs], "cues": cue_count,
            "presets": preset_count}
     if dry_run:
@@ -507,12 +629,13 @@ def rename(event_dir: Path, look: dict, was: str, base_rev: Any, *,
                                     doc, kind, show[1].revs.get(rel, ""))
                 done.append(rel)
             if cue_doc is not None:
-                configmod.write_json_atomic(Path(event_dir) / "cues.json", cue_doc)
-                done.append("cues.json")
+                configmod.write_json_atomic(Path(event_dir) / CUES_FILE, cue_doc,
+                                            text=cue_text)
+                done.append(CUES_FILE)
             if preset_doc is not None:
-                configmod.write_json_atomic(Path(event_dir) / "presets.json",
-                                            preset_doc)
-                done.append("presets.json")
+                configmod.write_json_atomic(Path(event_dir) / PRESETS_FILE,
+                                            preset_doc, text=preset_text)
+                done.append(PRESETS_FILE)
         except (ValueError, OSError) as exc:
             raise ValueError(
                 f"renamed as far as {', '.join(done) or 'the look itself'}, then "
@@ -579,7 +702,7 @@ def renamed(block: Mapping, old: str, new: str) -> dict:
     """A preset or a cue with look `old` called `new`: in its three slots, and
     as the key of its per-look tuning. Equal to `block` if it never names it."""
     out = dict(block)
-    for slot in ("movement", "color", "level"):
+    for slot in SLOTS:
         if isinstance(out.get(slot), dict):
             out[slot] = {group: (new if name == old else name)
                          for group, name in out[slot].items()}
@@ -590,25 +713,29 @@ def renamed(block: Mapping, old: str, new: str) -> dict:
 
 
 def _renamed_file(path: Path, key: str, old: str, new: str
-                  ) -> tuple[Optional[dict], int]:
+                  ) -> tuple[Optional[dict], int, Optional[str]]:
     """cues.json or presets.json with look `old` called `new`: the document to
-    write and how many entries changed, or (None, 0) when none do -- or when
-    there is no such file, or it does not parse.
+    write, how many entries changed, and its text in the layout the file has
+    now where that can be kept (`relaid`; None for the plain dump). Nothing to
+    write -- (None, 0, None) -- when no entry names the look, when there is no
+    such file, or when it does not parse.
 
     Read as plain JSON, not through its loader: every key the file has -- its
     comments, a field this engine does not know -- goes back as it came."""
     try:
-        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        original = Path(path).read_text(encoding="utf-8")
+        doc = json.loads(original)
     except (FileNotFoundError, json.JSONDecodeError):
-        return None, 0
+        return None, 0, None
     entries = doc.get(key) if isinstance(doc, dict) else None
     if not isinstance(entries, list):
-        return None, 0
+        return None, 0, None
     after = [renamed(e, old, new) if isinstance(e, dict) else e for e in entries]
     changed = sum(a != b for a, b in zip(after, entries))
     if not changed:
-        return None, 0
-    return {**doc, key: after}, changed
+        return None, 0, None
+    out = {**doc, key: after}
+    return out, changed, relaid(original, doc, out)
 
 
 _NAMING_ARGS = ("color", "colors", "look")
@@ -629,6 +756,11 @@ def _refs(kind: str, doc: Mapping) -> Iterator[tuple[Any, Any]]:
     clip's parameters; a template set's picks pass parameters too. A string
     in a parameter is a color or a look, whichever it is.
     """
+    def named(value: Any) -> bool:
+        # "@primary", "#ff2d6f" and "$color" say what they are, and it is not
+        # a look -- whatever a look in some hand-edited file is called.
+        return isinstance(value, str) and not value.startswith(REFERENCE_MARKS)
+
     def strings(values: Any, only: Optional[Iterable[str]] = None
                 ) -> Iterator[tuple[Any, Any]]:
         if not isinstance(values, dict):
@@ -636,11 +768,11 @@ def _refs(kind: str, doc: Mapping) -> Iterator[tuple[Any, Any]]:
         for key, value in values.items():
             if only is not None and key not in only:
                 continue
-            if isinstance(value, str):
+            if named(value):
                 yield values, key
             elif isinstance(value, list):
                 for i, item in enumerate(value):
-                    if isinstance(item, str):
+                    if named(item):
                         yield value, i
 
     def items(document: Mapping) -> Iterator[dict]:
@@ -651,7 +783,7 @@ def _refs(kind: str, doc: Mapping) -> Iterator[tuple[Any, Any]]:
 
     if kind == "routine":
         for param in (doc.get("params") or {}).values():
-            if isinstance(param, dict) and isinstance(param.get("default"), str):
+            if isinstance(param, dict) and named(param.get("default")):
                 yield param, "default"
         for values in (doc.get("variations") or {}).values():
             yield from strings(values)
@@ -667,7 +799,7 @@ def _refs(kind: str, doc: Mapping) -> Iterator[tuple[Any, Any]]:
             elif what == "routine":
                 yield from strings(item.get("params"))
             elif what == "snapshot":
-                for slot in ("movement", "color", "level"):
+                for slot in SLOTS:
                     yield from strings(item.get(slot))
     elif kind == "template_set":
         picks = list((doc.get("phrases") or {}).values()) + list(
@@ -799,15 +931,15 @@ def block_version(entry: libmod.LibraryEntry) -> Optional[dict]:
     if entry.kind == "color" and entry.color is not None and not entry.whites \
             and entry.colors is None and entry.intensity is None:
         rgb = _rgb(entry.color)
-        return {"block": "solid", "args": {"color": rgb}} if rgb else None
+        return {"block": _SOLID, "args": {"color": rgb}} if rgb else None
     if entry.kind == "intensity" and entry.intensity is not None \
             and not entry.intensities and not entry.strobes \
             and entry.levels is None:
-        return {"block": "dim", "args": {"level": round(entry.intensity, 4)}}
+        return {"block": _DIM, "args": {"level": round(entry.intensity, 4)}}
     if entry.kind == "pose" and entry.intensity is None:
         one = _one_offset(entry)
         if one is not None:
-            return {"block": "offset",
+            return {"block": _OFFSET,
                     "args": {"bearing": one[0], "elevation": one[1]}}
     return None
 
@@ -833,7 +965,7 @@ def reproduces(look: Mapping, stored: libmod.LibraryEntry) -> bool:
         return False
     declared = {p.name: p.default for p in blocksmod.PARAMS[version["block"]]}
     given = look.get("args") or {}
-    within = _SAME_DEGREES if version["block"] == "offset" else _SAME_LEVEL
+    within = _SAME_DEGREES if version["block"] == _OFFSET else _SAME_LEVEL
     for key, want in version["args"].items():
         have = given.get(key, declared.get(key))
         if isinstance(want, list):
@@ -876,8 +1008,13 @@ def usage(cues: Sequence[Any], presets: Sequence[Mapping],
 
     for kind, things in (("cues", cues), ("presets", presets)):
         for thing in things:
-            for slot in ("movement", "color", "level"):
-                for name in (field(thing, slot) or {}).values():
+            for slot in SLOTS:
+                # A slot that is not an object -- a preset or a cue edited by
+                # hand -- names nothing here. Whatever loads that file says
+                # what is wrong with it; this runs on an HTTP thread for
+                # every Studio page, and must not be what falls over.
+                held = field(thing, slot)
+                for name in (held.values() if isinstance(held, Mapping) else ()):
                     add(name, kind, field(thing, "name"))
     if folder is not None:
         for kind, ident, doc in _folder_docs(folder):
@@ -897,13 +1034,40 @@ def usage(cues: Sequence[Any], presets: Sequence[Mapping],
     return out
 
 
+def delete_refusal(entry: Optional[libmod.LibraryEntry],
+                   use: Optional[Mapping]) -> Optional[str]:
+    """Why this look may not be deleted, or None if it may -- asked by the
+    engine's `look_delete` and by the MCP tool, so there is one answer.
+
+    A stored look first: no amount of taking it out of cues makes a look in
+    looks.json deletable, and saying "it is still used" would send someone to
+    do exactly that. A look that took over a stored one may always go -- the
+    stored look takes the name back, so whatever names it still plays."""
+    if entry is None:
+        return None                 # `delete` says there is no such look
+    if not entry.is_parametric:
+        return (f"{entry.name!r} is a stored look: it cannot be deleted, only "
+                f"hidden from the picker")
+    if entry.supersedes:
+        return None
+    named = uses(use)
+    if named:
+        return (f"{entry.name!r} is still used by {'; '.join(named)}: take it "
+                f"out of those first")
+    if use and use["hides"]:
+        return (f"{', '.join(use['hides'])} is hidden in favour of "
+                f"{entry.name!r}: show it again, or point it at another look, "
+                f"first")
+    return None
+
+
 def uses(use: Optional[Mapping]) -> list[str]:
     """Where a look is named, as the files that name it, in words -- for a
     refusal. Being hidden in its favour is not a use: nothing plays through it."""
     if not use:
         return []
-    return ([f"cues.json ({', '.join(use['cues'])})"] if use["cues"] else []) \
-        + ([f"presets.json ({', '.join(use['presets'])})"] if use["presets"] else []) \
+    return ([f"{CUES_FILE} ({', '.join(use['cues'])})"] if use["cues"] else []) \
+        + ([f"{PRESETS_FILE} ({', '.join(use['presets'])})"] if use["presets"] else []) \
         + [f"routines/{r['id']}.json" for r in use["routines"]] \
         + [f"timelines/{t['track']}.json" for t in use["timelines"]] \
         + [f"templates/{t['id']}.json" for t in use["templates"]]

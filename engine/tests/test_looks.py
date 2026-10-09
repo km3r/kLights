@@ -89,6 +89,35 @@ check("an argument too long for a line is spread over several, still JSON",
       json.loads(lookstore.render(long)) == long
       and max(len(line) for line in lookstore.render(long).splitlines()) <= 110)
 
+accented = lookstore.render({"looks": [{"name": "Caf\u00e9", "block": "dim",
+                                        "notes": "45\u00b0 up"}]})
+check("a name or a note is written as it was typed, not escaped to ASCII: the "
+      "file is read by people",
+      '"Caf\u00e9"' in accented and '"45\u00b0 up"' in accented
+      and "\\u00" not in accented, accented)
+
+cues_text = (REPO / "events" / "despacio" / "cues.json").read_text(
+    encoding="utf-8").replace("\r\n", "\n")
+cues_doc = json.loads(cues_text)
+check("cues.json, laid out by hand, can be kept in its layout: unchanged, it "
+      "comes back byte for byte",
+      lookstore.relaid(cues_text, cues_doc, cues_doc) == cues_text)
+cues_copy = TMP / "cues-layout.json"
+cues_copy.write_text(cues_text, encoding="utf-8", newline="\n")
+moved_doc, moved_count, moved_text = lookstore._renamed_file(
+    cues_copy, "cues", "Heads - Ball", "Ball")
+was_lines, now_lines = cues_text.split("\n"), (moved_text or "").split("\n")
+differ = [i for i, (a, b) in enumerate(zip(was_lines, now_lines)) if a != b]
+check("and a rename changes only the lines that name the look -- every other "
+      "line, and every blank line, where it was",
+      moved_count == 2 and len(now_lines) == len(was_lines) and len(differ) == 2
+      and all('"Heads - Ball"' in was_lines[i] and '"Ball"' in now_lines[i] for i in differ)
+      and json.loads(moved_text) == moved_doc, f"{moved_count} {differ}")
+check("a file laid out some other way is not guessed at: the plain dump is "
+      "written instead",
+      lookstore.relaid(json.dumps(cues_doc, indent=2) + "\n", cues_doc, cues_doc) is None
+      and lookstore.relaid(cues_text, cues_doc, {**cues_doc, "extra": [1, 2]}) is None)
+
 # -- 2. a look from a client -----------------------------------------------------
 print("\n2. a look as a client sends it")
 rig = rigmod.load_rig(EVENT)
@@ -139,9 +168,28 @@ for label, look, needles in (
     ("groups that are not a list of tags",
      {"name": "A", "block": "orbit", "groups": "movers"}, ("groups is a list",)),
     ("something that is not an object", ["orbit"], ("a look is an object",)),
+    # Wherever a look can be named, these begin something that is not one.
+    ("a name that reads as a palette role", {"name": "@primary", "block": "orbit"},
+     ("cannot start with", "palette role")),
+    ("a name that reads as a color", {"name": "#ff0000", "block": "orbit"}, ("cannot start with",)),
+    ("a name that reads as a parameter", {"name": "$radius", "block": "orbit"}, ("cannot start with",)),
+    ("more points than a look can carry",
+     {"name": "A", "block": "aim_points", "args": {"points": [[0.1, 0.2, 0.3]] * 65}},
+     ("more than a look can carry", "64")),
+    ("a list nested deeper than any argument is",
+     {"name": "A", "block": "color_chase", "args": {"colors": [[[1, 0, 0]]]}},
+     ("more than a look can carry",)),
+    ("a text longer than any argument is",
+     {"name": "A", "block": "solid", "args": {"color": "#" + "f" * 300}},
+     ("more than a look can carry",)),
+    ("more groups than a rig has", {"name": "A", "block": "orbit",
+                                    "groups": [f"g{i}" for i in range(33)]}, ("at most 32 groups",)),
 ):
     ok, said = raises(lambda look=look: lookstore.clean_look(look), *needles)
     check(f"refused: {label}", ok, said)
+check("as many points as a path would ever have are fine",
+      len(lookstore.clean_look({"name": "A", "block": "aim_points",
+                                "args": {"points": [[0.1, 0.2, 0.3]] * 64}})["args"]["points"]) == 64)
 check("a group nothing on the rig carries is allowed, and named",
       lookstore.unknown_groups({"groups": ["corner movers", "lasers"]}, rig) == ["lasers"])
 
@@ -600,7 +648,12 @@ try:
           r["ok"] is False and "Lazy Circle is hidden in favour of" in r["error"], f"{r}")
     r = ask({"type": "look_delete", "look": "MH Red", "base_rev": sc.looks_rev})
     check("a stored look cannot be deleted, only hidden",
-          r["ok"] is False and "hide it instead" in r["error"], f"{r}")
+          r["ok"] is False and "only hidden" in r["error"], f"{r}")
+    r = ask({"type": "look_delete", "look": "MH Pink", "base_rev": sc.looks_rev})
+    check("and one that cues use says THAT, not 'take it out of those first': "
+          "no amount of unpicking makes a stored look deletable",
+          r["ok"] is False and "is a stored look" in r["error"]
+          and "still used" not in r["error"], f"{r}")
     r = ask({"type": "look_delete", "look": "Lasers", "base_rev": "r:000000000000"})
     check("a delete quotes the rev too", r["ok"] is False and "changed since" in r["error"])
     r = ask({"type": "look_delete", "look": "Lasers", "base_rev": sc.looks_rev})
@@ -755,6 +808,166 @@ try:
           "rebuild lands (a rig change drops it at once; this is not one)",
           sc.player.program is sentinel and sc.player._program_for is None)
     sc.player.program = None
+
+    # -- 9b. what a code review of this found ---------------------------------------
+    print("\n9b. names that read as references, guards before writes, failures that answer")
+    from engine import showfiles as sf  # noqa: E402
+    timeline_path = SHOWS / "timelines" / "synth-128.json"
+
+    # A look called like a palette role can only arrive by hand: Studio and
+    # MCP refuse the name. Even so, nothing may take "@secondary" in a show
+    # file for that look.
+    doc = on_disk()
+    doc["looks"].append({"name": "@secondary", "block": "dim", "args": {"level": 0.5}})
+    FILE.write_text(lookstore.render(doc), encoding="utf-8")
+    ask({"type": "looks_reload"})
+    roles_before = timeline_path.read_text(encoding="utf-8")
+    check("(the timeline does use the palette role @secondary)", '"@secondary"' in roles_before)
+    check("a look whose name reads as a palette role is not 'used' by every "
+          "color that is that role",
+          "@secondary" in sc.by_name
+          and listed("@secondary")["used_by"]["timelines"] == []
+          and listed("@secondary")["used_by"]["routines"] == [])
+    r = ask({"type": "look_save", "was": "@secondary", "base_rev": sc.looks_rev,
+             "look": {"name": "Half Level", "block": "dim", "args": {"level": 0.5}}})
+    check("and renaming it rewrites no show file: the colors are still the role",
+          r["ok"] and r["data"]["written"] == []
+          and timeline_path.read_text(encoding="utf-8") == roles_before, f"{r}")
+    r = ask({"type": "look_save", "base_rev": sc.looks_rev,
+             "look": {"name": "@accent", "block": "dim"}})
+    check("the engine does not let one be made", r["ok"] is False and "cannot start with" in r["error"])
+
+    # Every guard before the first write: a show file that is mid-edit.
+    r = ask({"type": "look_save", "base_rev": sc.looks_rev,
+             "look": {"name": "Guarded", "block": "dim", "args": {"level": 0.4}}})
+    tl = json.loads(timeline_path.read_text(encoding="utf-8"))
+    tl["rows"].append({"id": "gd", "type": "clips", "target": "level",
+                       "items": [{"id": "gd1", "kind": "look", "look": "Guarded",
+                                  "at": 16, "len": 8}]})
+    good_timeline = json.dumps(tl, indent=2)
+    timeline_path.write_text(good_timeline, encoding="utf-8")
+    sc.reload_library()
+    for _ in range(3):
+        assert sc.worker.wait_idle(5.0)
+        sc._drain()
+    half_typed = good_timeline[:-30] + "   <<< half-typed by hand"
+    timeline_path.write_text(half_typed, encoding="utf-8")
+    rev_before = lookstore.file_rev(EVENT)
+    r = ask({"type": "look_save", "was": "Guarded", "base_rev": sc.looks_rev,
+             "look": {"name": "Guarded 2", "block": "dim", "args": {"level": 0.4}}})
+    check("a rename that would have to rewrite a file someone is half-way through "
+          "editing is refused BEFORE anything is written: no look under both names",
+          r["ok"] is False and "Nothing has been renamed" in r["error"]
+          and "timelines/synth-128.json" in r["error"]
+          and lookstore.file_rev(EVENT) == rev_before
+          and not any(l["name"] == "Guarded 2" for l in on_disk()["looks"])
+          and timeline_path.read_text(encoding="utf-8") == half_typed, f"{r}")
+    timeline_path.write_text(good_timeline, encoding="utf-8")
+    r = ask({"type": "look_save", "was": "Guarded", "base_rev": sc.looks_rev,
+             "look": {"name": "Guarded 2", "block": "dim", "args": {"level": 0.4}}})
+    check("and once the file is mended, the same rename goes through",
+          r["ok"] and r["data"]["written"] == ["timelines/synth-128.json"], f"{r}")
+
+    # A new look that hides another, in one write.
+    rev_before = sc.looks_rev
+    r = ask({"type": "look_save", "base_rev": sc.looks_rev,
+             "look": {"name": "Cyan Block", "groups": ["corner movers"],
+                      **lookstore.block_version(ported["MH Cyan"])},
+             "hides": {"look": "MH Cyan", "note": "remade"}})
+    check("a look made in place of another hides it in the same write: it cannot "
+          "be left half done",
+          r["ok"] and sc.by_name["MH Cyan"].retired
+          and sc.by_name["MH Cyan"].replaced_by == "Cyan Block"
+          and sc.by_name["MH Cyan"].retired_note == "remade"
+          and "Cyan Block" in sc.by_name, f"{r}")
+    r = ask({"type": "look_save", "base_rev": sc.looks_rev,
+             "look": {"name": "Nope Block", "block": "dim"}, "hides": {"look": "Nope"}})
+    check("hiding a look that is not there makes nothing at all",
+          r["ok"] is False and "no look named 'Nope' to hide" in r["error"]
+          and "Nope Block" not in sc.by_name
+          and not any(l["name"] == "Nope Block" for l in on_disk()["looks"]), f"{r}")
+    r = ask({"type": "look_save", "base_rev": sc.looks_rev, "was": "Cyan Block",
+             "look": {"name": "Cyan Block", "block": "solid", "args": {"color": "@primary"}},
+             "hides": {"look": "MH Green"}})
+    check("and only a NEW look may", r["ok"] is False and "on a new look only" in r["error"])
+
+    # /api/looks on a preset someone edited by hand.
+    kept_presets = sc.presets
+    sc.presets = [*kept_presets, {"name": "odd", "movement": "Heads - Ball", "color": None,
+                                  "level": {}, "bank": 9, "cell": 0, "tags": []}]
+    resp = apimod.handle(None, "/api/looks", looks=sc.looks_public)
+    check("a preset whose slot is not an object does not take the Looks page down: "
+          "it names nothing, and the library is still listed",
+          resp.status == 200 and len(json.loads(resp.body)["looks"]) == len(sc.library))
+    sc.presets = kept_presets
+    resp = apimod.handle(None, "/api/looks", looks=lambda: 1 / 0)
+    check("and whatever does go wrong describing the library is answered as JSON, "
+          "not as a dropped connection",
+          resp.status == 500 and "ZeroDivisionError" in json.loads(resp.body)["error"])
+
+    # looks.json itself broken, with the other file untouched.
+    stored_path = EVENT / "looks.json"
+    stored_text = stored_path.read_text(encoding="utf-8")
+    stored_path.write_text(stored_text[:-25], encoding="utf-8")
+    sc.look_watcher.poll()
+    sc.look_watcher.poll()
+    settle()
+    public = sc.looks_public()
+    check("a looks.json that does not load is said on the Looks page too, by name, "
+          "though parametric_looks.json is the file it compares",
+          public["stale"] is True and "looks.json is not usable" in (public["problem"] or "")
+          and "line" in public["problem"], f"{(public['problem'] or '')[:90]}")
+    r = ask({"type": "look_hide", "look": "MH Red", "base_rev": sc.looks_rev})
+    check("and a save refused on its account says which file",
+          r["ok"] is False and "looks.json is not usable" in r["error"], f"{r}")
+    stored_path.write_text(stored_text, encoding="utf-8")
+    sc.look_watcher.poll()
+    sc.look_watcher.poll()
+    settle()
+    check("mended, the page is clear again", sc.looks_public()["stale"] is False
+          and sc.looks_public()["problem"] is None)
+
+    # The install: nothing that can fail before the library is in, and whoever
+    # asked is always answered.
+    sc.apply({"type": "select_look", "name": "Rolling Breathe"}, None)
+    sc.apply({"type": "preset_save", "name": "breathe pad"}, None)
+    rolling = next(l for l in on_disk()["looks"] if l["name"] == "Rolling Breathe")
+    real_save_presets = servermod.save_presets
+
+    def disk_full(event_dir, presets):
+        raise OSError("disk full")
+
+    servermod.save_presets = disk_full
+    try:
+        r = ask({"type": "look_save", "was": "Rolling Breathe", "base_rev": sc.looks_rev,
+                 "look": {**rolling, "name": "Rolling"}})
+    finally:
+        servermod.save_presets = real_save_presets
+    check("a rename whose presets cannot be written is still installed and still "
+          "answered: the library, the slot and the presets in memory follow, and a "
+          "notice says the file did not",
+          r is not None and r["ok"] and "Rolling" in sc.by_name
+          and sc.slots["level"].get("corner movers") == "Rolling"
+          and next(p for p in sc.presets if p["name"] == "breathe pad")["level"]
+          == {"corner movers": "Rolling"}
+          and any("presets.json could not be written" in n for n in sc.notices),
+          f"{r} {sc.notices[-2:]}")
+    real_install = sc._install_looks
+
+    def cannot(*args, **kwargs):
+        raise RuntimeError("no room")
+
+    sc._install_looks = cannot
+    try:
+        r = ask({"type": "look_hide", "look": "MH Orange", "base_rev": sc.looks_rev})
+    finally:
+        sc._install_looks = real_install
+    check("and if the install itself fails, the client is told so rather than left "
+          "to time out",
+          r is not None and r["ok"] is False and "was written, but the engine could "
+          "not take it up" in r["error"], f"{r}")
+    ask({"type": "looks_reload"})
+    check("(the file it wrote is read on the next look)", sc.by_name["MH Orange"].retired)
 
     # -- 10. an event that was never ported ----------------------------------------
     print("\n10. an event with no looks at all")

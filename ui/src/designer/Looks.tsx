@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Engine } from "./Designer";
 import { BLOCK_ARGS, BLOCK_SLOT, SLOTS, freeName, hexColor, lookUses, normalizeName } from "./model";
 import type { ArgSpec, LookSummary, LookUsage, LooksList, Slot } from "./model";
@@ -29,6 +29,12 @@ import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite }
  */
 
 const SLOT_NAME: Record<Slot, string> = { movement: "Movement", color: "Color", level: "Level" };
+/** Where this page is, for whatever sends someone to it. */
+export const LOOKS_HASH = "#studio/looks";
+/** The block a new look is offered first: the one most looks are. */
+export const FIRST_BLOCK = "orbit";
+/** Why the original is hidden, when a stored look is remade as a block look. */
+const REMADE_NOTE = "Remade as a block look in Studio.";
 const NO_USE: LookUsage = { cues: [], presets: [], routines: [], timelines: [], templates: [],
                             hides: [] };
 
@@ -61,14 +67,17 @@ function storedArg(spec: ArgSpec, v: unknown): unknown {
   return v;
 }
 
-/** The colors a look states outright, for a row's swatches. */
+/** The colors a look states outright, for a row's swatches. Only what its
+ *  block DECLARES as a color: a room point is three numbers in 0..1 as well,
+ *  and an aim_points look is not three shades of olive. */
 function swatchesOf(l: LookSummary): string[] {
   const out: string[] = [];
   const take = (v: unknown) => { const hex = hexColor(v); if (hex && !out.includes(hex)) out.push(hex); };
   for (const rgb of l.stored?.swatches ?? []) take(rgb);
-  for (const v of Object.values(l.args ?? {})) {
-    take(v);
-    if (Array.isArray(v)) v.forEach(take);
+  for (const spec of BLOCK_ARGS[l.block ?? ""] ?? []) {
+    const v = l.args?.[spec.name];
+    if (spec.kind === "color") take(v);
+    else if (spec.kind === "colors" && Array.isArray(v)) v.forEach(take);
   }
   return out.slice(0, 6);
 }
@@ -99,9 +108,11 @@ function onStage(engine: Engine): Set<string> {
 type Show = "all" | "block" | "stored" | "hidden" | "unused";
 type Sort = "name" | "picker";
 
-export function LooksView({ engine, list, error, selected, onSelect, onNew, onDone }: {
+export function LooksView({ engine, list, error, selected, unsaved, onSelect, onNew, onDone }: {
   engine: Engine; list: LooksList | null; error: string | null;
   selected: string | null; onSelect: (name: string) => void;
+  /** The looks with edits not yet saved: kept while another look is looked at. */
+  unsaved: ReadonlySet<string>;
   /** Open + New's dialog, for a look. */
   onNew: () => void;
   onDone: (said: string) => void;
@@ -120,7 +131,8 @@ export function LooksView({ engine, list, error, selected, onSelect, onNew, onDo
   const stepCount = every.filter((l) => l.step_of).length;
   const live = onStage(engine);
   const words = normalizeName(query).split(" ").filter(Boolean);
-  const looks = every.filter((l) => steps || words.length > 0 || !l.step_of || l.name === selected);
+  const looks = every.filter((l) => steps || words.length > 0 || !l.step_of || l.name === selected
+    || unsaved.has(l.name));
   const inSlot = looks.filter((l) => slot === "all" || l.slot === slot);
   const is: Record<Show, (l: LookSummary) => boolean> = {
     all: () => true,
@@ -163,7 +175,7 @@ export function LooksView({ engine, list, error, selected, onSelect, onNew, onDo
         <button onClick={onNew}>New look…</button>
       </div>
 
-      {list?.stale && (
+      {list && (list.stale || list.problem) && (
         <div className="s-note warn" role="alert">
           <b>{list.problem ? `${list.file} on disk does not load, so the engine is running the `
             + "library it had." : `${list.file} changed on disk since the engine read it.`}</b>
@@ -254,6 +266,7 @@ export function LooksView({ engine, list, error, selected, onSelect, onNew, onDo
                       || <span className="muted">{l.slot === "movement" ? "the movers" : "everything"}</span>}</td>
                     <td className="small">{used || <span className="muted">nothing</span>}</td>
                     <td className="s-look-state">
+                      {unsaved.has(l.name) && <Badge tone="info">Unsaved</Badge>}
                       {live.has(l.name) && <Badge tone="good">On stage</Badge>}
                       {l.retired && <Badge>Hidden</Badge>}
                       {l.source === "stored" ? <span className="s-tag">stored</span>
@@ -273,6 +286,11 @@ export function LooksView({ engine, list, error, selected, onSelect, onNew, onDo
 }
 
 // -- the selected look --------------------------------------------------------------
+
+/** A block look as it is being edited. The page keeps one per look that has
+ *  unsaved changes (`LookDraft`), so looking at another look -- to compare, to
+ *  copy a number -- does not throw the work away. */
+export type LookDraft = Edit;
 
 interface Edit {
   name: string;
@@ -328,10 +346,121 @@ function Uses({ l }: { l: LookSummary }) {
   );
 }
 
+/** A stored look's own section: what its table holds, and the way out of it. */
+function StoredLook({ l, onRemake }: { l: LookSummary; onRemake: () => void }) {
+  return (
+    <DetailSection title="What it is">
+      <span className="small">A table ported from QLC+: {l.stored?.what ?? "a stored look"}.
+        It plays exactly as it was stored, and has no arguments to change.</span>
+      {l.notes && <span className="muted small">{l.notes}</span>}
+      {l.block_version ? (
+        <>
+          <button className="d-primary s-wide" onClick={onRemake}>Make a block look from it…</button>
+          <span className="muted small">One <b>{l.block_version.block}</b> block says the same
+            thing, and a block look can be changed here and turned on the console.</span>
+        </>
+      ) : (
+        <span className="muted small">No single block says the same thing, so there is nothing
+          to remake it from. To replace it, make a new look and hide this one.</span>
+      )}
+    </DetailSection>
+  );
+}
+
+/** A block look's editor: its block and arguments, the fixtures it writes and
+ *  its notes. It only changes the edit; saving is the panel's. */
+function BlockEditor({ engine, l, list, edit, setEdit }: {
+  engine: Engine; l: LookSummary; list: LooksList;
+  edit: Edit; setEdit: Dispatch<SetStateAction<Edit>>;
+}) {
+  const specs = useMemo(() => (BLOCK_ARGS[edit.block] ?? []).map((spec) => {
+    // An absolute angle spans what this rig's heads can reach, as on the console.
+    const span = spec.reach ? engine.state?.reach?.[spec.reach as "bearing" | "elevation"] : undefined;
+    return span ? { ...spec, min: span[0], max: span[1] } : spec;
+  }), [edit.block, engine.state?.reach]);
+  const tuned = engine.state?.look_params?.[l.name];
+  const tunedKeys = Object.keys(tuned ?? {});
+  // The groups it can be given: the rig's, and any it names that the rig lacks.
+  const groups = [...list.groups, ...edit.groups.filter((g) => !list.groups.includes(g))];
+  const setArg = (spec: ArgSpec, v: unknown) => setEdit((e) => {
+    const args = { ...e.args };
+    if (v === undefined) delete args[spec.name]; else args[spec.name] = storedArg(spec, v);
+    return { ...e, args };
+  });
+  return (
+    <>
+      {l.supersedes && (
+        <p className="s-note">
+          <b>Takes over the stored look of the same name.</b>
+          The cues and presets that name it play this instead.{" "}
+          {l.exact === false ? "It has been changed since, on purpose: it no longer says "
+            + "what the stored look says."
+            : "It still says exactly what the stored look says; change it and that is "
+              + "recorded, so nothing holds it to the original."}</p>)}
+      <DetailSection title="Block">
+        <label className="s-field">
+          <select value={edit.block} aria-label="block"
+                  onChange={(e) => setEdit({ ...edit, block: e.target.value,
+                                             args: startingArgs(e.target.value) })}>
+            {lookBlocks(l.slot).map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <span className="muted small">The {SLOT_NAME[l.slot].toLowerCase()} blocks: the same ones
+            a routine is built from. Another block starts from its own defaults.</span>
+        </label>
+        <div className="s-args">
+          {specs.map((spec) => (
+            <ArgField key={`${edit.block}:${spec.name}`} spec={spec} value={edit.args[spec.name]}
+                      params={[]} engine={engine} onChange={(v) => setArg(spec, v)} />))}
+        </div>
+        {tunedKeys.length > 0 && (
+          <div className="s-note info">
+            <b>The console has it turned.</b>
+            {tunedKeys.map((k) => `${k} ${JSON.stringify(tuned![k])}`).join(", ")}, over what
+            is saved here.
+            <div className="d-form">
+              <button onClick={() => setEdit((e) => ({ ...e, args: { ...e.args, ...tuned } }))}>
+                Take the console's values</button>
+            </div>
+          </div>
+        )}
+      </DetailSection>
+
+      <DetailSection title="Fixtures">
+        <div className="d-chips" role="group" aria-label="fixture groups">
+          {groups.map((g) => {
+            const on = edit.groups.includes(g);
+            return (
+              <button key={g} className={`s-chip${on ? " on" : ""}`} aria-pressed={on}
+                      title={list.groups.includes(g) ? undefined : "Nothing on this rig carries this tag"}
+                      onClick={() => setEdit({ ...edit, groups: on ? edit.groups.filter((x) => x !== g)
+                        : [...edit.groups, g] })}>
+                {g}{list.groups.includes(g) ? "" : " (not on this rig)"}</button>
+            );
+          })}
+        </div>
+        <span className="muted small">{edit.groups.length
+          ? "It writes these groups and leaves the rest of the rig alone."
+          : l.slot === "movement" ? "None picked: it moves every moving head."
+            : "None picked: it writes every fixture."}</span>
+      </DetailSection>
+
+      <DetailSection title="Notes">
+        <textarea className="s-notes" rows={3} value={edit.notes} aria-label="notes"
+                  placeholder="What it is for, for whoever finds it later"
+                  onChange={(e) => setEdit({ ...edit, notes: e.target.value })} />
+      </DetailSection>
+    </>
+  );
+}
+
 type Mode = "duplicate" | "hide" | "delete" | "remake";
 
-export function LookDetail({ engine, l, list, onDone, onSelect }: {
+export function LookDetail({ engine, l, list, draft, onDraft, onDone, onSelect }: {
   engine: Engine; l: LookSummary; list: LooksList;
+  /** What was unsaved here when the panel was last on screen, if anything. */
+  draft?: LookDraft;
+  /** The unsaved edit, for the page to keep -- or null once there is none. */
+  onDraft: (draft: LookDraft | null) => void;
   /** Something was written, and what: say so where it survives this panel. */
   onDone: (said: string) => void;
   onSelect: (name: string | null) => void;
@@ -342,7 +471,7 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
   const isBlock = l.source === "block";
   const saved = editOf(l);
   const savedKey = savedForm(saved);
-  const [edit, setEdit] = useState<Edit>(saved);
+  const [edit, setEdit] = useState<Edit>(draft ?? saved);
   // A newer save (this panel's, the console's file, another tab's) is taken
   // while nothing here is unsaved.
   const [base, setBase] = useState(savedKey);
@@ -352,7 +481,14 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
     setBase(savedKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedKey]);
-  const dirty = isBlock && savedForm(edit) !== savedKey;
+  const editKey = savedForm(edit);
+  const dirty = isBlock && editKey !== savedKey;
+  // What is unsaved outlives the panel: the page keeps it by the look's name
+  // until it is saved, reverted, or made the same as what is saved again.
+  useEffect(() => {
+    onDraft(dirty ? edit : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, editKey]);
   const [mode, setMode] = useState<Mode | null>(null);
   const [copyName, setCopyName] = useState(() => freeName(names, `${l.name} copy`));
   const [remakeName, setRemakeName] = useState(() => freeName(names, l.name));
@@ -369,22 +505,7 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
   const name = edit.name.trim().replace(/\s+/g, " ");
   const nameTaken = name !== l.name && names.includes(name);
   const valid = !!name && !nameTaken;
-  const specs = useMemo(() => (BLOCK_ARGS[edit.block] ?? []).map((spec) => {
-    // An absolute angle spans what this rig's heads can reach, as on the console.
-    const span = spec.reach ? engine.state?.reach?.[spec.reach as "bearing" | "elevation"] : undefined;
-    return span ? { ...spec, min: span[0], max: span[1] } : spec;
-  }), [edit.block, engine.state?.reach]);
-  const tuned = isBlock ? engine.state?.look_params?.[l.name] : undefined;
-  const tunedKeys = Object.keys(tuned ?? {});
   const others = list.looks.filter((x) => x.name !== l.name && !x.retired);
-  // The groups it can be given: the rig's, and any it names that the rig lacks.
-  const groups = [...list.groups, ...edit.groups.filter((g) => !list.groups.includes(g))];
-
-  const setArg = (spec: ArgSpec, v: unknown) => setEdit((e) => {
-    const args = { ...e.args };
-    if (v === undefined) delete args[spec.name]; else args[spec.name] = storedArg(spec, v);
-    return { ...e, args };
-  });
   const noted = (data: unknown) => {
     const warnings = (data as { warnings?: string[] } | undefined)?.warnings ?? [];
     setWarning(warnings.length ? warnings.join(" ") : null);
@@ -395,6 +516,7 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
       { cues?: number; presets?: number; written?: string[] };
     noted(data);
     if (name === l.name) return `Saved ${name}. It is on the console's picker as saved.`;
+    onDraft(null);              // it was kept under the old name
     onSelect(name);
     const n = (count: number, one: string) => count ? `${count} ${one}${count === 1 ? "" : "s"}` : "";
     const what = [n(data.cues ?? 0, "cue"), n(data.presets ?? 0, "preset"),
@@ -411,13 +533,12 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
   });
   const remake = () => run(async () => {
     const to = remakeName.trim();
-    const made = await ask({ type: "look_save", base_rev: rev,
-                             look: { name: to, ...l.block_version, groups: l.groups,
-                                     notes: `Made from the stored look ${l.name}.` } }) as { rev: string };
-    if (hideOriginal) {
-      await ask({ type: "look_hide", look: l.name, replaced_by: to, base_rev: made.rev,
-                  note: "Remade as a block look in Studio." });
-    }
+    // One command: the look is made and the original hidden in the same
+    // write, or neither is. Two would leave a failure half done.
+    await ask({ type: "look_save", base_rev: rev,
+                look: { name: to, ...l.block_version, groups: l.groups,
+                        notes: `Made from the stored look ${l.name}.` },
+                ...(hideOriginal ? { hides: { look: l.name, note: REMADE_NOTE } } : {}) });
     onSelect(to);
     return `Made ${to} from ${l.name}${hideOriginal ? `, and hid ${l.name} from the picker` : ""}.`;
   });
@@ -430,6 +551,7 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
   });
   const remove = () => run(async () => {
     await ask({ type: "look_delete", look: l.name, base_rev: rev });
+    onDraft(null);
     // One that took over a stored look leaves that look behind, under the same
     // name: it stays on screen, to hide if it is not wanted either.
     onSelect(l.supersedes ? l.name : null);
@@ -554,88 +676,11 @@ export function LookDetail({ engine, l, list, onDone, onSelect }: {
         </div>
       )}
 
-      {!isBlock && (
-        <DetailSection title="What it is">
-          <span className="small">A table ported from QLC+: {l.stored?.what ?? "a stored look"}.
-            It plays exactly as it was stored, and has no arguments to change.</span>
-          {l.notes && <span className="muted small">{l.notes}</span>}
-          {l.block_version ? (
-            <>
-              <button className="d-primary s-wide" onClick={() => { setError(null); setMode("remake"); }}>
-                Make a block look from it…</button>
-              <span className="muted small">One <b>{l.block_version.block}</b> block says the same
-                thing, and a block look can be changed here and turned on the console.</span>
-            </>
-          ) : (
-            <span className="muted small">No single block says the same thing, so there is nothing
-              to remake it from. To replace it, make a new look and hide this one.</span>
-          )}
-        </DetailSection>
-      )}
+      {!isBlock && <StoredLook l={l} onRemake={() => { setError(null); setMode("remake"); }} />}
 
       {isBlock && (
         <>
-          {l.supersedes && (
-            <p className="s-note">
-              <b>Takes over the stored look of the same name.</b>
-              The cues and presets that name it play this instead.{" "}
-              {l.exact === false ? "It has been changed since, on purpose: it no longer says "
-                + "what the stored look says."
-                : "It still says exactly what the stored look says; change it and that is "
-                  + "recorded, so nothing holds it to the original."}</p>)}
-          <DetailSection title="Block">
-            <label className="s-field">
-              <select value={edit.block} aria-label="block"
-                      onChange={(e) => setEdit({ ...edit, block: e.target.value,
-                                                 args: startingArgs(e.target.value) })}>
-                {lookBlocks(l.slot).map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <span className="muted small">The {SLOT_NAME[l.slot].toLowerCase()} blocks: the same ones
-                a routine is built from. Another block starts from its own defaults.</span>
-            </label>
-            <div className="s-args">
-              {specs.map((spec) => (
-                <ArgField key={`${edit.block}:${spec.name}`} spec={spec} value={edit.args[spec.name]}
-                          params={[]} engine={engine} onChange={(v) => setArg(spec, v)} />))}
-            </div>
-            {tunedKeys.length > 0 && (
-              <div className="s-note info">
-                <b>The console has it turned.</b>
-                {tunedKeys.map((k) => `${k} ${JSON.stringify(tuned![k])}`).join(", ")}, over what
-                is saved here.
-                <div className="d-form">
-                  <button onClick={() => setEdit((e) => ({ ...e, args: { ...e.args, ...tuned } }))}>
-                    Take the console's values</button>
-                </div>
-              </div>
-            )}
-          </DetailSection>
-
-          <DetailSection title="Fixtures">
-            <div className="d-chips" role="group" aria-label="fixture groups">
-              {groups.map((g) => {
-                const on = edit.groups.includes(g);
-                return (
-                  <button key={g} className={`s-chip${on ? " on" : ""}`} aria-pressed={on}
-                          title={list.groups.includes(g) ? undefined : "Nothing on this rig carries this tag"}
-                          onClick={() => setEdit({ ...edit, groups: on ? edit.groups.filter((x) => x !== g)
-                            : [...edit.groups, g] })}>
-                    {g}{list.groups.includes(g) ? "" : " (not on this rig)"}</button>
-                );
-              })}
-            </div>
-            <span className="muted small">{edit.groups.length
-              ? "It writes these groups and leaves the rest of the rig alone."
-              : l.slot === "movement" ? "None picked: it moves every moving head."
-                : "None picked: it writes every fixture."}</span>
-          </DetailSection>
-
-          <DetailSection title="Notes">
-            <textarea className="s-notes" rows={3} value={edit.notes} aria-label="notes"
-                      placeholder="What it is for, for whoever finds it later"
-                      onChange={(e) => setEdit({ ...edit, notes: e.target.value })} />
-          </DetailSection>
-
+          <BlockEditor engine={engine} l={l} list={list} edit={edit} setEdit={setEdit} />
           {nameTaken && <p className="small d-error">There is already a look called {name}.</p>}
           {dirty && (
             <div className="d-form">

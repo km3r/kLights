@@ -194,9 +194,26 @@ class LibraryEntry:
 
 
 def load_entries(path: Path) -> list[LibraryEntry]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        # Named, with the line: this file is 9000 lines, it is re-read while a
+        # show runs (the engine watches it), and "Unterminated string" with no
+        # file name was all a save refused on its account had to say.
+        raise configmod.ConfigError(path, [
+            f"is not valid JSON: {exc.msg} at line {exc.lineno}, column "
+            f"{exc.colno}\n      fix: it is generated -- run "
+            f"shared/tools/port_library.py again rather than mending it by "
+            f"hand"]) from None
+    if not isinstance(data, dict):
+        raise configmod.ConfigError(path, ["the file must contain an object"])
     out = []
-    for raw in data.get("looks", []):
+    for index, raw in enumerate(data.get("looks", [])):
+        if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) \
+                or not isinstance(raw.get("kind"), str):
+            raise configmod.ConfigError(path, [
+                f"looks[{index}] needs a name and a kind"])
         out.append(LibraryEntry(
             name=raw["name"], kind=raw["kind"], tags=tuple(raw.get("tags", [])),
             groups=tuple(raw.get("groups", [])),

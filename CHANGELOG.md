@@ -55,7 +55,26 @@ the commit messages keep those labels.
   the notices, and the library that was running runs on.
 - **The console's tuning can be kept.** When a look's knobs have been turned
   on the console, its panel offers to take those values, to save as the look.
-- New commands, all `configure`: `look_save {look, was?, base_rev}`,
+- **What a look may be called, and carry.** A name may not start with `@`,
+  `#` or `$`: wherever a look can be named those begin a palette role, a
+  color and a parameter, and a look called `@primary` would have been "used"
+  by every color that is that role -- and a rename of it would have rewritten
+  them. A list in a look's arguments holds at most 64 entries and a look
+  names at most 32 groups, since every console is sent each look's arguments
+  ten times a second.
+- **Remaking a stored look is one write.** `look_save` takes `hides: {look,
+  note?}` on a new look, so the block look is made and the original hidden
+  together, or neither is.
+- **A rename checks everything before it writes anything.** A show file that
+  names the look and is mid-edit on disk refuses the rename up front, rather
+  than after the look is already under both names. And `cues.json` keeps the
+  layout it was written in: a rename changes the lines that name the look.
+- **Unsaved edits to a look are kept** while another look is on screen, and
+  the list marks the looks that have them.
+- **A `looks.json` that does not load is said**, by name and line, on the
+  Looks page and in any save it refuses; before, only
+  `parametric_looks.json` was compared, and the error named no file.
+- New commands, all `configure`: `look_save {look, was?, hides?, base_rev}`,
   `look_delete {look, base_rev}`, `look_hide {look, hidden?, replaced_by?,
   note?, base_rev}` and `looks_reload`. `GET /api/looks` lists the library
   (it answers with no show folder: looks are the event's), and the snapshot

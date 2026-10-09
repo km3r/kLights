@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, ID_RE, NEW_COLORS, freeId, phraseMatch, templateFromTimeline,
+  BEATS_PER_BAR, BLOCK_SLOT, ID_RE, NEW_COLORS, SLOTS, freeId, freeName, phraseMatch,
+  templateFromTimeline,
 } from "./model";
 import type {
   FoundPalette, LooksList, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, Slot,
   TemplateSetDoc, TemplateSummary, TimelineDoc, TrackDoc, TrackLine,
 } from "./model";
-import { BLOCK_SLOT, SLOTS, freeName } from "./model";
-import { lookBlocks, startingArgs } from "./Looks";
+import { FIRST_BLOCK, LOOKS_HASH, lookBlocks, startingArgs } from "./Looks";
 import { offeredLooks } from "./edit";
 import { newRoutine } from "./RoutineEditor";
 import { newTemplateSet } from "./Templates";
@@ -166,9 +166,15 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const lookNames = library.map((l) => l.name);
   const blockLooks = library.filter((l) => l.source === "block");
   const remakable = library.filter((l) => l.source === "stored" && l.block_version);
-  const [block, setBlock] = useState("orbit");
-  const [copyLook, setCopyLook] = useState(blockLooks[0]?.name ?? "");
-  const [fromStored, setFromStored] = useState(remakable[0]?.name ?? "");
+  const [block, setBlock] = useState(() => (lookBlocks().includes(FIRST_BLOCK) ? FIRST_BLOCK
+    : lookBlocks()[0] ?? ""));
+  // What is picked is the first of each list UNTIL one is picked -- not the
+  // first as it was when the dialog opened, which is none at all if the looks
+  // had not been read yet, and then nothing here could be made.
+  const [copyPicked, setCopyLook] = useState<string | null>(null);
+  const copyLook = copyPicked ?? blockLooks[0]?.name ?? "";
+  const [storedPicked, setFromStored] = useState<string | null>(null);
+  const fromStored = storedPicked ?? remakable[0]?.name ?? "";
   const [lookGroups, setLookGroups] = useState<string[] | null>(null);
   const lookSource = start === "copy" ? library.find((l) => l.name === copyLook)
     : start === "stored" ? library.find((l) => l.name === fromStored) : undefined;
@@ -256,7 +262,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
                 : start === "copy" && lookSource?.notes ? { notes: lookSource.notes } : {}) },
     });
     if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
-    location.hash = "#studio/looks";
+    location.hash = LOOKS_HASH;
     onLook(label, `Made ${label}. It is on the console's picker now; change it here.`);
     onClose();
   });

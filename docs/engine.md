@@ -148,7 +148,7 @@ changed, and where any look is hidden. Every edit is an edit to
 
 | command | what it writes |
 |---|---|
-| `look_save {look, was?, base_rev}` | a new block look, or a change to the one called `was` -- which renames it, and everything that names it, when `look.name` differs |
+| `look_save {look, was?, hides?, base_rev}` | a new block look, or a change to the one called `was` -- which renames it, and everything that names it, when `look.name` differs. A new look may hide another in the same write (`hides: {look, note?}`): a stored look remade as a block |
 | `look_delete {look, base_rev}` | removes a block look nothing names |
 | `look_hide {look, hidden?, replaced_by?, note?, base_rev}` | hides any look from the picker, or shows it again |
 | `looks_reload` | reads both files again now (the engine watches them, so this is only for seeing why a file does not load) |
@@ -161,14 +161,21 @@ does, which is when a page reads the list again.
 
 - **The file is checked as a load would check it, before it is written.** A
   look from a client is strict where a file is lenient: an argument the block
-  does not have is refused rather than dropped.
+  does not have is refused rather than dropped. Its name may not start with
+  `@`, `#` or `$` -- wherever a look can be named, those begin a palette role,
+  a color and a parameter, and usage and rename find a look by its name -- and
+  it carries at most 64 entries in a list and 32 groups, because the 10 Hz
+  snapshot carries every look's arguments to every console.
 - **The library reloads as the file is written**, on the worker, and is
   installed at a frame boundary. The movement look on stage stays up; a slot,
   a stacked move, tuning or a modulator naming a look that is gone is let go,
   with a notice if it was on stage. The show folder's programs are rebuilt
   from the new library, and what is playing plays on until its rebuild lands
   (`TrackPlayer.refresh`; a rig change drops them at once, and this is not
-  one).
+  one). A template set that is playing waits for the next track, as it does
+  after any folder edit. Nothing in the install can fail before the library
+  is in: the one write it makes, presets.json after a rename, is last, and a
+  failure there is a notice. Whoever sent the command is always answered.
 - **A rename moves everything that names the look** (`lookstore.rename`): the
   show folder's routines, timelines and template sets -- every place one can
   hold a look's name, found by the one walk (`lookstore._refs`) that also
@@ -176,7 +183,11 @@ does, which is when a page reads the list again.
   stage, and what was hidden in the look's favour. A folder of files has no
   transaction, so the look is written under BOTH names first, each reference
   is moved, and the old name goes last: stopped anywhere, nothing names a look
-  that is gone, and the error says how far it got.
+  that is gone, and the error says how far it got. Everything that can be
+  checked is checked before the first write -- each show file must still be
+  the file that last loaded cleanly, so one that is mid-edit refuses the
+  rename with nothing written. cues.json is written back in the layout it had
+  (`lookstore.relaid`), where that can be reproduced exactly.
 - **The engine watches both look files** (`showlibrary.Watcher`, the same one
   that watches the show folder) and reads an edit made outside it -- by hand,
   by MCP, by the porter -- within a second or two. A file that does not load

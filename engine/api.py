@@ -113,7 +113,14 @@ def handle(library, path: str, range_header: Optional[str] = None,
                                "name, in the list")
         if looks is None:
             return _error(503, "this engine has no look library to read")
-        return _json(looks())
+        try:
+            return _json(looks())
+        except Exception as exc:                            # noqa: BLE001
+            # Said, as JSON, to the page that asked -- not left to the HTTP
+            # server as a dropped connection, which a page can only show as
+            # "failed to fetch".
+            return _error(500, f"the look library could not be described: "
+                               f"{type(exc).__name__}: {exc}")
     if library is None:
         return _error(503, "no show folder -- start the engine with --show-dir")
     what, ident = match.group(1), match.group(2)

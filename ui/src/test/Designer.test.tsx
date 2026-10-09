@@ -3055,6 +3055,40 @@ describe("look library", () => {
     expect(within(page).getByRole("button", { name: "Lazy Circle Step 1" })).toBeInTheDocument();
   });
 
+  it("shows as swatches only what a block declares as a color", async () => {
+    looksList = { ...LOOKS, looks: [...LOOKS.looks,
+      { ...LOOK, name: "Corners", slot: "movement", kind: "path", source: "block",
+        block: "aim_points", supersedes: false,
+        // Room points: three numbers in 0..1 each, and not colors.
+        args: { points: [[0.5, 0.5, 0], [1, 1, 0], [0, 1, 0.5]], bars: 8 } }] };
+    const { page } = await library();
+    const row = (name: string) => within(page).getByRole("button", { name }).closest("tr")!;
+    expect(row("Corners").querySelector(".s-swatches")).toBeNull();
+    expect(row("Duo Pink/Cyan").querySelectorAll(".s-swatches > i")).toHaveLength(2);
+    expect(row("MH Red").querySelectorAll(".s-swatches > i")).toHaveLength(1);
+  });
+
+  it("keeps what is unsaved on one look while another is looked at", async () => {
+    const { user, page } = await library();
+    let panel = await pick(user, page, "Lazy Orbit");
+    const radius = within(panel).getByLabelText("radius");
+    await user.clear(radius);
+    await user.type(radius, "30");
+    panel = await pick(user, page, "Duo Pink/Cyan");
+    expect(within(panel).queryByText("Unsaved")).toBeNull();
+    // The list says which look is holding an edit...
+    const row = (name: string) => within(page).getByRole("button", { name }).closest("tr")!;
+    expect(row("Lazy Orbit")).toHaveTextContent("Unsaved");
+    expect(row("Duo Pink/Cyan")).not.toHaveTextContent("Unsaved");
+    // ...and going back finds it as it was left.
+    panel = await pick(user, page, "Lazy Orbit");
+    expect(within(panel).getByLabelText("radius")).toHaveValue(30);
+    expect(within(panel).getByRole("button", { name: "Save the look" })).toBeEnabled();
+    await user.click(within(panel).getByRole("button", { name: "Revert" }));
+    expect(within(panel).getByLabelText("radius")).toHaveValue(18.75);
+    expect(row("Lazy Orbit")).not.toHaveTextContent("Unsaved");
+  });
+
   it("changes a block look's argument and saves it with the rev it read", async () => {
     const { user, socket, page } = await library();
     const panel = await pick(user, page, "Lazy Orbit");
@@ -3183,10 +3217,10 @@ describe("look library", () => {
     expect(made.base_rev).toBe("r:looks");
     expect(made.look).toMatchObject({ name: "MH Red 2", block: "solid", args: { color: [1, 0, 0] },
                                       groups: ["corner movers"] });
-    // The second write quotes the rev the first one answered with.
-    await waitFor(() => expect(socket.sent.some((c) => c.type === "look_hide")).toBe(true));
-    const hidden = reply(socket, "look_hide", true, { rev: "r:3" });
-    expect(hidden).toMatchObject({ look: "MH Red", replaced_by: "MH Red 2", base_rev: "r:2" });
+    // Made and hidden in ONE command, so it cannot be left half done: the
+    // look made, the original still on the picker beside it, and an error.
+    expect(made).toMatchObject({ hides: { look: "MH Red", note: "Remade as a block look in Studio." } });
+    expect(socket.sent.some((c) => c.type === "look_hide")).toBe(false);
     expect(await screen.findByText("Made MH Red 2 from MH Red, and hid MH Red from the picker."))
       .toBeInTheDocument();
   });
@@ -3330,6 +3364,13 @@ describe("look library", () => {
     expect(alert).toHaveTextContent("'Nod' names block 'wobble'");
   });
 
+  it("says so when looks.json is the file that does not load, though this one is unchanged", async () => {
+    looksList = { ...LOOKS, stale: false,
+                  problem: "looks.json is not usable:\n  is not valid JSON: Unterminated string at line 9280" };
+    const { page } = await library();
+    expect(within(page).getByRole("alert")).toHaveTextContent("looks.json is not usable");
+  });
+
   it("says when the file changed on disk, and reads it again before any edit", async () => {
     looksList = { ...LOOKS, stale: true };
     const { user, socket, page } = await library();
@@ -3389,6 +3430,26 @@ describe("look library", () => {
                                 args: { width: 30, bars: 4, vertical: false, spread: 0 } });
     expect(await screen.findByText(/Made Slow Swing/)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("offers a copy of the first block look even when the looks arrive after the dialog opened", async () => {
+    looksList = { ...LOOKS, looks: [] };
+    const user = userEvent.setup();
+    const socket = await open("#studio");
+    await screen.findByRole("region", { name: "tracks" });
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.click(screen.getByRole("menuitem", { name: /A look/ }));
+    const dialog = screen.getByRole("dialog", { name: "New look" });
+    expect(within(dialog).queryByRole("radio", { name: /A copy of a block look/ })).toBeNull();
+    // The library is read while the dialog is open.
+    looksList = LOOKS;
+    act(() => socket.push(stateWith((s) => { s.looks_rev = "r:late"; })));
+    await user.click(await within(dialog).findByRole("radio", { name: /A copy of a block look/ }));
+    await user.type(within(dialog).getByLabelText("name"), "Late Copy");
+    // Nothing was picked by hand: the first block look is what is copied.
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    const sent = reply(socket, "look_save", true, { rev: "r:2" }) as unknown as LookSent;
+    expect(sent.look).toMatchObject({ name: "Late Copy", block: "orbit", args: { radius: 18.75 } });
   });
 
   it("makes a look from + New as a copy, or from a stored look a block can state", async () => {

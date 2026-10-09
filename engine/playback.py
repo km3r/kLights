@@ -544,7 +544,9 @@ class TrackPlayer:
         the rig did not: build them again, and leave what is on stage there
         until its replacement lands. `recompile` drops them at once, which a
         new rig needs (they name fixtures that may be gone) and an edited look
-        does not: a save in Studio must not blink a playing timeline."""
+        does not: a save in Studio must not blink a playing timeline. (A
+        template set that is playing waits for the next track, as after any
+        folder edit: `compile_templates`.)"""
         self._riggen += 1
         self._program_for, self._compiling_for, self._failed_for = None, None, None
         self.drop_precompiled()

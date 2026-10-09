@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } from "./model";
 import { PaletteDetail, PalettesView } from "./Palettes";
 import { LookDetail, LooksView } from "./Looks";
+import type { LookDraft } from "./Looks";
 import { NewDialog, NewMenu } from "./New";
 import type { NewKind } from "./New";
 import { TemplateAside, TemplatesView } from "./Templates";
@@ -142,6 +143,21 @@ export default function Studio({ engine, route }: {
   // The look on screen, by name: none until one is picked -- the first of two
   // hundred is nobody's choice.
   const [lookName, setLookName] = useState<string | null>(null);
+  // What is unsaved on the Looks page, by look: kept while another look is
+  // on screen, so comparing two looks does not cost the edit to one of them.
+  const [lookDrafts, setLookDrafts] = useState<Record<string, LookDraft>>({});
+  const keepLookDraft = useCallback((name: string, draft: LookDraft | null) => setLookDrafts((d) => {
+    if (draft != null) return { ...d, [name]: draft };
+    if (!(name in d)) return d;
+    const rest = { ...d };
+    delete rest[name];
+    return rest;
+  }), []);
+  // Only for block looks that are still there: a look deleted or renamed
+  // elsewhere takes its unsaved edit with it, rather than leaving it for
+  // whatever is next given that name.
+  const unsavedLooks = useMemo(() => new Set(Object.keys(lookDrafts).filter((name) =>
+    lib.looks?.looks.some((x) => x.name === name && x.source === "block"))), [lookDrafts, lib.looks]);
   // Said on one page, gone on the next -- unless it was said about a thing
   // just made from another page, which is on its way to the page it is on.
   const saidAhead = useRef(false);
@@ -233,6 +249,7 @@ export default function Studio({ engine, route }: {
     const done = (said: string) => { setSetSaid(said); lib.reload(); };
     main = (
       <LooksView engine={engine} list={lib.looks} error={lib.looksError} selected={lookName}
+                 unsaved={unsavedLooks}
                  onSelect={(name) => { setSetSaid(null); setLookName(name); }}
                  onNew={() => openNew("look")} onDone={done} />
     );
@@ -242,6 +259,8 @@ export default function Studio({ engine, route }: {
         <Said text={setSaid} />
         {look && lib.looks ? (
           <LookDetail key={look.name} engine={engine} l={look} list={lib.looks}
+                      draft={unsavedLooks.has(look.name) ? lookDrafts[look.name] : undefined}
+                      onDraft={(draft) => keepLookDraft(look.name, draft)}
                       onSelect={setLookName} onDone={done} />
         ) : <DetailEmpty>{lib.looks?.looks.length ? "Select a look to see what it is, and to change it."
           : "No looks yet. Make one with New look."}</DetailEmpty>}

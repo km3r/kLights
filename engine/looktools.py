@@ -66,11 +66,20 @@ class _Library:
         self.rev = lookstore.file_rev(self.dir)
         self.entries = libmod.load_library(self.dir)
         self.by_name = {e.name: e for e in self.entries}
-        self.cues = _json_list(self.dir / "cues.json", "cues")
-        self.presets = _json_list(self.dir / "presets.json", "presets")
+        self.cues = _json_list(self.dir / lookstore.CUES_FILE, "cues")
+        self.presets = _json_list(self.dir / lookstore.PRESETS_FILE, "presets")
         # The show folder, if there is one to ask: without it a look's uses
-        # are the event's own, and the answer says so.
+        # are the event's own, and the answer says so. A folder that was
+        # NAMED and is not there is a mistake to put right, not "nothing uses
+        # it" -- a delete judged against an empty folder would go ahead. One
+        # that is only this machine's default and is missing is the same as
+        # none, and said.
         self.root = showfiles.resolve_show_dir(show_dir)
+        self.missing: Optional[Path] = None
+        if self.root is not None and not self.root.is_dir():
+            if show_dir:
+                raise ValueError(f"the show folder {self.root} is not there")
+            self.missing, self.root = self.root, None
         self.folder = showfiles.load_folder(self.root) if self.root is not None else None
         self.use = lookstore.usage(self.cues, self.presets, self.folder, self.entries)
         self.held = patchmod.held_by(str(self.dir))
@@ -84,8 +93,11 @@ class _Library:
                                "rev": self.rev or ""}
         out["show_dir"] = str(self.root) if self.root is not None else None
         if self.root is None:
-            out["note"] = ("no show folder was given or configured, so routines "
-                           "and timelines that play a look are not counted")
+            out["note"] = ((f"this machine's show folder, {self.missing}, is not "
+                            f"there" if self.missing is not None
+                            else "no show folder was given or configured")
+                           + ", so routines and timelines that play a look are "
+                             "not counted")
         if self.held is not None:
             out["engine"] = (f"{self.held} is running this event: it watches the "
                              f"look files and reads an edit by itself")
@@ -183,15 +195,10 @@ def put_look(look: Any, was: Optional[str] = None, base_rev: Optional[str] = Non
             f"presets and the cue list the engine holds in memory, which only "
             f"the engine can do: rename {was!r} on Studio's Looks page, or stop "
             f"the show first", **lib.scope())
-    warnings: list[str] = []
     try:
-        missing = lookstore.unknown_groups(clean, rigmod.load_rig(lib.dir))
+        warnings = lookstore.group_warnings(clean, rigmod.load_rig(lib.dir))
     except (ValueError, FileNotFoundError, configmod.ConfigError):
-        missing = []                        # no rig to ask: nothing to warn of
-    if missing:
-        warnings.append(f"nothing on this rig is tagged "
-                        f"{', '.join(repr(g) for g in missing)}: until something "
-                        f"is, {name!r} moves and lights nothing")
+        warnings = []                       # no rig to ask: nothing to warn of
 
     def run(base: Optional[str], dry_run: bool) -> dict:
         if not renaming:
@@ -216,18 +223,9 @@ def delete_look(name: str, base_rev: Optional[str] = None, write: bool = False,
     if isinstance(lib, dict):
         return lib
     entry = lib.by_name.get(name)
-    # One that took over a stored look hands the name back to it, so whatever
-    # names it still has a look to play.
-    if entry is not None and entry.is_parametric and not entry.supersedes:
-        use = lib.use.get(name)
-        named = lookstore.uses(use)
-        if named:
-            return _error(f"{name!r} is still used by {'; '.join(named)}: take "
-                          f"it out of those first", **lib.scope())
-        if use and use["hides"]:
-            return _error(f"{', '.join(use['hides'])} is hidden in favour of "
-                          f"{name!r}: show it again, or point it at another "
-                          f"look, first", **lib.scope())
+    refusal = lookstore.delete_refusal(entry, lib.use.get(name))
+    if refusal is not None:
+        return _error(refusal, **lib.scope())
 
     def run(base: Optional[str], dry_run: bool) -> dict:
         return {"rev": lookstore.delete(lib.dir, name, base, dry_run=dry_run) or "",

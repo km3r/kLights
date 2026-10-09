@@ -708,7 +708,10 @@ export type Command =
    *  A new block look -- or, with `was`, a change to the look of that name,
    *  which renames it when `look.name` differs, moving every routine,
    *  timeline, template set, cue and preset that names it. */
-  | { type: "look_save"; look: unknown; was?: string; base_rev: string }
+  | { type: "look_save"; look: unknown; was?: string; base_rev: string;
+      /** A NEW look only: the look it takes the place of on the picker,
+       *  hidden in its favour in the same write. */
+      hides?: { look: string; note?: string } }
   /** Delete a block look nothing names; refused with where, if anything does. */
   | { type: "look_delete"; look: string; base_rev: string }
   /** Hide any look from the picker (or show it again): hidden, never removed. */

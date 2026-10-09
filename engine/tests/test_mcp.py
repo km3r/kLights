@@ -471,7 +471,14 @@ with tempfile.TemporaryDirectory() as tmp:
                               json.loads(looks_file.read_text(encoding="utf-8"))["retired"]))
     stored, err = server.tool("delete_look", event=e, name="MH Red", write=True,
                               base_rev=shown["rev"])
-    check("a stored look cannot be deleted", err and "hide it instead" in stored["errors"][0])
+    check("a stored look cannot be deleted", err and "only hidden" in stored["errors"][0])
+    lost, err = server.tool("list_looks", event=e, show_dir=str(Path(tmp) / "nowhere"))
+    check("a show folder that was named and is not there is an error, not 'nothing "
+          "uses it': a delete judged against an empty folder would go ahead",
+          err and "is not there" in lost["errors"][0], f"{lost.get('errors')}")
+    odd, err = server.tool("put_look", event=e, look={"name": "@primary", "block": "dim"})
+    check("a name that reads as a palette role is refused here as in Studio",
+          err and "cannot start with" in odd["errors"][0])
 
 stderr = server.close()
 check("nothing was written to stdout that was not JSON-RPC", True)

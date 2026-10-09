@@ -2921,7 +2921,10 @@ class ShowController:
             # has not read it yet -- it watches, so that is a second or two --
             # or it would not load, and `problem` says why. Until they agree a
             # save is refused: it would be made against a file nobody loaded.
-            "stale": lookstore.file_rev(self.event_dir) != self.looks_rev,
+            # (`problem` alone makes it stale: looks.json can be the file
+            # that does not load, with this one untouched.)
+            "stale": (self.looks_problem is not None
+                      or lookstore.file_rev(self.event_dir) != self.looks_rev),
             "problem": self.looks_problem,
             "groups": list(self.rig.tags()),
             "looks": [lookstore.describe(e, manual.get(e.name, False),
@@ -2953,7 +2956,20 @@ class ShowController:
 
         def then(result, respond):
             loaded, info = result
-            moved = self._install_looks(*loaded, renamed=renamed)
+            try:
+                moved = self._install_looks(*loaded, renamed=renamed)
+            except Exception as exc:                        # noqa: BLE001
+                # The file is written and the library is not installed. Said
+                # to whoever asked, rather than leaving them to time out; the
+                # watcher sees the file is not the library that is running
+                # and reads it again by itself.
+                self.note(f"{label} wrote the file, but the engine could not "
+                          f"take it up: {exc}")
+                respond(False, error=f"{lookstore.FILE} was written, but the "
+                                     f"engine could not take it up ({exc}). It "
+                                     f"reads the file again by itself; check "
+                                     f"the look, then the notices")
+                return
             respond(True, {"rev": loaded[1] or "", **(data or {}), **info,
                            "cues": max(info.get("cues", 0), moved["cues"]),
                            "presets": moved["presets"]})
@@ -3019,6 +3035,13 @@ class ShowController:
         was, base = m.get("was"), m.get("base_rev")
         if was is not None and not isinstance(was, str):
             raise ValueError("was is the look's name as you opened it")
+        # A NEW look may hide another as it is made -- a stored look remade
+        # as a block look -- in the same write (`lookstore.save`).
+        hides = m.get("hides")
+        if hides is not None and (was is not None or not isinstance(hides, dict)
+                                  or not isinstance(hides.get("look"), str)):
+            raise ValueError("hides is {look, note?}, on a new look only: the "
+                             "look the new one takes the place of on the picker")
         name = look["name"]
         renamed = (was, name) if was is not None and was != name else None
         event_dir = self.event_dir
@@ -3027,17 +3050,14 @@ class ShowController:
 
         def work():
             if renamed is None:
-                lookstore.save(event_dir, look, was, base)
+                lookstore.save(event_dir, look, was, base, hides=hides)
                 return None
             folder = folder_now()
             return lookstore.rename(
                 event_dir, look, was, base,
                 show=(show_root, folder) if folder is not None else None)
 
-        missing = lookstore.unknown_groups(look, self.rig)
-        warnings = ([f"nothing on this rig is tagged "
-                     f"{', '.join(repr(g) for g in missing)}: until something "
-                     f"is, {name!r} moves and lights nothing"] if missing else [])
+        warnings = lookstore.group_warnings(look, self.rig)
         said = (f"renamed look {was!r} to {name!r}" if renamed
                 else f"saved look {name!r}")
         return self._look_edit(f"saving look {name}", work, said, renamed=renamed,
@@ -3058,21 +3078,10 @@ class ShowController:
         entry = self.by_name.get(name)
 
         def work():
-            # One that took over a stored look hands the name back to it, so
-            # whatever names it still has a look to play.
-            if entry is not None and not entry.supersedes:
-                use = lookstore.usage(cues, presets, folder_now(),
-                                      entries).get(name)
-                named = lookstore.uses(use)
-                if named:
-                    raise ValueError(f"{name!r} is still used by "
-                                     f"{'; '.join(named)}: take it out of "
-                                     f"those first")
-                if use and use["hides"]:
-                    raise ValueError(
-                        f"{', '.join(use['hides'])} is hidden in favour of "
-                        f"{name!r}: show it again, or point it at another "
-                        f"look, first")
+            refusal = lookstore.delete_refusal(entry, lookstore.usage(
+                cues, presets, folder_now(), entries).get(name))
+            if refusal is not None:
+                raise ValueError(refusal)
             lookstore.delete(event_dir, name, base)
 
         return self._look_edit(f"deleting look {name}", work,
@@ -3122,7 +3131,10 @@ class ShowController:
             naming a look that is gone are dropped -- and tuning on a look
             whose block or arguments CHANGED is dropped too, since it was
             dialled in over the old authored values (a rename alone keeps it)
-          * after a rename, the presets and the cue list follow the name
+          * after a rename, the presets and the cue list follow the name --
+            in memory first; presets.json is written LAST, because it is the
+            one step here that can fail, and by then the library is installed
+            whatever becomes of it
           * the show folder's programs were built from the old library, so
             they are built again; what is playing plays on until its
             replacement lands (`TrackPlayer.refresh`)
@@ -3149,8 +3161,7 @@ class ShowController:
             presets = [lookstore.renamed(p, old, new) for p in self.presets]
             moved["presets"] = sum(a != b for a, b in zip(presets, self.presets))
             if moved["presets"]:
-                self.presets = presets
-                save_presets(self.event_dir, self.presets)
+                self.presets = presets              # written last, below
             if self.cues is not None:
                 cues = [replace(c, **lookstore.renamed(
                             {"movement": c.movement, "color": c.color,
@@ -3201,6 +3212,13 @@ class ShowController:
                 self.player.compile_idle(self.show_library)
             self._compile_pads()
             self._rematch_decks()
+        if moved["presets"]:
+            try:
+                save_presets(self.event_dir, self.presets)
+            except OSError as exc:
+                self.note(f"presets.json could not be written ({exc}): the "
+                          f"presets follow the rename here, and are written "
+                          f"with the next preset that is saved")
         return moved
 
     def _cmd_preview_arm(self, m: dict, now: float) -> dict:
