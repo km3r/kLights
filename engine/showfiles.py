@@ -2118,6 +2118,61 @@ def delete_doc(path: Path, base_rev: str) -> None:
     path.unlink()
 
 
+# The files a track has in the folder, by kind, in the order a removal takes
+# them: the track's own goes last.
+TRACK_FILES = ("timeline", "waveform", "track")
+
+
+def remove_track(root: Path, track_id: str, base_rev: str,
+                 timeline_rev: str = "") -> list[str]:
+    """Take a track out of the show: its timeline and its waveform, then
+    tracks/<id>.json. Returns the files removed, in that order.
+
+    Refused if the track changed since `base_rev`, and if its timeline is not
+    the one the caller saw (`timeline_rev`, "" for none): a timeline is the
+    hand-built part, and one saved or synced in a moment ago must not go with
+    the track unseen. The waveform is rekordbox's and comes back with a prep,
+    so it is not asked about. Nothing is removed until both are checked.
+
+    The track's own file goes LAST, for the reason a rename writes the new
+    file first: stopped anywhere, the folder still has the track, nothing in
+    it is a timeline for a track that is gone, and removing it again finishes.
+    The audio it names is somewhere else and is never touched; nor is the one
+    `.bak` a save leaves beside a file, as with every delete here."""
+    root = Path(root)
+    track_path = path_for(root, "track", track_id)
+    current = doc_rev(track_path)
+    where = f"{SUBDIR['track']}/{track_id}.json"
+    if current is None:
+        raise ValueError(f"{where} is not there")
+    again = "Reload, and remove the track then if you still mean to"
+    if current != base_rev:
+        raise StaleEdit(f"{where} changed since you opened it (another machine, "
+                        f"MCP, or another tab saved it). {again}")
+    timeline = doc_rev(path_for(root, "timeline", track_id))
+    if timeline is not None and timeline != timeline_rev:
+        rel = f"{SUBDIR['timeline']}/{track_id}.json"
+        raise StaleEdit(
+            (f"its timeline ({rel}) changed since you opened it" if timeline_rev
+             else f"it has a timeline ({rel}) that was not there when you looked")
+            + f" (another machine, MCP, or another tab saved it), and removing "
+              f"the track deletes it. {again}")
+    removed: list[str] = []
+    for kind in TRACK_FILES:
+        path = path_for(root, kind, track_id)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            done = f"removed {', '.join(removed)}, then " if removed else ""
+            raise ValueError(f"{done}could not remove {SUBDIR[kind]}/{path.name}: "
+                             f"{exc}. {where} is still there; remove the track "
+                             f"again to finish") from exc
+        removed.append(f"{SUBDIR[kind]}/{path.name}")
+    return removed
+
+
 class StaleEdit(ValueError):
     """The file changed after the editor read it -- a sync from another machine,
     an MCP write, another designer tab. Refused, because saving over it would

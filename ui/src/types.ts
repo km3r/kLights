@@ -362,6 +362,9 @@ export interface OutputsState {
                last_error: string | null; now: string | null } | null;
   /** Why an output is off: a bad address in show.json or klights.local.json. */
   problems: string[];
+  /** The outputs this machine's klights.local.json sets, which win here over
+   *  show.json's. Absent from an engine that does not say. */
+  local?: string[];
 }
 
 /** A track loaded on a deck that is not the master. `ready`: its timeline is
@@ -678,6 +681,8 @@ export type Command =
    *  send them with an id and wait for the reply. */
   | { type: "timeline_draft"; doc: unknown }
   | { type: "timeline_save"; doc: unknown; base_rev: string }
+  /** Delete a track's timeline and keep the track; `base_rev` is the timeline's. */
+  | { type: "timeline_delete"; track: string; base_rev: string }
   | { type: "routine_draft"; doc: unknown }
   | { type: "routine_save"; doc: unknown; base_rev: string }
   /** Rename a routine and every reference to it (timelines, template sets,
@@ -699,7 +704,12 @@ export type Command =
   | { type: "palette_delete"; palette: string; base_rev: string }
   /** Give copies of a library palette its colors: `files` as /api/palettes lists them. */
   | { type: "palette_sync"; palette: string; files: string[] }
-  | { type: "track_link"; track_id: string }
+  /** Teach a prepped track another description: the playing deck's, or --
+   *  with a `title` -- the one given (Studio, with nothing playing). */
+  | { type: "track_link"; track_id: string; title?: string; artist?: string; album?: string }
+  /** Take a track out of the show, its timeline and waveform with it.
+   *  `base_rev` is the track's; `timeline_rev` its timeline's, "" for none. */
+  | { type: "track_delete"; track: string; base_rev: string; timeline_rev: string }
   /** Prep tracks from the DJ's rekordbox collection into the show folder, by
    *  rekordbox id. Answered when the bridge has finished. */
   | { type: "rekordbox_prep"; ids: number[] }

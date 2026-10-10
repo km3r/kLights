@@ -17,11 +17,14 @@ import {
 import { WAVE_HEIGHT } from "../designer/lanes";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
+import { pageFor, problemsOf } from "../designer/Problems";
+import { outputProblems } from "../designer/ShowSettings";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import waveVectors from "../designer/__fixtures__/wave-vectors.json";
 import audioVectors from "../designer/__fixtures__/audio-vectors.json";
 import type {
-  AudioBand, Point, RoutineDoc, TemplateSetDoc, TimelineDoc, WaveformDoc,
+  AudioBand, FolderProblem, Point, RoutineDoc, ShowSummary, TemplateSetDoc, TimelineDoc,
+  WaveformDoc,
 } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
 import trackDoc from "../../../shared/show-example/tracks/synth-128.json";
@@ -521,6 +524,10 @@ const CATALOGUE = {
 let rekordbox: [number, unknown] = [200, CATALOGUE];
 /** The example track's waveform, for the tests that give it one. */
 let waveform: WaveformDoc | null = null;
+/** What a test adds to the example track's line in /api/tracks, and to
+ *  /api/show: a waveform, aliases; the folder's problems, another show.json. */
+let trackExtra: Record<string, unknown> = {};
+let showExtra: Record<string, unknown> = {};
 
 const HOT = { primary: "#ff2d6f", secondary: "#ff8a00", accent: "#ffffff" };
 /** The library: Hot, copied into the timeline (with older colors) and Club
@@ -543,6 +550,11 @@ const PALETTES = {
 
 const PHRASE_ITEMS = trackDoc.phrases.items as [number, number, string][];
 
+const SHOW_DOC = { kind: "klights.show", version: 1, template_set: "club",
+                   pause: { policy: "idle", grace_s: 4, idle_routine: "idle-orbit", fade_beats: 4 },
+                   follow: { default: "disarmed", min_track_change_s: 2 },
+                   sources: { rkbx: { latency_ms: -15 } } };
+
 /** A prepped track read back: the example track under another name. */
 function trackAs(id: string, title: string, artist: string) {
   return { ...structuredClone(trackDoc), id, identity: { ...trackDoc.identity, title, artist } };
@@ -554,23 +566,21 @@ function serve(path: string): [number, unknown] {
       { id: "synth-128", title: "synthetic 128", artist: "kLights",
         bpm: 128, phrases: 8, has_timeline: true, grid_rev: "g:834af7",
         has_waveform: false, has_audio: false, phrase_items: PHRASE_ITEMS,
-        timeline: { rows: 7, items: 13, grid_rev: "g:834af7" }, edited: 2,
-        rekordbox: [{ db: "collection:TEST", id: 101 }], signatures: 1 },
+        timeline: { rows: 7, items: 13, grid_rev: "g:834af7", rev: TIMELINE_REV }, edited: 2,
+        rekordbox: [{ db: "collection:TEST", id: 101 }], signatures: 1, aliases: [],
+        rev: "r:t", ...trackExtra },
       // From another collection: not this rekordbox's row 102, so the browser
       // still offers it.
       { id: "kolsch-night-drive", title: "Night Drive", artist: "Kölsch", bpm: 124,
         phrases: 8, has_timeline: false, grid_rev: "g:834af7", has_waveform: false,
         has_audio: true, audio_here: false, phrase_items: PHRASE_ITEMS, timeline: null,
-        edited: 1, rekordbox: [{ db: "xml:OTHER", id: 7 }], signatures: 0 },
+        edited: 1, rekordbox: [{ db: "xml:OTHER", id: 7 }], signatures: 0, aliases: [],
+        rev: "r:k" },
     ] }];
   }
   if (path === "/api/show") {
     return [200, { dir: "/shows", rev: "r:s", show_rev: "r:show", errors: [], warnings: [],
-                   show: { kind: "klights.show", version: 1, template_set: "club",
-                           pause: { policy: "idle", grace_s: 4, idle_routine: "idle-orbit",
-                                    fade_beats: 4 },
-                           follow: { default: "disarmed", min_track_change_s: 2 },
-                           sources: { rkbx: { latency_ms: -15 } } } }];
+                   failed: {}, problems: [], show: SHOW_DOC, ...showExtra }];
   }
   if (path === "/api/tracks/kolsch-night-drive") {
     return [200, { doc: trackAs("kolsch-night-drive", "Night Drive", "Kölsch"), rev: "r:k" }];
@@ -605,6 +615,8 @@ beforeEach(() => {
   resetCatalogue();
   rekordbox = [200, CATALOGUE];
   waveform = null;
+  trackExtra = {};
+  showExtra = {};
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -2780,6 +2792,358 @@ describe("show settings", () => {
     expect(await within(page).findByRole("alert")).toHaveTextContent("changed since");
     await user.click(within(page).getByRole("button", { name: "Take the newer one" }));
     expect(within(page).getByLabelText("pause policy")).toHaveValue("idle");
+  });
+
+  it("says where the other outputs go, and saves them in show.json", async () => {
+    const user = userEvent.setup();
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    const outputs = await within(page).findByRole("region", { name: "other outputs" });
+    // Nothing is sent anywhere until it is asked for.
+    expect(within(outputs).getByLabelText("send OSC")).not.toBeChecked();
+    expect(within(outputs).queryByLabelText("OSC port")).toBeNull();
+    expect(within(outputs).getByLabelText("sending now")).toHaveTextContent(
+      "This engine is sending: none of them.");
+    await user.click(within(outputs).getByLabelText("send OSC"));
+    // OSC has no port of its own: it starts on Resolume's, to be changed.
+    expect(within(outputs).getByLabelText("OSC port")).toHaveValue(7000);
+    expect(within(outputs).getByLabelText("OSC host")).toHaveAttribute("placeholder", "127.0.0.1");
+    await user.type(within(outputs).getByLabelText("OSC host"), "192.168.1.20");
+    await user.click(within(outputs).getByLabelText("send MIDI"));
+    expect(within(outputs).getByLabelText("MIDI port")).toHaveAttribute("placeholder", "9123");
+    await user.click(within(outputs).getByLabelText("send Timecode"));
+    await user.selectOptions(within(outputs).getByLabelText("timecode fps"), "25");
+    await user.click(within(page).getByRole("button", { name: "Save" }));
+    const sent = reply(socket, "show_save", true, { rev: "r:show2" }) as unknown as {
+      doc: { outputs: unknown; pause: unknown }; base_rev: string };
+    expect(sent.base_rev).toBe("r:show");
+    // An output left at its defaults is `{}`: on, with nothing to say.
+    expect(sent.doc.outputs).toEqual({ osc: { port: 7000, host: "192.168.1.20" }, midi: {},
+                                       timecode: { fps: 25 } });
+    expect(sent.doc.pause).toEqual(SHOW_DOC.pause);
+  });
+
+  it("will not save an output that cannot be sent to, and says why", async () => {
+    const user = userEvent.setup();
+    showExtra = { show: { ...SHOW_DOC, outputs: { osc: { host: "10.0.0.5", port: 7000 },
+                                                  midi: { port: 9200 } } } };
+    await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    const outputs = await within(page).findByRole("region", { name: "other outputs" });
+    expect(within(outputs).getByLabelText("OSC host")).toHaveValue("10.0.0.5");
+    expect(within(outputs).getByLabelText("MIDI port")).toHaveValue(9200);
+    await user.clear(within(outputs).getByLabelText("OSC port"));
+    expect(outputs).toHaveTextContent("OSC needs a port");
+    expect(within(page).getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.type(within(outputs).getByLabelText("OSC port"), "8000");
+    // A port is a whole number up to 65535: the keystroke past it is ignored.
+    await user.type(within(outputs).getByLabelText("OSC port"), "0");
+    expect(within(outputs).getByLabelText("OSC port")).toHaveValue(8000);
+    expect(within(page).getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.clear(within(outputs).getByLabelText("OSC host"));
+    await user.type(within(outputs).getByLabelText("OSC host"), "vj-laptop");
+    expect(outputs).toHaveTextContent("OSC: give the machine's address");
+    expect(within(page).getByRole("button", { name: "Save" })).toBeDisabled();
+    // Turned off, it is out of the file, and nothing is left to object to.
+    await user.click(within(outputs).getByLabelText("send OSC"));
+    expect(within(page).getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(outputProblems({ osc: { host: "localhost", port: 7000 }, midi: {},
+                            timecode: { host: "255.255.255.255" } })).toEqual([]);
+    expect(outputProblems({ osc: {}, midi: { host: "300.1.1.1" } })).toHaveLength(2);
+  });
+
+  it("says a machine's klights.local.json overrides the outputs, and when this engine's does", async () => {
+    const socket = await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    const outputs = await within(page).findByRole("region", { name: "other outputs" });
+    // Always: these are the show's, and a machine can overrule them.
+    expect(within(outputs).getByRole("note", { name: "what overrides these" })).toHaveTextContent(
+      /A machine's klights\.local\.json overrides these\..*the venue's addresses win/);
+    expect(within(outputs).queryByRole("status", { name: "overridden on this engine" })).toBeNull();
+    // This engine's own file sets OSC: said, with where it really goes.
+    act(() => socket.push(stateWith((st) => {
+      st.outputs = { osc: { target: "10.0.0.5:7000", sent: 3, errors: 0, last_error: null, on: 0 },
+                     midi: null, timecode: null,
+                     problems: ["outputs.timecode: fps 60 must be 24, 25, 29.97 or 30; timecode is off"],
+                     local: ["osc", "timecode"] };
+    })));
+    expect(within(outputs).getByRole("status", { name: "overridden on this engine" }))
+      .toHaveTextContent("This engine's klights.local.json sets OSC and Timecode.");
+    expect(within(outputs).getByLabelText("sending now")).toHaveTextContent(
+      /This engine is sending: OSC to 10\.0\.0\.5:7000\..*timecode is off/);
+  });
+});
+
+describe("track files", () => {
+  async function library() {
+    const user = userEvent.setup();
+    const socket = await open("#studio");
+    const page = await screen.findByRole("region", { name: "tracks" });
+    await within(page).findByText("synthetic 128");
+    return { user, socket, page };
+  }
+  const details = () => screen.getByRole("complementary", { name: "details" });
+  const menu = async (user: ReturnType<typeof userEvent.setup>, item: string, title = "synthetic 128") => {
+    await user.click(within(details()).getByRole("button", { name: `more for ${title}` }));
+    return within(details()).getByRole("menuitem", { name: new RegExp(`^${item}`) });
+  };
+  const on = (title: string, artist: string, track_id: string | null) => stateWith((st) => {
+    st.track = { ...st.track!, state: "playing", title, artist, source: "blt", deck: "1",
+                 match: { track_id, via: track_id ? "title_artist_album" : "none",
+                          candidates: track_id ? [track_id] : [], has_timeline: !!track_id,
+                          stale: false } };
+  });
+
+  it("removes a track from the show, after saying exactly which files go", async () => {
+    trackExtra = { has_waveform: true };
+    const { user, socket } = await library();
+    await user.click(await menu(user, "Remove from the show…"));
+    const confirm = within(details()).getByRole("group", { name: "confirm remove track" });
+    const files = within(confirm).getByRole("list", { name: "files to delete" });
+    expect(within(files).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "tracks/synth-128.json",
+      "timelines/synth-128.json · its timeline, 7 lanes, 13 clips and points",
+      "waveforms/synth-128.json"]);
+    expect(confirm).toHaveTextContent(/audio file and rekordbox are not touched/);
+    expect(confirm).toHaveTextContent(/its timeline cannot be brought back/);
+    expect(socket.sent.some((c) => c.type === "track_delete")).toBe(false);
+    await user.click(within(confirm).getByRole("button", { name: "Remove the track" }));
+    const sent = reply(socket, "track_delete", true, {
+      deleted: ["timelines/synth-128.json", "waveforms/synth-128.json", "tracks/synth-128.json"] });
+    // Both revs: the track's, and its timeline's, so neither goes unseen.
+    expect(sent).toMatchObject({ track: "synth-128", base_rev: "r:t", timeline_rev: TIMELINE_REV });
+    expect(await screen.findByText("Removed synthetic 128 from the show: timelines/synth-128.json, "
+      + "waveforms/synth-128.json, tracks/synth-128.json.")).toBeInTheDocument();
+  });
+
+  it("lists only the files a track has, and can be talked out of it", async () => {
+    const { user, socket, page } = await library();
+    await user.click(within(page).getByRole("button", { name: /Night Drive/ }));
+    await user.click(await menu(user, "Remove from the show…", "Night Drive"));
+    const confirm = within(details()).getByRole("group", { name: "confirm remove track" });
+    expect(within(confirm).getAllByRole("listitem").map((li) => li.textContent))
+      .toEqual(["tracks/kolsch-night-drive.json"]);
+    expect(confirm).not.toHaveTextContent(/cannot be brought back/);
+    await user.click(within(confirm).getByRole("button", { name: "Keep it" }));
+    expect(within(details()).queryByRole("group", { name: "confirm remove track" })).toBeNull();
+    expect(socket.sent.some((c) => c.type === "track_delete")).toBe(false);
+    // With no timeline there is none to delete, and the menu says so.
+    const item = await menu(user, "Delete its timeline…", "Night Drive");
+    expect(item).toBeDisabled();
+    expect(item).toHaveTextContent("It has none");
+  });
+
+  it("does not offer to remove the track on the deck, nor the one Studio is driving", async () => {
+    const { user, socket } = await library();
+    act(() => socket.push(on("synthetic 128", "kLights", "synth-128")));
+    let item = await menu(user, "Remove from the show…");
+    expect(item).toBeDisabled();
+    expect(item).toHaveTextContent("It is on the deck now");
+    await user.keyboard("{Escape}");
+    act(() => socket.push(stateWith((st) => {
+      st.preview = { client: "other", name: "laptop", track_id: "synth-128", draft: false,
+                     playing: true, ready: true };
+    })));
+    item = await menu(user, "Remove from the show…");
+    expect(item).toBeDisabled();
+    expect(item).toHaveTextContent("Studio is driving the rig on it");
+  });
+
+  it("says why when the engine will not remove it", async () => {
+    const { user, socket } = await library();
+    await user.click(await menu(user, "Remove from the show…"));
+    await user.click(within(details()).getByRole("button", { name: "Remove the track" }));
+    reply(socket, "track_delete", false, undefined,
+          "'synth-128' cannot be removed while it is playing: it is the track on the deck now (blt)");
+    expect(await within(details()).findByRole("alert")).toHaveTextContent("while it is playing");
+    // Still there to try again: nothing was taken away.
+    expect(within(details()).getByRole("group", { name: "confirm remove track" })).toBeInTheDocument();
+  });
+
+  it("deletes a track's timeline and keeps the track", async () => {
+    const { user, socket } = await library();
+    await user.click(await menu(user, "Delete its timeline…"));
+    const confirm = within(details()).getByRole("group", { name: "confirm delete timeline" });
+    expect(confirm).toHaveTextContent("Delete timelines/synth-128.json (7 lanes, 13 clips and points)?");
+    expect(confirm).toHaveTextContent(/The track stays in the show, and the Club template set lights it again/);
+    expect(confirm).not.toHaveTextContent(/playing now/);
+    await user.click(within(confirm).getByRole("button", { name: "Delete the timeline" }));
+    const sent = reply(socket, "timeline_delete", true, { deleted: "timelines/synth-128.json" });
+    expect(sent).toMatchObject({ track: "synth-128", base_rev: TIMELINE_REV });
+    expect(await screen.findByText("Deleted timelines/synth-128.json. synthetic 128 is still in the show."))
+      .toBeInTheDocument();
+    expect(socket.sent.some((c) => c.type === "track_delete")).toBe(false);
+  });
+
+  it("says a playing track keeps its timeline for this play, and what the engine refuses", async () => {
+    const { user, socket } = await library();
+    act(() => socket.push(on("synthetic 128", "kLights", "synth-128")));
+    await user.click(await menu(user, "Delete its timeline…"));
+    const confirm = within(details()).getByRole("group", { name: "confirm delete timeline" });
+    expect(confirm).toHaveTextContent(/It is playing now: this play keeps the timeline it started with/);
+    await user.click(within(confirm).getByRole("button", { name: "Delete the timeline" }));
+    reply(socket, "timeline_delete", false, undefined,
+          "synth-128.json changed since you opened it (another machine, MCP, or another tab saved it)");
+    expect(await within(details()).findByRole("alert")).toHaveTextContent("changed since");
+  });
+
+  it("links a track to another description, typed in", async () => {
+    const { user, socket } = await library();
+    await user.click(await menu(user, "Link another description…"));
+    const task = within(details()).getByRole("group", { name: "link a description" });
+    expect(within(task).getByLabelText("title on the deck")).toHaveFocus();
+    // Nothing is playing: there is only the typed way, and it needs a title.
+    expect(within(task).queryByRole("button", { name: "Link what is playing" })).toBeNull();
+    expect(within(task).getByRole("button", { name: "Link it" })).toBeDisabled();
+    await user.type(within(task).getByLabelText("title on the deck"), " Synthetic 128 (Guest Edit) ");
+    await user.type(within(task).getByLabelText("artist on the deck"), "kLights");
+    await user.click(within(task).getByRole("button", { name: "Link it" }));
+    const sent = reply(socket, "track_link", true, { queued: true, track_id: "synth-128",
+                                                     applies: "next_play" });
+    expect(sent).toMatchObject({ track_id: "synth-128", title: "Synthetic 128 (Guest Edit)",
+                                 artist: "kLights", album: "" });
+    expect(await screen.findByText('Linked "Synthetic 128 (Guest Edit)" to synthetic 128. '
+      + "It applies from the track's next play.")).toBeInTheDocument();
+  });
+
+  it("links what a deck is playing, taking the deck's own description", async () => {
+    const { user, socket } = await library();
+    act(() => socket.push(on("Unknown Guest Tune", "Guest DJ", null)));
+    await user.click(await menu(user, "Link another description…"));
+    const task = within(details()).getByRole("group", { name: "link a description" });
+    expect(task).toHaveTextContent("Playing now: Unknown Guest Tune · Guest DJ (not matched)");
+    await user.click(within(task).getByRole("button", { name: "Link what is playing" }));
+    const sent = reply(socket, "track_link", true, { queued: true, track_id: "synth-128",
+                                                     applies: "next_play" });
+    // No description of its own: the engine takes the deck's, signature and all.
+    expect(sent).toEqual({ type: "track_link", track_id: "synth-128", id: (sent as { id?: string }).id });
+    expect(await screen.findByText(/Linked what is playing \("Unknown Guest Tune"\) to synthetic 128/))
+      .toBeInTheDocument();
+  });
+
+  it("does not offer what is playing when it is this track, and says what the engine refuses", async () => {
+    trackExtra = { aliases: [{ title: "Synth (Guest Copy)", artist: "kLights", album: "" }] };
+    const { user, socket } = await library();
+    // What it already answers to is in the panel.
+    const also = within(details()).getByRole("region", { name: "also answers to" });
+    expect(within(also).getByRole("listitem")).toHaveTextContent("Synth (Guest Copy) · kLights");
+    act(() => socket.push(on("synthetic 128", "kLights", "synth-128")));
+    await user.click(await menu(user, "Link another description…"));
+    const task = within(details()).getByRole("group", { name: "link a description" });
+    expect(within(task).queryByRole("button", { name: "Link what is playing" })).toBeNull();
+    await user.type(within(task).getByLabelText("title on the deck"), "Night Drive");
+    await user.keyboard("{Enter}");
+    reply(socket, "track_link", false, undefined,
+          "that description already leads to 'kolsch-night-drive' (tracks/kolsch-night-drive.json)");
+    expect(await within(details()).findByRole("alert")).toHaveTextContent("already leads to");
+    expect(within(task).getByLabelText("title on the deck")).toHaveValue("Night Drive");
+  });
+});
+
+describe("show folder problems", () => {
+  const PROBLEMS: FolderProblem[] = [
+    { level: "error", file: "routines/torn.json", text: "is not valid JSON: Expecting value at line 1, column 1" },
+    { level: "error", file: "routines/fan-drop.json", text: "is not valid JSON: Expecting value at line 3, column 9" },
+    { level: "warning", file: "tracks/synth-128 (conflicted copy).json",
+      text: "looks like a sync conflict copy and is not loaded; merge it into the original by hand and delete it" },
+    { level: "warning", file: "routines/fan-drop.json", text: "kept the last good version until the file is fixed" },
+    { level: "warning", file: "timelines/synth-128.json",
+      text: "item 'drop' uses routine 'gone', which is not in routines/" },
+    { level: "warning", file: "timelines/ghost.json",
+      text: "track 'ghost' is not in tracks/ -- prep it, or it can never match" },
+    { level: "warning", file: "templates/club.json", text: "uses routine 'gone', which is not in routines/" },
+    { level: "warning", file: "show.json", text: "names idle routine 'nope', which is not in routines/" },
+  ];
+  const broken = () => ({
+    errors: PROBLEMS.filter((p) => p.level === "error").map((p) => `${p.file}: ${p.text}`),
+    warnings: PROBLEMS.filter((p) => p.level === "warning").map((p) => `${p.file} ${p.text}`),
+    failed: { "routines/fan-drop.json": "fan-drop.json: is not valid JSON" }, problems: PROBLEMS });
+
+  it("links a file to the page that edits it, where there is one", () => {
+    const pages = { tracks: ["synth-128"], routines: ["fan-drop"], templates: ["club"], palettes: ["hot"] };
+    expect(pageFor("show.json", pages)).toBe("#studio/show");
+    expect(pageFor("timelines/synth-128.json", pages)).toBe("#studio/track/synth-128");
+    expect(pageFor("tracks/synth-128.json", pages)).toBe("#studio/track/synth-128");
+    expect(pageFor("waveforms/synth-128.json", pages)).toBe("#studio/track/synth-128");
+    expect(pageFor("routines/fan-drop.json", pages)).toBe("#studio/routine/fan-drop");
+    expect(pageFor("templates/club.json", pages)).toBe("#studio/templates/club");
+    expect(pageFor("palettes/hot.json", pages)).toBe("#studio/palettes");
+    // Nothing to open: a file that never loaded, a timeline whose track is
+    // not there, a conflict copy, a problem about no file at all.
+    expect(pageFor("routines/torn.json", pages)).toBeNull();
+    expect(pageFor("timelines/ghost.json", pages)).toBeNull();
+    expect(pageFor("tracks/synth-128 (conflicted copy).json", pages)).toBeNull();
+    expect(pageFor(null, pages)).toBeNull();
+    // An engine that sends only the sentences: shown whole, errors first.
+    const old = { errors: ["routines/a.json: broken"], warnings: ["show.json names x"] } as ShowSummary;
+    expect(problemsOf(old)).toEqual([
+      { level: "error", file: null, text: "routines/a.json: broken" },
+      { level: "warning", file: null, text: "show.json names x" }]);
+    expect(problemsOf(null)).toEqual([]);
+  });
+
+  it("puts the folder's errors and warnings over the track list, each with its file", async () => {
+    const user = userEvent.setup();
+    showExtra = broken();
+    await open("#studio");
+    const box = await screen.findByRole("region", { name: "show folder problems" });
+    expect(box).toHaveTextContent("The show folder has 2 errors and 6 warnings.");
+    expect(box).toHaveTextContent("1 file is broken and playing its last good version.");
+    // Errors are shown without being asked for.
+    const list = await within(box).findByRole("list", { name: "problems" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(8);
+    expect(rows[0]).toHaveTextContent("Error" + "routines/torn.json is not valid JSON");
+    expect(rows[4]).toHaveTextContent(
+      "Warning" + "timelines/synth-128.json item 'drop' uses routine 'gone', which is not in routines/");
+    // Each file with a page links to it...
+    await waitFor(() => expect(within(list).getByRole("link", { name: "timelines/synth-128.json" }))
+      .toHaveAttribute("href", "#studio/track/synth-128"));
+    expect(within(list).getAllByRole("link", { name: "routines/fan-drop.json" })[0])
+      .toHaveAttribute("href", "#studio/routine/fan-drop");
+    expect(within(list).getByRole("link", { name: "templates/club.json" }))
+      .toHaveAttribute("href", "#studio/templates/club");
+    expect(within(list).getByRole("link", { name: "show.json" })).toHaveAttribute("href", "#studio/show");
+    // ...and one with none is named all the same.
+    expect(within(list).queryByRole("link", { name: "routines/torn.json" })).toBeNull();
+    expect(within(list).queryByRole("link", { name: "timelines/ghost.json" })).toBeNull();
+    expect(within(list).getByText("tracks/synth-128 (conflicted copy).json")).toBeInTheDocument();
+    await user.click(within(box).getByRole("button", { name: /The show folder has/ }));
+    expect(within(box).queryByRole("list", { name: "problems" })).toBeNull();
+  });
+
+  it("keeps warnings alone folded until asked, and says nothing over a clean folder", async () => {
+    const user = userEvent.setup();
+    const only = PROBLEMS.filter((p) => p.level === "warning" && p.file === "show.json");
+    showExtra = { errors: [], warnings: ["show.json names idle routine"], problems: only };
+    await open("#studio");
+    const box = await screen.findByRole("region", { name: "show folder problems" });
+    expect(box).toHaveTextContent("The show folder has 1 warning.");
+    expect(box).not.toHaveTextContent(/last good version/);
+    expect(within(box).queryByRole("list", { name: "problems" })).toBeNull();
+    await user.click(within(box).getByRole("button", { name: /The show folder has 1 warning/ }));
+    expect(within(box).getByRole("list", { name: "problems" })).toHaveTextContent(
+      "show.json names idle routine 'nope'");
+    cleanup();
+    showExtra = {};
+    await open("#studio");
+    await within(await screen.findByRole("region", { name: "tracks" })).findByText("synthetic 128");
+    expect(screen.queryByRole("region", { name: "show folder problems" })).toBeNull();
+  });
+
+  it("shows them on the Show settings page too, and says so when there are none", async () => {
+    showExtra = broken();
+    await open("#studio/show");
+    const page = await screen.findByRole("region", { name: "show settings" });
+    const box = await within(page).findByRole("region", { name: "show folder problems" });
+    expect(within(box).getByRole("list", { name: "problems" })).toHaveTextContent("routines/torn.json");
+    cleanup();
+    showExtra = {};
+    await open("#studio/show");
+    const clean = await screen.findByRole("region", { name: "show settings" });
+    await within(clean).findByLabelText("the show's template set");
+    expect(within(clean).getByText("The show folder loads with no errors or warnings."))
+      .toBeInTheDocument();
   });
 });
 

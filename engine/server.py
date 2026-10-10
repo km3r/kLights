@@ -156,8 +156,10 @@ TIER: dict[str, str] = {
     # the show folder: what is written there outlives the night
     "track_link": "configure", "show_reload": "configure",
     "show_latency": "configure", "rekordbox_prep": "configure",
+    "track_delete": "configure",
     # the designer: writes the show folder, and can take the stage
     "timeline_draft": "configure", "timeline_save": "configure",
+    "timeline_delete": "configure",
     "routine_draft": "configure", "routine_save": "configure",
     "routine_rename": "configure", "routine_delete": "configure",
     "template_draft": "configure", "template_save": "configure",
@@ -2645,6 +2647,83 @@ class ShowController:
         It applies to the track from its next play, like any folder change."""
         return self._save("timeline", m)
 
+    def _cmd_timeline_delete(self, m: dict, now: float) -> object:
+        """Delete a track's timeline and keep the track: the template set (or
+        the operator's show) lights it again. Refused if the file changed
+        since `base_rev`. Like a save, it applies from the track's next play:
+        one playing now keeps the timeline it started with."""
+        library = self._need_library()
+        track, base = m.get("track"), m.get("base_rev")
+        if not isinstance(track, str):
+            raise ValueError("timeline_delete needs track")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        root = library.root
+
+        def work():
+            path = showfiles.path_for(root, "timeline", track)
+            if not path.is_file():
+                raise ValueError(f"{track!r} has no timeline to delete")
+            showfiles.delete_doc(path, base)
+            return f"{showfiles.SUBDIR['timeline']}/{track}.json"
+
+        def then(rel, respond):
+            respond(True, {"deleted": rel})
+            self.note(f"deleted {rel}")
+            self.reload_library()
+
+        return self._on_worker(f"deleting the timeline of {track}", work, then)
+
+    def _on_stage(self, track_id: str, now: float) -> Optional[str]:
+        """Who has this track on the rig right now, and what to do about it,
+        in words: the deck it is loaded on, or Studio driving its timeline.
+        None when nobody does."""
+        sample = self.transport.sample(now)
+        pinned = self.pinned
+        if (pinned is not None and pinned.track_seq == sample.track_seq
+                and pinned.match is not None and pinned.match.track_id == track_id):
+            return ("it is the track on the deck now"
+                    + (f" ({sample.source})" if sample.source else "")
+                    + ". Remove it when the track has changed -- or take the "
+                      "clock back first, if the deck has gone")
+        preview = self.player.preview if self.player is not None else None
+        if preview is not None and preview.track_id == track_id:
+            return (f"Studio ({preview.name}) is driving the rig on it. "
+                    f"Release the rig first")
+        return None
+
+    def _cmd_track_delete(self, m: dict, now: float) -> object:
+        """Take a track out of the show: tracks/<id>.json and, with it, that
+        track's timeline and waveform (showfiles.remove_track -- the track's
+        own file last). `base_rev` is the track's rev and `timeline_rev` its
+        timeline's ("" for none), so neither goes unseen. Refused while the
+        track is on the rig: the deck's, or Studio's preview. Answered with
+        the files removed; the audio it names is never touched."""
+        library = self._need_library()
+        track, base = m.get("track"), m.get("base_rev")
+        timeline_rev = m.get("timeline_rev", "")
+        if not isinstance(track, str):
+            raise ValueError("track_delete needs track")
+        if not isinstance(base, str):
+            raise ValueError("base_rev is required: the rev you opened")
+        if not isinstance(timeline_rev, str):
+            raise ValueError('timeline_rev is the rev of its timeline as you '
+                             'read it, or "" if it had none')
+        busy = self._on_stage(track, now)
+        if busy is not None:
+            raise ValueError(f"{track!r} cannot be removed while it is "
+                             f"playing: {busy}")
+        root = library.root
+
+        def then(removed, respond):
+            respond(True, {"deleted": removed})
+            self.note(f"removed track {track!r} from the show: {', '.join(removed)}")
+            self.reload_library()
+
+        return self._on_worker(
+            f"removing track {track}",
+            lambda: showfiles.remove_track(root, track, base, timeline_rev), then)
+
     def _cmd_routine_draft(self, m: dict, now: float) -> object:
         """Check an unsaved routine: the format's rules, then the routine bound
         to THIS rig as it is -- and in each of its variations -- for what will
@@ -2958,7 +3037,12 @@ class ShowController:
         when beat-link sent one, so every later play matches by itself. It does
         NOT re-match the track playing now: like any change to the show
         folder, it applies from the track's next play. The write is on the
-        worker; the reply says it was queued and a notice says how it went."""
+        worker; the reply says it was queued and a notice says how it went.
+
+        With a `title` (and `artist`, `album`) the description is the one
+        given instead of the deck's -- Studio, before the night, with nothing
+        playing. Typed, so it is held to more: one the track already answers
+        to, or one that is another track's, is refused rather than queued."""
         library = self.show_library
         if library is None:
             raise ValueError("no show folder -- start the engine with "
@@ -2967,11 +3051,16 @@ class ShowController:
         if not isinstance(track_id, str) or track_id not in library.folder.tracks:
             raise ValueError(f"there is no prepped track {track_id!r} in "
                              f"{library.root}/tracks")
-        ident = self.transport.sample(now).identity
-        if not ident.title:
-            raise ValueError("nothing identified is playing -- a link needs a "
-                             "track title from the deck")
-        sig = ident.signature
+        if any(k in m for k in ("title", "artist", "album")):
+            title, artist, album = self._typed_description(library, track_id, m)
+            sig = None
+        else:
+            ident = self.transport.sample(now).identity
+            if not ident.title:
+                raise ValueError("nothing identified is playing -- a link needs "
+                                 "a track title from the deck")
+            title, artist, album, sig = (ident.title, ident.artist, ident.album,
+                                         ident.signature)
         if sig:
             owner = [t for t in library.index.by_signature.get(sig, ())
                      if t != track_id]
@@ -2980,7 +3069,7 @@ class ShowController:
                     f"this deck's signature already belongs to {owner[0]!r}; "
                     f"remove it from tracks/{owner[0]}.json ids.blt_signatures "
                     f"first, or both tracks would claim it")
-        root, title = library.root, ident.title
+        root = library.root
 
         def done(what: str) -> None:
             if what == "already":
@@ -2991,11 +3080,38 @@ class ShowController:
             self.reload_library()
 
         self.worker.submit(
-            lambda: showlibrary.link(root, track_id, ident.title, ident.artist,
-                                     ident.album, sig,
+            lambda: showlibrary.link(root, track_id, title, artist, album, sig,
                                      showlibrary.default_added()),
             done=done, label=f"linking {title!r} to {track_id}")
         return {"queued": True, "track_id": track_id, "applies": "next_play"}
+
+    @staticmethod
+    def _typed_description(library, track_id: str, m: dict) -> tuple[str, str, str]:
+        """A description typed for `track_link`, checked: (title, artist,
+        album). Dictionary lookups on the loaded folder."""
+        parts = []
+        for name in ("title", "artist", "album"):
+            value = m.get(name, "")
+            if not isinstance(value, str) or len(value) > 200:
+                raise ValueError(f"{name} must be text, at most 200 characters")
+            parts.append(value.strip())
+        title, artist, album = parts
+        alias = tracksmod.alias_for(title, artist, album)
+        key = tracksmod.identity_key(alias)
+        if not key[0]:
+            raise ValueError("a link needs a title: what the deck will call "
+                             "the track")
+        if tracksmod.has_description(library.folder.tracks[track_id], alias):
+            raise ValueError(f"{track_id} already answers to that description")
+        index = library.index
+        for table in (index.by_alias, index.by_title_artist_album):
+            other = [t for t in table.get(key, ()) if t != track_id]
+            if other:
+                raise ValueError(
+                    f"that description already leads to {other[0]!r} "
+                    f"(tracks/{other[0]}.json): one description can lead to "
+                    f"only one track")
+        return title, artist, album
 
     def _cmd_rekordbox_prep(self, m: dict, now: float) -> object:
         """Prep tracks from the DJ's rekordbox collection into the show folder:

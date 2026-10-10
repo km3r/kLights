@@ -517,6 +517,10 @@ class Outputs:
         self.timecode: Optional[TimecodeOut] = None
         self.config: dict = {}
         self.problems: list[str] = []
+        # The outputs this machine's klights.local.json sets, which win here
+        # over show.json's: said, so a saved address that "does nothing" on
+        # one machine is not a mystery.
+        self.local: list[str] = []
 
     @property
     def outs(self) -> tuple:
@@ -532,6 +536,8 @@ class Outputs:
         line saying what changed, or None if nothing did. An output whose
         place is unchanged keeps its state -- the cues it knows are on."""
         config = merge(show, local)
+        self.local = sorted(name for name, conf in (local or {}).items()
+                            if isinstance(conf, Mapping) and name in _PLACES)
         if config == self.config:
             return None
         self.config = config
@@ -596,7 +602,7 @@ class Outputs:
         return {name: (out.public() if out is not None else None)
                 for name, out in (("osc", self.osc), ("midi", self.midi),
                                   ("timecode", self.timecode))} | {
-            "problems": list(self.problems)}
+            "problems": list(self.problems), "local": list(self.local)}
 
     def close(self) -> None:
         for out in self.outs:

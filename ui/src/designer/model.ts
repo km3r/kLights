@@ -218,8 +218,12 @@ export interface TrackLine {
   signatures?: number;
   /** rekordbox's phrases: [start beat, end beat, label]. */
   phrase_items?: [number, number, string][];
-  /** Its timeline in a line: how big, and the grid it was drawn on. */
-  timeline?: { rows: number; items: number; grid_rev?: string | null } | null;
+  /** Its timeline in a line: how big, the grid it was drawn on, and its rev
+   *  for a delete to quote. */
+  timeline?: { rows: number; items: number; grid_rev?: string | null;
+               rev?: string | null } | null;
+  /** The other descriptions it answers to: a guest's copy, linked by hand. */
+  aliases?: { title: string; artist?: string; album?: string }[];
   /** When its show last changed on disk, seconds since the epoch. */
   edited?: number | null;
   /** A file the track names is on this machine (the named paths only). */
@@ -237,6 +241,19 @@ export interface ShowSummary {
           pause?: { idle_routine?: string }; [key: string]: unknown } | null;
   errors: string[];
   warnings: string[];
+  /** Files broken since they last loaded, running on their last good version:
+   *  relative path, and why. */
+  failed?: Record<string, string>;
+  /** The errors and warnings again, a row each with the file it is about. */
+  problems?: FolderProblem[];
+}
+
+/** One thing wrong in the show folder. `file` is relative to the folder
+ *  ("timelines/x.json", "show.json"); null for the few about no file. */
+export interface FolderProblem {
+  level: "error" | "warning";
+  file: string | null;
+  text: string;
 }
 
 /** One phrase family's pick in a template set. */
