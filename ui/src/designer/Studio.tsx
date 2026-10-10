@@ -23,6 +23,7 @@ import type { PrepPick, StartTrack } from "./Start";
 import { PanelToggle, usePanels } from "./panels";
 import { useDesignerGuide } from "./guide";
 import { DetailEmpty, Said } from "./detail";
+import { FolderProblems } from "./Problems";
 import "./designer.css";
 
 /**
@@ -113,6 +114,9 @@ export default function Studio({ engine, route }: {
   const lib = useLibrary(engine);
   const guide = useDesignerGuide("designer");
   const [selected, setSelected] = useState<string | null>(null);
+  // What the last change to a track's files did (as routineSaid, below):
+  // removing a track takes away the panel that did it.
+  const [trackSaid, setTrackSaid] = useState<string | null>(null);
   const [tickedTracks, setTickedTracks] = useState<Set<string>>(new Set());
   const [tickedRb, setTickedRb] = useState<Set<number>>(new Set());
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -176,6 +180,10 @@ export default function Studio({ engine, route }: {
   useEffect(() => {
     if (routineId == null && lib.routines?.length) setRoutineId(lib.routines[0]!.id);
   }, [lib.routines, routineId]);
+  const selectTrack = (id: string) => {
+    if (id !== selected) setTrackSaid(null);
+    setSelected(id);
+  };
   const selectRoutine = (id: string) => {
     if (id !== routineId) { setRoutineSaid(null); setRoutineAsk((a) => ({ action: null, n: a.n })); }
     setRoutineId(id);
@@ -197,6 +205,10 @@ export default function Studio({ engine, route }: {
   const tracks = lib.tracks ?? [];
   const sel = tracks.find((t) => t.id === selected) ?? null;
   const canWrite = engine.tier === "configure";
+  // What is wrong in the folder, over the track list and on Show settings.
+  const pages = { tracks: tracks.map((t) => t.id), routines: (lib.routines ?? []).map((r) => r.id),
+                  templates: lib.sets.map((s) => s.id),
+                  palettes: (lib.palettes ?? []).map((p) => p.id) };
 
   let main: ReactNode;
   let side: ReactNode | null = null;
@@ -272,6 +284,8 @@ export default function Studio({ engine, route }: {
         <Said text={setSaid} />
         <ShowSettingsView engine={engine} show={lib.show} sets={lib.sets}
                           routines={lib.routines ?? []}
+                          problems={<FolderProblems show={lib.show} pages={pages}
+                                                    clean="The show folder loads with no errors or warnings." />}
                           onDone={(said) => { setSetSaid(said); lib.reload(); }} />
       </>
     );
@@ -308,7 +322,8 @@ export default function Studio({ engine, route }: {
     main = (
       <TracksView tracks={lib.tracks} error={lib.error} set={set} playing={playing}
                   liveTrack={liveTrack}
-                  selected={selected} onSelect={setSelected}
+                  problems={<FolderProblems show={lib.show} pages={pages} />}
+                  selected={selected} onSelect={selectTrack}
                   ticked={tickedTracks} setTicked={setTickedTracks}
                   onStart={(ids) => {
                     const picked = tracks.filter((t) => ids.includes(t.id));
@@ -316,9 +331,15 @@ export default function Studio({ engine, route }: {
                                 tracks: picked.map((t) => ({ id: t.id, title: t.title, artist: t.artist })) });
                   }} />
     );
-    side = sel ? <TrackDetail key={sel.id} t={sel} set={set} playing={playing} sets={lib.sets}
-                              live={sel.id === liveTrack} />
-      : <DetailEmpty>Select a track to see what it needs.</DetailEmpty>;
+    side = (
+      <>
+        <Said text={trackSaid} />
+        {sel ? <TrackDetail key={sel.id} engine={engine} t={sel} set={set} playing={playing}
+                            sets={lib.sets} live={sel.id === liveTrack}
+                            onDone={(said) => { setTrackSaid(said); lib.reload(); }} />
+          : <DetailEmpty>Select a track to see what it needs.</DetailEmpty>}
+      </>
+    );
   }
 
   return (

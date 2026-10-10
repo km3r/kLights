@@ -558,6 +558,311 @@ try:
     sc._drain()
     check("its transport arriving after that is ignored, not five notices",
           list(sc.notices) == before, f"{list(sc.notices)[len(before):]}")
+
+    # -- 4b. a track's place in the folder: its timeline, itself, its names ----
+    print("\n4b. deleting a timeline, removing a track, linking a description")
+
+    def reload():
+        sc.reload_library()
+        assert sc.worker.wait_idle(5.0)
+        sc._drain()
+
+    def line(tid):
+        return next((t for t in jget("/api/tracks")[1]["tracks"] if t["id"] == tid), None)
+
+    def spare_track():
+        """A second track with a timeline and a waveform, written straight to
+        the folder the way a prep on another machine arrives."""
+        doc = json.loads(track_path.read_text())
+        doc.update(id="spare", aliases=[], ids={})
+        doc["identity"] = {**doc["identity"], "title": "Spare Track",
+                           "artist": "Nobody", "album": ""}
+        doc.pop("audio", None)
+        (shows / "tracks" / "spare.json").write_text(json.dumps(doc))
+        tl = json.loads((shows / "timelines" / "synth-128.json").read_text())
+        tl["track"] = "spare"
+        (shows / "timelines" / "spare.json").write_text(json.dumps(tl))
+        (shows / "waveforms").mkdir(exist_ok=True)
+        (shows / "waveforms" / "spare.json").write_text(
+            json.dumps({"kind": "klights.waveform", "version": 1, "track": "spare"}))
+        reload()
+
+    def there(*rels):
+        return [rel for rel in rels if (shows / rel).is_file()]
+
+    SPARE = ("timelines/spare.json", "waveforms/spare.json", "tracks/spare.json")
+    spare_track()
+    spare = line("spare")
+    check("a track's line carries its timeline's rev, for a delete to quote",
+          spare and spare["has_timeline"] and spare["has_waveform"]
+          and spare["timeline"]["rev"] == sc.show_library.folder.revs["timelines/spare.json"]
+          and spare["aliases"] == [], f"{spare}")
+
+    # The timeline alone.
+    tl_rev = spare["timeline"]["rev"]
+    r = ask({"type": "timeline_delete", "track": "spare", "base_rev": tl_rev, "id": 60},
+            client=viewer)
+    check("deleting a timeline is configure-tier",
+          r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "timeline_delete", "track": "spare", "id": 61})
+    check("and needs the rev that was read", r["ok"] is False and "base_rev" in r["error"])
+    r = ask({"type": "timeline_delete", "track": "spare", "base_rev": "r:000000000000",
+             "id": 62})
+    check("a timeline changed since it was read is not deleted",
+          r["ok"] is False and "changed since" in r["error"]
+          and there(*SPARE) == list(SPARE), f"{r}")
+    r = ask({"type": "timeline_delete", "track": "../show", "base_rev": tl_rev, "id": 63})
+    check("an id that is not a file name is refused",
+          r["ok"] is False and "not a usable id" in r["error"], f"{r}")
+    r = ask({"type": "timeline_delete", "track": "spare", "base_rev": tl_rev, "id": 64})
+    check("with its rev the timeline is deleted, and only the timeline",
+          r["ok"] and r["data"] == {"deleted": "timelines/spare.json"}
+          and there(*SPARE) == ["waveforms/spare.json", "tracks/spare.json"], f"{r}")
+    check("the folder reloads: the track is there, with no timeline",
+          "spare" in sc.show_library.folder.tracks
+          and "spare" not in sc.show_library.folder.timelines
+          and line("spare")["has_timeline"] is False and line("spare")["timeline"] is None)
+    r = ask({"type": "timeline_delete", "track": "spare", "base_rev": tl_rev, "id": 65})
+    check("a track with no timeline has none to delete, and says so",
+          r["ok"] is False and "no timeline to delete" in r["error"], f"{r}")
+    check("the track everything else uses is untouched",
+          there("timelines/synth-128.json", "tracks/synth-128.json")
+          == ["timelines/synth-128.json", "tracks/synth-128.json"])
+
+    # The whole track.
+    spare_track()
+    spare = line("spare")
+    rev, tl_rev = spare["rev"], spare["timeline"]["rev"]
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev,
+             "timeline_rev": tl_rev, "id": 70}, client=viewer)
+    check("removing a track is configure-tier",
+          r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "track_delete", "track": "spare", "timeline_rev": tl_rev, "id": 71})
+    check("and needs the track's rev", r["ok"] is False and "base_rev" in r["error"])
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": "r:000000000000",
+             "timeline_rev": tl_rev, "id": 72})
+    check("a track changed since it was read is not removed, nor anything of it",
+          r["ok"] is False and "tracks/spare.json changed since" in r["error"]
+          and there(*SPARE) == list(SPARE), f"{r}")
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev,
+             "timeline_rev": "r:000000000000", "id": 73})
+    check("nor one whose timeline changed since: it would be deleted unseen",
+          r["ok"] is False and "timelines/spare.json" in r["error"]
+          and "changed since" in r["error"] and there(*SPARE) == list(SPARE), f"{r}")
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev, "id": 74})
+    check("nor one with a timeline the request never saw (made a moment ago, "
+          "on another machine)",
+          r["ok"] is False and "was not there when you looked" in r["error"]
+          and there(*SPARE) == list(SPARE), f"{r}")
+    r = ask({"type": "track_delete", "track": "nope", "base_rev": rev, "id": 75})
+    check("a track that is not in the folder says so",
+          r["ok"] is False and "tracks/nope.json is not there" in r["error"], f"{r}")
+    r = ask({"type": "track_delete", "track": "../show", "base_rev": rev, "id": 76})
+    check("and an id that is not a file name never reaches the disk",
+          r["ok"] is False and "not a usable id" in r["error"], f"{r}")
+
+    # On the rig: Studio's preview, then a deck.
+    r = ask({"type": "preview_arm", "track_id": "spare", "force": True, "id": 77})
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev,
+             "timeline_rev": tl_rev, "id": 78})
+    check("a track Studio is driving the rig on is not removed",
+          r["ok"] is False and "while it is playing" in r["error"]
+          and "Studio (designer)" in r["error"] and there(*SPARE) == list(SPARE), f"{r}")
+    ask({"type": "preview_release", "id": 79})
+    t = sc.ctx.time + 5.0
+    sc.apply({"type": "sync", "source": "blt", "deck": "1", "title": "Spare Track",
+              "artist": "Nobody", "album": "", "rekordbox_id": 3, "duration": 180.0},
+             None, t)
+    for i in range(10):
+        sc.apply({"type": "sync", "source": "blt", "deck": "1",
+                  "track_time": 10 + i / 25, "playing": True, "pitch": 1.0},
+                 None, t + i / 25)
+    sc.ctx.time = t + 0.4
+    sc._track_frame()
+    check("(the deck is on the spare track)",
+          sc.snapshot()["track"]["match"]["track_id"] == "spare",
+          f"{sc.snapshot()['track']['match']}")
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev,
+             "timeline_rev": tl_rev, "id": 80})
+    check("the track on the deck is not removed, and the refusal says what to do",
+          r["ok"] is False and "while it is playing" in r["error"]
+          and "on the deck now (blt)" in r["error"]
+          and "take the clock back" in r["error"] and there(*SPARE) == list(SPARE), f"{r}")
+    r = ask({"type": "timeline_delete", "track": "nope", "base_rev": tl_rev, "id": 81})
+    check("(a timeline delete of some other track is not held up by it)",
+          r["ok"] is False and "no timeline to delete" in r["error"], f"{r}")
+    sc.apply({"type": "sync_off"}, None, sc.ctx.time)
+    sc._track_frame()
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": rev,
+             "timeline_rev": tl_rev, "id": 82})
+    check("once the deck has moved on it goes: timeline, waveform, then the "
+          "track's own file, answered in that order",
+          r["ok"] and r["data"] == {"deleted": list(SPARE)} and there(*SPARE) == [], f"{r}")
+    check("the folder reloads without it, and with nothing left that names it",
+          "spare" not in sc.show_library.folder.tracks
+          and "spare" not in sc.show_library.folder.timelines
+          and "spare" not in sc.show_library.folder.waveforms
+          and line("spare") is None
+          and not any("spare" in w for w in sc.show_library.folder.warnings),
+          f"{sc.show_library.folder.warnings}")
+    check("and a notice says what was removed",
+          any("removed track 'spare'" in n and "tracks/spare.json" in n for n in sc.notices),
+          f"{sc.notices[-2:]}")
+    check("the other track is as it was",
+          there("timelines/synth-128.json", "tracks/synth-128.json")
+          == ["timelines/synth-128.json", "tracks/synth-128.json"]
+          and "synth-128" in sc.show_library.folder.tracks)
+
+    # A track with nothing but its own file, and one the timeline of which
+    # went meanwhile.
+    spare_track()
+    (shows / "timelines" / "spare.json").unlink()
+    (shows / "waveforms" / "spare.json").unlink()
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": line("spare")["rev"],
+             "timeline_rev": tl_rev, "id": 83})
+    check("a timeline that has already gone does not hold the removal up",
+          r["ok"] and r["data"] == {"deleted": ["tracks/spare.json"]}, f"{r}")
+    spare_track()
+    real_unlink = pathlib.Path.unlink
+
+    def stuck(self, *a, **kw):
+        if self.name == "spare.json" and self.parent.name == "waveforms":
+            raise PermissionError("in use")
+        return real_unlink(self, *a, **kw)
+
+    pathlib.Path.unlink = stuck
+    try:
+        r = ask({"type": "track_delete", "track": "spare", "base_rev": line("spare")["rev"],
+                 "timeline_rev": line("spare")["timeline"]["rev"], "id": 84})
+    finally:
+        pathlib.Path.unlink = real_unlink
+    check("stopped part way, it says how far it got and the track is still there",
+          r["ok"] is False and "removed timelines/spare.json, then could not remove "
+          "waveforms/spare.json" in r["error"] and "remove the track again" in r["error"]
+          and there(*SPARE) == ["waveforms/spare.json", "tracks/spare.json"], f"{r}")
+    reload()
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": line("spare")["rev"],
+             "timeline_rev": "", "id": 85})
+    check("and removing it again finishes", r["ok"] and there(*SPARE) == [], f"{r}")
+
+    # Another description for a track, typed rather than taken from a deck.
+    spare_track()
+    for bad, why in (({"title": "  "}, "needs a title"),
+                     ({"title": "!!!"}, "needs a title"),
+                     ({"title": 7}, "title must be text"),
+                     ({"title": "x" * 201}, "at most 200"),
+                     ({"title": "Ok", "artist": ["a"]}, "artist must be text"),
+                     ({"title": "synthetic 128", "artist": "KLIGHTS", "album": "Test Track"},
+                      "already answers to that description"),
+                     ({"title": "Spare Track", "artist": "Nobody"},
+                      "already leads to 'spare' (tracks/spare.json)")):
+        r = ask({"type": "track_link", "track_id": "synth-128", **bad, "id": 90})
+        check(f"track_link with {str(bad)[:60]} is refused: {why}",
+              r["ok"] is False and why in r["error"], f"{r}")
+    r = ask({"type": "track_link", "track_id": "synth-128", "title": "Guest Copy",
+             "id": 91}, client=viewer)
+    check("a typed link is configure-tier like any other",
+          r["ok"] is False and "needs configure" in r["error"])
+    r = ask({"type": "track_link", "track_id": "synth-128", "title": " Synthetic 128 (Guest Edit) ",
+             "artist": "kLights", "id": 92})
+    linked = json.loads(track_path.read_text())
+    check("a typed description is saved as an alias, trimmed, with no signature",
+          r["ok"] and r["data"] == {"queued": True, "track_id": "synth-128",
+                                    "applies": "next_play"}
+          and linked["aliases"][-1]["title"] == "Synthetic 128 (Guest Edit)"
+          and linked["aliases"][-1]["artist"] == "kLights"
+          and linked["aliases"][-1]["via"] == "manual"
+          and linked["ids"]["blt_signatures"] == [], f"{r} {linked['aliases']}")
+    check("the track's line lists what it answers to",
+          line("synth-128")["aliases"] == [{"title": "Synthetic 128 (Guest Edit)",
+                                            "artist": "kLights", "album": ""}],
+          f"{line('synth-128')['aliases']}")
+    match = sc.show_library.index.match(title="synthetic 128 (guest edit)", artist="KLIGHTS")
+    check("and the matcher takes that description to the track",
+          match.track_id == "synth-128" and match.via == "alias", f"{match}")
+    r = ask({"type": "track_link", "track_id": "spare", "title": "Synthetic 128 (Guest Edit)",
+             "artist": "kLights", "id": 93})
+    check("a description another track answers to by alias is not given to a second",
+          r["ok"] is False and "already leads to 'synth-128'" in r["error"], f"{r}")
+    r = ask({"type": "track_delete", "track": "spare", "base_rev": line("spare")["rev"],
+             "timeline_rev": line("spare")["timeline"]["rev"], "id": 94})
+
+    # Where the other outputs go is show.json's too: Studio's Show settings
+    # page saves it with the same show_save.
+    show_doc = json.loads((shows / "show.json").read_text())
+    show_rev = jget("/api/show")[1]["show_rev"]
+    bad_out = ask({"type": "show_save", "base_rev": show_rev, "id": 95, "doc": {
+        **show_doc, "outputs": {"osc": {"host": "vj.local", "port": 7000}}}})
+    check("show.json's outputs are checked on a save: a host by name is refused, "
+          "and says to give an address",
+          bad_out["ok"] is False and "outputs.osc.host" in bad_out["error"]
+          and "not an IPv4 address" in bad_out["error"] and sc.outputs.osc is None,
+          f"{bad_out}")
+    out = ask({"type": "show_save", "base_rev": show_rev, "id": 96, "doc": {
+        **show_doc, "outputs": {"osc": {"host": "127.0.0.1", "port": 7000}, "midi": {},
+                                "timecode": {"fps": 25}}}})
+    said = sc.snapshot()["outputs"] or {}
+    check("saved, the engine points its outputs there as the folder reloads -- "
+          "an empty one at its defaults",
+          out["ok"] and (said.get("osc") or {}).get("target") == "127.0.0.1:7000"
+          and (said.get("midi") or {}).get("target") == "127.0.0.1:9123"
+          and (said.get("timecode") or {}).get("fps") == 25 and said.get("problems") == []
+          and said.get("local") == [],
+          f"{out} {said}")
+    out = ask({"type": "show_save", "base_rev": out["data"]["rev"], "id": 97,
+               "doc": show_doc})
+    check("and taken out again, they are off", out["ok"] and sc.snapshot()["outputs"] is None,
+          f"{out} {sc.snapshot()['outputs']}")
+
+    # -- 4c. the folder's own problems, a row each ------------------------------
+    print("\n4c. the folder's problems, each with its file")
+    check("(the spare track is out of the way again)", r["ok"], f"{r}")
+    clean = jget("/api/show")[1]
+    check("a clean folder has no problem rows", clean["problems"] == []
+          and clean["errors"] == [] and clean["warnings"] == [], f"{clean.get('problems')}")
+    ghost = json.loads((shows / "timelines" / "synth-128.json").read_text())
+    ghost["track"] = "ghost"
+    (shows / "timelines" / "ghost.json").write_text(json.dumps(ghost))
+    (shows / "routines" / "fan-drop.json").write_text("{", "utf-8")
+    (shows / "routines" / "torn.json").write_text("{", "utf-8")
+    (shows / "tracks" / "synth-128 (conflicted copy).json").write_text("{}", "utf-8")
+    show_doc = json.loads((shows / "show.json").read_text())
+    (shows / "show.json").write_text(json.dumps({**show_doc, "template_set": "nowhere"}))
+    reload()
+    body = jget("/api/show")[1]
+    rows = body["problems"]
+    by_file = {}
+    for row in rows:
+        by_file.setdefault(row["file"], []).append(row)
+    check("every problem is a row: errors first, then warnings, none lost",
+          [r_["level"] for r_ in rows] == ["error"] * len(body["errors"])
+          + ["warning"] * len(body["warnings"]) and len(body["errors"]) == 2, f"{rows}")
+    check("each names the file it is about, apart from what it says",
+          by_file.get("routines/torn.json", [{}])[0].get("level") == "error"
+          and by_file["routines/torn.json"][0]["text"].startswith("is not valid JSON")
+          and any(r_["text"].startswith("track 'ghost' is not in tracks/")
+                  for r_ in by_file.get("timelines/ghost.json", []))
+          and any("names template set 'nowhere'" in r_["text"]
+                  for r_ in by_file.get("show.json", [])), f"{rows}")
+    check("a sync conflict copy is named whole, spaces and brackets included",
+          any("sync conflict copy" in r_["text"]
+              for r_ in by_file.get("tracks/synth-128 (conflicted copy).json", [])),
+          f"{sorted(k for k in by_file if k)}")
+    check("a file broken since it loaded is an error and a warning, and `failed` "
+          "says it runs on its last good version",
+          [r_["level"] for r_ in by_file.get("routines/fan-drop.json", [])]
+          == ["error", "warning"] and "routines/fan-drop.json" in body["failed"]
+          and "routines/torn.json" not in body["failed"], f"{body['failed']}")
+    check("nothing is left without a file here", None not in by_file, f"{by_file.get(None)}")
+    status, orphan = jget("/api/timelines/ghost")
+    r = ask({"type": "timeline_delete", "track": "ghost", "base_rev": orphan.get("rev"),
+             "id": 98})
+    check("a timeline whose track is gone is still read with its rev, and can be "
+          "deleted by it",
+          status == 200 and r["ok"] and r["data"] == {"deleted": "timelines/ghost.json"}
+          and not (shows / "timelines" / "ghost.json").exists()
+          and not any(row["file"] == "timelines/ghost.json"
+                      for row in jget("/api/show")[1]["problems"]), f"{status} {r}")
 finally:
     srv.stop()
     sc.worker.stop()

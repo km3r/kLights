@@ -12,6 +12,7 @@ tier check, frame boundary and reply channel as everything else that changes
 the show.
 
     /api/show                 show.json, counts, every problem in the folder
+                              (`problems`: a row each, with the file it is about)
     /api/tracks               every prepped track, one line each
     /api/tracks/<id>          one track document and its rev
     /api/timelines/<id>       a track's timeline and its rev (404: none yet)
@@ -149,7 +150,11 @@ def handle(library, path: str, range_header: Optional[str] = None,
                       "show_rev": folder.revs.get("show.json"),
                       "show": folder.show, **library.counts,
                       "errors": folder.errors, "warnings": folder.warnings,
-                      "failed": folder.failed})
+                      "failed": folder.failed,
+                      # The same, a row each with the file it is about, for
+                      # Studio to list and link from: errors first.
+                      "problems": [_problem("error", e) for e in folder.errors]
+                      + [_problem("warning", w) for w in folder.warnings]})
     if what == "tracks" and ident is None:
         return _json({"tracks": [_track_line(library, tid, doc)
                                  for tid, doc in sorted(folder.tracks.items())]})
@@ -229,6 +234,25 @@ def handle(library, path: str, range_header: Optional[str] = None,
     return _file(found, range_header)
 
 
+# Every problem a folder load reports starts with the file it is about, as
+# showfiles.load_folder writes them: "timelines/x.json: ...", "show.json names
+# ...". Up to the FIRST ".json", so a sync conflict copy's name -- spaces,
+# brackets and all -- is taken whole.
+_PROBLEM_FILE = re.compile(
+    r"^(show\.json|(?:%s)/[^/]+?\.json)(?=[\s:]|\Z)"
+    % "|".join(sorted(set(showfiles.SUBDIR.values()))))
+
+
+def _problem(level: str, text: str) -> dict:
+    """One of the folder's problems as a row: which file, and what about it.
+    `file` is None for the few that are about no file (the folder is missing)."""
+    match = _PROBLEM_FILE.match(text)
+    if match is None:
+        return {"level": level, "file": None, "text": text}
+    return {"level": level, "file": match.group(1),
+            "text": text[match.end():].lstrip(": ")}
+
+
 def _lane_line(row: dict) -> dict:
     items = row.get("items") or ()
     return {"type": row.get("type"), "target": row.get("target"), "role": row.get("role"),
@@ -265,7 +289,9 @@ def _track_line(library, tid: str, doc: dict) -> dict:
                 "items": sum(len(r.get("items") or ()) + len(r.get("points") or ())
                              for r in timeline.get("rows") or ()
                              if isinstance(r, dict)),
-                "grid_rev": timeline.get("grid_rev")},
+                "grid_rev": timeline.get("grid_rev"),
+                # for a delete of it (or of the track) to quote
+                "rev": folder.revs.get(f"timelines/{tid}.json")},
             "edited": _edited(library.root, tid),
             # Whether a file the track names is on THIS machine. Only the
             # named paths are looked at: an `audio_roots` search walks a music
@@ -277,6 +303,11 @@ def _track_line(library, tid: str, doc: dict) -> dict:
             "rekordbox": [{"db": r.get("db"), "id": r.get("id")}
                           for r in (doc.get("ids") or {}).get("rekordbox") or ()],
             "signatures": len((doc.get("ids") or {}).get("blt_signatures") or ()),
+            # The other descriptions it answers to: a guest's copy, linked by
+            # hand (`track_link`).
+            "aliases": [{"title": a.get("title"), "artist": a.get("artist") or "",
+                         "album": a.get("album") or ""}
+                        for a in doc.get("aliases") or () if isinstance(a, dict)],
             "rev": folder.revs.get(f"tracks/{tid}.json")}
 
 
