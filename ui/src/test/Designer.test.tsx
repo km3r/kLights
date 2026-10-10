@@ -18,10 +18,13 @@ import { WAVE_HEIGHT } from "../designer/lanes";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
 import { pageFor, problemsOf } from "../designer/Problems";
-import { outputProblems } from "../designer/ShowSettings";
+import {
+  OUTPUTS, TIMECODE_FPS, TIMECODE_FPS_DEFAULT, outputProblems,
+} from "../designer/ShowSettings";
 import blockLists from "../designer/__fixtures__/blocks.json";
 import waveVectors from "../designer/__fixtures__/wave-vectors.json";
 import audioVectors from "../designer/__fixtures__/audio-vectors.json";
+import outputDefaults from "../designer/__fixtures__/outputs.json";
 import type {
   AudioBand, FolderProblem, Point, RoutineDoc, ShowSummary, TemplateSetDoc, TimelineDoc,
   WaveformDoc,
@@ -2850,6 +2853,19 @@ describe("show settings", () => {
     expect(outputProblems({ osc: { host: "localhost", port: 7000 }, midi: {},
                             timecode: { host: "255.255.255.255" } })).toEqual([]);
     expect(outputProblems({ osc: {}, midi: { host: "300.1.1.1" } })).toHaveLength(2);
+    // As the engine reads an address: no leading zeros, four parts.
+    expect(outputProblems({ midi: { host: "010.0.0.5" } })).toHaveLength(1);
+    expect(outputProblems({ midi: { host: "10.0.5" } })).toHaveLength(1);
+    expect(outputProblems({ midi: { host: "0.0.0.0" } })).toEqual([]);
+  });
+
+  it("offers each output where the engine puts it when show.json does not say", () => {
+    // outputs.json is written from engine/outputs.py: a default that moves
+    // there cannot leave this page promising the old one.
+    expect(Object.fromEntries(OUTPUTS.map((o) => [o.name, { host: o.host, port: o.port }])))
+      .toEqual(outputDefaults.places);
+    expect(TIMECODE_FPS).toEqual(outputDefaults.timecode_fps);
+    expect(TIMECODE_FPS_DEFAULT).toBe(outputDefaults.timecode_fps_default);
   });
 
   it("says a machine's klights.local.json overrides the outputs, and when this engine's does", async () => {
@@ -3002,8 +3018,10 @@ describe("track files", () => {
                                                      applies: "next_play" });
     expect(sent).toMatchObject({ track_id: "synth-128", title: "Synthetic 128 (Guest Edit)",
                                  artist: "kLights", album: "" });
-    expect(await screen.findByText('Linked "Synthetic 128 (Guest Edit)" to synthetic 128. '
-      + "It applies from the track's next play.")).toBeInTheDocument();
+    // Queued, not yet written: it says what was asked and where it will show.
+    expect(await screen.findByText('Linking "Synthetic 128 (Guest Edit)" to synthetic 128. '
+      + "It shows under Also answers to once the engine has written it, and applies from the "
+      + "track's next play.")).toBeInTheDocument();
   });
 
   it("links what a deck is playing, taking the deck's own description", async () => {
@@ -3017,7 +3035,7 @@ describe("track files", () => {
                                                      applies: "next_play" });
     // No description of its own: the engine takes the deck's, signature and all.
     expect(sent).toEqual({ type: "track_link", track_id: "synth-128", id: (sent as { id?: string }).id });
-    expect(await screen.findByText(/Linked what is playing \("Unknown Guest Tune"\) to synthetic 128/))
+    expect(await screen.findByText(/Linking what is playing \("Unknown Guest Tune"\) to synthetic 128/))
       .toBeInTheDocument();
   });
 

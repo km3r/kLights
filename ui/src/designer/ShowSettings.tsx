@@ -40,9 +40,11 @@ const POLICY: Record<string, string> = {
 
 /** The other outputs, as engine/outputs.py places them: what each is, where
  *  it goes when show.json does not say, and what turning it on starts with.
- *  OSC has no default port -- it is whatever the VJ app listens on. */
-const OUTPUTS: { name: OutputName; label: string; what: string; host: string;
-                 port: number | null; start: Place }[] = [
+ *  OSC has no default port -- it is whatever the VJ app listens on. The hosts,
+ *  ports and frame rates are the engine's (`outputs.defaults()`), and a test
+ *  holds them to it through __fixtures__/outputs.json. */
+export const OUTPUTS: { name: OutputName; label: string; what: string; host: string;
+                        port: number | null; start: Place }[] = [
   { name: "osc", label: "OSC", host: "127.0.0.1", port: null, start: { port: 7000 },
     what: "To a VJ app, or anything that listens: the cues and curves of a timeline's OSC "
       + "lanes. Resolume listens on 7000." },
@@ -53,8 +55,12 @@ const OUTPUTS: { name: OutputName; label: string; what: string; host: string;
     what: "Art-Net timecode: the matched track's position, for a VJ app with its own "
       + "timeline per track." },
 ];
-const FPS = [24, 25, 29.97, 30];
-const HOST_RE = /^(localhost|(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3})$/;
+export const TIMECODE_FPS = [24, 25, 29.97, 30];
+export const TIMECODE_FPS_DEFAULT = 30;
+/** "localhost", or four numbers 0-255 with no leading zeros: what the engine
+ *  takes (showfiles.host_problem). */
+const OCTET = "(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const HOST_RE = new RegExp(`^(localhost|${OCTET}(\\.${OCTET}){3})$`);
 
 /** Why the outputs cannot be saved as they are, in words; none when they can.
  *  The engine checks the same on a save; this is so Save says why first. */
@@ -145,7 +151,7 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone, problem
   const sources = Object.entries((doc.sources ?? {}) as Record<string, { latency_ms?: number }>);
   const outputs = (doc.outputs ?? {}) as Outputs;
   const setOutput = (name: OutputName, place: Place | undefined) =>
-    setDoc((d) => d && clean({ ...d, outputs: { ...outputs, [name]: place } }));
+    setDoc((d) => d && clean({ ...d, outputs: { ...((d.outputs ?? {}) as Outputs), [name]: place } }));
   /** A port field's value, as `num` above but a whole number. */
   const port = (raw: string): number | undefined | null => {
     const v = num(raw, 1, 65535);
@@ -283,9 +289,9 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone, problem
                            if (v !== null) setOutput(o.name, { ...place, port: v });
                          }} />
                   {o.name === "timecode" && <>{" at "}
-                    <select value={place.fps ?? 30} aria-label="timecode fps"
+                    <select value={place.fps ?? TIMECODE_FPS_DEFAULT} aria-label="timecode fps"
                             onChange={(e) => setOutput(o.name, { ...place, fps: Number(e.target.value) })}>
-                      {FPS.map((f) => <option key={f} value={f}>{f}</option>)}
+                      {TIMECODE_FPS.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>{" fps"}</>}
                 </span>
               )}

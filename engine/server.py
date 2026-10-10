@@ -142,6 +142,9 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
 # available to them -- everything it does is undone by pressing it again.
 TIERS = ("view", "operate", "configure")
 
+# The longest title, artist or album a typed `track_link` takes.
+LINK_TEXT_MAX = 200
+
 TIER: dict[str, str] = {
     "hello": "view",
     # configure: persists past tonight, or steps around a safety guard
@@ -3092,8 +3095,9 @@ class ShowController:
         parts = []
         for name in ("title", "artist", "album"):
             value = m.get(name, "")
-            if not isinstance(value, str) or len(value) > 200:
-                raise ValueError(f"{name} must be text, at most 200 characters")
+            if not isinstance(value, str) or len(value) > LINK_TEXT_MAX:
+                raise ValueError(f"{name} must be text, at most "
+                                 f"{LINK_TEXT_MAX} characters")
             parts.append(value.strip())
         title, artist, album = parts
         alias = tracksmod.alias_for(title, artist, album)

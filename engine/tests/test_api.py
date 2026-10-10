@@ -816,8 +816,9 @@ try:
 
     # -- 4c. the folder's own problems, a row each ------------------------------
     print("\n4c. the folder's problems, each with its file")
+    check("(the spare track is out of the way again)", r["ok"], f"{r}")
     clean = jget("/api/show")[1]
-    check("a clean folder has no problem rows", r["ok"] and clean["problems"] == []
+    check("a clean folder has no problem rows", clean["problems"] == []
           and clean["errors"] == [] and clean["warnings"] == [], f"{clean.get('problems')}")
     ghost = json.loads((shows / "timelines" / "synth-128.json").read_text())
     ghost["track"] = "ghost"
@@ -853,6 +854,15 @@ try:
           == ["error", "warning"] and "routines/fan-drop.json" in body["failed"]
           and "routines/torn.json" not in body["failed"], f"{body['failed']}")
     check("nothing is left without a file here", None not in by_file, f"{by_file.get(None)}")
+    status, orphan = jget("/api/timelines/ghost")
+    r = ask({"type": "timeline_delete", "track": "ghost", "base_rev": orphan.get("rev"),
+             "id": 98})
+    check("a timeline whose track is gone is still read with its rev, and can be "
+          "deleted by it",
+          status == 200 and r["ok"] and r["data"] == {"deleted": "timelines/ghost.json"}
+          and not (shows / "timelines" / "ghost.json").exists()
+          and not any(row["file"] == "timelines/ghost.json"
+                      for row in jget("/api/show")[1]["problems"]), f"{status} {r}")
 finally:
     srv.stop()
     sc.worker.stop()

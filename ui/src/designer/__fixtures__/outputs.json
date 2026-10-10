@@ -1,0 +1,23 @@
+{
+ "places": {
+  "osc": {
+   "host": "127.0.0.1",
+   "port": null
+  },
+  "midi": {
+   "host": "127.0.0.1",
+   "port": 9123
+  },
+  "timecode": {
+   "host": "255.255.255.255",
+   "port": 6454
+  }
+ },
+ "timecode_fps": [
+  24,
+  25,
+  29.97,
+  30
+ ],
+ "timecode_fps_default": 30
+}

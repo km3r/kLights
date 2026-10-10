@@ -327,6 +327,9 @@ export function trackChecks(t: TrackLine, audio: AudioCheck, draft = false): Che
 
 type TrackTask = "link" | "timeline" | "remove";
 
+/** The longest title, artist or album a link takes (the engine's LINK_TEXT_MAX). */
+const LINK_TEXT_MAX = 200;
+
 /** A description as one line: title, then artist and album where it has them. */
 function describe(d: { title?: string | null; artist?: string | null; album?: string | null }): string {
   return [d.title, d.artist, d.album].filter(Boolean).join(" · ");
@@ -400,17 +403,20 @@ export function TrackDetail({ engine, t, set, playing, sets, live, onDone }: {
                  ...(t.has_timeline ? [`timelines/${t.id}.json`] : []),
                  ...(t.has_waveform ? [`waveforms/${t.id}.json`] : [])];
 
-  const applies = "It applies from the track's next play.";
+  // The engine answers a link when it is queued, not when it is written: say
+  // what was asked, and where the result shows.
+  const applies = "It shows under Also answers to once the engine has written it, and applies "
+    + "from the track's next play.";
   const linkTyped = () => run(async () => {
     const title = alias.title.trim();
     await ask({ type: "track_link", track_id: t.id, title, artist: alias.artist.trim(),
                 album: alias.album.trim() });
     setAlias({ title: "", artist: "", album: "" });
-    return `Linked "${title}" to ${t.title}. ${applies}`;
+    return `Linking "${title}" to ${t.title}. ${applies}`;
   });
   const linkHeard = () => run(async () => {
     await ask({ type: "track_link", track_id: t.id });
-    return `Linked what is playing ("${heard?.title ?? ""}") to ${t.title}. ${applies}`;
+    return `Linking what is playing ("${heard?.title ?? ""}") to ${t.title}. ${applies}`;
   });
   const deleteTimeline = () => run(async () => {
     await ask({ type: "timeline_delete", track: t.id, base_rev: t.timeline?.rev ?? "" });
@@ -481,21 +487,21 @@ export function TrackDetail({ engine, t, set, playing, sets, live, onDone }: {
           )}
           <form className="s-stack" onSubmit={(e) => {
             e.preventDefault();
-            if (alias.title.trim()) void linkTyped();
+            if (alias.title.trim() && !busy && canWrite) void linkTyped();
           }}>
-            <input ref={field} value={alias.title} aria-label="title on the deck" maxLength={200}
+            <input ref={field} value={alias.title} aria-label="title on the deck" maxLength={LINK_TEXT_MAX}
                    placeholder="Title, as the deck shows it"
                    onChange={(e) => setAlias({ ...alias, title: e.target.value })} />
-            <input value={alias.artist} aria-label="artist on the deck" maxLength={200}
+            <input value={alias.artist} aria-label="artist on the deck" maxLength={LINK_TEXT_MAX}
                    placeholder="Artist" onChange={(e) => setAlias({ ...alias, artist: e.target.value })} />
-            <input value={alias.album} aria-label="album on the deck" maxLength={200}
+            <input value={alias.album} aria-label="album on the deck" maxLength={LINK_TEXT_MAX}
                    placeholder="Album, if the deck sends one"
                    onChange={(e) => setAlias({ ...alias, album: e.target.value })} />
             <button type="submit" className="d-primary s-self"
                     disabled={!alias.title.trim() || busy || !canWrite}>Link it</button>
           </form>
           <span className="muted small">Capitals, accents and punctuation do not matter; the
-            words do. {applies}</span>
+            words do. It applies from the track's next play.</span>
         </Task>
       )}
       {task === "timeline" && t.has_timeline && (
