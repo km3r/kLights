@@ -57,6 +57,9 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>Or click a routine in the <b>browser</b> on the left to place it at
             the playhead on the scene lane, or drag it onto the lane and beat you
             want. Its tabs hold palettes, hits and looks too.</>,
+          <>This rig's looks are made and changed on Studio's <b>Looks</b> page:
+            a look is one block, saved to the event, and on the console's
+            picker as soon as it is saved.</>,
           <>Select a routine clip to see which fixtures each of its roles plays
             on. <b>Plays on</b> picks another tag, or one fixture, for that clip
             only. Tags are set on the console's Setup tab.</>,

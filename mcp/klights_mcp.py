@@ -9,9 +9,9 @@ whole engine is standard library only and a tool for editing the show's config
 is a poor place to introduce the first dependency. The protocol surface actually
 needed is three methods.
 
-**Everything it can change goes through `engine.patch`** (the rig) **or
-`engine.showtools`** (the show folder: tracks, timelines, routines, template
-sets). This file is a
+**Everything it can change goes through `engine.patch`** (the rig),
+**`engine.showtools`** (the show folder: tracks, timelines, routines, template
+sets) **or `engine.looktools`** (an event's looks). This file is a
 translation layer and nothing else: no validation rules live here, so the answer
 to "is this patch legal" cannot drift between saying it in chat, typing it at
 the CLI, and tapping it in the UI.
@@ -28,6 +28,9 @@ Two deliberate restrictions:
     The SHOW FOLDER is different: the engine reloads it, a playing track keeps
     its version until its next play, and every write quotes the rev it read, so
     a change made elsewhere is refused rather than overwritten.
+    An event's LOOKS are like the show folder: the engine watches the look
+    files and reads an edit by itself. Only a rename is refused mid-show --
+    it has presets and a cue list to move that the engine holds in memory.
 
 Stdout is the transport, so nothing may print to it. Diagnostics go to stderr.
 """
@@ -42,6 +45,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import looktools                               # noqa: E402
 from engine import patch                                   # noqa: E402
 from engine import showtools                               # noqa: E402
 
@@ -156,6 +160,67 @@ SHOW_TOOLS = [
      "inputSchema": _schema({**_SHOW, **_DOC, **_REV, **_WRITE}, ["doc"])},
 ]
 
+_LOOK_REV = {"base_rev": {**_STR, "description":
+                          "the rev list_looks or get_look gave, so a change "
+                          "made elsewhere since is refused rather than "
+                          "overwritten. \"\" when the event has no "
+                          "parametric_looks.json yet. Required to write."}}
+_LOOK_SHOW = {"show_dir": {**_STR, "description":
+                           "the show folder whose routines and timelines may "
+                           "name a look. Default: KLIGHTS_SHOW_DIR, then "
+                           "show_dir in klights.local.json; with neither, only "
+                           "the event's own cues and presets are counted."}}
+
+LOOK_TOOLS = [
+    {"name": "list_looks",
+     "description": "An event's look library, a line each: every look the "
+                    "console's picker offers. A BLOCK look is one block and its "
+                    "arguments (parametric_looks.json) and can be changed; a "
+                    "STORED look is a table ported from QLC+ (looks.json, "
+                    "generated) and can only be hidden -- block_version names "
+                    "the block that says the same thing, where one does. Also "
+                    "what uses each, and the rev a write must quote.",
+     "inputSchema": _schema({**_EVENT, **_LOOK_SHOW}, [])},
+    {"name": "get_look",
+     "description": "One look in full: its block and arguments, or what its "
+                    "stored table holds; its fixtures, notes, whether it is "
+                    "hidden and for what; and every cue, preset, routine, "
+                    "timeline and template set that names it.",
+     "inputSchema": _schema({**_EVENT, **_LOOK_SHOW, "name": _STR}, ["name"])},
+    {"name": "put_look",
+     "description": "Check a block look and, with write=true and base_rev, save "
+                    "it. look: {name, block, args?, groups?, notes?} -- block "
+                    "is one from engine/blocks.py with a slot of its own "
+                    "(orbit, pendulum, solid, hue_cycle, chase, dim ...), args "
+                    "are that block's (unknown ones are refused), groups are "
+                    "rig tags. Without `was` it is a NEW look; with `was` it "
+                    "changes the look of that name, and renames it when "
+                    "look.name differs -- moving every routine, timeline, "
+                    "template set, cue and preset that names it. A running "
+                    "engine reads a save by itself; a rename is refused while "
+                    "one runs (use Studio's Looks page).",
+     "inputSchema": _schema({**_EVENT, **_LOOK_SHOW,
+                             "look": {"type": "object"},
+                             "was": {**_STR, "description":
+                                     "the look's name as you read it; omit to "
+                                     "make a new look"},
+                             **_LOOK_REV, **_WRITE}, ["look"])},
+    {"name": "delete_look",
+     "description": "Delete a block look nothing names; refused, with where, "
+                    "while a cue, preset, routine, timeline or template set "
+                    "does. A stored look cannot be deleted: hide it.",
+     "inputSchema": _schema({**_EVENT, **_LOOK_SHOW, "name": _STR,
+                             **_LOOK_REV, **_WRITE}, ["name"])},
+    {"name": "hide_look",
+     "description": "Hide any look, stored or block, from the console's picker "
+                    "-- optionally with the look that covers it now and why -- "
+                    "or show it again (hidden=false). Hidden is not removed: it "
+                    "still plays for whatever names it, and auto mode skips it.",
+     "inputSchema": _schema({**_EVENT, "name": _STR, "hidden": _BOOL,
+                             "replaced_by": _STR, "note": _STR,
+                             **_LOOK_REV, **_WRITE}, ["name"])},
+]
+
 TOOLS = [
     {
         "name": "describe_rig",
@@ -258,7 +323,7 @@ TOOLS = [
                        "it survives a fresh clone and can be patched.",
         "inputSchema": _schema({"path": _STR}, ["path"]),
     },
-] + SHOW_TOOLS
+] + SHOW_TOOLS + LOOK_TOOLS
 
 
 # ------------------------------------------------------------------- tools --
@@ -337,10 +402,35 @@ def call_show_tool(name: str, args: dict) -> "dict | None":
     return None
 
 
+def call_look_tool(name: str, args: dict) -> "dict | None":
+    """The look-library tools, or None for a name that is not one."""
+    event = args.get("event", "despacio")
+    write = bool(args.get("write", False))
+    if name == "list_looks":
+        return looktools.list_looks(event, args.get("show_dir"))
+    if name == "get_look":
+        return looktools.get_look(args["name"], event, args.get("show_dir"))
+    if name == "put_look":
+        return looktools.put_look(args["look"], args.get("was"),
+                                  args.get("base_rev"), write, event,
+                                  args.get("show_dir"))
+    if name == "delete_look":
+        return looktools.delete_look(args["name"], args.get("base_rev"), write,
+                                     event, args.get("show_dir"))
+    if name == "hide_look":
+        return looktools.hide_look(args["name"], bool(args.get("hidden", True)),
+                                   args.get("replaced_by"), args.get("note"),
+                                   args.get("base_rev"), write, event)
+    return None
+
+
 def call_tool(name: str, args: dict) -> dict:
     shown = call_show_tool(name, args)
     if shown is not None:
         return shown
+    looked = call_look_tool(name, args)
+    if looked is not None:
+        return looked
     if name == "describe_rig":
         return patch.describe(args.get("event", "despacio"))
     if name == "list_profiles":

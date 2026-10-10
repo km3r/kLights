@@ -276,11 +276,14 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    split. Draft a first pass from a template set, tap hits in with the Record
    pads, or edit the list. **Drive the rig** plays the draft you are editing on
    the real rig, from the page's own audio. **+ New** makes a timeline, a
-   routine, a template set or a palette. Routines are reusable rows on roles
+   routine, a template set, a palette or a look. Routines are reusable rows on roles
    (movers, pinspots), with open parameters and variations. They have a library
    (folders, where each is used, rename and delete) and an editor of their own,
    where a lane can also move one block's argument. Template sets, the show's
-   palette library and show.json's settings each have a page. Undo, Ctrl+S,
+   palette library and show.json's settings each have a page. So do this
+   rig's **looks**: make one from a block, change its arguments, hide the ones
+   you no longer want on the picker -- saved to the event, and on the console
+   at once. Undo, Ctrl+S,
    Space and Delete work as you would expect. Every save quotes the version it
    opened, so a change made elsewhere is never overwritten.
 3. **Play.** The engine matches the DJ's track against the folder (CDJs via

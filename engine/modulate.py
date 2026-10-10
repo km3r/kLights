@@ -33,8 +33,8 @@ reasoning as `waves.sampled`.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, replace
+from typing import Callable, Optional
 
 from . import params as parammod
 from . import waves
@@ -199,6 +199,19 @@ class Rack:
 
     def clear(self) -> None:
         self.by_key = {}
+
+    def rename(self, old: str, new: str) -> None:
+        """A look was renamed: its modulators follow the name."""
+        if any(mod.look == old for mod in self.by_key.values()):
+            mods = [replace(mod, look=new) if mod.look == old else mod
+                    for mod in self.by_key.values()]
+            self.by_key = {mod.key: mod for mod in mods}
+
+    def keep(self, wanted: Callable[[Modulator], bool]) -> None:
+        """Drop every modulator `wanted` says no to -- the ones left aimed at
+        a look, or a parameter, the library no longer has."""
+        if not all(wanted(mod) for mod in self.by_key.values()):
+            self.by_key = {k: mod for k, mod in self.by_key.items() if wanted(mod)}
 
     def __len__(self) -> int:
         return len(self.by_key)
