@@ -708,7 +708,10 @@ print("\n17b. a superseding look IS the ported look it replaces")
 # every head, through the real layers on the real rig, under the shape macros
 # an operator might have up, to a hundredth of a degree.
 ported_by_name = {e.name: e for e in entries}
-superseding = [r for r in parametric if r.supersedes]
+# Only the ones still CLAIMED exact. A superseding look changed away from its
+# original on purpose says so in the file (`exact: false`, written by Studio
+# as it saves the change), keeps the name, and is nobody's to measure here.
+superseding = [r for r in parametric if r.supersedes and r.exact]
 check("there are superseding looks to measure", len(superseding) >= 6,
       f"{len(superseding)}")
 

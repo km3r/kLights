@@ -274,6 +274,10 @@ class Watcher:
     on_change: Callable[[], None]
     report: Callable[[str], None] = lambda text: None
     interval: float = POLL_S
+    # What to compare: the show folder's files, unless told otherwise (the
+    # engine watches an event's look files with this too).
+    scan: Callable[[Path], Signature] = scan
+    what: str = "show folder"
     seen: Optional[Signature] = None        # what the installed load read
     _pending: Optional[Signature] = None
     _stop: threading.Event = field(default_factory=threading.Event)
@@ -283,7 +287,7 @@ class Watcher:
         if seen is not None:
             self.seen = seen
         if self.seen is None:
-            self.seen = scan(self.root)
+            self.seen = self.scan(self.root)
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
@@ -299,7 +303,7 @@ class Watcher:
 
     def poll(self) -> bool:
         """One look. True if it called `on_change`."""
-        now = scan(self.root)
+        now = self.scan(self.root)
         if now == self.seen:
             self._pending = None
             return False
@@ -320,7 +324,7 @@ class Watcher:
                 # A NAS that went away. Say so once, keep looking: the share
                 # coming back is a change like any other.
                 if not failing:
-                    self.report(f"show folder watch failed: {exc}")
+                    self.report(f"{self.what} watch failed: {exc}")
                 failing = True
 
 

@@ -3,7 +3,7 @@ import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
   BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
-  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, itemName,
+  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, hexColor, itemName,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
 import {
@@ -808,7 +808,8 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
 }
 
 /** A color: a palette role, a color of its own, or one of the routine's
- *  color parameters. */
+ *  color parameters. A color of its own is shown whichever way it is written:
+ *  "#rrggbb", or the [r, g, b] a console look stores. */
 function ColorValue({ label, value, onChange, params }: {
   label: string; value: unknown; onChange: (v: unknown) => void; params: string[];
 }) {
@@ -818,7 +819,7 @@ function ColorValue({ label, value, onChange, params }: {
       {ROLES.map((r) => (
         <button key={r} className={role === r ? "on" : ""} onClick={() => onChange(`@${r}`)}>{r}</button>))}
       <input type="color" aria-label={`${label} direct color`}
-             value={typeof value === "string" && value.startsWith("#") ? value : "#ffffff"}
+             value={hexColor(value) ?? "#ffffff"}
              onChange={(e) => onChange(e.target.value)} />
       {params.map((p) => (
         <button key={p} className={value === `$${p}` ? "on" : ""} onClick={() => onChange(`$${p}`)}>
@@ -827,7 +828,10 @@ function ColorValue({ label, value, onChange, params }: {
   );
 }
 
-function ArgField({ spec, value, params, onChange, engine }: {
+/** One argument of a block, as a field: a number, a choice, a color... Used by
+ *  the routine editor's inspector and by the Looks page, which has no
+ *  parameters to offer (`params` empty). */
+export function ArgField({ spec, value, params, onChange, engine }: {
   spec: ArgSpec; value: unknown; params: string[]; onChange: (v: unknown) => void; engine: Engine;
 }) {
   const fromParam = typeof value === "string" && value.startsWith("$");

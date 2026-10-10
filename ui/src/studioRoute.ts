@@ -9,6 +9,8 @@ import { apiUrl } from "./useEngine";
  *   #studio/routines             the routine library
  *   #studio/templates[/<id>]     the template sets, or one of them
  *   #studio/palettes             the palette library
+ *   #studio/looks                this rig's looks (the event's, not the show
+ *                                folder's)
  *   #studio/show                 the show's settings (show.json)
  *   #studio/rekordbox[/<id>]     the rekordbox collection, or one playlist
  *                                (?find=<text> searches the whole collection)
@@ -29,6 +31,7 @@ export type StudioRoute =
   | { view: "templates"; id?: string }
   | { view: "show" }
   | { view: "palettes" }
+  | { view: "looks" }
   | { view: "rekordbox"; scope: string; find?: string }
   | { view: "track"; id: string }
   | { view: "routine"; id: string };
@@ -41,6 +44,7 @@ export function studioRoute(hash: string): StudioRoute | null {
   if (what === "templates") return ident ? { view: "templates", id: ident } : { view: "templates" };
   if (what === "show") return { view: "show" };
   if (what === "palettes") return { view: "palettes" };
+  if (what === "looks") return { view: "looks" };
   if (what === "rekordbox") {
     const find = new URLSearchParams(query).get("find") ?? undefined;
     return { view: "rekordbox", scope: ident || ALL_TRACKS, ...(find ? { find } : {}) };

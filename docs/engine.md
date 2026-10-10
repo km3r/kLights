@@ -140,6 +140,84 @@ whether it is **exact**:
 
 In both cases `looks.json` is untouched, so the port's round-trip proof stands.
 
+## Editing the library
+
+Studio's **Looks** page (`#studio/looks`) is where a block look is made and
+changed, and where any look is hidden. Every edit is an edit to
+`parametric_looks.json`, made by [`lookstore.py`](../engine/lookstore.py):
+
+| command | what it writes |
+|---|---|
+| `look_save {look, was?, hides?, base_rev}` | a new block look, or a change to the one called `was` -- which renames it, and everything that names it, when `look.name` differs. A new look may hide another in the same write (`hides: {look, note?}`): a stored look remade as a block |
+| `look_delete {look, base_rev}` | removes a block look nothing names |
+| `look_hide {look, hidden?, replaced_by?, note?, base_rev}` | hides any look from the picker, or shows it again |
+| `looks_reload` | reads both files again now (the engine watches them, so this is only for seeing why a file does not load) |
+
+`GET /api/looks` lists the library for the page: each look with what it is,
+everything that names it (cues, presets, the show folder's routines and
+timelines), and `rev`, which every write quotes as `base_rev` ("" when the
+event has no file yet). The snapshot's `looks_rev` moves when the library
+does, which is when a page reads the list again.
+
+- **The file is checked as a load would check it, before it is written.** A
+  look from a client is strict where a file is lenient: an argument the block
+  does not have is refused rather than dropped. Its name may not start with
+  `@`, `#` or `$` -- wherever a look can be named, those begin a palette role,
+  a color and a parameter, and usage and rename find a look by its name -- and
+  it carries at most 64 entries in a list and 32 groups, because the 10 Hz
+  snapshot carries every look's arguments to every console.
+- **The library reloads as the file is written**, on the worker, and is
+  installed at a frame boundary. The movement look on stage stays up; a slot,
+  a stacked move, tuning or a modulator naming a look that is gone is let go,
+  with a notice if it was on stage. The show folder's programs are rebuilt
+  from the new library, and what is playing plays on until its rebuild lands
+  (`TrackPlayer.refresh`; a rig change drops them at once, and this is not
+  one). A template set that is playing waits for the next track, as it does
+  after any folder edit. Nothing in the install can fail before the library
+  is in: the one write it makes, presets.json after a rename, is last, and a
+  failure there is a notice. Whoever sent the command is always answered.
+- **A rename moves everything that names the look** (`lookstore.rename`): the
+  show folder's routines, timelines and template sets -- every place one can
+  hold a look's name, found by the one walk (`lookstore._refs`) that also
+  answers "what uses this look" -- cues.json, the presets, what is tuned or on
+  stage, and what was hidden in the look's favour. A folder of files has no
+  transaction, so the look is written under BOTH names first, each reference
+  is moved, and the old name goes last: stopped anywhere, nothing names a look
+  that is gone, and the error says how far it got. Everything that can be
+  checked is checked before the first write -- each show file must still be
+  the file that last loaded cleanly, so one that is mid-edit refuses the
+  rename with nothing written. cues.json is written back in the layout it had
+  (`lookstore.relaid`), where that can be reproduced exactly.
+- **The engine watches both look files** (`showlibrary.Watcher`, the same one
+  that watches the show folder) and reads an edit made outside it -- by hand,
+  by MCP, by the porter -- within a second or two. A file that does not load
+  is said once, `/api/looks` carries why as `problem`, and the library that
+  was running runs on.
+- **A stored look is never written.** It can be hidden; and where one block
+  states it exactly -- one color (`solid`), one level (`dim`), every head at
+  one offset (`offset`) -- `/api/looks` offers that block as `block_version`,
+  and Studio makes a block look from it under a name of its own. A route, a
+  chase or a color per fixture is a table, and is offered nothing.
+- **A superseding look can be changed, renamed and deleted like any other.**
+  Changed, it keeps the name -- and every cue that uses it -- and the save
+  records whether it still reproduces the stored look (`lookstore.reproduces`:
+  the block that states the stored look, the same fixtures, the same numbers):
+  `exact: false` once it does not, removed again if it is changed back.
+  `test_library` measures only the exact ones against their originals, so the
+  flag is the difference between a typo and a decision. Renamed, the stored
+  look returns under the old name, hidden in favour of the new one. Deleted,
+  the stored look returns as it was.
+- The file keeps its hand-written layout (`lookstore.render`): the file as
+  committed renders back byte for byte, so a save is exactly the lines that
+  changed.
+
+The MCP server offers the same edits ([`looktools.py`](../engine/looktools.py):
+`list_looks`, `get_look`, `put_look`, `delete_look`, `hide_look`), through the
+same `lookstore` functions. Dry runs unless asked; and since the engine watches
+the files, a look saved from a conversation is on the picker without a restart.
+A rename is the one edit refused while an engine runs the event: it has the
+presets and the cue list the engine holds in memory to move.
+
 Nothing downstream of [`clock.py`](../engine/clock.py) is authored in
 milliseconds.
 
@@ -286,7 +364,7 @@ editor gives completion and inline errors while you hand-edit at a venue.
 | `events/<e>/rig.json` | what is plugged in, and which room it uses |
 | `events/<e>/calibration.json` | what this rig measured in this room on this day |
 | `events/<e>/looks.json` | the look library, **generated** by the porter |
-| `events/<e>/parametric_looks.json` | hand-authored looks built from blocks, and the ported looks they retire |
+| `events/<e>/parametric_looks.json` | looks built from blocks, and the looks hidden from the picker. Written by Studio's Looks page; safe to hand-edit |
 | `events/<e>/presets.json`, `cues.json` | saved pictures, and the night as an ordered list |
 
 Writes go through `write_json_atomic` — temp file beside the target, `fsync`,
@@ -597,17 +675,18 @@ engine is sending now.
 `#studio/palettes` is the show's palette library, `palettes/<id>.json`: a
 library palette is a source that timelines and sets copy by name, never a
 link, so compiling is unchanged; `palette_sync` brings chosen copies up to the
-library's colors. Adding tracks preps them (`rekordbox_prep`) and can start
+library's colors. `#studio/looks` is the one page that is not about the show
+folder: this rig's looks, from the event (see *Editing the library* above). Adding tracks preps them (`rekordbox_prep`) and can start
 each one in the same step: a timeline drafted from a template set, an empty
 one, or none; the drafting is the timeline editor's own function, written with
 `timeline_save` and base_rev "". **+ New**, in the top bar of Studio's library
 pages, makes any of these: a timeline (drafted from a set, copied from another track's, or empty),
 a routine (blank, a copy, or a console look wrapped as one, bound to this rig),
 a template set (blank, a copy, or built from what a timeline's scene lane plays
-on each phrase family) or a palette. The first three open in their editor
-unsaved, the start handed over in sessionStorage (`pending.ts`, for a minute)
-and applied there, so nothing is written until Save; a palette has no editor
-and is written at once. `#studio/track/<id>` is layout B
+on each phrase family), a palette or a look. The first three open in their
+editor unsaved, the start handed over in sessionStorage (`pending.ts`, for a
+minute) and applied there, so nothing is written until Save; a palette and a
+look have no editor page and are written at once. `#studio/track/<id>` is layout B
 -- bar ruler, rekordbox's phrases, the waveform (its bottom edge drags it
 taller, and **Bands** stacks its low, mid and high), then the timeline's rows
 (the higher lane wins), hits, automation and the VJ lane, with the rig's plan and
@@ -620,7 +699,8 @@ fixture fails `test_api`). Everything else -- whether a document is valid,
 what a routine does on this rig -- it asks the engine.
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
-behind the MCP server: status, tracks (with their phrase beats), routines,
+behind the MCP server (an event's looks are [`looktools.py`](../engine/looktools.py)
+beside it): status, tracks (with their phrase beats), routines,
 template sets and timelines to read; `put_*` for whole documents and
 `edit_timeline` for small ops (add/update/remove items and lanes, set points or
 palettes); `link_track`; `lint_show` (the folder, and against an event's rig);
@@ -643,7 +723,8 @@ the folder may be written while a show runs.
 | parameters that move on their own | [`modulate.py`](../engine/modulate.py), [`waves.py`](../engine/waves.py) |
 | a track's audio as levels over its beats | [`bands.py`](../engine/bands.py) |
 | self-running axes | [`auto.py`](../engine/auto.py) |
-| the ported look library | [`library.py`](../engine/library.py) |
+| the look library: stored and block looks, merged | [`library.py`](../engine/library.py) |
+| edits to the look library, from Studio and from an assistant | [`lookstore.py`](../engine/lookstore.py), [`looktools.py`](../engine/looktools.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |

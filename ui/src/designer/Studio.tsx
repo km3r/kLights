@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } from "./model";
 import { PaletteDetail, PalettesView } from "./Palettes";
+import { LookDetail, LooksView } from "./Looks";
+import type { LookDraft } from "./Looks";
 import { NewDialog, NewMenu } from "./New";
 import type { NewKind } from "./New";
 import { TemplateAside, TemplatesView } from "./Templates";
@@ -10,7 +12,7 @@ import { apiFetch } from "../useEngine";
 import type { StudioRoute } from "../studioRoute";
 import type { Engine } from "./Designer";
 import { DESIGNER_CHUNK } from "./model";
-import type { CatalogueTrack, RoutineSummary, ShowSummary, TrackLine } from "./model";
+import type { CatalogueTrack, LooksList, RoutineSummary, ShowSummary, TrackLine } from "./model";
 import { ALL, Coverage, RekordboxNav, RekordboxView, loadCatalogue } from "./Collection";
 import { TrackDetail, TracksView } from "./Library";
 import type { ActiveSet } from "./Library";
@@ -25,8 +27,8 @@ import { FolderProblems } from "./Problems";
 import "./designer.css";
 
 /**
- * Studio's library: the show folder's tracks and routines, and the DJ's
- * rekordbox collection to add tracks from.
+ * Studio's library: the show folder's tracks and routines, this rig's looks,
+ * and the DJ's rekordbox collection to add tracks from.
  *
  *   top        Studio, the event, what the rig is doing, the console
  *   left       the sidebar: the library, then rekordbox's playlists
@@ -49,6 +51,9 @@ interface Library {
   sets: TemplateSummary[];
   palettes: PaletteSummary[] | null;
   found: FoundPalette[];
+  /** This rig's looks: the event's, read apart from the show folder. */
+  looks: LooksList | null;
+  looksError: string | null;
   reload: () => void;
 }
 
@@ -82,9 +87,22 @@ function useLibrary(engine: Engine): Library {
       .catch(() => { if (live) setPalettes({ palettes: [], found: [] }); });
     return () => { live = false; };
   }, [folderRev, asked]);
+  // The looks are the event's, with a rev of their own: read again when the
+  // engine says the look file changed -- and when the folder does, since a
+  // look's "used by" names the folder's routines and timelines.
+  const [looks, setLooks] = useState<LooksList | null>(null);
+  const [looksError, setLooksError] = useState<string | null>(null);
+  const looksRev = engine.state?.looks_rev;
+  useEffect(() => {
+    let live = true;
+    apiFetch<LooksList>("/api/looks")
+      .then((r) => { if (live) { setLooks(r); setLooksError(null); } })
+      .catch((e: Error) => { if (live) setLooksError(e.message); });
+    return () => { live = false; };
+  }, [looksRev, folderRev, asked]);
   const reload = useCallback(() => setAsked((n) => n + 1), []);
   return { tracks, error, routines, show, sets, palettes: palettes.palettes,
-           found: palettes.found, reload };
+           found: palettes.found, looks, looksError, reload };
 }
 
 interface Dialog { title: string; prep?: PrepPick[]; tracks?: StartTrack[]; ran?: boolean }
@@ -126,7 +144,31 @@ export default function Studio({ engine, route }: {
   // none, on purpose (the one shown was just deleted).
   const [paletteId, setPaletteId] = useState<string | null | undefined>(undefined);
   const shownPalette = paletteId === undefined ? (lib.palettes?.[0]?.id ?? null) : paletteId;
-  useEffect(() => { setSetSaid(null); }, [tplId, route.view]);
+  // The look on screen, by name: none until one is picked -- the first of two
+  // hundred is nobody's choice.
+  const [lookName, setLookName] = useState<string | null>(null);
+  // What is unsaved on the Looks page, by look: kept while another look is
+  // on screen, so comparing two looks does not cost the edit to one of them.
+  const [lookDrafts, setLookDrafts] = useState<Record<string, LookDraft>>({});
+  const keepLookDraft = useCallback((name: string, draft: LookDraft | null) => setLookDrafts((d) => {
+    if (draft != null) return { ...d, [name]: draft };
+    if (!(name in d)) return d;
+    const rest = { ...d };
+    delete rest[name];
+    return rest;
+  }), []);
+  // Only for block looks that are still there: a look deleted or renamed
+  // elsewhere takes its unsaved edit with it, rather than leaving it for
+  // whatever is next given that name.
+  const unsavedLooks = useMemo(() => new Set(Object.keys(lookDrafts).filter((name) =>
+    lib.looks?.looks.some((x) => x.name === name && x.source === "block"))), [lookDrafts, lib.looks]);
+  // Said on one page, gone on the next -- unless it was said about a thing
+  // just made from another page, which is on its way to the page it is on.
+  const saidAhead = useRef(false);
+  useEffect(() => {
+    if (saidAhead.current) { saidAhead.current = false; return; }
+    setSetSaid(null);
+  }, [tplId, route.view]);
 
   // Something to look at in the details panel from the start.
   useEffect(() => {
@@ -213,6 +255,27 @@ export default function Studio({ engine, route }: {
                          onDone={(said) => { setSetSaid(said); lib.reload(); }} />
         ) : <DetailEmpty>{lib.palettes?.length ? "Select a palette to edit it."
           : "The library is empty. Make a palette with New palette."}</DetailEmpty>}
+      </>
+    );
+  } else if (route.view === "looks") {
+    const done = (said: string) => { setSetSaid(said); lib.reload(); };
+    main = (
+      <LooksView engine={engine} list={lib.looks} error={lib.looksError} selected={lookName}
+                 unsaved={unsavedLooks}
+                 onSelect={(name) => { setSetSaid(null); setLookName(name); }}
+                 onNew={() => openNew("look")} onDone={done} />
+    );
+    const look = lib.looks?.looks.find((x) => x.name === lookName) ?? null;
+    side = (
+      <>
+        <Said text={setSaid} />
+        {look && lib.looks ? (
+          <LookDetail key={look.name} engine={engine} l={look} list={lib.looks}
+                      draft={unsavedLooks.has(look.name) ? lookDrafts[look.name] : undefined}
+                      onDraft={(draft) => keepLookDraft(look.name, draft)}
+                      onSelect={setLookName} onDone={done} />
+        ) : <DetailEmpty>{lib.looks?.looks.length ? "Select a look to see what it is, and to change it."
+          : "No looks yet. Make one with New look."}</DetailEmpty>}
       </>
     );
   } else if (route.view === "show") {
@@ -315,6 +378,10 @@ export default function Studio({ engine, route }: {
             <a className={`s-nav-item${route.view === "palettes" ? " on" : ""}`} href="#studio/palettes"
                aria-current={route.view === "palettes" ? "page" : undefined}>
               <span className="s-nav-name">Palettes</span><span className="s-n">{lib.palettes?.length || ""}</span></a>
+            <div className="s-sec">This rig</div>
+            <a className={`s-nav-item${route.view === "looks" ? " on" : ""}`} href="#studio/looks"
+               aria-current={route.view === "looks" ? "page" : undefined}>
+              <span className="s-nav-name">Looks</span><span className="s-n">{lib.looks?.looks.length || ""}</span></a>
             <div className="s-sec">Show</div>
             <a className={`s-nav-item${route.view === "show" ? " on" : ""}`} href="#studio/show"
                aria-current={route.view === "show" ? "page" : undefined}>
@@ -332,8 +399,16 @@ export default function Studio({ engine, route }: {
       {making && (
         <NewDialog engine={engine} kind={making} tracks={tracks} routines={lib.routines ?? []}
                    sets={lib.sets} showSet={setId} palettes={lib.palettes ?? []} found={lib.found}
+                   looks={lib.looks}
+                   onLook={(name, said) => {
+                     saidAhead.current = route.view !== "looks";
+                     setLookName(name); setSetSaid(said); lib.reload();
+                   }}
                    onClose={() => setMaking(null)}
-                   onPalette={(id, said) => { setPaletteId(id); setSetSaid(said); lib.reload(); }} />
+                   onPalette={(id, said) => {
+                     saidAhead.current = route.view !== "palettes";
+                     setPaletteId(id); setSetSaid(said); lib.reload();
+                   }} />
       )}
       {dialog && (
         <StartDialog engine={engine} title={dialog.title} prep={dialog.prep} tracks={dialog.tracks}

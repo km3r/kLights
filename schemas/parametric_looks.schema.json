@@ -36,6 +36,10 @@
           "supersedes": {
             "type": "boolean",
             "description": "true to take over the ported look of this name; it must reproduce it exactly"
+          },
+          "exact": {
+            "type": "boolean",
+            "description": "false once a superseding look no longer reproduces the stored look of its name; leave it out otherwise"
           }
         },
         "required": [

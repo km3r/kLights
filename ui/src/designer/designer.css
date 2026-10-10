@@ -648,6 +648,25 @@ a.s-use:hover b { color: var(--accent); }
 }
 .designer .s-palette-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--panel); color: var(--text); }
 .s-palette-card-text { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px 9px; font-size: 13px; }
+/* the Looks page */
+.s-table td.s-look { display: flex; flex-direction: column; gap: 1px; min-width: 200px; }
+.s-table td.s-look > span { display: flex; align-items: center; gap: 6px; }
+.designer .s-look-name {
+  padding: 0; min-height: 0; border: 0; background: none; color: var(--text);
+  font-size: 13px; text-align: left; align-self: flex-start;
+}
+.designer .s-look-name:hover b { color: var(--accent); }
+.s-table tr.s-dim td.s-look b { color: #aab4c5; font-weight: 500; }
+.s-table .s-look-state { text-align: right; white-space: nowrap; }
+.s-table .s-look-state > * + * { margin-left: 4px; }
+.s-slot { font-size: 11px; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); white-space: nowrap; }
+.s-slot.m { border-color: rgba(90, 169, 255, 0.5); }
+.s-slot.c { border-color: rgba(255, 120, 190, 0.5); }
+.s-slot.l { border-color: rgba(255, 182, 72, 0.5); }
+.s-args { display: flex; flex-direction: column; gap: 6px; }
+.s-args .d-arg > span:first-child { min-width: 84px; }
+.designer .s-notes { width: 100%; resize: vertical; font: inherit; font-size: 12px; }
+.s-pre { display: block; white-space: pre-wrap; margin-top: 4px; }
 .s-found-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #1e2430; }
 .s-found-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .designer .s-title-input { display: block; width: 100%; margin: 2px 0; font-size: 16px; font-weight: 700; min-height: 32px; }

@@ -530,6 +530,10 @@ export interface EngineState {
    *  separately from `looks[].params` so the UI can tell "dialled in" from
    *  "authored" and offer a Reset that means something. */
   look_params: Record<string, Record<string, ParamValue>>;
+  /** Which parametric_looks.json `looks` was read from ("" when the event has
+   *  none). Studio's Looks page reads /api/looks again when it moves. Absent
+   *  from an engine older than the page. */
+  looks_rev?: string;
   /** Parameters that are moving on their own. A list, not a map: the key is a
    *  (look, param) pair and the UI shows them as a rack of running modulators. */
   modulators: ModulatorSpec[];
@@ -704,6 +708,22 @@ export type Command =
   | { type: "palette_delete"; palette: string; base_rev: string }
   /** Give copies of a library palette its colors: `files` as /api/palettes lists them. */
   | { type: "palette_sync"; palette: string; files: string[] }
+  /** The look library (Studio's Looks page): parametric_looks.json, in the
+   *  event folder. `base_rev` is the rev /api/looks gave, "" with no file yet.
+   *  A new block look -- or, with `was`, a change to the look of that name,
+   *  which renames it when `look.name` differs, moving every routine,
+   *  timeline, template set, cue and preset that names it. */
+  | { type: "look_save"; look: unknown; was?: string; base_rev: string;
+      /** A NEW look only: the look it takes the place of on the picker,
+       *  hidden in its favour in the same write. */
+      hides?: { look: string; note?: string } }
+  /** Delete a block look nothing names; refused with where, if anything does. */
+  | { type: "look_delete"; look: string; base_rev: string }
+  /** Hide any look from the picker (or show it again): hidden, never removed. */
+  | { type: "look_hide"; look: string; hidden?: boolean; replaced_by?: string;
+      note?: string; base_rev: string }
+  /** Read the look files again, after an edit made outside Studio. */
+  | { type: "looks_reload" }
   /** Teach a prepped track another description: the playing deck's, or --
    *  with a `title` -- the one given (Studio, with nothing playing). */
   | { type: "track_link"; track_id: string; title?: string; artist?: string; album?: string }

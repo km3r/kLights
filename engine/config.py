@@ -247,8 +247,13 @@ def load(path: Path, schema: dict[str, Spec]) -> dict:
 
 # ------------------------------------------------------------------ writing --
 
-def write_json_atomic(path: Path, data: Any, *, backup: bool = True) -> None:
+def write_json_atomic(path: Path, data: Any, *, backup: bool = True,
+                      text: Optional[str] = None) -> None:
     """Write JSON so the file is never observed half-written.
+
+    `text` is `data` already rendered, for a file kept in a layout of its own
+    (`lookstore`): it is what gets written, in place of the default two-space
+    dump.
 
     Same directory for the temp file, because `os.replace` is only atomic within
     a filesystem and a temp dir can easily be on another one -- which would turn
@@ -261,7 +266,8 @@ def write_json_atomic(path: Path, data: Any, *, backup: bool = True) -> None:
         shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
 
     tmp = path.with_name(path.name + ".tmp")
-    text = json.dumps(data, indent=2) + "\n"
+    if text is None:
+        text = json.dumps(data, indent=2) + "\n"
     try:
         with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
@@ -507,6 +513,12 @@ PARAMETRIC_LOOKS = {
         # the original stays reachable.
         "supersedes": Spec(bool, fix="true to take over the ported look of "
                                      "this name; it must reproduce it exactly"),
+        # Set to false by Studio when a superseding look is changed away from
+        # the look whose name it took: it still takes the name, and the cues
+        # that use it, but `test_library` no longer holds it to the original.
+        "exact": Spec(bool, fix="false once a superseding look no longer "
+                                "reproduces the stored look of its name; leave "
+                                "it out otherwise"),
     })),
     # Ported entries to hide from the picker. HIDDEN, never deleted: the port's
     # round-trip proof depends on those entries still being in looks.json, and
