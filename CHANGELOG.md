@@ -17,6 +17,59 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — the cue list, in Studio
+
+- **Studio has a Cues page** (`#studio/cues`, under *This rig*, beside
+  Looks): the event's cue list in running order -- each cue's looks by slot,
+  how it comes in and whether it leaves by itself -- with the cue the console
+  is on marked **Live** and the one GO takes marked **Next**. Until now the
+  list could only be changed by hand in `cues.json`.
+- **A cue is edited in its panel.** The look in each slot for each fixture
+  group, picked from the rig's looks; fade and hold in beats; and what else it
+  restores, each only if ticked -- master, speed, the shape (size, spread,
+  centre), slot rates, and tuning for the block looks it names (typed there,
+  or taken from what the console has turned). Its name and notes too.
+  Duplicate, delete, and **+ New** (empty, from the looks on stage now, or a
+  copy), at a place in the running order.
+- **The running order is changed by dragging a row or with its arrows.**
+- **The list keeps its place.** A save is on every console's GO card at once,
+  with no restart, and the console stays on the cue it is on: by name,
+  wherever the cue moved and whatever it was renamed. Deleting the cue the
+  console is on drops the list back to the cue before it, so GO takes what
+  would have come next. Nothing on stage changes until a cue is taken again
+  -- which the panel can do (**Take it on the rig**).
+- **Reset has a button.** `cue_reset` rewinds the list to before its first
+  cue; the engine has always had it, and no console sent it.
+- **A look the library lacks is flagged, not refused**: on the row, in the
+  panel and in the save's reply. So is a look in a slot that is not its own.
+  The despacio list has one of those: its *Drop* cue puts the level look
+  `Drop` in its movement and color slots.
+- **The file keeps what is in it.** `cues.json` is edited as JSON, so its
+  `$schema`, its comments and any field this engine does not know stay, and it
+  is written in the layout it has by hand: the file as committed comes back
+  byte for byte, and a save changes only the lines that changed. What is
+  written is first held to exactly what a load would accept (`cues.parse`),
+  so no save can write a file the next start refuses.
+- **The engine watches `cues.json`.** An edit made outside Studio -- by hand,
+  by the MCP server -- is read within a second or two. A file that does not
+  load is said once, with why, on the Cues page and in the notices; the list
+  that was running runs on, and nothing is saved over the broken file.
+- **Renaming a look and editing cues agree about the file.** A look rename
+  rewrites `cues.json`; the list and its rev are now read again in the same
+  step, so a cue saved straight after is not refused as stale, and a rename
+  that makes a cue take more lines no longer drops the file's layout.
+- New commands, all `configure`: `cue_save {cue, was?, at?, base_rev}`,
+  `cue_copy {cue, to, base_rev}`, `cue_move {cue, to, base_rev}`,
+  `cue_delete {cue, base_rev}`, `cues_name {name, base_rev}` and
+  `cues_reload`. `GET /api/cues` lists the cues in full (it answers with no
+  show folder), and the snapshot carries `cues_rev`. Every write quotes the
+  rev it read.
+- **The same edits in conversation**: the MCP server has `list_cues`,
+  `get_cue`, `put_cue` and `delete_cue`
+  ([`engine/cuetools.py`](engine/cuetools.py)). Dry runs unless asked; a
+  running engine reads what they write by itself, and nothing is refused
+  while one runs.
+
 ### Added — Studio does the rest of what a show folder needs
 
 Five things about the show folder that still needed a text editor, the CLI or

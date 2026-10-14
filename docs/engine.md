@@ -218,6 +218,78 @@ the files, a look saved from a conversation is on the picker without a restart.
 A rename is the one edit refused while an engine runs the event: it has the
 presets and the cue list the engine holds in memory to move.
 
+## Editing the cue list
+
+Studio's **Cues** page (`#studio/cues`) is where the night's cue list is
+authored: the cues in running order, each with the look it puts in every slot
+for every fixture group, its fade and hold in beats, and whatever else it
+restores -- a master, a speed, the shape macro, slot rates, its looks' tuning
+-- and its notes. Every edit is an edit to `cues.json`, made by
+[`cuestore.py`](../engine/cuestore.py):
+
+| command | what it writes |
+|---|---|
+| `cue_save {cue, was?, at?, base_rev}` | a new cue at place `at` in the running order (last, when not said), or a change to the one called `was` -- which renames it when `cue.name` differs, and moves it when `at` is given |
+| `cue_copy {cue, to, base_rev}` | a copy of a cue's entry as the file has it, under the name `to`, straight after it |
+| `cue_move {cue, to, base_rev}` | moves a cue to place `to` (0 is first) |
+| `cue_delete {cue, base_rev}` | removes a cue. The last one is refused: a cue list cannot be empty |
+| `cues_name {name, base_rev}` | names the list itself, which is the title of the console's GO card |
+| `cues_reload` | reads the file again now (the engine watches it, so this is only for seeing why it does not load) |
+
+All six are `configure`. `go`, `cue_back`, `cue` and `cue_reset` stay
+`operate`: running the night is not configuration. The Cues page is also where
+`cue_reset` has its button -- no console had one.
+
+`GET /api/cues` lists the cues in full for the page, with `rev` (which every
+write quotes as `base_rev`; "" when the event has no cue list yet), `stale`
+and `problem` as `/api/looks` has them, and on each cue `missing` and `flags`.
+It answers with no show folder: the cue list is the event's. The snapshot's
+`cues_rev` moves when the list does, which is when a page reads it again.
+
+- **The file is edited as the JSON it is**, not through its loader, so every
+  key goes back as it came: `$schema`, the `_comment` lines, a field on a cue
+  this engine does not know. It is written in the layout it has by hand
+  (`cuestore.render`): the file as committed renders back byte for byte, so a
+  save is exactly the lines that changed.
+- **What is written is what a load would accept.** The document is run
+  through the loader's own check (`cues.parse`, the whole of what `cues.load`
+  does to a file's contents) before anything is written. A cue from a client
+  is held to more than that (`cuestore.clean_cue`): a field a cue does not
+  have is refused rather than dropped, and so is a speed, a master, a shape or
+  a rate outside what taking the cue would quietly clamp or skip -- right at
+  GO, wrong for a save, where the author is still there to be told.
+- **A look the library lacks is flagged, never refused** (`cuestore.flags`,
+  in the words of `cues.missing_looks`): the cue is saved, loads, and skips
+  that look when taken. So are a look in a slot that is not its own, a group
+  nothing on the rig carries, more than one movement look, and tuning for a
+  look the cue does not put in a slot.
+- **Installing is not taking.** The list is read again on the worker and
+  installed at a frame boundary (`_install_cues`) WITHOUT losing its place:
+  the cue that is current stays current by name, wherever it moved and
+  whatever it was renamed, and its hold keeps counting from when it was taken
+  (`cuestore.carry`). If the current cue was deleted, the list falls back to
+  the nearest cue before it that is left -- so GO takes what would have come
+  next -- and a notice says so. Nothing on stage changes: an edited cue is on
+  stage as it was taken, until it is taken again. A new `CueList` is bound,
+  never the running one edited, because the snapshot and `/api/cues` read it
+  from other threads.
+- **The engine watches cues.json** (`showlibrary.Watcher`, as for the look
+  files): an edit by hand or by MCP is read within a second or two. A file
+  that does not load is said once, `/api/cues` carries why as `problem`, the
+  list that was running runs on, and nothing is saved over it.
+- **A look rename and this page agree about the file.** `lookstore.rename`
+  rewrites cues.json where a cue names the look. The list and its rev are read
+  again in the same job, so a cue saved straight afterwards is not refused as
+  stale; and where the rename changes how many lines a cue takes, the file is
+  written through this module's layout (`cuestore.render_like`) rather than
+  falling back to a plain dump.
+
+The MCP server offers the same edits ([`cuetools.py`](../engine/cuetools.py):
+`list_cues`, `get_cue`, `put_cue`, `delete_cue`), through the same `cuestore`
+functions. Dry runs unless asked, quoting the rev they read. Nothing is
+refused while an engine runs the event: it reads the edit by itself and keeps
+its place in the list.
+
 Nothing downstream of [`clock.py`](../engine/clock.py) is authored in
 milliseconds.
 
@@ -346,7 +418,7 @@ run and embedded in the printed URL.
 |---|---|
 | **view** | watch only; every command is refused with a reason |
 | **operate** | drive the show — looks, color, cues, master, **panic**, Follow DJ arm/disarm, grab/release |
-| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep`, and Studio's writes and preview (`*_draft`, `*_save`, `*_rename`, `*_delete`, `palette_sync`, `preview_*`) |
+| **configure** | anything that persists past tonight or steps around a guard: `jog`, `solve --write`, venue edits, all `patch_*`, `track_link`, `show_reload`, `rekordbox_prep`, and Studio's writes and preview (`*_draft`, `*_save`, `*_rename`, `*_delete`, `palette_sync`, `cue_copy`, `cue_move`, `cues_name`, `preview_*`) |
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
@@ -365,7 +437,8 @@ editor gives completion and inline errors while you hand-edit at a venue.
 | `events/<e>/calibration.json` | what this rig measured in this room on this day |
 | `events/<e>/looks.json` | the look library, **generated** by the porter |
 | `events/<e>/parametric_looks.json` | looks built from blocks, and the looks hidden from the picker. Written by Studio's Looks page; safe to hand-edit |
-| `events/<e>/presets.json`, `cues.json` | saved pictures, and the night as an ordered list |
+| `events/<e>/presets.json` | saved pictures |
+| `events/<e>/cues.json` | the night as an ordered list of cues. Written by Studio's Cues page; safe to hand-edit |
 
 Writes go through `write_json_atomic` — temp file beside the target, `fsync`,
 `os.replace`, one `.bak` kept. A crash mid-write leaves the old file or the new
@@ -675,18 +748,20 @@ engine is sending now.
 `#studio/palettes` is the show's palette library, `palettes/<id>.json`: a
 library palette is a source that timelines and sets copy by name, never a
 link, so compiling is unchanged; `palette_sync` brings chosen copies up to the
-library's colors. `#studio/looks` is the one page that is not about the show
-folder: this rig's looks, from the event (see *Editing the library* above). Adding tracks preps them (`rekordbox_prep`) and can start
+library's colors. `#studio/looks` and `#studio/cues` are the two pages that
+are not about the show folder: this rig's looks and its cue list, from the
+event (see *Editing the library* and *Editing the cue list* above). Adding tracks preps them (`rekordbox_prep`) and can start
 each one in the same step: a timeline drafted from a template set, an empty
 one, or none; the drafting is the timeline editor's own function, written with
 `timeline_save` and base_rev "". **+ New**, in the top bar of Studio's library
 pages, makes any of these: a timeline (drafted from a set, copied from another track's, or empty),
 a routine (blank, a copy, or a console look wrapped as one, bound to this rig),
 a template set (blank, a copy, or built from what a timeline's scene lane plays
-on each phrase family), a palette or a look. The first three open in their
+on each phrase family), a palette, a look or a cue (empty, the looks on stage
+now, or a copy, at a place in the running order). The first three open in their
 editor unsaved, the start handed over in sessionStorage (`pending.ts`, for a
-minute) and applied there, so nothing is written until Save; a palette and a
-look have no editor page and are written at once. `#studio/track/<id>` is layout B
+minute) and applied there, so nothing is written until Save; a palette, a
+look and a cue have no editor page and are written at once. `#studio/track/<id>` is layout B
 -- bar ruler, rekordbox's phrases, the waveform (its bottom edge drags it
 taller, and **Bands** stacks its low, mid and high), then the timeline's rows
 (the higher lane wins), hits, automation and the VJ lane, with the rig's plan and
@@ -700,7 +775,7 @@ what a routine does on this rig -- it asks the engine.
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
 behind the MCP server (an event's looks are [`looktools.py`](../engine/looktools.py)
-beside it): status, tracks (with their phrase beats), routines,
+beside it, and its cue list [`cuetools.py`](../engine/cuetools.py)): status, tracks (with their phrase beats), routines,
 template sets and timelines to read; `put_*` for whole documents and
 `edit_timeline` for small ops (add/update/remove items and lanes, set points or
 palettes); `link_track`; `lint_show` (the folder, and against an event's rig);
@@ -725,6 +800,7 @@ the folder may be written while a show runs.
 | self-running axes | [`auto.py`](../engine/auto.py) |
 | the look library: stored and block looks, merged | [`library.py`](../engine/library.py) |
 | edits to the look library, from Studio and from an assistant | [`lookstore.py`](../engine/lookstore.py), [`looktools.py`](../engine/looktools.py) |
+| the cue list, and edits to it from Studio and from an assistant | [`cues.py`](../engine/cues.py), [`cuestore.py`](../engine/cuestore.py), [`cuetools.py`](../engine/cuetools.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |

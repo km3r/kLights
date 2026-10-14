@@ -534,6 +534,10 @@ export interface EngineState {
    *  none). Studio's Looks page reads /api/looks again when it moves. Absent
    *  from an engine older than the page. */
   looks_rev?: string;
+  /** Which cues.json `cues` was read from ("" when the event has no cue list).
+   *  Studio's Cues page reads /api/cues again when it moves. Absent from an
+   *  engine older than the page. */
+  cues_rev?: string;
   /** Parameters that are moving on their own. A list, not a map: the key is a
    *  (look, param) pair and the UI shows them as a rack of running modulators. */
   modulators: ModulatorSpec[];
@@ -724,6 +728,22 @@ export type Command =
       note?: string; base_rev: string }
   /** Read the look files again, after an edit made outside Studio. */
   | { type: "looks_reload" }
+  /** The cue list (Studio's Cues page): cues.json, in the event folder.
+   *  `base_rev` is the rev /api/cues gave, "" with no file yet. A new cue at
+   *  place `at` in the running order (last, when left out) -- or, with `was`,
+   *  a change to the cue of that name, which renames it when `cue.name`
+   *  differs. The running list keeps its place, and the stage is not touched. */
+  | { type: "cue_save"; cue: unknown; was?: string; at?: number; base_rev: string }
+  /** Duplicate a cue as `to`, straight after it. */
+  | { type: "cue_copy"; cue: string; to: string; base_rev: string }
+  /** Move a cue to place `to` in the running order (0 is first). */
+  | { type: "cue_move"; cue: string; to: number; base_rev: string }
+  /** Delete a cue. The last one is refused: a cue list cannot be empty. */
+  | { type: "cue_delete"; cue: string; base_rev: string }
+  /** Name the list itself: the title of the console's GO card. */
+  | { type: "cues_name"; name: string; base_rev: string }
+  /** Read cues.json again, after an edit made outside Studio. */
+  | { type: "cues_reload" }
   /** Teach a prepped track another description: the playing deck's, or --
    *  with a `title` -- the one given (Studio, with nothing playing). */
   | { type: "track_link"; track_id: string; title?: string; artist?: string; album?: string }

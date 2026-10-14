@@ -35,7 +35,9 @@ import timelineDoc from "../../../shared/show-example/timelines/synth-128.json";
 import clubDoc from "../../../shared/show-example/templates/club.json";
 import fanDrop from "../../../shared/show-example/routines/fan-drop.json";
 import idleOrbit from "../../../shared/show-example/routines/idle-orbit.json";
-import { currentSocket, installMockSocket, stateWith, type MockSocket } from "./mockSocket";
+import {
+  currentSocket, despacioState, installMockSocket, stateWith, type MockSocket,
+} from "./mockSocket";
 
 /**
  * The designer, against the example show folder served by a fake `/api` and a
@@ -600,6 +602,31 @@ const LOOKS = {
 };
 let looksList: Omit<typeof LOOKS, "looks"> & { looks: object[]; problem?: string } = LOOKS;
 
+const CUE = { movement: {} as Record<string, string>, color: {} as Record<string, string>,
+              level: {} as Record<string, string>, fade: 8, hold: 0,
+              speed: null as number | null, master: null as number | null,
+              macro: null as { size?: number; spread?: number } | null, rates: null, params: null,
+              notes: "", missing: [] as string[], flags: [] as string[] };
+/** This rig's cue list, as /api/cues lists it: four cues over the looks above,
+ *  one of them naming a look the library no longer has. */
+const CUES = {
+  event: "despacio", file: "cues.json", rev: "r:cues" as string | null, stale: false,
+  name: "Night" as string | null, groups: ["corner movers", "pinspots"],
+  cues: [
+    { ...CUE, name: "Warm Up", movement: { "corner movers": "Heads - Ball" },
+      color: { "corner movers": "Duo Pink/Cyan", pinspots: "MH Red" }, fade: 32, master: 0.55,
+      macro: { size: 0.6, spread: 0 }, notes: "Doors." },
+    { ...CUE, name: "Deep", movement: { "corner movers": "Lazy Orbit" }, fade: 16 },
+    { ...CUE, name: "Drop", movement: { "corner movers": "Gone Look" }, fade: 0,
+      missing: ["Gone Look"],
+      flags: ["movement wants 'Gone Look' for 'corner movers', which is not in the library: "
+        + "taking the cue skips it"] },
+    { ...CUE, name: "Landing", movement: { "corner movers": "Heads - Ball" }, fade: 48, hold: 64,
+      speed: 0.5 },
+  ],
+};
+let cuesList: Omit<typeof CUES, "cues"> & { cues: object[]; problem?: string } = CUES;
+
 function serve(path: string): [number, unknown] {
   if (path === "/api/tracks") {
     return [200, { tracks: [
@@ -643,6 +670,7 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/templates/club") return [200, { doc: clubDoc, rev: "r:c" }];
   if (path === "/api/palettes") return [200, PALETTES];
   if (path === "/api/looks") return [200, looksList];
+  if (path === "/api/cues") return [200, cuesList];
   if (path === "/api/templates/warmup") {
     return [200, { doc: { ...structuredClone(clubDoc), id: "warmup", name: "Warmup" }, rev: "r:w" }];
   }
@@ -659,6 +687,7 @@ beforeEach(() => {
   trackExtra = {};
   showExtra = {};
   looksList = LOOKS;
+  cuesList = CUES;
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const [status, body] = serve(new URL(url, "http://engine").pathname);
     return { ok: status === 200, status, json: async () => body };
@@ -2644,9 +2673,9 @@ describe("+ New", () => {
     const { user } = await menu();
     const items = within(screen.getByRole("menu", { name: "New" })).getAllByRole("menuitem");
     expect(items.map((i) => i.querySelector("b")?.textContent)).toEqual([
-      "A timeline for a track", "A routine", "A template set", "A palette", "A look",
+      "A timeline for a track", "A routine", "A template set", "A palette", "A look", "A cue",
       "Tracks from rekordbox"]);
-    expect(items[5]).toHaveAttribute("href", "#studio/rekordbox");
+    expect(items[6]).toHaveAttribute("href", "#studio/rekordbox");
     await user.keyboard("r");
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.getByRole("dialog", { name: "New routine" })).toBeInTheDocument();
@@ -3867,5 +3896,457 @@ describe("look library", () => {
     const remade = reply(socket, "look_save", true, { rev: "r:3" }) as unknown as LookSent;
     expect(remade.look).toMatchObject({ name: "MH Red 2", block: "solid", args: { color: [1, 0, 0] },
                                         notes: "Made from the stored look MH Red." });
+  });
+});
+
+describe("cue list in Studio", () => {
+  type CueSent = { cue: Record<string, unknown>; was?: string; at?: number; base_rev: string };
+  async function cuePage() {
+    const user = userEvent.setup();
+    const socket = await open("#studio/cues");
+    const page = await screen.findByRole("region", { name: "cues" });
+    await within(page).findByRole("button", { name: "Warm Up" });
+    return { user, socket, page };
+  }
+  const aside = () => screen.getByRole("complementary", { name: "details" });
+  const pick = async (user: ReturnType<typeof userEvent.setup>, page: HTMLElement, name: string) => {
+    await user.click(within(page).getByRole("button", { name }));
+    return within(aside()).getByLabelText("selected cue");
+  };
+  const row = (page: HTMLElement, name: string) =>
+    within(page).getByRole("button", { name }).closest("tr")!;
+  /** The snapshot with the console on one of these cues (-1: not started). */
+  const consoleAt = (index: number) => stateWith((s) => {
+    const names = CUES.cues.map((c) => c.name);
+    s.cues = { name: "Night", index, count: names.length, current: names[index] ?? null,
+               next: names[index + 1] ?? null, auto_advance: false,
+               cues: CUES.cues.map((c) => ({ name: c.name, fade: c.fade, hold: c.hold, notes: c.notes })) };
+  });
+  const set = (input: HTMLElement, value: string) => fireEvent.change(input, { target: { value } });
+
+  it("lists the cues in running order: their looks, how each comes in and leaves, what is wrong", async () => {
+    const { page } = await cuePage();
+    expect(within(page).getByText(/4 cues on/)).toHaveTextContent(
+      "4 cues on despacio, in running order: the console's GO card, Night, steps through them.");
+    const names = within(page).getAllByRole("row").slice(1)
+      .map((r) => within(r).getAllByRole("button")[0]!.textContent);
+    expect(names).toEqual(["Warm Up", "Deep", "Drop", "Landing"]);
+    expect(row(page, "Warm Up")).toHaveTextContent("Doors.");
+    expect(row(page, "Warm Up")).toHaveTextContent("MovementHeads - Ball");
+    expect(row(page, "Warm Up")).toHaveTextContent("ColorDuo Pink/Cyan (corner movers)MH Red (pinspots)");
+    expect(row(page, "Warm Up")).toHaveTextContent("32 beat fade");
+    expect(row(page, "Warm Up")).toHaveTextContent("waits for GO");
+    expect(row(page, "Drop")).toHaveTextContent("cut");
+    expect(row(page, "Drop")).toHaveTextContent("1 missing look");
+    expect(row(page, "Landing")).toHaveTextContent("auto after 64");
+    // The nav counts them, under the rig beside the looks.
+    expect(within(screen.getByRole("navigation", { name: "Studio" }))
+      .getByRole("link", { name: /^Cues/ })).toHaveTextContent("4");
+  });
+
+  it("shows which cue the console is on, and rewinds the list with the command it never had a button for", async () => {
+    const { user, socket, page } = await cuePage();
+    // Before the first GO nothing is live, and there is nothing to rewind.
+    const where = within(page).getByRole("status", { name: "where the list is" });
+    expect(where).toHaveTextContent("Not started · GO takes Warm Up");
+    expect(within(page).queryByText("Live")).toBeNull();
+    expect(within(page).getByRole("button", { name: "Reset" })).toBeDisabled();
+    act(() => socket.push(consoleAt(1)));
+    expect(where).toHaveTextContent("Now: Deep (2 of 4) · GO takes Drop");
+    expect(row(page, "Deep")).toHaveTextContent("Live");
+    expect(row(page, "Drop")).toHaveTextContent("Next");
+    expect(row(page, "Warm Up")).not.toHaveTextContent("Live");
+    await user.click(within(page).getByRole("button", { name: "Reset" }));
+    expect(socket.last()).toEqual({ type: "cue_reset" });
+    act(() => socket.push(consoleAt(3)));
+    expect(where).toHaveTextContent("Now: Landing (4 of 4) · the end of the list");
+  });
+
+  it("reorders with a row's arrows or by dragging it, quoting the rev it read", async () => {
+    const { user, socket, page } = await cuePage();
+    expect(within(page).getByRole("button", { name: "move Warm Up up" })).toBeDisabled();
+    expect(within(page).getByRole("button", { name: "move Landing down" })).toBeDisabled();
+    await user.click(within(page).getByRole("button", { name: "move Deep up" }));
+    expect(reply(socket, "cue_move", true, { rev: "r:2", index: 0 }))
+      .toMatchObject({ type: "cue_move", cue: "Deep", to: 0, base_rev: "r:cues" });
+    expect(await screen.findByText(/Moved Deep to 1 of 4/)).toBeInTheDocument();
+    await user.click(within(page).getByRole("button", { name: "move Deep down" }));
+    expect(reply(socket, "cue_move", true, { rev: "r:3" })).toMatchObject({ cue: "Deep", to: 2 });
+    // One move at a time: while it is in flight no row can be dragged.
+    expect(await screen.findByText(/Moved Deep to 3 of 4/)).toBeInTheDocument();
+    expect(row(page, "Landing")).toHaveAttribute("draggable", "true");
+    // Dragged: Landing dropped on the first row goes first.
+    fireEvent.dragStart(row(page, "Landing"));
+    fireEvent.dragOver(row(page, "Warm Up"));
+    expect(row(page, "Warm Up")).toHaveClass("s-drop");
+    fireEvent.drop(row(page, "Warm Up"));
+    expect(reply(socket, "cue_move", true, { rev: "r:4" })).toMatchObject({ cue: "Landing", to: 0 });
+    // Dropped on itself, nothing is asked.
+    const moves = socket.commands.filter((c) => c.type === "cue_move").length;
+    fireEvent.dragStart(row(page, "Drop"));
+    fireEvent.drop(row(page, "Drop"));
+    expect(socket.commands.filter((c) => c.type === "cue_move")).toHaveLength(moves);
+  });
+
+  it("edits a cue in its panel: a look for each slot and group, its timing, saved with the rev it read", async () => {
+    const { user, socket, page } = await cuePage();
+    const panel = await pick(user, page, "Deep");
+    expect(within(panel).getByText("Cue 2 of 4")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Save the cue" })).toBeNull();
+    // The movement lane picks from the rig's movement looks: not a hidden
+    // one, not a color.
+    const movement = within(panel).getByLabelText("movement look for corner movers");
+    expect(movement).toHaveValue("Lazy Orbit");
+    expect(within(movement).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["Lazy Orbit", "Heads - Ball"]);
+    await user.selectOptions(movement, "Heads - Ball");
+    // One movement look runs the rig: no second lane is offered.
+    expect(within(panel).queryByLabelText("add a movement look for")).toBeNull();
+    // A color lane, opened for a group that has color looks.
+    const add = within(panel).getByLabelText("add a color look for");
+    expect(within(add).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["+ a look for…", "corner movers"]);
+    await user.selectOptions(add, "corner movers");
+    // It opens on the first look that writes that group; any of the slot's can be picked.
+    const color = within(panel).getByLabelText("color look for corner movers");
+    expect(color).toHaveValue("MH Red");
+    await user.selectOptions(color, "Duo Pink/Cyan");
+    expect(within(panel).getByText("Nothing: the cue leaves level as it is.")).toBeInTheDocument();
+    set(within(panel).getByLabelText("fade"), "4");
+    set(within(panel).getByLabelText("hold"), "32");
+    expect(within(panel).getByText("Unsaved")).toBeInTheDocument();
+    expect(row(page, "Deep")).toHaveTextContent("Unsaved");
+    // The rig takes the saved cue, so it is not offered half-changed.
+    expect(within(panel).getByRole("button", { name: "Take it on the rig" })).toBeDisabled();
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    const sent = reply(socket, "cue_save", true, { rev: "r:2", name: "Deep", index: 1,
+                                                   warnings: [] }) as unknown as CueSent;
+    expect(sent.was).toBe("Deep");
+    expect(sent.base_rev).toBe("r:cues");
+    expect(sent.at).toBeUndefined();
+    // Only what the cue sets: no empty slot, no null.
+    expect(sent.cue).toEqual({ name: "Deep", movement: { "corner movers": "Heads - Ball" },
+                               color: { "corner movers": "Duo Pink/Cyan" }, fade: 4, hold: 32 });
+    expect(await screen.findByText(/Saved Deep\. The console takes it as saved\./)).toBeInTheDocument();
+  });
+
+  it("takes a lane out of a cue, and will not save a cue with no fade", async () => {
+    const { user, socket, page } = await cuePage();
+    const panel = await pick(user, page, "Warm Up");
+    await user.click(within(panel).getByRole("button", { name: "remove color for pinspots" }));
+    expect(within(panel).queryByLabelText("color look for pinspots")).toBeNull();
+    set(within(panel).getByLabelText("fade"), "");
+    expect(within(panel).getByRole("button", { name: "Save the cue" })).toBeDisabled();
+    set(within(panel).getByLabelText("fade"), "0");
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    const sent = reply(socket, "cue_save", true, { rev: "r:2" }) as unknown as CueSent;
+    expect(sent.cue).toEqual({ name: "Warm Up", movement: { "corner movers": "Heads - Ball" },
+                               color: { "corner movers": "Duo Pink/Cyan" }, fade: 0, master: 0.55,
+                               macro: { size: 0.6, spread: 0 }, notes: "Doors." });
+  });
+
+  it("renames a cue with the save, and refuses a name another cue has before the engine is asked", async () => {
+    const { user, socket, page } = await cuePage();
+    act(() => socket.push(consoleAt(1)));
+    const panel = await pick(user, page, "Deep");
+    const name = within(panel).getByLabelText("cue name");
+    await user.clear(name);
+    await user.type(name, "Drop");
+    expect(within(panel).getByText("There is already a cue called Drop.")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Save and rename" })).toBeDisabled();
+    await user.clear(name);
+    await user.type(name, "Deep  Dive ");
+    await user.click(within(panel).getByRole("button", { name: "Save and rename" }));
+    const sent = reply(socket, "cue_save", true, { rev: "r:2", name: "Deep Dive" }) as unknown as CueSent;
+    expect(sent).toMatchObject({ was: "Deep", cue: { name: "Deep Dive", fade: 16 } });
+    // It was the cue the console is on, and still is.
+    expect(await screen.findByText("Renamed Deep to Deep Dive. The console is still on it."))
+      .toBeInTheDocument();
+  });
+
+  it("flags a look the library lacks, and saves the cue all the same", async () => {
+    const { user, socket, page } = await cuePage();
+    const panel = await pick(user, page, "Drop");
+    const check = within(panel).getByRole("group", { name: "to check" });
+    expect(check).toHaveTextContent("One thing to check");
+    expect(check).toHaveTextContent("movement wants 'Gone Look' for 'corner movers', which is not in the library");
+    const movement = within(panel).getByLabelText("movement look for corner movers");
+    expect(movement).toHaveValue("Gone Look");
+    expect(within(movement).getAllByRole("option")[0]).toHaveTextContent("Gone Look (not in the library)");
+    // Something else changed: the flag is worked out for what is on screen...
+    set(within(panel).getByLabelText("hold"), "8");
+    expect(within(panel).getByRole("group", { name: "to check" })).toHaveTextContent("Gone Look");
+    // ...the save goes ahead, and the engine's own warning is shown.
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    const sent = reply(socket, "cue_save", true, { rev: "r:2", name: "Drop", warnings: [
+      "movement wants 'Gone Look' for 'corner movers', which is not in the library: taking the cue skips it",
+    ] }) as unknown as CueSent;
+    expect(sent.cue).toMatchObject({ movement: { "corner movers": "Gone Look" }, hold: 8 });
+    expect(await within(panel).findByRole("status")).toHaveTextContent("not in the library");
+    // Pointed at a look that is there, there is nothing left to check.
+    await user.selectOptions(within(panel).getByLabelText("movement look for corner movers"), "Lazy Orbit");
+    expect(within(panel).queryByRole("group", { name: "to check" })).toBeNull();
+  });
+
+  it("restores a master, a speed, a shape and slot rates with a cue only if each is ticked", async () => {
+    const { user, socket, page } = await cuePage();
+    let panel = await pick(user, page, "Deep");
+    expect(within(panel).getByRole("checkbox", { name: "Master" })).not.toBeChecked();
+    expect(within(panel).queryByLabelText("master")).toBeNull();
+    await user.click(within(panel).getByRole("checkbox", { name: "Master" }));
+    set(within(panel).getByLabelText("master"), "0.8");
+    await user.click(within(panel).getByRole("checkbox", { name: "Speed" }));
+    set(within(panel).getByLabelText("speed"), "2");
+    await user.click(within(panel).getByRole("checkbox", { name: "Shape" }));
+    expect(within(panel).getByLabelText("size")).toHaveValue(1);
+    set(within(panel).getByLabelText("size"), "1.2");
+    set(within(panel).getByLabelText("center bearing"), "30");
+    await user.click(within(panel).getByRole("checkbox", { name: "Slot rates" }));
+    set(within(panel).getByLabelText("color rate"), "0.5");
+    await user.type(within(panel).getByLabelText("notes"), "Color arrives.");
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    let sent = reply(socket, "cue_save", true, { rev: "r:2" }) as unknown as CueSent;
+    expect(sent.cue).toEqual({ name: "Deep", movement: { "corner movers": "Lazy Orbit" }, fade: 16,
+                               speed: 2, master: 0.8, macro: { size: 1.2, spread: 0, center: [30, 0] },
+                               rates: { color: 0.5 }, notes: "Color arrives." });
+    // Unticked, the cue leaves it alone: it is not in what is saved.
+    panel = await pick(user, page, "Warm Up");
+    expect(within(panel).getByLabelText("master")).toHaveValue(0.55);
+    await user.click(within(panel).getByRole("checkbox", { name: "Master" }));
+    await user.click(within(panel).getByRole("checkbox", { name: "Shape" }));
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    sent = reply(socket, "cue_save", true, { rev: "r:3" }) as unknown as CueSent;
+    expect(sent.cue).toEqual({ name: "Warm Up", movement: { "corner movers": "Heads - Ball" },
+                               color: { "corner movers": "Duo Pink/Cyan", pinspots: "MH Red" },
+                               fade: 32, notes: "Doors." });
+  });
+
+  it("carries tuning for the block looks a cue names: typed here, or taken from the console", async () => {
+    const { user, socket, page } = await cuePage();
+    const panel = await pick(user, page, "Deep");
+    await user.click(within(panel).getByRole("checkbox", { name: "Look tuning" }));
+    const tuning = within(panel).getByRole("group", { name: "tuning for Lazy Orbit" });
+    // What is not set here goes back to the look's own saved value, shown.
+    const radius = within(tuning).getByLabelText("radius");
+    expect(radius).toHaveValue(null);
+    expect(radius).toHaveAttribute("placeholder", "18.75");
+    // Ticked with nothing set is still something: every look back as saved.
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    let sent = reply(socket, "cue_save", true, { rev: "r:2" }) as unknown as CueSent;
+    expect(sent.cue.params).toEqual({});
+    set(radius, "30");
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    sent = reply(socket, "cue_save", true, { rev: "r:3" }) as unknown as CueSent;
+    expect(sent.cue.params).toEqual({ "Lazy Orbit": { radius: 30 } });
+    // The console has it turned: its values can be taken as they are.
+    act(() => socket.push(stateWith((s) => { s.look_params = { "Lazy Orbit": { radius: 12, bars: 8 } }; })));
+    await user.click(within(tuning).getByRole("button", { name: "Take the console's values" }));
+    expect(within(tuning).getByLabelText("radius")).toHaveValue(12);
+    await user.click(within(panel).getByRole("button", { name: "Save the cue" }));
+    sent = reply(socket, "cue_save", true, { rev: "r:4" }) as unknown as CueSent;
+    expect(sent.cue.params).toEqual({ "Lazy Orbit": { radius: 12, bars: 8 } });
+  });
+
+  it("keeps what is unsaved on one cue while another is looked at", async () => {
+    const { user, page } = await cuePage();
+    let panel = await pick(user, page, "Deep");
+    set(within(panel).getByLabelText("fade"), "2");
+    panel = await pick(user, page, "Landing");
+    expect(within(panel).queryByText("Unsaved")).toBeNull();
+    expect(row(page, "Deep")).toHaveTextContent("Unsaved");
+    panel = await pick(user, page, "Deep");
+    expect(within(panel).getByLabelText("fade")).toHaveValue(2);
+    await user.click(within(panel).getByRole("button", { name: "Revert" }));
+    expect(within(panel).getByLabelText("fade")).toHaveValue(16);
+    expect(row(page, "Deep")).not.toHaveTextContent("Unsaved");
+  });
+
+  it("duplicates, moves and deletes a cue from its menu", async () => {
+    const { user, socket, page } = await cuePage();
+    act(() => socket.push(consoleAt(1)));
+    let panel = await pick(user, page, "Deep");
+    await user.click(within(panel).getByRole("button", { name: "more for Deep" }));
+    await user.click(screen.getByRole("menuitem", { name: "Duplicate…" }));
+    const task = within(panel).getByRole("group", { name: "Duplicate Deep" });
+    expect(within(task).getByLabelText("name of the copy")).toHaveValue("Deep copy");
+    await user.clear(within(task).getByLabelText("name of the copy"));
+    await user.type(within(task).getByLabelText("name of the copy"), "Drop");
+    expect(within(task).getByRole("button", { name: "Make the copy" })).toBeDisabled();
+    await user.clear(within(task).getByLabelText("name of the copy"));
+    await user.type(within(task).getByLabelText("name of the copy"), "Deeper");
+    await user.click(within(task).getByRole("button", { name: "Make the copy" }));
+    expect(reply(socket, "cue_copy", true, { rev: "r:2", name: "Deeper", index: 2 }))
+      .toMatchObject({ type: "cue_copy", cue: "Deep", to: "Deeper", base_rev: "r:cues" });
+    expect(await screen.findByText("Duplicated Deep as Deeper, straight after it.")).toBeInTheDocument();
+
+    panel = await pick(user, page, "Deep");
+    await user.click(within(panel).getByRole("button", { name: "more for Deep" }));
+    await user.click(screen.getByRole("menuitem", { name: "Move down" }));
+    expect(reply(socket, "cue_move", true, { rev: "r:3" })).toMatchObject({ cue: "Deep", to: 2 });
+
+    await user.click(within(panel).getByRole("button", { name: "more for Deep" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    const confirm = within(panel).getByRole("group", { name: "confirm delete" });
+    // It is the cue the console is on: said, before it goes.
+    expect(confirm).toHaveTextContent("The console is on this cue: the list falls back to the one before it");
+    await user.click(within(confirm).getByRole("button", { name: "Delete it" }));
+    expect(reply(socket, "cue_delete", true, { rev: "r:4", deleted: "Deep" }))
+      .toMatchObject({ type: "cue_delete", cue: "Deep", base_rev: "r:cues" });
+    expect(await screen.findByText(/Deleted Deep\. The console was on it/)).toBeInTheDocument();
+  });
+
+  it("will not offer to delete the only cue: a cue list cannot be empty", async () => {
+    cuesList = { ...CUES, cues: [CUES.cues[0]!] };
+    const { user, page } = await cuePage();
+    const panel = await pick(user, page, "Warm Up");
+    await user.click(within(panel).getByRole("button", { name: "more for Warm Up" }));
+    const item = screen.getByRole("menuitem", { name: /Delete…/ });
+    expect(item).toBeDisabled();
+    expect(item).toHaveTextContent("The only cue: a list cannot be empty");
+  });
+
+  it("takes a cue on the rig from its panel, as the console's jump does", async () => {
+    const { user, socket, page } = await cuePage();
+    const panel = await pick(user, page, "Drop");
+    expect(within(panel).getByText(/The same as jumping to it on the console: it cuts in\./))
+      .toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "Take it on the rig" }));
+    expect(socket.last()).toEqual({ type: "cue", index: 2 });
+    act(() => socket.push(consoleAt(2)));
+    expect(within(panel).getByRole("button", { name: "Take it again" })).toBeInTheDocument();
+    expect(within(panel).getByText("Live")).toBeInTheDocument();
+  });
+
+  it("renames the list itself: the title of the console's GO card", async () => {
+    const { user, socket, page } = await cuePage();
+    await user.click(within(page).getByRole("button", { name: "more for the cue list" }));
+    await user.click(screen.getByRole("menuitem", { name: "Rename the list…" }));
+    const task = within(page).getByRole("group", { name: "Rename the cue list" });
+    const name = within(task).getByLabelText("name of the cue list");
+    expect(name).toHaveValue("Night");
+    await user.clear(name);
+    expect(within(task).getByRole("button", { name: "Rename" })).toBeDisabled();
+    await user.type(name, "Saturday");
+    await user.click(within(task).getByRole("button", { name: "Rename" }));
+    expect(reply(socket, "cues_name", true, { rev: "r:2", name: "Saturday" }))
+      .toMatchObject({ type: "cues_name", name: "Saturday", base_rev: "r:cues" });
+    expect(await screen.findByText(/The list is called Saturday/)).toBeInTheDocument();
+    expect(within(page).queryByRole("group", { name: "Rename the cue list" })).toBeNull();
+  });
+
+  it("says when cues.json on disk is not the list that is running, and reads it again", async () => {
+    cuesList = { ...CUES, stale: true, problem: "cues.json is not usable:\n  cues[1].fade must be a number" };
+    const { user, socket, page } = await cuePage();
+    const alert = within(page).getByRole("alert");
+    expect(alert).toHaveTextContent("cues.json on disk does not load, so the engine is running the list it had.");
+    expect(alert).toHaveTextContent("cues[1].fade must be a number");
+    // Nothing is saved or moved over a file nobody loaded.
+    expect(within(page).getByRole("button", { name: "move Deep up" })).toBeDisabled();
+    const panel = await pick(user, page, "Deep");
+    set(within(panel).getByLabelText("fade"), "2");
+    expect(within(panel).getByRole("button", { name: "Save the cue" })).toBeDisabled();
+    await user.click(within(page).getByRole("button", { name: "Read the cues again" }));
+    expect(reply(socket, "cues_reload", true, { rev: "r:9" })).toMatchObject({ type: "cues_reload" });
+  });
+
+  it("reads the list again when the engine says the cue file changed", async () => {
+    const { socket, page } = await cuePage();
+    cuesList = { ...CUES, rev: "r:next",
+                 cues: [...CUES.cues, { ...CUE, name: "From The Console", fade: 4 }] };
+    act(() => socket.push(stateWith((s) => { s.cues_rev = "r:next"; })));
+    expect(await within(page).findByRole("button", { name: "From The Console" })).toBeInTheDocument();
+    expect(within(page).getByText(/5 cues on/)).toBeInTheDocument();
+  });
+
+  it("is read-only without the configure token, but an operator can still rewind and take", async () => {
+    const { user, socket, page } = await cuePage();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "welcome", id: "c1", tier: "operate" }) }));
+    act(() => socket.push(consoleAt(0)));
+    expect(within(page).getByRole("button", { name: "move Deep up" })).toBeDisabled();
+    expect(row(page, "Deep")).toHaveAttribute("draggable", "false");
+    const panel = await pick(user, page, "Deep");
+    set(within(panel).getByLabelText("fade"), "2");
+    expect(within(panel).getByRole("button", { name: "Save the cue" })).toBeDisabled();
+    expect(within(panel).getByText(/Read only/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "Revert" }));
+    await user.click(within(panel).getByRole("button", { name: "Take it on the rig" }));
+    expect(socket.last()).toEqual({ type: "cue", index: 1 });
+    await user.click(within(page).getByRole("button", { name: "Reset" }));
+    expect(socket.last()).toEqual({ type: "cue_reset" });
+  });
+
+  it("makes a cue from + New: at a place in the order, from what is on stage, or as a copy", async () => {
+    const { user, socket, page } = await cuePage();
+    await user.click(within(page).getByRole("button", { name: "New cue…" }));
+    let dialog = screen.getByRole("dialog", { name: "New cue" });
+    const make = () => within(dialog).getByRole("button", { name: "Make it" });
+    expect(make()).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("name"), "Deep");
+    expect(within(dialog).getByText("there is already a cue of that name")).toBeInTheDocument();
+    expect(make()).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText("name"));
+    await user.type(within(dialog).getByLabelText("name"), "Encore");
+    const where = within(dialog).getByLabelText("where in the running order");
+    expect(within(where).getAllByRole("option").map((o) => o.textContent))
+      .toEqual(["last", "first", "after Warm Up", "after Deep", "after Drop"]);
+    await user.selectOptions(where, "after Deep");
+    await user.click(make());
+    let sent = reply(socket, "cue_save", true, { rev: "r:2", name: "Encore", index: 2 }) as unknown as CueSent;
+    expect(sent.was).toBeUndefined();
+    expect(sent).toMatchObject({ base_rev: "r:cues", at: 2, cue: { name: "Encore", fade: 8 } });
+    expect(await screen.findByText(/Made Encore\. It is on the console's GO card now/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // From what the rig is running, slot by slot -- here, to open the night.
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.click(screen.getByRole("menuitem", { name: /A cue/ }));
+    dialog = screen.getByRole("dialog", { name: "New cue" });
+    await user.click(within(dialog).getByRole("radio", { name: /What is on stage now/ }));
+    await user.type(within(dialog).getByLabelText("name"), "As It Stands");
+    await user.selectOptions(within(dialog).getByLabelText("where in the running order"), "first");
+    await user.click(make());
+    sent = reply(socket, "cue_save", true, { rev: "r:3" }) as unknown as CueSent;
+    expect(sent.at).toBe(0);
+    expect(sent.cue).toEqual({ name: "As It Stands", ...despacioState.selection, fade: 8 });
+    expect(Object.keys(sent.cue).sort()).toEqual(["color", "fade", "level", "movement", "name"]);
+
+    // A copy is the engine's own: the entry as the file has it.
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.click(screen.getByRole("menuitem", { name: /A cue/ }));
+    dialog = screen.getByRole("dialog", { name: "New cue" });
+    await user.click(within(dialog).getByRole("radio", { name: /A copy of a cue/ }));
+    expect(within(dialog).queryByLabelText("where in the running order")).toBeNull();
+    await user.selectOptions(within(dialog).getByLabelText("copy of"), "Landing");
+    await user.type(within(dialog).getByLabelText("name"), "Landing again");
+    await user.click(make());
+    expect(reply(socket, "cue_copy", true, { rev: "r:4" }))
+      .toMatchObject({ type: "cue_copy", cue: "Landing", to: "Landing again", base_rev: "r:cues" });
+  });
+
+  it("starts an event's cue list from + New on any Studio page", async () => {
+    cuesList = { ...CUES, rev: null, name: null, cues: [] };
+    const user = userEvent.setup();
+    const socket = await open("#studio/cues");
+    const page = await screen.findByRole("region", { name: "cues" });
+    expect(await within(page).findByText(/This event has no cue list yet/)).toBeInTheDocument();
+    expect(within(aside()).getByText("No cues yet. Make one with New cue.")).toBeInTheDocument();
+    location.hash = "#studio";
+    await screen.findByRole("region", { name: "tracks" });
+    await user.click(screen.getByRole("button", { name: "+ New" }));
+    await user.keyboard("c");
+    const dialog = screen.getByRole("dialog", { name: "New cue" });
+    // No cue to copy, and no order to place it in yet.
+    expect(within(dialog).queryByRole("radio", { name: /A copy of a cue/ })).toBeNull();
+    expect(within(dialog).queryByLabelText("where in the running order")).toBeNull();
+    await user.type(within(dialog).getByLabelText("name"), "Doors");
+    await user.click(within(dialog).getByRole("button", { name: "Make it" }));
+    const sent = reply(socket, "cue_save", true, { rev: "r:1", name: "Doors" }) as unknown as CueSent;
+    // "" for the rev: there is no file yet, and the save makes it. No place
+    // is said, which is last.
+    expect(sent).toMatchObject({ base_rev: "", cue: { name: "Doors", fade: 8 } });
+    expect(sent.at).toBeUndefined();
+    // Made from another page, it is shown on its own.
+    await waitFor(() => expect(location.hash).toBe("#studio/cues"));
+    expect(await screen.findByText(/Made Doors/)).toBeInTheDocument();
   });
 });

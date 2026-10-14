@@ -480,6 +480,57 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a name that reads as a palette role is refused here as in Studio",
           err and "cannot start with" in odd["errors"][0])
 
+print("\n8. the cue tools read and edit an event's cue list")
+check("the cue tools are listed",
+      {"list_cues", "get_cue", "put_cue", "delete_cue"} <= names)
+with tempfile.TemporaryDirectory() as tmp:
+    ev = Path(tmp) / "despacio"
+    shutil.copytree(EVENT, ev, ignore=shutil.ignore_patterns(
+        "__pycache__", "*.bak", ".engine.lock", "backups"))
+    e, cues_file = str(ev), ev / "cues.json"
+    before = cues_file.read_bytes()
+    listed, err = server.tool("list_cues", event=e)
+    check("list_cues lists the night in running order, with the rev to quote",
+          not err and [c["name"] for c in listed["cues"]][:3] == ["Warm Up", "Idle", "Deep"]
+          and listed["rev"].startswith("r:") and listed["name"] == "Night",
+          f"{listed.get('errors')}")
+    one, err = server.tool("get_cue", event=e, name="Drop")
+    check("get_cue is one cue in full, with what is wrong with it",
+          not err and one["cue"]["fade"] == 0 and one["index"] == 7
+          and any("level look" in f for f in one["cue"]["flags"]), f"{one}")
+    cue = {"name": "Chat Cue", "movement": {"corner movers": "Ball Wave"},
+           "color": {"pinspots": "Not A Look"}, "fade": 4, "hold": 16}
+    tried, err = server.tool("put_cue", event=e, cue=cue, at=1)
+    check("put_cue is a dry run by default: it reports, flags the look the library "
+          "lacks, and writes nothing",
+          not err and tried["dry_run"] and not tried["written"] and tried["index"] == 1
+          and any("'Not A Look'" in w for w in tried["warnings"])
+          and cues_file.read_bytes() == before, f"{tried}")
+    refused, err = server.tool("put_cue", event=e, cue=cue, write=True,
+                               base_rev="r:000000000000")
+    check("a write quoting a stale rev is refused",
+          err and "changed since" in refused["errors"][0] and cues_file.read_bytes() == before)
+    wrote, err = server.tool("put_cue", event=e, cue=cue, at=1, write=True,
+                             base_rev=listed["rev"])
+    after = json.loads(cues_file.read_text(encoding="utf-8"))
+    check("with write and the rev it is saved, at its place, with the file's "
+          "comments kept",
+          not err and wrote["written"] and after["cues"][1] == cue
+          and after["_comment"] and len(after["cues"]) == len(listed["cues"]) + 1, f"{wrote}")
+    bad, err = server.tool("put_cue", event=e, cue={"name": "Chat Cue", "fade": -2},
+                           was="Chat Cue", write=True, base_rev=wrote["rev"])
+    check("a cue that is not valid is refused with why",
+          err and "fade must be at least 0" in bad["errors"][0])
+    dry, err = server.tool("delete_cue", event=e, name="Chat Cue")
+    check("delete_cue is a dry run by default",
+          not err and not dry["written"]
+          and len(json.loads(cues_file.read_text(encoding="utf-8"))["cues"]) == len(after["cues"]))
+    gone, err = server.tool("delete_cue", event=e, name="Chat Cue", write=True,
+                            base_rev=wrote["rev"])
+    check("and deletes with write and the rev: the file is the night again",
+          not err and gone["written"]
+          and json.loads(cues_file.read_text(encoding="utf-8")) == json.loads(before), f"{gone}")
+
 stderr = server.close()
 check("nothing was written to stdout that was not JSON-RPC", True)
 check("the server logged no tracebacks", "Traceback" not in stderr,
