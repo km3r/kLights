@@ -35,6 +35,7 @@ from engine import state as statemod
 from engine import websocket as wsmod
 from engine import blocks as blocksmod
 from engine import commands as commandsmod
+from engine import config as configmod
 from engine.controller import presets as presetsmod
 from engine import params as parammod
 from engine import server as servermod
@@ -1346,7 +1347,8 @@ wait_reply(client, "s3")
 # A handler whose answer JSON cannot carry must not stop the frame it was sent
 # from -- the reply is built on the output thread.
 controller.COMMANDS = {**controller.COMMANDS, "test_unserialisable": commandsmod.Command(
-    "test_unserialisable", commandsmod.OPERATE, {}, "_cmd_test_unserialisable", "")}
+    "test_unserialisable", commandsmod.OPERATE, {}, "_cmd_test_unserialisable", "",
+    reply={"when": configmod.Spec()})}
 controller._cmd_test_unserialisable = lambda m, now: {"when": object()}
 client.send({"type": "test_unserialisable", "id": "u1"})
 reply = wait_reply(client, "u1")

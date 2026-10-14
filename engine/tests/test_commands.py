@@ -212,4 +212,48 @@ check("and nobody, once it has returned", controller._call is None)
 del controller.COMMANDS
 del Ctl._cmd_test_sender
 
+print("\n6. what a command answers with")
+saved = COMMANDS["timeline_save"]
+check("a save declares the rev and path it answers with",
+      set(saved.reply) == {"rev", "path"} and saved.reply["rev"].required)
+check("an answer that fits is fine", saved.reply_problems({"rev": "r", "path": "p"}) is None)
+said = saved.reply_problems({"rev": "r"})
+check("one missing a key it declares is not", "path is required" in (said or ""), said)
+said = saved.reply_problems(None)
+check("nor is no answer at all", "not its reply" in (said or ""), said)
+said = COMMANDS["master"].reply_problems({"anything": 1})
+check("a command that declares no answer may not send one",
+      "declares no reply" in (said or ""), said)
+check("the suites hold every answer to its declaration", commandsmod.STRICT is True)
+
+Ctl._cmd_test_liar = lambda self, m, now: {"rev": 7}
+controller.COMMANDS = {**COMMANDS, "test_liar": commandsmod.Command(
+    "test_liar", commandsmod.OPERATE, {}, "_cmd_test_liar", "", reply=saved.reply)}
+said = refusal({"type": "test_liar"})
+check("under the suites, an answer that does not fit is refused",
+      "test_liar's reply" in said and "rev must be text" in said, said)
+commandsmod.STRICT = False
+try:
+    controller.apply({"type": "test_liar"}, None)
+    check("at a show it is sent all the same, and said",
+          any("test_liar's reply" in n and "sent all the same" in n
+              for n in controller.notices), controller.notices[-1:])
+finally:
+    commandsmod.STRICT = True
+    del controller.COMMANDS
+    del Ctl._cmd_test_liar
+
+
+print("\n7. the console's copy")
+ts = commandsmod.typescript(COMMANDS)
+check("every command is in the generated TypeScript, with its tier",
+      all(f'  {n}: "{c.tier}",' in ts for n, c in COMMANDS.items()))
+check("a required argument is required there, an optional one may be null",
+      "    value: number;" in ts and "    hold?: boolean | null;" in ts)
+check("a choice is a union of its values",
+      '"movement" | "color" | "level"' in ts)
+check("and an answer is typed by its command",
+      "export interface CommandReplies {" in ts and "  timeline_save: {" in ts
+      and "  master: {" not in ts.split("export interface CommandReplies {")[1])
+
 finish("commands")

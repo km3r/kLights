@@ -207,9 +207,14 @@ class Core:
         if call is None:
             raise RuntimeError("_deferred() outside a command: there is no "
                                "one to answer")
-        client, rid, kind = call.client, call.reply_id, call.command.name
+        client, rid, cmd = call.client, call.reply_id, call.command
+        kind = cmd.name
 
         def respond(ok: bool, data: Any = None, error: Optional[str] = None):
+            if ok:
+                problem = self._reply_problem(cmd, data)
+                if problem is not None and commandsmod.STRICT:
+                    ok, data, error = False, None, problem
             if rid is not None and client is not None:
                 self._reply(client, rid, ok=ok, error=error, data=data)
             elif not ok:
@@ -337,7 +342,20 @@ class Core:
         # Whatever the handler returned rides back in the reply, for the few
         # commands whose answer is not visible in the broadcast state -- a
         # validation result, say. Most return None and the reply is just ok.
+        if result is not DEFERRED:
+            problem = self._reply_problem(cmd, result)
+            if problem is not None and commandsmod.STRICT:
+                raise commandsmod.CommandError(problem)
         return result
+
+    def _reply_problem(self, cmd: commandsmod.Command, data: Any) -> Optional[str]:
+        """What is wrong with an answer, against what its command declares
+        (`reply`); said in the notices and sent all the same, unless the
+        suites are running (`commands.STRICT`), which refuse it instead."""
+        problem = cmd.reply_problems(data)
+        if problem is not None and not commandsmod.STRICT:
+            self.note(f"{problem} (sent all the same)")
+        return problem
 
     @command("hello", tier=VIEW, args={"name": S(str)})
     def _cmd_hello(self, m: dict, now: float) -> None:

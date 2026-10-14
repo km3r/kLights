@@ -17,6 +17,26 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — the console is built against the engine's own command list
+
+The console's `Command` type was written by hand beside the engine's
+declarations, and what a command answered with was `unknown`, cast at each
+use. Both now come from the engine: `ui/src/commands.generated.ts`, written
+by `engine/tests/dump_designer_fixtures.py` from every `@command`, holds each
+command's arguments, what it answers with, and its tier. `test_api` fails
+while it is stale.
+
+- **Answers are declared.** A command that answers with data says what
+  (`reply=`), and each answer is checked as it goes out: a mismatch is a
+  notice at a show, and refused under the test suites, so a declaration
+  cannot drift from its handler.
+- **`request` is typed by its command.** A save resolves to `{rev, path}`, a
+  draft check to `{errors, warnings, problems}`; the casts are gone.
+- **Controls ask the engine's rule.** Studio's pages enabled their writes on
+  `tier === "configure"`; they ask `mayRun(tier, "cue_save")` and the like.
+- Stricter on one argument: `modulate`'s `shape` is one of the engine's
+  shapes, where the console's own type said any string.
+
 ### Changed — the 10 Hz snapshot is a ninth of the size: the look list goes once
 
 The look list was 86% of every snapshot -- about 50 kB of 59, sent ten times a

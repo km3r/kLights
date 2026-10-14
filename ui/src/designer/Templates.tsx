@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { mayRun } from "../types";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, newVisuals, useHistory } from "./edit";
@@ -459,7 +460,7 @@ export function TemplateAside({ engine, id, doc, dirty, rev, summary, sets, trac
   /** Something was written, and what. */
   onDone: (said: string) => void;
 }) {
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "template_save");
   const phrased = useMemo(() => tracks.filter((t) => (t.phrase_items ?? []).length > 0), [tracks]);
   const [trackId, setTrackId] = useState<string>(phrased[0]?.id ?? "");
   const [mode, setMode] = useState<"duplicate" | "rename" | "delete" | null>(null);

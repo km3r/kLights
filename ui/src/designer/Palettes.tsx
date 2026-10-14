@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mayRun } from "../types";
 import type { Engine } from "./Designer";
 import { ROLES } from "./edit";
 import { freeId, freeName } from "./model";
@@ -59,7 +60,7 @@ export function PalettesView({ engine, palettes, found, selected, onSelect, onDo
   const [error, setError] = useState<string | null>(null);
   const list = palettes ?? [];
   const ids = list.map((p) => p.id);
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "palette_save");
 
   const create = async (name: string, colors: Colors, said: string) => {
     setError(null);
@@ -146,7 +147,7 @@ export function PaletteDetail({ engine, p, palettes, onDone, onSelect }: {
   engine: Engine; p: PaletteSummary; palettes: PaletteSummary[];
   onDone: (said: string) => void; onSelect: (id: string | null) => void;
 }) {
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "palette_save");
   const saved: Colors & { name: string } = { name: p.name, primary: p.primary,
                                              secondary: p.secondary, accent: p.accent };
   const [edit, setEdit] = useState(saved);

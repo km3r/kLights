@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { mayRun } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { ID_RE, freeId as freeIdAmong, normalizeName, usageCount } from "./model";
@@ -205,7 +206,7 @@ export function RoutineDetail({ engine, r, routines, action, actionKey, onAsked,
   onDone: (said: string) => void;
   onSelect: (id: string) => void;
 }) {
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "routine_save");
   const used = r.used_by ?? { timelines: [], templates: [], show: [] };
   const count = usageCount(used);
   const folders = [...new Set(routines.map((x) => x.folder).filter((f): f is string => !!f))].sort();

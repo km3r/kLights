@@ -23,6 +23,14 @@ from .. import state as statemod
 from ..commands import CONFIGURE, OPERATE, command
 from .common import S, _BASE_REV, _NAME
 
+# What an edit to the cue list answers with: cues.json's rev now, and where the
+# cue it changed sits.
+_CUE_EDITED = {
+    "rev": S(str, required=True, fix="cues.json's rev now"),
+    "name": S(str), "warnings": S(list, each=S(str)), "deleted": S(str),
+    "index": S(int, fix="where the cue is now in the running order, 0 first"),
+    "count": S(int, fix="how many cues the list holds")}
+
 
 class Cues:
     """The cue list, and taking a cue."""
@@ -305,7 +313,7 @@ class Cues:
 
         self.worker.submit(job, done, label="reading the cues again")
 
-    @command("cue_save", tier=CONFIGURE, args={
+    @command("cue_save", tier=CONFIGURE, reply=_CUE_EDITED, args={
         "cue": S(dict, required=True),
         "was": S(str, fix="the cue's name as you opened it"),
         "at": S(int, fix="a place in the running order, 0 for first; last when not said"),
@@ -333,7 +341,7 @@ class Cues:
             lambda: cuestore.save(event_dir, cue, was, base, at=at), said,
             renamed=renamed, data={"name": name, "warnings": warnings})
 
-    @command("cue_copy", tier=CONFIGURE, args={
+    @command("cue_copy", tier=CONFIGURE, reply=_CUE_EDITED, args={
         "cue": _NAME, "to": S(str), "base_rev": _BASE_REV})
     def _cmd_cue_copy(self, m: dict, now: float) -> object:
         """Duplicate the cue called `cue` as `to`, straight after it: the
@@ -346,7 +354,7 @@ class Cues:
             lambda: cuestore.duplicate(event_dir, name, fresh, base),
             f"duplicated cue {name!r} as {fresh!r}", data={"name": fresh})
 
-    @command("cue_move", tier=CONFIGURE, args={
+    @command("cue_move", tier=CONFIGURE, reply=_CUE_EDITED, args={
         "cue": _NAME,
         "to": S(int, required=True, fix="a place in the running order, 0 for first"),
         "base_rev": _BASE_REV})
@@ -360,7 +368,8 @@ class Cues:
             f"moved cue {name!r} to {to + 1} in the running order",
             data={"name": name})
 
-    @command("cue_delete", tier=CONFIGURE, args={"cue": _NAME, "base_rev": _BASE_REV})
+    @command("cue_delete", tier=CONFIGURE, reply=_CUE_EDITED,
+             args={"cue": _NAME, "base_rev": _BASE_REV})
     def _cmd_cue_delete(self, m: dict, now: float) -> object:
         """Delete the cue called `cue`. Not the last one: a cue list cannot
         be empty. If it was the current cue, the list falls back to the cue
@@ -371,7 +380,8 @@ class Cues:
             f"deleting cue {name}", lambda: cuestore.delete(event_dir, name, base),
             f"deleted cue {name!r}", data={"deleted": name})
 
-    @command("cues_name", tier=CONFIGURE, args={"name": S(str), "base_rev": _BASE_REV})
+    @command("cues_name", tier=CONFIGURE, reply=_CUE_EDITED,
+             args={"name": S(str), "base_rev": _BASE_REV})
     def _cmd_cues_name(self, m: dict, now: float) -> object:
         """Name the cue list itself: the title of the console's GO card."""
         fresh = cuestore.clean_name(m.get("name"), "the cue list")
@@ -381,7 +391,7 @@ class Cues:
             lambda: cuestore.rename_list(event_dir, fresh, base),
             f"the cue list is called {fresh!r}")
 
-    @command("cues_reload", tier=CONFIGURE)
+    @command("cues_reload", tier=CONFIGURE, reply=_CUE_EDITED)
     def _cmd_cues_reload(self, m: dict, now: float) -> object:
         """Read cues.json again now -- after an edit by hand, or by MCP. A
         file that does not load is said, and the list that is running runs

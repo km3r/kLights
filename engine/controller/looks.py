@@ -28,6 +28,16 @@ from .common import S, _BASE_REV, _NAME
 from .picture import default_setlist
 from .presets import save_presets
 
+# What an edit to the look library answers with: the file's rev now, and how
+# many cues and presets a rename moved -- with what the edit itself says.
+_LOOK_EDITED = {
+    "rev": S(str, required=True, fix="parametric_looks.json's rev now"),
+    "cues": S(int, required=True, fix="cues a rename moved to the new name"),
+    "presets": S(int, required=True, fix="presets a rename moved to the new name"),
+    "name": S(str), "warnings": S(list, each=S(str)),
+    "written": S(list, each=S(str), fix="show-folder files a rename rewrote"),
+    "deleted": S(str), "hidden": S(bool)}
+
 
 class Looks:
     """The look library, and Studio's edits to it."""
@@ -198,7 +208,7 @@ class Looks:
         root, folder = library.root, library.folder
         return lambda: self._on_disk(root, folder)
 
-    @command("look_save", tier=CONFIGURE, args={
+    @command("look_save", tier=CONFIGURE, reply=_LOOK_EDITED, args={
         "look": S(dict, required=True),
         "was": S(str, fix="the look's name as you opened it"),
         "hides": S(dict, of={"look": S(str, required=True), "note": S(str)}),
@@ -245,7 +255,8 @@ class Looks:
                                data={"name": name, "warnings": warnings,
                                      "written": []})
 
-    @command("look_delete", tier=CONFIGURE, args={"look": _NAME, "base_rev": _BASE_REV})
+    @command("look_delete", tier=CONFIGURE, reply=_LOOK_EDITED,
+             args={"look": _NAME, "base_rev": _BASE_REV})
     def _cmd_look_delete(self, m: dict, now: float) -> object:
         """Delete a block look nothing names. One a cue, a preset, a routine or
         a timeline still names is refused with where, so a delete can never
@@ -267,7 +278,7 @@ class Looks:
         return self._look_edit(f"deleting look {name}", work,
                                f"deleted look {name!r}", data={"deleted": name})
 
-    @command("look_hide", tier=CONFIGURE, args={
+    @command("look_hide", tier=CONFIGURE, reply=_LOOK_EDITED, args={
         "look": _NAME,
         "hidden": S(bool),
         "replaced_by": S(str, fix="a look's name"),
@@ -289,7 +300,7 @@ class Looks:
              else f"look {name!r} is back in the picker"),
             data={"name": name, "hidden": hidden})
 
-    @command("looks_reload", tier=CONFIGURE)
+    @command("looks_reload", tier=CONFIGURE, reply=_LOOK_EDITED)
     def _cmd_looks_reload(self, m: dict, now: float) -> object:
         """Read both look files again now -- after an edit by hand, or by MCP.
         A file that does not load is said, and the library that is running

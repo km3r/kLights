@@ -55,6 +55,19 @@ _BASE_REV = S(str, required=True,
               fix='the rev you opened, or "" for a new file -- so a save never '
                   "overwrites a change it has not seen")
 
+# What commands answer with, where several answer alike (`@command(reply=)`).
+_STRINGS = S(list, required=True, each=S(str))
+# A draft, checked: the format's rules, then what it asks of this rig.
+_CHECKED = {"errors": _STRINGS, "warnings": _STRINGS,
+            "problems": S(list, required=True, each=S(str),
+                          fix="what will not work on this rig")}
+# A show-folder document, written.
+_SAVED = {"rev": S(str, required=True, fix="the file's rev now: the next save quotes it"),
+          "path": S(str, required=True, fix="where it was written, in the show folder")}
+_DELETED = {"deleted": S(str, required=True, fix="the file removed, in the show folder")}
+_WRITTEN = {"written": S(list, required=True, each=S(str),
+                         fix="every file rewritten, in the show folder")}
+
 
 @dataclass
 class Client:

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { mayRun } from "../types";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Engine } from "./Designer";
 import { BLOCK_ARGS, BLOCK_SLOT, SLOTS, freeName, hexColor, lookUses, normalizeName } from "./model";
@@ -151,7 +152,7 @@ export function LooksView({ engine, list, error, selected, unsaved, onSelect, on
     });
   const rows = sort === "name" ? [...shown].sort((a, b) => a.name.localeCompare(b.name)) : shown;
   const blocks = every.filter((l) => l.source === "block").length;
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "look_save");
 
   const chip = <T extends string>(value: T, current: T, set: (v: T) => void, label: string, n: number) => (
     <button key={value} className={`s-chip${value === current ? " on" : ""}`}
@@ -465,7 +466,7 @@ export function LookDetail({ engine, l, list, draft, onDraft, onDone, onSelect }
   onDone: (said: string) => void;
   onSelect: (name: string | null) => void;
 }) {
-  const canWrite = engine.tier === "configure" && !list.stale;
+  const canWrite = mayRun(engine.tier, "look_save") && !list.stale;
   const rev = list.rev ?? "";
   const names = list.looks.map((x) => x.name);
   const isBlock = l.source === "block";
@@ -506,21 +507,20 @@ export function LookDetail({ engine, l, list, draft, onDraft, onDone, onSelect }
   const nameTaken = name !== l.name && names.includes(name);
   const valid = !!name && !nameTaken;
   const others = list.looks.filter((x) => x.name !== l.name && !x.retired);
-  const noted = (data: unknown) => {
-    const warnings = (data as { warnings?: string[] } | undefined)?.warnings ?? [];
+  const noted = (data: { warnings?: string[] | null } | undefined) => {
+    const warnings = data?.warnings ?? [];
     setWarning(warnings.length ? warnings.join(" ") : null);
   };
 
   const save = () => run(async () => {
-    const data = await ask({ type: "look_save", look: lookDoc(edit), was: l.name, base_rev: rev }) as
-      { cues?: number; presets?: number; written?: string[] };
+    const data = await ask({ type: "look_save", look: lookDoc(edit), was: l.name, base_rev: rev });
     noted(data);
     if (name === l.name) return `Saved ${name}. It is on the console's picker as saved.`;
     onDraft(null);              // it was kept under the old name
     onSelect(name);
     const n = (count: number, one: string) => count ? `${count} ${one}${count === 1 ? "" : "s"}` : "";
-    const what = [n(data.cues ?? 0, "cue"), n(data.presets ?? 0, "preset"),
-                  n(data.written?.length ?? 0, "show file")].filter(Boolean);
+    const what = [n(data?.cues ?? 0, "cue"), n(data?.presets ?? 0, "preset"),
+                  n(data?.written?.length ?? 0, "show file")].filter(Boolean);
     return `Renamed ${l.name} to ${name}`
       + (what.length ? `, and moved what named it: ${what.join(", ")}.` : ".")
       + (l.supersedes ? ` The stored look ${l.name} is back under that name, hidden in favour of ${name}.` : "");
@@ -687,7 +687,7 @@ export function LookDetail({ engine, l, list, draft, onDraft, onDone, onSelect }
               <button className="d-primary" disabled={!valid || busy || !canWrite}
                       onClick={() => void save()}>{name !== l.name ? "Save and rename" : "Save the look"}</button>
               <button onClick={() => { setEdit(saved); setError(null); }}>Revert</button>
-              {engine.tier !== "configure" && <span className="muted small">{READ_ONLY}</span>}
+              {!mayRun(engine.tier, "look_save") && <span className="muted small">{READ_ONLY}</span>}
             </div>
           )}
           {dirty && name !== l.name && (
@@ -701,7 +701,7 @@ export function LookDetail({ engine, l, list, draft, onDraft, onDone, onSelect }
 
       <DetailSection title="On the rig">
         <div className="d-form">
-          <button disabled={dirty || engine.tier === "view" || engine.status !== "open"}
+          <button disabled={dirty || !mayRun(engine.tier, "select_look") || engine.status !== "open"}
                   onClick={() => engine.send({ type: "select_look", name: l.name })}>
             {live ? "On stage now" : "Play it on the rig"}</button>
         </div>

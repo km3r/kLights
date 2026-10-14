@@ -22,11 +22,25 @@ from .. import showlibrary
 from .. import timeline as timelinemod
 from .. import tracks as tracksmod
 from ..commands import CONFIGURE, command
-from .common import DEFERRED, S, _BASE_REV, _DOC, _NAME
+from .common import (DEFERRED, S, _BASE_REV, _CHECKED, _DELETED, _DOC, _NAME, _SAVED,
+                     _WRITTEN)
 
 
 # The longest title, artist or album a typed `track_link` takes.
 LINK_TEXT_MAX = 200
+
+# What prepping tracks from rekordbox answers with: the prep bridge's summary.
+_PREPPED = {
+    "results": S(list, required=True, each=S(dict, of={
+        "status": S(str, required=True), "track_id": S(str, required=True),
+        "rekordbox_ids": S(list, required=True, each=S(int)),
+        "title": S(str, required=True), "artist": S(str, required=True),
+        "signature": S(bool, required=True),
+        "notes": S(list, required=True, each=S(str))})),
+    "skipped": S(list, required=True, each=S(dict, of={
+        "rekordbox_id": S(int, required=True), "title": S(str, required=True),
+        "artist": S(str, required=True), "reason": S(str, required=True)})),
+    "show_dir": S(str)}
 
 
 class ShowFolder:
@@ -37,7 +51,7 @@ class ShowFolder:
             raise ValueError("no show folder -- start the engine with --show-dir")
         return self.show_library
 
-    @command("timeline_draft", tier=CONFIGURE, args={"doc": _DOC})
+    @command("timeline_draft", tier=CONFIGURE, reply=_CHECKED, args={"doc": _DOC})
     def _cmd_timeline_draft(self, m: dict, now: float) -> object:
         """Check an unsaved timeline: the format's rules, then a compile
         against THIS rig. Answers with errors, warnings and problems. If the
@@ -89,13 +103,14 @@ class ShowFolder:
                                lambda: showfiles.write_doc(path, doc, kind, base),
                                then)
 
-    @command("timeline_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
+    @command("timeline_save", tier=CONFIGURE, reply=_SAVED,
+             args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_timeline_save(self, m: dict, now: float) -> object:
         """Write a timeline, refused if the file changed since `base_rev`.
         It applies to the track from its next play, like any folder change."""
         return self._save("timeline", m)
 
-    @command("timeline_delete", tier=CONFIGURE, args={
+    @command("timeline_delete", tier=CONFIGURE, reply=_DELETED, args={
         "track": _NAME,
         "base_rev": _BASE_REV})
     def _cmd_timeline_delete(self, m: dict, now: float) -> object:
@@ -139,7 +154,10 @@ class ShowFolder:
                     f"Release the rig first")
         return None
 
-    @command("track_delete", tier=CONFIGURE, args={
+    @command("track_delete", tier=CONFIGURE,
+             reply={"deleted": S(list, required=True, each=S(str),
+                                 fix="the files removed, the track's own last")},
+             args={
         "track": _NAME,
         "base_rev": _BASE_REV,
         "timeline_rev": S(str, fix="its timeline's rev as you read it, or \"\" "
@@ -169,7 +187,7 @@ class ShowFolder:
             f"removing track {track}",
             lambda: showfiles.remove_track(root, track, base, timeline_rev), then)
 
-    @command("routine_draft", tier=CONFIGURE, args={"doc": _DOC})
+    @command("routine_draft", tier=CONFIGURE, reply=_CHECKED, args={"doc": _DOC})
     def _cmd_routine_draft(self, m: dict, now: float) -> object:
         """Check an unsaved routine: the format's rules, then the routine bound
         to THIS rig as it is -- and in each of its variations -- for what will
@@ -200,7 +218,8 @@ class ShowFolder:
 
         return self._on_worker("checking a routine draft", work, then)
 
-    @command("routine_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
+    @command("routine_save", tier=CONFIGURE, reply=_SAVED,
+             args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)
 
@@ -214,7 +233,7 @@ class ShowFolder:
         would leave it naming one that is gone. Runs on the worker."""
         return showfiles.load_folder(root, previous=folder)
 
-    @command("routine_rename", tier=CONFIGURE, args={
+    @command("routine_rename", tier=CONFIGURE, reply=_WRITTEN, args={
         "routine": _NAME,
         "to": _NAME,
         "base_rev": _BASE_REV})
@@ -237,7 +256,7 @@ class ShowFolder:
             lambda: showfiles.rename_routine(root, self._on_disk(root, folder), old, new, base),
             then)
 
-    @command("template_draft", tier=CONFIGURE, args={"doc": _DOC})
+    @command("template_draft", tier=CONFIGURE, reply=_CHECKED, args={"doc": _DOC})
     def _cmd_template_draft(self, m: dict, now: float) -> object:
         """Check an unsaved template set: the format's rules, then what it asks
         of the routines (one that is not there, a variation or parameter it
@@ -255,12 +274,13 @@ class ShowFolder:
         return self._on_worker("checking a template set", work,
                                lambda value, respond: respond(True, value))
 
-    @command("template_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
+    @command("template_save", tier=CONFIGURE, reply=_SAVED,
+             args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_template_save(self, m: dict, now: float) -> object:
         """Write a template set, refused if the file changed since `base_rev`."""
         return self._save("template_set", m)
 
-    @command("template_rename", tier=CONFIGURE, args={
+    @command("template_rename", tier=CONFIGURE, reply=_WRITTEN, args={
         "template": _NAME,
         "to": _NAME,
         "base_rev": _BASE_REV})
@@ -280,7 +300,7 @@ class ShowFolder:
                                    root, self._on_disk(root, folder), old, new, base),
                                then)
 
-    @command("template_delete", tier=CONFIGURE, args={
+    @command("template_delete", tier=CONFIGURE, reply=_DELETED, args={
         "template": _NAME,
         "base_rev": _BASE_REV})
     def _cmd_template_delete(self, m: dict, now: float) -> object:
@@ -304,7 +324,8 @@ class ShowFolder:
 
         return self._on_worker(f"deleting template set {tid}", work, then)
 
-    @command("palette_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
+    @command("palette_save", tier=CONFIGURE, reply=_SAVED,
+             args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_palette_save(self, m: dict, now: float) -> object:
         """Write a library palette. Its copies in timelines and sets are not
         touched: `palette_sync` does that, on request. Its name must be its
@@ -319,7 +340,7 @@ class ShowFolder:
                                  f"name, so each needs its own")
         return self._save("palette", m)
 
-    @command("palette_delete", tier=CONFIGURE, args={
+    @command("palette_delete", tier=CONFIGURE, reply=_DELETED, args={
         "palette": _NAME,
         "base_rev": _BASE_REV})
     def _cmd_palette_delete(self, m: dict, now: float) -> object:
@@ -340,7 +361,7 @@ class ShowFolder:
 
         return self._on_worker(f"deleting palette {pid}", work, then)
 
-    @command("palette_sync", tier=CONFIGURE, args={
+    @command("palette_sync", tier=CONFIGURE, reply=_WRITTEN, args={
         "palette": _NAME,
         "files": S(list, required=True, non_empty=True, each=S(str),
                    fix="the timelines and sets to update, as /api/palettes lists them")})
@@ -361,7 +382,8 @@ class ShowFolder:
         return self._on_worker(f"updating copies of palette {pid}",
                                lambda: showfiles.sync_palette(root, folder, pid, files), then)
 
-    @command("show_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
+    @command("show_save", tier=CONFIGURE, reply=_SAVED,
+             args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_show_save(self, m: dict, now: float) -> object:
         """Write show.json: the show's template set, the pause policy and idle
         routine, Follow's start. Refused if it changed since `base_rev` -- the
@@ -369,7 +391,7 @@ class ShowFolder:
         as any change to it does."""
         return self._save("show", m)
 
-    @command("routine_delete", tier=CONFIGURE, args={
+    @command("routine_delete", tier=CONFIGURE, reply=_DELETED, args={
         "routine": _NAME,
         "base_rev": _BASE_REV})
     def _cmd_routine_delete(self, m: dict, now: float) -> object:
@@ -395,7 +417,9 @@ class ShowFolder:
 
         return self._on_worker(f"deleting routine {rid}", work, then)
 
-    @command("track_link", tier=CONFIGURE, args={
+    @command("track_link", tier=CONFIGURE,
+             reply={"queued": S(bool, required=True), "track_id": S(str, required=True),
+                    "applies": S(str, required=True, choices=("next_play",))}, args={
         "track_id": _NAME,
         "title": S(str),
         "artist": S(str),
@@ -484,7 +508,7 @@ class ShowFolder:
                     f"only one track")
         return title, artist, album
 
-    @command("rekordbox_prep", tier=CONFIGURE, args={
+    @command("rekordbox_prep", tier=CONFIGURE, reply=_PREPPED, args={
         "ids": S(list, required=True, non_empty=True, each=S(int, min=0),
                  fix="rekordbox track ids")})
     def _cmd_rekordbox_prep(self, m: dict, now: float) -> object:

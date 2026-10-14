@@ -2,7 +2,7 @@ import {
   Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   useSyncExternalStore,
 } from "react";
-import type { EngineState, FixtureState, LookInfo, Reply } from "../types";
+import type { EngineState, FixtureState, LookInfo } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
@@ -746,7 +746,7 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
     const timer = setTimeout(async () => {
       const reply = await request(kind === "timeline" ? { type: "timeline_draft", doc }
         : kind === "routine" ? { type: "routine_draft", doc } : { type: "template_draft", doc });
-      if (reply.ok && reply.data) setCheck(reply.data as DraftCheck);
+      if (reply.ok && reply.data) setCheck(reply.data);
     }, 500);
     return () => clearTimeout(timer);
   }, [doc, request, connected, history.dirty, key, rev, kind, kept]);
@@ -791,13 +791,13 @@ function Toolbar<D extends object>({ history, rev, setRev, engine, kind, ident }
     if (!doc) return;
     setSaving(true);
     setSaveError(null);
-    const reply: Reply = await engine.request(
+    const reply = await engine.request(
       kind === "timeline" ? { type: "timeline_save", doc, base_rev: rev }
         : kind === "routine" ? { type: "routine_save", doc, base_rev: rev }
           : { type: "template_save", doc, base_rev: rev });
     setSaving(false);
-    if (reply.ok) {
-      setRev((reply.data as { rev: string }).rev);
+    if (reply.ok && reply.data) {
+      setRev(reply.data.rev);
       history.markSaved(doc);
       try { localStorage.removeItem(key); } catch { /* fine */ }
     } else {

@@ -1,3 +1,5 @@
+import type { Command, ReplyData } from "./commands.generated";
+
 /**
  * The wire protocol, mirroring engine/server.py's snapshot().
  *
@@ -592,173 +594,12 @@ export interface EngineState {
   drift: DriftRow[] | null;
 }
 
-/** Everything the UI can ask the engine to do. */
-export type Command =
-  | { type: "hello"; name: string }
-  | { type: "select_look"; name: string; hold?: boolean; slot?: Slot }
-  | { type: "clear_slot"; slot: Slot; group?: string }
-  /** Turn a routine's own knobs. Only the keys being changed are sent; the
-   *  engine keeps the rest. `reset` drops every override and returns the
-   *  look to what parametric_looks.json authored. Refused for a ported look, which
-   *  is a stored table of DMX and has nothing to tune. */
-  | { type: "look_params"; name: string;
-      values?: Record<string, ParamValue>; reset?: boolean }
-  /** Bind a parameter to a musical waveform. Omit `look` for a shape macro.
-   *  `low`/`high` default to the target's full declared range and are clamped
-   *  to it, so a modulator can only sweep where a finger could have dragged.
-   *  Binding the same target twice replaces rather than stacking. */
-  | { type: "modulate"; param: string; look?: string; shape?: string;
-      bars?: number; low?: number; high?: number; phase?: number; seed?: number }
-  | { type: "modulate_clear"; param?: string; look?: string; all?: boolean }
-  /** Stack another movement routine over the base route. Refused for a look
-   *  that is not movement, for the base route itself, and past the cap. */
-  | { type: "movement_add"; name: string }
-  | { type: "movement_remove"; name?: string; all?: boolean }
-  /** Nudge a routine's numbers within their declared ranges, reproducibly.
-   *  `amount` is the fraction of each range to move within. Omit `seed` and the
-   *  engine picks the next one and publishes it. `bars` is never varied — the
-   *  cycle length is a musical decision, not a shape one. */
-  | { type: "vary"; name: string; amount?: number; seed?: number }
-  | { type: "preset_save"; name: string; bank?: number; cell?: number;
-      tags?: string[]; routine?: PadRoutine | null }
-  | { type: "preset_apply"; name: string }
-  | { type: "preset_delete"; name: string }
-  | { type: "preset_move"; name: string; bank: number; cell: number }
-  | { type: "preset_tag"; name: string; tags: string[] }
-  | { type: "release" }
-  | { type: "next_look" }
-  | { type: "master"; value: number }
-  | { type: "blackout"; on: boolean }
-  | { type: "panic" }
-  | { type: "clear_panic" }
-  | { type: "tap" }
-  | { type: "bpm"; value: number }
-  | { type: "speed"; value: number }
-  | { type: "nudge_phase"; beats: number }
-  | { type: "downbeat" }
-  | { type: "auto"; axis: keyof AutoAxes; on: boolean }
-  | { type: "auto_interval"; axis: "looks" | "palette"; value: number }
-  | { type: "energy"; source: "manual" | "phrase"; value?: number }
-  | { type: "color"; target: string; color: RGB; white?: number | null; clear?: boolean }
-  | { type: "level"; target: string; value?: number; clear?: boolean }
-  | { type: "palette_select"; index: number }
-  | { type: "jog"; fixture: string; pan: number; tilt: number }
-  | { type: "jog_clear"; fixture?: string }
-  | { type: "capture"; fixture: string; target: number[]; label: string }
-  | { type: "capture_clear"; fixture?: string }
-  | { type: "solve"; write?: boolean }
-  /** With no readings, the engine checks each head's current jog position. */
-  | { type: "drift"; readings?: number[][] }
-  | { type: "venue"; crowd?: Partial<{
-        min_x: number; max_x: number; min_z: number; max_z: number;
-        head_band_min: number; head_band_max: number;
-      }>; canopy?: Partial<{ enabled: boolean; height: number; radius: number }> }
-  | { type: "taper"; crowd_level?: number; margin_deg?: number;
-      slew_per_second?: number; enabled?: boolean }
-  | { type: "venue_save" }
-  | { type: "patch_add"; name: string; manufacturer: string; model: string;
-      mode: string; address?: number; universe?: number; tags?: string[];
-      position?: { x: number; y: number; z: number }; beam_deg?: number }
-  | { type: "patch_remove"; name: string }
-  | { type: "patch_address"; name: string; address: number; universe?: number }
-  | { type: "patch_tags"; name: string; tags: string[] }
-  | { type: "patch_position"; name: string;
-      position: { x: number; y: number; z: number } }
-  | { type: "patch_autopatch"; start?: number; universe?: number }
-  | { type: "patch_apply" }
-  | { type: "go" }
-  | { type: "cue_back" }
-  | { type: "cue"; index: number }
-  | { type: "cue_reset" }
-  | { type: "flash"; target: string; on?: boolean }
-  | { type: "flash_clear" }
-  | { type: "macro"; size?: number; spread?: number;
-      center?: [number, number]; reset?: boolean }
-  /** How fast ONE slot's chase runs. Distinct from `speed`, which is the clock
-   *  and moves the whole show including cue holds and auto boundaries. */
-  | { type: "rate"; slot: Slot; value: number }
-  | { type: "rate"; reset: true }
-  /** Take the clock back from a bridge. Tempo and phase stay put; only who
-   *  decides next changes. */
-  | { type: "sync_off" }
-  /** Follow DJ (F19i): may the matched track's timeline drive the rig. */
-  | { type: "follow"; armed: boolean }
-  | { type: "program_grab"; slot: Slot }
-  | { type: "program_release"; slot?: Slot }
-  | { type: "show_latency"; source: string; ms: number }
-  /** Milestone 2: switch template set (null = off), on the next downbeat. */
-  | { type: "template_set"; set: string | null }
-  /** The designer (F19j). Drafts and saves are answered from the worker;
-   *  send them with an id and wait for the reply. */
-  | { type: "timeline_draft"; doc: unknown }
-  | { type: "timeline_save"; doc: unknown; base_rev: string }
-  /** Delete a track's timeline and keep the track; `base_rev` is the timeline's. */
-  | { type: "timeline_delete"; track: string; base_rev: string }
-  | { type: "routine_draft"; doc: unknown }
-  | { type: "routine_save"; doc: unknown; base_rev: string }
-  /** Rename a routine and every reference to it (timelines, template sets,
-   *  show.json). `routine`, not `id`: `id` is the request's own. */
-  | { type: "routine_rename"; routine: string; to: string; base_rev: string }
-  /** Delete a routine nothing uses; refused with where, if anything does. */
-  | { type: "routine_delete"; routine: string; base_rev: string }
-  | { type: "template_draft"; doc: unknown }
-  | { type: "template_save"; doc: unknown; base_rev: string }
-  /** Rename a template set, and show.json with it if it is the show's. */
-  | { type: "template_rename"; template: string; to: string; base_rev: string }
-  /** Delete a template set that is not the show's. */
-  | { type: "template_delete"; template: string; base_rev: string }
-  /** Write show.json, refused if it changed since `base_rev`. */
-  | { type: "show_save"; doc: unknown; base_rev: string }
-  /** A palette of the library: its own file in palettes/. */
-  | { type: "palette_save"; doc: unknown; base_rev: string }
-  /** Delete a library palette; its copies stay in their files. */
-  | { type: "palette_delete"; palette: string; base_rev: string }
-  /** Give copies of a library palette its colors: `files` as /api/palettes lists them. */
-  | { type: "palette_sync"; palette: string; files: string[] }
-  /** The look library (Studio's Looks page): parametric_looks.json, in the
-   *  event folder. `base_rev` is the rev /api/looks gave, "" with no file yet.
-   *  A new block look -- or, with `was`, a change to the look of that name,
-   *  which renames it when `look.name` differs, moving every routine,
-   *  timeline, template set, cue and preset that names it. */
-  | { type: "look_save"; look: unknown; was?: string; base_rev: string;
-      /** A NEW look only: the look it takes the place of on the picker,
-       *  hidden in its favour in the same write. */
-      hides?: { look: string; note?: string } }
-  /** Delete a block look nothing names; refused with where, if anything does. */
-  | { type: "look_delete"; look: string; base_rev: string }
-  /** Hide any look from the picker (or show it again): hidden, never removed. */
-  | { type: "look_hide"; look: string; hidden?: boolean; replaced_by?: string;
-      note?: string; base_rev: string }
-  /** Read the look files again, after an edit made outside Studio. */
-  | { type: "looks_reload" }
-  /** The cue list (Studio's Cues page): cues.json, in the event folder.
-   *  `base_rev` is the rev /api/cues gave, "" with no file yet. A new cue at
-   *  place `at` in the running order (last, when left out) -- or, with `was`,
-   *  a change to the cue of that name, which renames it when `cue.name`
-   *  differs. The running list keeps its place, and the stage is not touched. */
-  | { type: "cue_save"; cue: unknown; was?: string; at?: number; base_rev: string }
-  /** Duplicate a cue as `to`, straight after it. */
-  | { type: "cue_copy"; cue: string; to: string; base_rev: string }
-  /** Move a cue to place `to` in the running order (0 is first). */
-  | { type: "cue_move"; cue: string; to: number; base_rev: string }
-  /** Delete a cue. The last one is refused: a cue list cannot be empty. */
-  | { type: "cue_delete"; cue: string; base_rev: string }
-  /** Name the list itself: the title of the console's GO card. */
-  | { type: "cues_name"; name: string; base_rev: string }
-  /** Read cues.json again, after an edit made outside Studio. */
-  | { type: "cues_reload" }
-  /** Teach a prepped track another description: the playing deck's, or --
-   *  with a `title` -- the one given (Studio, with nothing playing). */
-  | { type: "track_link"; track_id: string; title?: string; artist?: string; album?: string }
-  /** Take a track out of the show, its timeline and waveform with it.
-   *  `base_rev` is the track's; `timeline_rev` its timeline's, "" for none. */
-  | { type: "track_delete"; track: string; base_rev: string; timeline_rev: string }
-  /** Prep tracks from the DJ's rekordbox collection into the show folder, by
-   *  rekordbox id. Answered when the bridge has finished. */
-  | { type: "rekordbox_prep"; ids: number[] }
-  | { type: "preview_arm"; track_id: string; force?: boolean }
-  | { type: "preview_transport"; time_s: number; playing: boolean }
-  | { type: "preview_release" };
+/** Everything the UI can ask the engine to do: generated from the engine's own
+ *  declarations (`@command`), so what is sent is what the engine reads. */
+export type {
+  Command, CommandArgs, CommandName, CommandReplies, ReplyData, Tier,
+} from "./commands.generated";
+export { COMMAND_TIERS, mayRun } from "./commands.generated";
 
 /** The look library, sent apart from the 10 Hz snapshot -- where it was most
  *  of every frame's bytes -- when a console connects and when it changes. */
@@ -769,20 +610,23 @@ export interface LooksFrame {
   looks: LookInfo[];
 }
 
-/** The engine's answer to a command sent with an id (`useEngine.request`). */
-export interface Reply {
+/** The engine's answer to a command sent with an id (`useEngine.request`):
+ *  `data` is what that command declares it answers with (`ReplyData`). */
+export interface Reply<D = unknown> {
   type: "reply";
   id: string | number;
   ok: boolean;
   error?: string;
-  data?: unknown;
+  data?: D;
 }
+
+/** Send a command and wait for its answer, typed by the command. */
+export type Request = <C extends Command>(
+  command: C, timeoutMs?: number,
+) => Promise<Reply<ReplyData<C["type"]>>>;
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
-/** What this client may do, decided by the engine from the URL's token.
- *  `view` can watch but every command it sends is refused. */
-export type Tier = "view" | "operate" | "configure";
 
 /** How much of the console to show. A local preference, not a permission —
  *  `Tier` is what the engine enforces, this is only what is on screen. */

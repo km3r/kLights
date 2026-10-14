@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  Command, ConnectionStatus, EngineState, LookInfo, LooksFrame, Reply, Tier,
+  Command, ConnectionStatus, EngineState, LookInfo, LooksFrame, Reply, ReplyData,
+  Request, Tier,
 } from "./types";
 
 /**
@@ -181,8 +182,8 @@ export function useEngine() {
    * few whose result is not visible in the broadcast state: a save's new rev,
    * a draft's validation, a refusal and its reason.
    */
-  const request = useCallback((command: Command, timeoutMs = 20000): Promise<Reply> =>
-    new Promise((resolve) => {
+  const request: Request = useCallback(<C extends Command>(command: C, timeoutMs = 20000) =>
+    new Promise<Reply<ReplyData<C["type"]>>>((resolve) => {
       const ws = socket.current;
       const id = `r${++nextId.current}`;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -193,7 +194,12 @@ export function useEngine() {
         pending.current.delete(id);
         resolve({ type: "reply", id, ok: false, error: "the engine did not answer" });
       }, timeoutMs);
-      pending.current.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      // The engine holds each answer to its command's declaration
+      // (`@command(reply=)`), which is what ReplyData says it is.
+      pending.current.set(id, (r) => {
+        clearTimeout(timer);
+        resolve(r as Reply<ReplyData<C["type"]>>);
+      });
       ws.send(JSON.stringify({ ...command, id }));
     }), []);
 

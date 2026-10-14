@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { mayRun } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
@@ -135,7 +136,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "timeline_save");
   const title = { timeline: "New timeline", routine: "New routine", template: "New template set",
                   palette: "New palette", look: "New look", cue: "New cue" }[kind];
 

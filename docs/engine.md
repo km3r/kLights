@@ -460,6 +460,23 @@ the test, so moving a command between tiers is a change someone reviews. `type`
 and `id` belong to the wire and cannot be arguments: `id` is what a reply is
 tagged with.
 
+A command that answers with data says what, with `reply=` in the same `Spec`
+(`timeline_save` answers `{rev, path}`). Each answer is checked as it goes
+out: at a show a mismatch is a notice and the answer is sent all the same;
+under the suites (`commands.STRICT`, set by `engine/tests/harness.py`) it is
+refused, so the test that sent the command fails and a declaration cannot drift
+from what its handler sends.
+
+**The console is built against these declarations.**
+`engine/tests/dump_designer_fixtures.py` writes them out as
+[`ui/src/commands.generated.ts`](../ui/src/commands.generated.ts): the
+`Command` type every `send` is checked against, each command's reply type --
+so `request({type: "timeline_save", ...})` resolves to a reply whose `data`
+is `{rev, path}` -- and `mayRun(tier, command)`, the engine's own rule for
+whether a control should be enabled. `test_api` fails while the file is stale,
+so a command added or changed here does not compile in the console until the
+file is written again.
+
 ## Configuration
 
 Every event and venue file is JSON, validated on load against a declared shape

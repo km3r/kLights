@@ -37,6 +37,14 @@ SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
 
 failures: list[str] = []
 
+# Every answer a command sends is held to what the command declares it sends
+# (`@command(..., reply=...)`): under the suites a mismatch is refused, so the
+# test that sent the command fails, rather than a notice nobody reads.
+sys.path.insert(0, str(REPO))
+from engine import commands as _commands  # noqa: E402
+
+_commands.STRICT = True
+
 
 def check(label: str, ok: Any, detail: Any = "") -> bool:
     """One assertion. Prints PASS or FAIL, remembers a failure, never raises,

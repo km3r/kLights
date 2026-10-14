@@ -29,6 +29,10 @@ block takes, read by the routine editor AND the console's Tweak card:
                                      (`blocks.PARAMS`), the shape macros
                                      (`params.MACROS`), the modulator shapes
                                      and the shapes a lane's wave can take
+    ui/src/commands.generated.ts     every command the engine takes: its
+                                     arguments, what it answers with and
+                                     who may send it (`@command`, see
+                                     engine/commands.py)
 
 Before it, the routine editor carried a hand-typed copy of every block's
 defaults, steps and units (`BLOCK_ARGS`), and only the argument NAMES were held
@@ -181,8 +185,11 @@ def block_table() -> dict:
 
 def render_ui() -> dict[str, str]:
     """Generated UI source, by name under ui/src."""
+    from engine import commands
+    from engine.controller import ShowController
     return {"blocks.generated.json":
-            json.dumps(block_table(), indent=1, ensure_ascii=False) + "\n"}
+            json.dumps(block_table(), indent=1, ensure_ascii=False) + "\n",
+            "commands.generated.ts": commands.typescript(ShowController.COMMANDS)}
 
 
 def main() -> int:

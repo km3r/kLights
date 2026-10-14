@@ -278,7 +278,10 @@ class Follow:
                              "to take a lane from")
         self.player.grab({slot})
 
-    @command("template_set", tier=OPERATE, args={
+    @command("template_set", tier=OPERATE,
+             reply={"pending": S(str, fix="the set taking over on the next downbeat; "
+                                          "null for none")},
+             args={
         "set": S(str, fix="a set's id, or null for none")})
     def _cmd_template_set(self, m: dict, now: float) -> dict:
         """Switch template set -- a vibe, live. It takes over on the next
@@ -307,7 +310,8 @@ class Follow:
             raise ValueError("no show folder -- start the engine with --show-dir")
         self.player.release(m.get("slot"))
 
-    @command("show_latency", tier=CONFIGURE, args={
+    @command("show_latency", tier=CONFIGURE,
+             reply={"source": S(str, required=True), "ms": S(N, required=True)}, args={
         "source": S(str, required=True, non_empty=True, fix='e.g. "rkbx"'),
         "ms": S(N, required=True, min=-2000, max=2000)})
     def _cmd_show_latency(self, m: dict, now: float) -> dict:
@@ -332,7 +336,9 @@ class Follow:
                            done=done, label="saving the latency")
         return {"source": source, "ms": ms}
 
-    @command("preview_arm", tier=CONFIGURE, args={"track_id": _NAME, "force": S(bool)})
+    @command("preview_arm", tier=CONFIGURE,
+             reply={"track_id": S(str, required=True)},
+             args={"track_id": _NAME, "force": S(bool)})
     def _cmd_preview_arm(self, m: dict, now: float) -> dict:
         """The designer takes the stage: its transport drives the rig through
         this track's timeline. Refused while a DJ is playing, unless forced."""

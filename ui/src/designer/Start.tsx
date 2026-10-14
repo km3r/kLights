@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { mayRun } from "../types";
 import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { draftFromTemplate, newTimeline } from "./model";
@@ -100,7 +101,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
   const [phase, setPhase] = useState<"choose" | "running" | "done">("choose");
   const [rows, setRows] = useState<ProgressRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "rekordbox_prep");
   const count = prep?.length ?? tracks?.length ?? 0;
   const setName = sets.find((s) => s.id === setId)?.name ?? setId;
   const options = OPTIONS.filter((o) => (prep ? true : o.id !== "template"))
@@ -129,7 +130,7 @@ export function StartDialog({ engine, title, prep, tracks, sets, activeSet, onCl
         setPhase("done");
         return;
       }
-      const summary = reply.data as PrepSummary;
+      const summary: PrepSummary = reply.data ?? { results: [], skipped: [] };
       const seen = new Set<string>();
       const prepped: ProgressRow[] = [];
       for (const r of summary.results) {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useHelp } from "../components";
+import type { Command } from "../types";
 import type { Engine } from "./Designer";
 
 /**
@@ -166,7 +167,7 @@ export function useWrite(engine: Engine, onDone: (said: string) => void) {
       setBusy(false);
     }
   };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
+  const ask = async <C extends Command>(command: C) => {
     const reply = await engine.request(command);
     if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
     return reply.data;

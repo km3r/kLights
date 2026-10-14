@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Command, EngineState, Reply, Tier } from "../types";
+import type { Command, EngineState, Request, Tier } from "../types";
 import { apiFetch, apiUrl } from "../useEngine";
 import { SideSection } from "./detail";
 import { PlanSvg } from "../Plan";
@@ -54,7 +54,8 @@ export interface Engine {
   state: EngineState | null;
   status: string;
   send: (c: Command) => void;
-  request: (c: Command, timeoutMs?: number) => Promise<Reply>;
+  /** Answered with what the command declares (`ReplyData`). */
+  request: Request;
   tier: Tier;
   /** This console's id on the engine, once it has said hello. */
   clientId?: string | null;

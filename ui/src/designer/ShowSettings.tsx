@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mayRun } from "../types";
 import type { ReactNode } from "react";
 import type { Engine } from "./Designer";
 import type { RoutineSummary, ShowSummary, TemplateSummary } from "./model";
@@ -114,7 +115,7 @@ export function ShowSettingsView({ engine, show, sets, routines, onDone, problem
     setBase(savedText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedText]);
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "show_save");
 
   if (!show) return <section className="s-page" aria-label="show settings"><p className="muted">
     Loading the show folder…</p></section>;
