@@ -118,4 +118,25 @@ def clients(c, i):
 collide("clients", clients)
 
 
+print("\n4. the snapshot is every part's section, each key said once")
+# Each part of the controller publishes its own section (`_public_*`). Merged
+# into one dict, two parts naming the same key would have the later one win
+# silently, and a part whose section is not merged would publish nothing.
+controller = servermod.ShowController(EVENT)
+parts = sorted(n for n in dir(controller) if n.startswith("_public_"))
+sections = {n: getattr(controller, n)() for n in parts}
+said: dict[str, list[str]] = {}
+for name, section in sections.items():
+    for key in section:
+        said.setdefault(key, []).append(name)
+twice = {k: v for k, v in said.items() if len(v) > 1}
+check("no key is published by two parts", not twice, f"{twice}")
+snap = controller.snapshot()
+check("the snapshot is exactly every part's section, and its envelope",
+      set(snap) == set(said) | {"type", "rev", "version"},
+      f"missing {sorted(set(said) - set(snap))}, "
+      f"extra {sorted(set(snap) - set(said) - {'type', 'rev', 'version'})}")
+check("one section per part", len(parts) >= 11, parts)
+
+
 finish("snapshot threads")

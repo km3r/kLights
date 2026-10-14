@@ -27,6 +27,8 @@ from engine.tests.harness import check, finish, isolated_event  # noqa: E402
 from engine import commands as commandsmod  # noqa: E402
 from engine import config as configmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
+from engine.controller import hand as handmod  # noqa: E402
+from engine.controller import presets as presetsmod  # noqa: E402
 
 COMMANDS = servermod.ShowController.COMMANDS
 Ctl = servermod.ShowController
@@ -79,7 +81,7 @@ print("\n2. a declaration names everything its handler reads")
 # hands the message to. The helpers are named here so a new one is noticed:
 # a handler passing `m` to anything else fails the check below until it is.
 KEY_RE = re.compile(r'\bm\["(\w+)"\]|\bm\.get\("(\w+)"|"(\w+)" in m\b')
-HELPERS = {"_cell_request": servermod._cell_request, "_target": servermod._target,
+HELPERS = {"_cell_request": presetsmod._cell_request, "_target": handmod._target,
            "self._save": Ctl._save, "self._typed_description": Ctl._typed_description}
 # Validated by their own module, which whitelists what it reads: the
 # declaration lists the same fields (sync) or the module's arguments (modulate).

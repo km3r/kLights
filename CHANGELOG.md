@@ -17,6 +17,22 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — the controller is one module per part, not one 5,000-line file
+
+`engine/server.py` held the HTTP and WebSocket transport and the whole
+`ShowController`: 88 command handlers and the state of every feature, in one
+file that two-fifths of all commits touched. The controller is now
+`engine/controller/`, one module per part of what the console does -- the
+picture, the hand overrides, presets, the cue list, calibration, the room, the
+patch, tempo, following the DJ, Studio's show-folder writes, the look library
+-- over a `core` holding the rig, the clock, the runner and the command queue.
+Each module holds that part's state (`_init_*`), its commands, and its own
+section of the snapshot (`_public_*`). server.py is the transport, at 951
+lines.
+
+The code was moved, not rewritten: every line of the old file is in the new
+ones, and nothing a client sends or receives changed.
+
 ### Changed — every command declares who may send it and what it takes
 
 Each of the 88 console commands now states its tier and the shape of its

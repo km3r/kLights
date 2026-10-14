@@ -71,8 +71,8 @@ the three doors into a running show:
 2. **Config and show-folder files.** Every schema and kind is mutated. The
    validator must say no or yes without raising. Whatever it *accepts*, the engine
    must load, because that is the reason the validator exists.
-3. **Console commands.** Messages are built from the fields each `_cmd_*`
-   handler reads, taken from `engine/server.py` itself, and sent through `submit()`
+3. **Console commands.** Messages are built from the arguments each command
+   declares (`ShowController.COMMANDS`, see `engine/commands.py`), and sent through `submit()`
    onto the real output thread. Afterwards every frame must still render, the
    clock must stay a number, the snapshot must stay strict JSON (one `NaN` there
    and every phone's `JSON.parse` fails), and the DMX thread must still be alive.

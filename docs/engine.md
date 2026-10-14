@@ -354,7 +354,10 @@ person exceeds the cost of it being available, and pressing it again undoes it.
 ### Adding a command
 
 A command is declared on the method that applies it, with its tier and the
-shape of its arguments ([`commands.py`](../engine/commands.py)):
+shape of its arguments ([`commands.py`](../engine/commands.py)), in the part of
+the controller it belongs to ([`engine/controller/`](../engine/controller/__init__.py)):
+`hand.py` here, beside the master's state (`_init_hand`) and its line in the
+snapshot (`_public_hand`):
 
 ```python
 @command("master", tier=OPERATE, args={
@@ -756,6 +759,8 @@ the folder may be written while a show runs.
 | edits to the look library, from Studio and from an assistant | [`lookstore.py`](../engine/lookstore.py), [`looktools.py`](../engine/looktools.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
+| what a console command does, and the snapshot | [`controller/`](../engine/controller/__init__.py): one module per part -- `picture`, `hand`, `presets`, `cues`, `calibration`, `room`, `patching`, `tempo`, `follow`, `showfolder`, `looks`, over `core` |
+| which commands exist, who may send them, what they take | [`commands.py`](../engine/commands.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |
 | DJ tempo ingest | [`sync.py`](../engine/sync.py) |
 | which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |

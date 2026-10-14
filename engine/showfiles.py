@@ -115,7 +115,7 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
 #
 # The CENTRE ranges are the portable fallback (`params.CENTER_*`), not the
 # run-time clamp. At run time the centre is bounded by the playing rig's reach
-# (`server.rig_reach`), which on a real rig is often wider on one side and
+# (`controller.core.rig_reach`), which on a real rig is often wider on one side and
 # narrower on the other. A show folder does not know which rig will play it, so
 # it is authored against the range every rig can be expected to understand.
 #

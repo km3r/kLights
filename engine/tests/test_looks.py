@@ -30,6 +30,7 @@ from engine import lookstore  # noqa: E402
 from engine import patch as patchmod  # noqa: E402
 from engine import rig as rigmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
+from engine.controller import looks as ctl_looks  # noqa: E402
 
 EVENT = isolated_event("despacio")
 TMP = EVENT.parent
@@ -917,17 +918,18 @@ try:
     sc.apply({"type": "select_look", "name": "Rolling Breathe"}, None)
     sc.apply({"type": "preset_save", "name": "breathe pad"}, None)
     rolling = next(l for l in on_disk()["looks"] if l["name"] == "Rolling Breathe")
-    real_save_presets = servermod.save_presets
+    # Patched where the install looks it up: the looks part's own import.
+    real_save_presets = ctl_looks.save_presets
 
     def disk_full(event_dir, presets):
         raise OSError("disk full")
 
-    servermod.save_presets = disk_full
+    ctl_looks.save_presets = disk_full
     try:
         r = ask({"type": "look_save", "was": "Rolling Breathe", "base_rev": sc.looks_rev,
                  "look": {**rolling, "name": "Rolling"}})
     finally:
-        servermod.save_presets = real_save_presets
+        ctl_looks.save_presets = real_save_presets
     check("a rename whose presets cannot be written is still installed and still "
           "answered: the library, the slot and the presets in memory follow, and a "
           "notice says the file did not",

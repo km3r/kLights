@@ -339,8 +339,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # What the centre macro really spans on this rig -- see CENTRE_REACH.
     try:
         from engine import rig as rigmod
-        from engine import server as servermod
-        reach = servermod.rig_reach(rigmod.load_rig(args.event))
+        from engine.controller.core import rig_reach
+        reach = rig_reach(rigmod.load_rig(args.event))
         if reach:
             CENTRE_REACH.update(reach)
     except Exception as exc:                                       # noqa: BLE001

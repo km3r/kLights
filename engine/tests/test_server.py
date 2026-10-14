@@ -35,6 +35,7 @@ from engine import state as statemod
 from engine import websocket as wsmod
 from engine import blocks as blocksmod
 from engine import commands as commandsmod
+from engine.controller import presets as presetsmod
 from engine import params as parammod
 from engine import server as servermod
 from engine.server import ShowController, ShowServer
@@ -434,29 +435,29 @@ controller.apply({"type": "flash_clear"}, None)
 
 # The pure layout rules first, where every branch is reachable without a socket.
 check("a preset with no bank lands on the first free pad",
-      [(p["bank"], p["cell"]) for p in servermod.arrange_presets(
+      [(p["bank"], p["cell"]) for p in presetsmod.arrange_presets(
           [{"name": "a"}, {"name": "b"}])] == [(1, 0), (1, 1)])
 check("one that names a pad keeps it, and is not shuffled by its neighbours",
-      [(p["name"], p["bank"], p["cell"]) for p in servermod.arrange_presets(
+      [(p["name"], p["bank"], p["cell"]) for p in presetsmod.arrange_presets(
           [{"name": "a"}, {"name": "pinned", "bank": 1, "cell": 0}])]
       == [("pinned", 1, 0), ("a", 1, 1)])
 check("two presets claiming one pad: first claim wins, second is rehomed",
-      {p["name"]: p["cell"] for p in servermod.arrange_presets(
+      {p["name"]: p["cell"] for p in presetsmod.arrange_presets(
           [{"name": "first", "bank": 1, "cell": 2},
            {"name": "second", "bank": 1, "cell": 2}])}
       == {"first": 2, "second": 0})
 # Being told "your banks are full" while building a show is not a thing a
 # console gets to do, so the last bank grows instead.
-nine = servermod.arrange_presets([{"name": f"p{i}"} for i in range(9)])
+nine = presetsmod.arrange_presets([{"name": f"p{i}"} for i in range(9)])
 check("a ninth preset opens a second bank rather than refusing",
       (nine[-1]["bank"], nine[-1]["cell"]) == (2, 0),
       f"{nine[-1]['bank']}.{nine[-1]['cell']}")
 check("garbage in the presets list is skipped, not crashed on",
-      [p["name"] for p in servermod.arrange_presets(
+      [p["name"] for p in presetsmod.arrange_presets(
           [{"name": "ok"}, {"nameless": True}, "not a dict", None])] == ["ok"])
 # `bank: true` is an int to isinstance and would sail through as bank 1.
 check("a boolean where a bank number should be is rehomed",
-      servermod.arrange_presets(
+      presetsmod.arrange_presets(
           [{"name": "a", "bank": True, "cell": 0}])[0]["bank"] == 1)
 
 # Then the behaviour that actually matters at the desk: re-recording a preset
