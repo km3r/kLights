@@ -11,7 +11,12 @@
  */
 
 import { BLOCK_PARAMS, BLOCK_SLOTS } from "../blocks";
+import { ID_PATTERN, PARAM_TYPES, RIG_BOUND_BLOCKS, VISUAL_PARAMS, VISUAL_SCENES } from "../showfiles.generated";
 import type { ParamSpec } from "../types";
+
+// The show-folder format's own lists, generated from engine/showfiles.py.
+export { PARAM_TYPES, VISUAL_PARAMS, VISUAL_SCENES };
+export type { VisualRule } from "../showfiles.generated";
 
 /** Marks every designer page. It is only in the designer's own chunk: a build
  *  check greps the console's entry script to prove a phone never loads it. */
@@ -299,8 +304,6 @@ export function usageCount(u: RoutineUsage | undefined): number {
   return u ? u.timelines.length + u.templates.length + u.show.length : 0;
 }
 
-export const PARAM_TYPES = ["color", "number", "rate", "look"] as const;
-
 export interface ParamDef {
   type: (typeof PARAM_TYPES)[number];
   default?: unknown;
@@ -576,7 +579,7 @@ export function templateFromTimeline(id: string, name: string, track: TrackDoc,
 }
 
 /** The engine's rule for an id, which is also the file's name (showfiles.ID_RE). */
-export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+export const ID_RE = new RegExp(`^${ID_PATTERN}$`);
 
 /** A new palette's colors, until they are changed. */
 export const NEW_COLORS: Readonly<Record<"primary" | "secondary" | "accent", string>> =
@@ -956,20 +959,6 @@ export function findItem(doc: { rows: Row[] }, id: string | null): { row: Row; i
 /** A clip's name on a lane: what it IS, in a word or two. */
 /** The end of an OSC address, which is the part that says what it does:
  *  `/composition/layers/1/clips/3/connect` is `clips/3/connect`. */
-/** The built-in visuals' scenes and what each reads -- a copy of
- *  `engine/showfiles.VISUAL_PARAMS`: "color", "file", "bool", a list of
- *  choices, or a [min, max] range. Every scene also takes `opacity`. */
-export const VISUAL_SCENES = ["wash", "bars", "tunnel", "particles", "strobe", "video"] as const;
-export type VisualRule = "color" | "file" | "bool" | string[] | [number, number];
-export const VISUAL_PARAMS: Record<string, Record<string, VisualRule>> = {
-  wash: { color: "color", pulse: [0, 1] },
-  bars: { color: "color", count: [1, 64], speed: [0, 8] },
-  tunnel: { color: "color", speed: [0, 8], depth: [2, 40] },
-  particles: { color: "color", count: [1, 2000], burst: [0, 1] },
-  strobe: { color: "color", rate: [0.25, 16] },
-  video: { file: "file", loop: "bool", rate: ["beat", "normal"], bpm: [20, 400] },
-};
-
 export function shortAddress(address: string): string {
   const parts = address.split("/").filter(Boolean);
   return parts.length > 3 ? parts.slice(-3).join("/") : address;
@@ -1301,7 +1290,7 @@ const choicesOf = (block: string, arg: string): string[] =>
 
 export const CHASE_ORDERS = choicesOf("chase", "order");
 export const EASINGS = choicesOf("aim_points", "easing");
-export const RIG_BOUND = ["look", "snapshot"];
+export const RIG_BOUND: readonly string[] = RIG_BOUND_BLOCKS;
 
 /** The blocks a lane of this slot can hold. */
 export function blocksFor(slot: string): string[] {

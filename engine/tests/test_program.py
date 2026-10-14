@@ -109,8 +109,12 @@ SOLID = lambda color, role="movers": routine(  # noqa: E731
 
 # -- 0. the parts agree -------------------------------------------------------
 print("\n0. the parts agree")
-check("blocks.py builds exactly the blocks the format allows",
-      blocksmod.BLOCKS == sf.BLOCK_NAMES)
+# The format takes its block list from blocks.py, so what is left to hold is
+# that blocks.py can build every block it lists.
+check("blocks.py has a builder for every block the format allows",
+      sf.BLOCK_NAMES is blocksmod.BLOCKS
+      and all(name in {**blocksmod._MOVES, **blocksmod._LAYERS, **blocksmod._ADAPTERS}
+              for name in sf.BLOCK_NAMES))
 folder = sf.load_folder(REPO / "shared" / "show-example")
 example_tl = tl.Timeline.from_doc(folder.timelines["synth-128"],
                                   sf.timeline_channels)

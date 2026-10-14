@@ -977,3 +977,7 @@ def _snapshot(args, fixtures, slot, env, rigging, label) -> Block:
 
 
 _ADAPTERS = {"look": _look, "snapshot": _snapshot}
+
+# The blocks that name something only one rig has -- a look, a preset -- so a
+# routine using one must say which rig it was made for (showfiles).
+RIG_BOUND = tuple(_ADAPTERS)

@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
-  AUDIO_BANDS, AUDIO_STEP, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES,
+  AUDIO_BANDS, AUDIO_STEP, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid,
   TrackAudio, blocksFor, curveValue, decodeWave, draftFromTemplate, freeName, hexColor, laneValue,
   newTimeline, phraseMatch, templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
 import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultAudio, defaultWave, gapStart,
+  PLACE_MIME, copyRange, cutRange, defaultAudio, defaultWave, gapStart,
   paramSpec, pasteBoard, routineLaneSpecs, snapDown, splitAt, swing, timelineLaneSpecs,
 } from "../designer/edit";
 import { WAVE_HEIGHT } from "../designer/lanes";
@@ -87,8 +87,6 @@ describe("designer model", () => {
     }
     expect(CHASE_ORDERS).toEqual(blockLists.orders);
     expect(EASINGS).toEqual(blockLists.easings);
-    expect(AUTOMATION_RANGES).toEqual(blockLists.automation);
-    expect([...PARAM_TYPES]).toEqual(blockLists.param_types);
   });
 
   it("takes every block's defaults, steps and ranges from the engine", () => {

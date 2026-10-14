@@ -6,6 +6,8 @@ import type { EngineState, FixtureState, LookInfo } from "../types";
 import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import { WAVE_SHAPES } from "../blocks";
+import { AUTOMATION_RANGES, CURVES, PALETTE_ROLES } from "../showfiles.generated";
+import type { HIT_KINDS } from "../showfiles.generated";
 import { SideSection } from "./detail";
 import {
   AUDIO_BANDS, AUDIO_STEP, BEATS_PER_BAR, BLOCK_ARGS, NEW_COLORS, VISUAL_PARAMS, VISUAL_SCENES,
@@ -33,11 +35,7 @@ import type {
 
 export type Snap = "beat" | "bar" | "phrase";
 
-export const AUTOMATION_RANGES: Record<string, [number, number]> = {
-  master: [0, 1], size: [0, 3], spread: [-1, 1],
-  "center.bearing": [-180, 180], "center.elevation": [-90, 90],
-  "rate.movement": [0, 8], "rate.color": [0, 8], "rate.level": [0, 8],
-};
+export { AUTOMATION_RANGES };
 
 // -- what an automation lane drives -----------------------------------------------
 
@@ -246,7 +244,7 @@ export function useLaneSpec(row: Row): LaneSpec {
 }
 
 export const FADES = [0, 1, 2, 4, 8, 16];
-export const ROLES = ["primary", "secondary", "accent"] as const;
+export const ROLES = PALETTE_ROLES;
 
 // -- history ------------------------------------------------------------------
 
@@ -885,8 +883,9 @@ export function gapStart(history: Pick<Edits, "snap" | "snapBeat">, items: Item[
   return Math.max(snapDown(history, beat), before);
 }
 
-/** The hits, as every place that adds one offers them. */
-export const HITS = [
+/** The hits, as every place that adds one offers them: one for each kind the
+ *  format has (HIT_KINDS). */
+export const HITS: readonly { hit: (typeof HIT_KINDS)[number]; label: string; text: string }[] = [
   { hit: "flash", label: "Flash", text: "a burst, decaying" },
   { hit: "strobe", label: "Strobe", text: "for a bar" },
   { hit: "blackout", label: "Blackout", text: "a beat of dark" },
@@ -1301,8 +1300,6 @@ export function defaultAudio(row: Row, spec: LaneSpec,
   return { band: bands.includes("low") ? "low" : bands[0] ?? "all",
            depth: Math.round(Math.max(-half, depth) * 100) / 100, release: 0.5 };
 }
-
-const CURVES = ["linear", "step", "ease"] as const;
 
 /** A color value as CSS, or null for one only the show can resolve -- a
  *  palette role, a color look -- which the lane names instead of painting. */
@@ -2447,7 +2444,7 @@ function OscCue({ item, set }: { item: Item; set: (fields: Partial<Item>) => voi
   );
 }
 
-const ROLE_COLORS = ["@primary", "@secondary", "@accent"];
+const ROLE_COLORS = PALETTE_ROLES.map((r) => `@${r}`);
 
 /** A visuals cue: its scene, and that scene's parameters. A video's file is
  *  picked from the show folder's media/. */
