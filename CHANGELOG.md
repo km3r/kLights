@@ -17,6 +17,16 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Fixed — a color pick or a phone joining could lose a broadcast
+
+The 10 Hz snapshot walks the hand colors and the presence list on its own
+thread. A color picked, or a browser connecting or leaving, while it did so
+changed that dict's size under it: the broadcast was lost with a
+"snapshot failed" notice. Both are now replaced whole on each change rather
+than edited, as the rest of what the snapshot reads already was, and
+`test_snapshot_threads` makes the threads collide on purpose -- it failed on
+the first snapshot before the fix.
+
 ### Added — Studio does the rest of what a show folder needs
 
 Five things about the show folder that still needed a text editor, the CLI or

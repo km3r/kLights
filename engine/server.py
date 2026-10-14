@@ -455,6 +455,9 @@ class ShowController:
         # Each entry is (command dict, sender, arrival time) -- or, from inside
         # the engine only, (callable, None, time): see `submit_call`.
         self.commands: "queue.Queue[tuple[Any, Optional[Client], float]]" = queue.Queue()
+        # Who is connected. Written by the HTTP threads as clients arrive and
+        # leave, through `add_client` / `remove_client` -- never edited in
+        # place, since the snapshot walks it on the broadcast thread.
         self.clients: dict[str, Client] = {}
         # How a reply reaches the one client that asked for it. Set by the
         # ShowServer that owns the sockets; None when there is no server (the
@@ -491,6 +494,12 @@ class ShowController:
         # without reaching for a clock or the module RNG. Published, so a
         # variation worth keeping can be written down.
         self.vary_seed = 0
+        # Hand color, white, level and flash, per target. Every one of these
+        # is published by the 10 Hz snapshot, which walks them on the
+        # broadcast thread while commands land on this one, so each is REBOUND
+        # by a write and never edited: a dict that changes size under a
+        # comprehension raises, and that broadcast is lost on every console.
+        # `test_snapshot_threads` makes the two threads collide on purpose.
         self.color_overrides: dict[str, tuple[float, float, float]] = {}
         # RGBW white, per target -- separate from color_overrides because not
         # every fixture has a white channel, and a target that mixes RGB-only
@@ -1108,6 +1117,16 @@ class ShowController:
     def note(self, text: str) -> None:
         self.notices.append(text)
         del self.notices[:-20]
+
+    def add_client(self, client: Client) -> None:
+        """A browser connected. Called on its HTTP thread: rebinds, so a
+        snapshot walking the presence list never sees it change size."""
+        self.clients = {**self.clients, client.id: client}
+
+    def remove_client(self, cid: str) -> None:
+        """A browser went away. Rebinds, as `add_client` does."""
+        if cid in self.clients:
+            self.clients = {k: c for k, c in self.clients.items() if k != cid}
 
     # -- commands ----------------------------------------------------------
 
@@ -1937,15 +1956,15 @@ class ShowController:
             raise ValueError(f"color must be [r, g, b], each 0 to 1, got {raw!r}")
         color = tuple(max(0.0, min(1.0, _finite(c, "a color channel"))) for c in raw)
         target = _target(m)
-        # `white_overrides` is REBOUND, never edited: the snapshot thread
-        # publishes it, and a dict changing size under that copy fails the
-        # broadcast. (`color_overrides` is not published.)
+        # Both REBOUND, never edited: the snapshot publishes them from the
+        # broadcast thread (see where they are declared).
+        colors = {k: v for k, v in self.color_overrides.items() if k != target}
         whites = {k: v for k, v in self.white_overrides.items() if k != target}
         if m.get("clear"):
-            self.color_overrides.pop(target, None)
+            self.color_overrides = colors
             self.white_overrides = whites
         else:
-            self.color_overrides[target] = color
+            self.color_overrides = {**colors, target: color}
             # "white" absent (the quick palette, most color picks) leaves any
             # white already overridden for this target alone -- a palette tap
             # is a statement about RGB only, not an instruction to forget the
@@ -1979,10 +1998,13 @@ class ShowController:
         trim rides on top of it, and the master still takes everything down.
         """
         target = _target(m)
+        # Rebound, never edited -- published, like the color overrides.
+        rest = {k: v for k, v in self.level_overrides.items() if k != target}
         if m.get("clear"):
-            self.level_overrides.pop(target, None)
+            self.level_overrides = rest
         else:
-            self.level_overrides[target] = max(0.0, min(1.0, _finite(m["value"], "level")))
+            self.level_overrides = {
+                **rest, target: max(0.0, min(1.0, _finite(m["value"], "level")))}
         self._rebuild_overrides()
 
     def _cmd_flash(self, m: dict, now: float) -> None:
@@ -4558,7 +4580,7 @@ class ShowServer:
 
     def drop(self, cid: str) -> None:
         conn = self.sockets.pop(cid, None)
-        self.controller.clients.pop(cid, None)
+        self.controller.remove_client(cid)
         # A designer that went away must not leave the rig on its transport.
         self.controller.submit_call(lambda: self.controller.preview_gone(cid))
         if conn is not None:
@@ -4574,7 +4596,7 @@ class ShowServer:
         lock = conn.lock
         client = Client(id=cid, connected_at=time.time(), tier=tier)
         self.sockets[cid] = conn
-        self.controller.clients[cid] = client
+        self.controller.add_client(client)
         try:
             with lock:
                 ws.send(json.dumps({"type": "welcome", "id": cid,
