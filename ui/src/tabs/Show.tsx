@@ -568,7 +568,7 @@ function Track({ state, send }: { state: EngineState; send: (c: Command) => void
               <button key={s.id ?? "off"} aria-pressed={active}
                       className={active ? "on" : waiting ? "pending" : ""}
                       title={waiting ? "Switches on the next downbeat" : undefined}
-                      onClick={() => send({ type: "template_set", id: s.id })}>
+                      onClick={() => send({ type: "template_set", set: s.id })}>
                 {s.name}{waiting && " · next downbeat"}
               </button>
             );

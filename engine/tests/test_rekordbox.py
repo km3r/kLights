@@ -648,7 +648,7 @@ try:
           r and r["ok"] is False and "needs configure" in r["error"], f"{r}")
     r = ask({"type": "rekordbox_prep", "ids": "all", "id": 2})
     check("ids are checked before anything runs",
-          r and r["ok"] is False and "list of rekordbox" in r["error"], f"{r}")
+          r and r["ok"] is False and "ids must be a list" in r["error"], f"{r}")
     r = ask({"type": "rekordbox_prep", "ids": [101, 104], "id": 3})
     check("prepped off the output thread, answered with the bridge's summary",
           r and r["ok"] and [x["status"] for x in r["data"]["results"]] == ["created"]

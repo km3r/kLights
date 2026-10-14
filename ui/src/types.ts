@@ -680,7 +680,7 @@ export type Command =
   | { type: "program_release"; slot?: Slot }
   | { type: "show_latency"; source: string; ms: number }
   /** Milestone 2: switch template set (null = off), on the next downbeat. */
-  | { type: "template_set"; id: string | null }
+  | { type: "template_set"; set: string | null }
   /** The designer (F19j). Drafts and saves are answered from the worker;
    *  send them with an id and wait for the reply. */
   | { type: "timeline_draft"; doc: unknown }

@@ -351,6 +351,35 @@ run and embedded in the printed URL.
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
 
+### Adding a command
+
+A command is declared on the method that applies it, with its tier and the
+shape of its arguments ([`commands.py`](../engine/commands.py)):
+
+```python
+@command("master", tier=OPERATE, args={
+    "value": S(N, required=True, fix="0 to 1, the show's overall level")})
+def _cmd_master(self, m: dict, now: float) -> None:
+    self.master = max(0.0, min(1.0, float(m["value"])))
+```
+
+`apply` dispatches only on these declarations, so there is no command without a
+tier, and no default tier for one that forgot. The arguments are checked before
+the handler runs with the same `Spec` the config files use: a missing key, text
+where a number belongs, NaN, `true` as a number, or a value outside `choices` is
+refused as `master: value is required but missing -- 0 to 1, ...`. Unknown keys
+pass, as in a file, and a null reads as absent. What a handler still checks is
+what only it can judge -- whether the look exists, whether the timeline is
+driving.
+
+[`test_commands.py`](../engine/tests/test_commands.py) holds three things in
+place: every `_cmd_` method is declared; a declaration names every argument its
+handler reads (the fuzz suite builds its messages from the declarations, so an
+undeclared one would go unfuzzed); and the `configure` tier is written out in
+the test, so moving a command between tiers is a change someone reviews. `type`
+and `id` belong to the wire and cannot be arguments: `id` is what a reply is
+tagged with.
+
 ## Configuration
 
 Every event and venue file is JSON, validated on load against a declared shape
@@ -505,7 +534,7 @@ operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
 With a template set active (show.json's `template_set`, or switched live with
-`template_set {id | null}`, operate tier) the chain is timeline, then template,
+`template_set {set | null}`, operate tier) the chain is timeline, then template,
 then the operator's show -- still only while a DJ track plays with Follow
 armed. A matched track's template follows its own phrases in track beats (bars
 on its grid if it has none); a guest's follows the deck's live phrase in clock

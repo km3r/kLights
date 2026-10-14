@@ -34,6 +34,7 @@ from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
 from engine import blocks as blocksmod
+from engine import commands as commandsmod
 from engine import params as parammod
 from engine import server as servermod
 from engine.server import ShowController, ShowServer
@@ -1338,6 +1339,8 @@ wait_reply(client, "s3")
 
 # A handler whose answer JSON cannot carry must not stop the frame it was sent
 # from -- the reply is built on the output thread.
+controller.COMMANDS = {**controller.COMMANDS, "test_unserialisable": commandsmod.Command(
+    "test_unserialisable", commandsmod.OPERATE, {}, "_cmd_test_unserialisable", "")}
 controller._cmd_test_unserialisable = lambda m, now: {"when": object()}
 client.send({"type": "test_unserialisable", "id": "u1"})
 reply = wait_reply(client, "u1")
@@ -1345,6 +1348,7 @@ check("a reply whose data cannot be sent says so, and the show runs on",
       reply["ok"] is True and "not serialisable" in reply.get("error", ""),
       f"{reply}")
 del controller._cmd_test_unserialisable
+del controller.COMMANDS                 # back to the class's table
 other.close()
 
 
@@ -2711,7 +2715,7 @@ try:
     # Refusals first.
     for bad, why in (({"track_id": "nope"}, "no prepped track"),
                      ({"track_id": "../x"}, "no prepped track"),
-                     ({}, "no prepped track")):
+                     ({}, "track_id is required")):
         try:
             sc.apply({"type": "track_link", **bad}, None, at(t))
             refused = False

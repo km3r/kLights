@@ -191,6 +191,15 @@ def _check_object(cfg: dict, schema: dict[str, Spec], prefix: str,
         _check(cfg[key], spec, where, out, drop)
 
 
+def problems(obj: dict, schema: dict[str, Spec]) -> list[str]:
+    """Everything wrong with one object against a schema, without raising and
+    without touching it -- for something that is not a file, such as a command
+    off the socket (`commands.Command.check`)."""
+    out: list[str] = []
+    _check_object(obj, schema, "", out)
+    return out
+
+
 def validate(cfg: Any, schema: dict[str, Spec], path: Path,
              current: int = CURRENT_VERSION, *, drop: bool = False) -> None:
     """Raise ConfigError listing everything wrong with `cfg`.

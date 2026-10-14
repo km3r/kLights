@@ -17,6 +17,29 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — every command declares who may send it and what it takes
+
+Each of the 88 console commands now states its tier and the shape of its
+arguments on the handler that applies it (`engine/commands.py`), and the
+engine dispatches only on those declarations. Before, the tiers were a table
+apart from the handlers, and a command missing from it was `operate`: a new
+command that should have needed `configure` was open to anyone with a phone.
+No command's tier changed.
+
+- **Arguments are refused before anything runs**, with one kind of message:
+  `master: value is required but missing -- 0 to 1, the show's overall level`.
+  Text where a number belongs (`"0.5"`), NaN, `true` as a number and a value
+  outside a command's choices are refused the same way for every command;
+  31 hand-written checks that did this one handler at a time are gone.
+- **`template_set` takes `set`**, not `id`. `id` is what a reply is tagged
+  with, so a client asking for a reply had its set replaced by its own reply
+  id. A console still on an older bundle sends `id` and is read as it meant.
+- `test_commands` holds the table complete (a handler reading an argument its
+  declaration leaves out fails), and writes out which commands are
+  `configure`, so a change of tier is a change someone reviews. The fuzz suite
+  now builds its messages from the declarations, which cover the arguments a
+  handler reads through a helper -- reading server.py's source missed those.
+
 ### Fixed — a color pick or a phone joining could lose a broadcast
 
 The 10 Hz snapshot walks the hand colors and the presence list on its own

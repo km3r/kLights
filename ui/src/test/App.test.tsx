@@ -1236,7 +1236,7 @@ describe("follow dj (track card)", () => {
     expect(within(sets).getByRole("button", { name: "Club" }))
       .toHaveAttribute("aria-pressed", "true");
     await user.click(within(sets).getByRole("button", { name: "Chill" }));
-    expect(socket.last()).toEqual({ type: "template_set", id: "chill" });
+    expect(socket.last()).toEqual({ type: "template_set", set: "chill" });
     act(() => socket.push(program((p) => {
       Object.assign(p, { armed: true, engaged: true, mode: "template", set: "club",
                          pending: "off", sets: [{ id: "club", name: "Club" }] });
@@ -1244,7 +1244,7 @@ describe("follow dj (track card)", () => {
     expect(within(screen.getByRole("group", { name: "template set" }))
       .getByRole("button", { name: /Off · next downbeat/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Off/ }));
-    expect(socket.last()).toEqual({ type: "template_set", id: null });
+    expect(socket.last()).toEqual({ type: "template_set", set: null });
   });
 
   it("lists what the other decks have loaded, and whether their shows are built", () => {

@@ -28,6 +28,11 @@ set process-wide timing, and one suite's leftovers must never decide another's
 result. The runner prints the tail of a failing suite, so a check's detail says
 by how much it failed, not just that it did.
 
+What the suites share is [`engine/tests/harness.py`](../engine/tests/harness.py):
+`check(label, ok, detail)` for each assertion, `finish(name)` as a suite's last
+line, and `isolated_event()` for a throwaway copy of an event and the venue
+library with the lookups pointed at it.
+
 The suites assert **failure paths**: a refused command, a corrupt config, a
 crash mid-write, a rig that cannot load. A test that only proves the happy path
 passes when the feature is deleted.

@@ -55,6 +55,8 @@ from . import collection as collectionmod
 from . import config as configmod
 from . import cues as cuesmod
 from . import clock as clockmod
+from . import commands as commandsmod
+from .commands import CONFIGURE, OPERATE, VIEW, command
 from . import geometry as geo
 from . import library as libmod
 from . import lookstore
@@ -141,43 +143,34 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
 # PANIC is deliberately `operate`, not `configure`. It is the one command whose
 # cost of being unavailable to the wrong person exceeds the cost of being
 # available to them -- everything it does is undone by pressing it again.
-TIERS = ("view", "operate", "configure")
+TIERS = commandsmod.TIERS
+
+# Each command states its tier where it is handled (`@command` on the
+# ShowController methods below), and a command that does not is not a
+# command. `configure` is anything that persists past tonight or steps around
+# a guard: jog, writing a calibration, the room, the patch, the show folder,
+# Studio's writes and its preview. GO is `operate`: driving the night is the
+# job, not configuration.
+
+# The shapes command arguments share. `Spec` is what config files are checked
+# with; engine/commands.py says how a command is.
+S, N = configmod.Spec, configmod.Number
+_NAME = S(str, required=True, non_empty=True)
+_LOOK_NAME = S(str, required=True, non_empty=True,
+               fix="a look's name, as the picker lists it")
+_SLOT = S(str, choices=statemod.SLOTS)
+_TARGET = S(str, fix='a group, a fixture name, or "all"')
+_TAGS = S(list, each=S(str))
+_XYZ = S(dict, of={axis: S(N, required=True) for axis in ("x", "y", "z")},
+         fix='{"x", "y", "z"} in millimetres, y up, from the front-left floor')
+_DOC = S(dict, required=True, fix="the whole document")
+_BASE_REV = S(str, required=True,
+              fix='the rev you opened, or "" for a new file -- so a save never '
+                  "overwrites a change it has not seen")
+AUTO_AXES = ("timing", "look_changes", "palette", "energy")
 
 # The longest title, artist or album a typed `track_link` takes.
 LINK_TEXT_MAX = 200
-
-TIER: dict[str, str] = {
-    "hello": "view",
-    # configure: persists past tonight, or steps around a safety guard
-    "jog": "configure", "jog_clear": "configure",
-    "capture": "configure", "capture_clear": "configure", "solve": "configure",
-    "drift": "configure", "venue": "configure", "venue_save": "configure",
-    "taper": "configure",
-    "patch_add": "configure", "patch_remove": "configure",
-    "patch_address": "configure", "patch_tags": "configure",
-    "patch_position": "configure", "patch_autopatch": "configure",
-    "patch_apply": "configure",
-    # the show folder: what is written there outlives the night
-    "track_link": "configure", "show_reload": "configure",
-    "show_latency": "configure", "rekordbox_prep": "configure",
-    "track_delete": "configure",
-    # the designer: writes the show folder, and can take the stage
-    "timeline_draft": "configure", "timeline_save": "configure",
-    "timeline_delete": "configure",
-    "routine_draft": "configure", "routine_save": "configure",
-    "routine_rename": "configure", "routine_delete": "configure",
-    "template_draft": "configure", "template_save": "configure",
-    "template_rename": "configure", "template_delete": "configure",
-    "show_save": "configure",
-    "palette_save": "configure", "palette_delete": "configure",
-    "palette_sync": "configure",
-    # the look library: parametric_looks.json, in the event folder
-    "look_save": "configure", "look_delete": "configure",
-    "look_hide": "configure", "looks_reload": "configure",
-    "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
-    # GO is `operate`: driving the night is the job, not configuration.
-    # everything not listed is `operate` -- see apply()
-}
 
 
 class Connection:
@@ -463,6 +456,9 @@ class ShowController:
         # ShowServer that owns the sockets; None when there is no server (the
         # tests that drive a controller directly), and then nothing is sent.
         self.reply_to: Optional[Callable[[str, dict], None]] = None
+        # The command `apply` is in the middle of, for a handler that answers
+        # later or needs its sender; None between commands.
+        self._call: Optional[commandsmod.Call] = None
         # Anything slow -- parsing a show file, matching a track, an fsync to a
         # shared folder -- runs here and posts its result back through
         # `submit_call`, so it lands on the output thread at a frame boundary.
@@ -880,8 +876,6 @@ class ShowController:
                     self.note(f"engine task failed: {exc}")
                 continue
             rid = reply_id(message)
-            # Who to answer, for a handler that answers later (`_deferred`).
-            self._replying = (client, rid, message.get("type", "?"))
             try:
                 result = self.apply(message, client, at)
             except Exception as exc:                        # noqa: BLE001
@@ -904,7 +898,11 @@ class ShowController:
         """A way to answer the command being applied, later -- for one whose
         work runs on the worker. Without an id (or a sender) a failure lands
         in the notices instead, as any other failure would."""
-        client, rid, kind = getattr(self, "_replying", (None, None, "?"))
+        call = self._call
+        if call is None:
+            raise RuntimeError("_deferred() outside a command: there is no "
+                               "one to answer")
+        client, rid, kind = call.client, call.reply_id, call.command.name
 
         def respond(ok: bool, data: Any = None, error: Optional[str] = None):
             if rid is not None and client is not None:
@@ -1130,6 +1128,11 @@ class ShowController:
 
     # -- commands ----------------------------------------------------------
 
+    def _sender(self) -> Optional[Client]:
+        """Who sent the command being applied; None for one from inside the
+        engine or from a test driving the controller directly."""
+        return self._call.client if self._call is not None else None
+
     def submit(self, message: dict, client: Optional[Client]) -> None:
         """Queue a command, stamped with the time it ARRIVED.
 
@@ -1159,21 +1162,29 @@ class ShowController:
 
     def apply(self, message: dict, client: Optional[Client],
               at: Optional[float] = None) -> Any:
+        """Apply one command, on the output thread. The one place a command
+        enters the show: the one lookup that says what it is, the one check
+        of who may send it, the one check of its arguments."""
         kind = message.get("type")
         now = self.ctx.time if at is None else at
-        handler = getattr(self, f"_cmd_{kind}", None)
-        if handler is None:
+        cmd = self.COMMANDS.get(kind) if isinstance(kind, str) else None
+        if cmd is None:
             raise ValueError(f"unknown command {kind!r}")
         # A client with no token may watch but not touch. Checked here rather
         # than at the socket, so there is exactly one place a command can enter
         # the show and exactly one place that decides whether it may.
-        need = TIER.get(kind, "operate")
-        if client is not None and not client.may(need):
+        if client is not None and not client.may(cmd.tier):
             raise ValueError(
-                f"{kind!r} needs {need} access and this client has "
+                f"{kind!r} needs {cmd.tier} access and this client has "
                 f"{client.tier}. Open the URL the engine printed, including "
                 f"its ?token=, or restart with --no-token")
-        result = handler(message, now)
+        cmd.check(message)
+        previous = self._call
+        self._call = commandsmod.Call(cmd, client, reply_id(message))
+        try:
+            result = getattr(self, cmd.method)(message, now)
+        finally:
+            self._call = previous
         self.rev += 1
         if client is not None and kind != "hello":
             client.last_action = describe(message)
@@ -1267,6 +1278,10 @@ class ShowController:
             # since by then the old one is gone.
             self.runner.set_show(show, fade_beats=fade_beats)
 
+    @command("select_look", tier=OPERATE, args={
+        "name": _LOOK_NAME,
+        "slot": _SLOT,
+        "hold": S(bool)})
     def _cmd_select_look(self, m: dict, now: float) -> None:
         """Select a look INTO ITS OWN SLOT, worked out from what it sets.
 
@@ -1299,10 +1314,11 @@ class ShowController:
         self._grab({slot, "color"} if entry.kind == "mixed" else {slot})
         self._recompose()
 
+    @command("clear_slot", tier=OPERATE, args={
+        "slot": S(str, required=True, choices=statemod.SLOTS),
+        "group": S(str)})
     def _cmd_clear_slot(self, m: dict, now: float) -> None:
         slot = m["slot"]
-        if slot not in ("movement", "color", "level"):
-            raise ValueError(f"unknown slot {slot!r}")
         self._clear_pad()
         if slot == "movement":
             raise ValueError(
@@ -1317,6 +1333,10 @@ class ShowController:
         self._grab({slot})
         self._recompose()
 
+    @command("look_params", tier=OPERATE, args={
+        "name": _LOOK_NAME,
+        "values": S(dict, fix="argument -> value, as the block declares them"),
+        "reset": S(bool)})
     def _cmd_look_params(self, m: dict, now: float) -> None:
         """Turn one routine's own knobs, live.
 
@@ -1492,6 +1512,15 @@ class ShowController:
                 f"{', '.join(p.name for p in declared)}")
         return found
 
+    @command("modulate", tier=OPERATE, args={
+        "param": S(str, required=True, non_empty=True),
+        "look": S(str),
+        "shape": S(str, choices=modmod.SHAPES),
+        "bars": S(N),
+        "low": S(N),
+        "high": S(N),
+        "phase": S(N),
+        "seed": S(N)})
     def _cmd_modulate(self, m: dict, now: float) -> None:
         """Bind a parameter to a musical waveform.
 
@@ -1509,6 +1538,10 @@ class ShowController:
         target = self.target_param(look, param)
         self.modulators.add(modmod.build(m, target, self.reach))
 
+    @command("modulate_clear", tier=OPERATE, args={
+        "param": S(str),
+        "look": S(str),
+        "all": S(bool)})
     def _cmd_modulate_clear(self, m: dict, now: float) -> None:
         """Stop one modulator, or all of them.
 
@@ -1522,7 +1555,9 @@ class ShowController:
             self.ctx.live_params = {}
             self.note("all modulation stopped")
             return
-        param = m["param"]
+        param = m.get("param")
+        if not param:
+            raise ValueError("modulate_clear needs param, or all: true")
         look = m.get("look")
         if not self.modulators.remove(look, param):
             raise KeyError(
@@ -1537,6 +1572,7 @@ class ShowController:
     # Three is enough for "a slow route, a fast wobble, and a drift".
     MAX_STACK = 3
 
+    @command("movement_add", tier=OPERATE, args={"name": _LOOK_NAME})
     def _cmd_movement_add(self, m: dict, now: float) -> None:
         """Stack another movement routine on top of the one that is up.
 
@@ -1573,17 +1609,24 @@ class ShowController:
         self.movement_extra = [*self.movement_extra, name]
         self._recompose()
 
+    @command("movement_remove", tier=OPERATE, args={"name": S(str), "all": S(bool)})
     def _cmd_movement_remove(self, m: dict, now: float) -> None:
         if m.get("all"):
             self.movement_extra = []
             self._recompose()
             return
-        name = m["name"]
+        name = m.get("name")
+        if not name:
+            raise ValueError("movement_remove needs name, or all: true")
         if name not in self.movement_extra:
             raise KeyError(f"{name!r} is not stacked")
         self.movement_extra = [n for n in self.movement_extra if n != name]
         self._recompose()
 
+    @command("vary", tier=OPERATE, args={
+        "name": _LOOK_NAME,
+        "amount": S(N, fix="0-1: how much of each range to move within"),
+        "seed": S(int)})
     def _cmd_vary(self, m: dict, now: float) -> None:
         """Nudge a routine's numbers around, reproducibly.
 
@@ -1614,7 +1657,7 @@ class ShowController:
         if not entry.is_parametric:
             raise ValueError(
                 f"{name!r} is a ported look -- it has no parameters to vary")
-        amount = max(0.0, min(1.0, _finite(m.get("amount", 0.3), "vary amount")))
+        amount = max(0.0, min(1.0, float(m.get("amount", 0.3))))
         if m.get("seed") is not None:
             seed = int(m["seed"])
         else:
@@ -1652,9 +1695,11 @@ class ShowController:
         self._recompose()
         self.note(f"varied {name!r} at {amount:.2f} from seed {seed}")
 
+    @command("release", tier=OPERATE)
     def _cmd_release(self, m: dict, now: float) -> None:
         self.director.release()
 
+    @command("next_look", tier=OPERATE)
     def _cmd_next_look(self, m: dict, now: float) -> None:
         self._clear_pad()
         self.setlist.advance()
@@ -1663,6 +1708,13 @@ class ShowController:
 
     # presets ---------------------------------------------------------------
 
+    @command("preset_save", tier=OPERATE, args={
+        "name": _NAME,
+        "bank": S(int),
+        "cell": S(int),
+        "tags": _TAGS,
+        "routine": S(dict, fix='{"id": "<routine id>", "variation"?, "params"?}, '
+                               'or null for a pad of looks only')})
     def _cmd_preset_save(self, m: dict, now: float) -> None:
         """Snapshot all three slots plus the tempo feel under one name.
 
@@ -1752,6 +1804,10 @@ class ShowController:
             out["params"] = dict(params)
         return out
 
+    @command("preset_move", tier=OPERATE, args={
+        "name": _NAME,
+        "bank": S(int),
+        "cell": S(int)})
     def _cmd_preset_move(self, m: dict, now: float) -> None:
         """Put a preset on a different pad, SWAPPING with whatever is there.
 
@@ -1783,6 +1839,7 @@ class ShowController:
         save_presets(self.event_dir, self.presets)
         self.note(f"moved preset {name!r} to {where[0]}.{where[1] + 1}")
 
+    @command("preset_tag", tier=OPERATE, args={"name": _NAME, "tags": _TAGS})
     def _cmd_preset_tag(self, m: dict, now: float) -> None:
         name = m["name"]
         preset = next((p for p in self.presets if p["name"] == name), None)
@@ -1793,6 +1850,7 @@ class ShowController:
                         for p in self.presets]
         save_presets(self.event_dir, self.presets)
 
+    @command("preset_apply", tier=OPERATE, args={"name": _NAME})
     def _cmd_preset_apply(self, m: dict, now: float) -> None:
         name = m["name"]
         preset = next((p for p in self.presets if p["name"] == name), None)
@@ -1868,6 +1926,7 @@ class ShowController:
         self._grab(statemod.SLOTS)
         self._recompose()
 
+    @command("preset_delete", tier=OPERATE, args={"name": _NAME})
     def _cmd_preset_delete(self, m: dict, now: float) -> None:
         name = m["name"]
         before = len(self.presets)
@@ -1879,67 +1938,83 @@ class ShowController:
 
     # levels ---------------------------------------------------------------
 
+    @command("master", tier=OPERATE, args={
+        "value": S(N, required=True, fix="0 to 1, the show's overall level")})
     def _cmd_master(self, m: dict, now: float) -> None:
-        value = _finite(m["value"], "master")
-        self.master = max(0.0, min(1.0, value))
+        self.master = max(0.0, min(1.0, float(m["value"])))
 
+    @command("blackout", tier=OPERATE, args={"on": S(bool)})
     def _cmd_blackout(self, m: dict, now: float) -> None:
         self.blackout = bool(m.get("on", not self.blackout))
 
+    @command("panic", tier=OPERATE)
     def _cmd_panic(self, m: dict, now: float) -> None:
         self.runner.panic()
         self.note("PANIC -- output forced to zero")
 
+    @command("clear_panic", tier=OPERATE)
     def _cmd_clear_panic(self, m: dict, now: float) -> None:
         self.runner.clear_panic()
         self.note("panic cleared")
 
     # clock ----------------------------------------------------------------
 
+    @command("tap", tier=OPERATE)
     def _cmd_tap(self, m: dict, now: float) -> None:
         self.clock.tap(now)
 
+    @command("bpm", tier=OPERATE, args={"value": S(N, required=True)})
     def _cmd_bpm(self, m: dict, now: float) -> None:
         self.clock.set_bpm(float(m["value"]), now)
 
+    @command("speed", tier=OPERATE, args={"value": S(N, required=True)})
     def _cmd_speed(self, m: dict, now: float) -> None:
         self.clock.set_speed(float(m["value"]), now)
 
+    @command("nudge_phase", tier=OPERATE, args={"beats": S(N, required=True)})
     def _cmd_nudge_phase(self, m: dict, now: float) -> None:
         self.clock.nudge_phase(float(m["beats"]), now)
 
+    @command("downbeat", tier=OPERATE)
     def _cmd_downbeat(self, m: dict, now: float) -> None:
         self.clock.set_downbeat(now)
 
     # auto -----------------------------------------------------------------
 
+    @command("auto", tier=OPERATE, args={
+        "axis": S(str, required=True, choices=AUTO_AXES),
+        "on": S(bool, required=True)})
     def _cmd_auto(self, m: dict, now: float) -> None:
-        axis = m["axis"]
-        if axis not in ("timing", "look_changes", "palette", "energy"):
-            raise ValueError(f"unknown auto axis {axis!r}")
-        setattr(self.director.config, axis, bool(m["on"]))
+        setattr(self.director.config, m["axis"], m["on"])
 
+    @command("auto_interval", tier=OPERATE, args={
+        "axis": S(str, required=True, choices=("looks", "palette")),
+        "value": S(N, required=True, fix="phrases between changes")})
     def _cmd_auto_interval(self, m: dict, now: float) -> None:
         field_name = {"looks": "change_every_phrases",
                       "palette": "palette_every_phrases"}[m["axis"]]
-        setattr(self.director.config, field_name,
-                max(0.0625, _finite(m["value"], "an auto interval")))
+        setattr(self.director.config, field_name, max(0.0625, float(m["value"])))
 
+    @command("energy", tier=OPERATE, args={
+        "source": S(str, choices=("manual", "phrase")),
+        "value": S(N)})
     def _cmd_energy(self, m: dict, now: float) -> None:
-        source = m.get("source", "manual")
-        if source == "manual":
-            level = _finite(m.get("value", 0.5), "energy")
+        if m.get("source", "manual") == "manual":
+            level = float(m.get("value", 0.5))
             if not isinstance(self.director.energy_source, autom.ManualEnergy):
                 self.director.energy_source = autom.ManualEnergy(level)
             else:
                 self.director.energy_source.value = level
-        elif source == "phrase":
-            self.director.energy_source = autom.PhraseEnergy()
         else:
-            raise ValueError(f"unknown energy source {source!r}")
+            self.director.energy_source = autom.PhraseEnergy()
 
     # color ---------------------------------------------------------------
 
+    @command("color", tier=OPERATE, args={
+        "target": _TARGET,
+        "color": S(list, required=True, each=S(N), fix="[r, g, b], each 0 to 1"),
+        "white": S(N),
+        "clear": S(bool)})
     def _cmd_color(self, m: dict, now: float) -> None:
         """Per-fixture picker and global quick palette, in one command.
 
@@ -1952,9 +2027,9 @@ class ShowController:
         # Exactly three. An empty list was stored as an empty color, render()
         # then raised on every frame, and the runner held the last good frame:
         # the rig frozen on one command until someone cleared that color.
-        if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+        if len(raw) != 3:
             raise ValueError(f"color must be [r, g, b], each 0 to 1, got {raw!r}")
-        color = tuple(max(0.0, min(1.0, _finite(c, "a color channel"))) for c in raw)
+        color = tuple(max(0.0, min(1.0, float(c))) for c in raw)
         target = _target(m)
         # Both REBOUND, never edited: the snapshot publishes them from the
         # broadcast thread (see where they are declared).
@@ -1976,13 +2051,18 @@ class ShowController:
                     self.white_overrides = whites
                 else:
                     self.white_overrides = {
-                        **whites, target: max(0.0, min(1.0, _finite(white, "white")))}
+                        **whites, target: max(0.0, min(1.0, float(white)))}
         self._rebuild_overrides()
 
+    @command("palette_select", tier=OPERATE, args={"index": S(int, required=True)})
     def _cmd_palette_select(self, m: dict, now: float) -> None:
         self.palette.index = int(m["index"]) % len(self.palette.colors)
         self.director.rebuild()
 
+    @command("level", tier=OPERATE, args={
+        "target": _TARGET,
+        "value": S(N, fix="0-1, a multiplier on the look"),
+        "clear": S(bool)})
     def _cmd_level(self, m: dict, now: float) -> None:
         """Dim one fixture, one group, or everything, by hand.
 
@@ -2002,11 +2082,14 @@ class ShowController:
         rest = {k: v for k, v in self.level_overrides.items() if k != target}
         if m.get("clear"):
             self.level_overrides = rest
+        elif m.get("value") is None:
+            raise ValueError("level needs value, or clear: true")
         else:
             self.level_overrides = {
-                **rest, target: max(0.0, min(1.0, _finite(m["value"], "level")))}
+                **rest, target: max(0.0, min(1.0, float(m["value"])))}
         self._rebuild_overrides()
 
+    @command("flash", tier=OPERATE, args={"target": _TARGET, "on": S(bool)})
     def _cmd_flash(self, m: dict, now: float) -> None:
         """Momentary bump on a group, a fixture, or everything.
 
@@ -2031,6 +2114,7 @@ class ShowController:
             self.flashing = self.flashing - {target}
         self._rebuild_overrides()
 
+    @command("flash_clear", tier=OPERATE)
     def _cmd_flash_clear(self, m: dict, now: float) -> None:
         """Release every bump.
 
@@ -2064,6 +2148,10 @@ class ShowController:
 
     # calibration ----------------------------------------------------------
 
+    @command("jog", tier=CONFIGURE, args={
+        "fixture": _NAME,
+        "pan": S(N, required=True),
+        "tilt": S(N, required=True)})
     def _cmd_jog(self, m: dict, now: float) -> None:
         """Drive one head at literal DMX so it can be aimed by eye.
 
@@ -2076,10 +2164,17 @@ class ShowController:
         self._rebuild_overrides()
         self.note(f"JOG {name}: safety taper bypassed -- empty room only")
 
+    @command("jog_clear", tier=CONFIGURE, args={"fixture": S(str)})
     def _cmd_jog_clear(self, m: dict, now: float) -> None:
         self.jog.pop(m["fixture"], None) if "fixture" in m else self.jog.clear()
         self._rebuild_overrides()
 
+    @command("capture", tier=CONFIGURE, args={
+        "fixture": _NAME,
+        "target": S(list, required=True, each=S(N), fix="[x, y, z] in millimetres"),
+        "label": S(str),
+        "pan": S(N),
+        "tilt": S(N)})
     def _cmd_capture(self, m: dict, now: float) -> None:
         """Record where a head is pointing right now, against a known target.
 
@@ -2106,9 +2201,11 @@ class ShowController:
         self.note(f"captured {name} at {m.get('label', 'a target')} "
                   f"({len(self.captures[name])} so far)")
 
+    @command("capture_clear", tier=CONFIGURE, args={"fixture": S(str)})
     def _cmd_capture_clear(self, m: dict, now: float) -> None:
         self.captures.pop(m["fixture"], None) if "fixture" in m else self.captures.clear()
 
+    @command("solve", tier=CONFIGURE, args={"write": S(bool)})
     def _cmd_solve(self, m: dict, now: float) -> None:
         """Solve from the captures taken so far, optionally writing them."""
         if self.rig.geometry is None:
@@ -2169,6 +2266,8 @@ class ShowController:
         self.note(f"wrote {path.name} -- not live yet. Apply it to load it into "
                   f"the running show")
 
+    @command("drift", tier=CONFIGURE, args={
+        "readings": S(list, each=S(list, each=S(N)), fix="one [pan, tilt] per head, in rig order")})
     def _cmd_drift(self, m: dict, now: float) -> None:
         """Compare fresh ball readings against the stored calibration.
 
@@ -2216,6 +2315,10 @@ class ShowController:
 
     # venue and taper policy ------------------------------------------------
 
+    @command("venue", tier=CONFIGURE, args={
+        "crowd": S(dict, of={k: S(N) for k in ("min_x", "max_x", "min_z", "max_z",
+                                               "head_band_min", "head_band_max")}),
+        "canopy": S(dict, of={"enabled": S(bool), "height": S(N), "radius": S(N)})})
     def _cmd_venue(self, m: dict, now: float) -> None:
         """Edit the crowd zone and canopy live, from the phone at load-in.
 
@@ -2267,6 +2370,11 @@ class ShowController:
         self.ctx.venue = self.rig.venue
         self.note("venue updated (not yet saved)")
 
+    @command("taper", tier=CONFIGURE, args={
+        "crowd_level": S(N),
+        "margin_deg": S(N),
+        "slew_per_second": S(N),
+        "enabled": S(bool)})
     def _cmd_taper(self, m: dict, now: float) -> None:
         """The taper policy: how far a beam over the crowd is dimmed, and how
         smoothly. `crowd_level` 0 restores a hard guard at the cost of every
@@ -2276,12 +2384,9 @@ class ShowController:
         # always something venue_save can write and the next start can load.
         self.ctx.taper = replace(
             cfg,
-            crowd_level=max(0.0, min(1.0, _finite(m.get("crowd_level", cfg.crowd_level),
-                                                  "crowd_level"))),
-            margin_deg=max(0.0, min(90.0, _finite(m.get("margin_deg", cfg.margin_deg),
-                                                  "margin_deg"))),
-            slew_per_second=max(0.0, _finite(m.get("slew_per_second", cfg.slew_per_second),
-                                             "slew_per_second")),
+            crowd_level=max(0.0, min(1.0, float(m.get("crowd_level", cfg.crowd_level)))),
+            margin_deg=max(0.0, min(90.0, float(m.get("margin_deg", cfg.margin_deg)))),
+            slew_per_second=max(0.0, float(m.get("slew_per_second", cfg.slew_per_second))),
             enabled=bool(m.get("enabled", cfg.enabled)))
         if not self.ctx.taper.enabled:
             self.note("SAFETY TAPER DISABLED -- beams are no longer dimmed over the crowd")
@@ -2377,6 +2482,7 @@ class ShowController:
                   f"{cue.name}" + (f" (fade {cue.fade:g} beats)"
                                    if cue.fade else " (cut)"))
 
+    @command("go", tier=OPERATE)
     def _cmd_go(self, m: dict, now: float) -> None:
         if self.cues is None:
             raise ValueError("this event has no cues.json")
@@ -2386,6 +2492,7 @@ class ShowController:
             return
         self.take_cue(cue)
 
+    @command("cue_back", tier=OPERATE)
     def _cmd_cue_back(self, m: dict, now: float) -> None:
         if self.cues is None:
             raise ValueError("this event has no cues.json")
@@ -2395,18 +2502,25 @@ class ShowController:
             return
         self.take_cue(cue)
 
+    @command("cue", tier=OPERATE, args={"index": S(int, required=True)})
     def _cmd_cue(self, m: dict, now: float) -> None:
         """Jump straight to a cue. Fades like any other take."""
         if self.cues is None:
             raise ValueError("this event has no cues.json")
         self.take_cue(self.cues.jump(int(m["index"]), self.ctx.beat))
 
+    @command("cue_reset", tier=OPERATE)
     def _cmd_cue_reset(self, m: dict, now: float) -> None:
         if self.cues is None:
             raise ValueError("this event has no cues.json")
         self.cues.reset()
         self.note("cue list rewound -- nothing taken")
 
+    @command("macro", tier=OPERATE, args={
+        "size": S(N),
+        "spread": S(N),
+        "center": S(list, each=S(N), fix="[bearing, elevation] in degrees"),
+        "reset": S(bool)})
     def _cmd_macro(self, m: dict, now: float) -> None:
         """Live shape controls over whatever movement look is up.
 
@@ -2444,6 +2558,7 @@ class ShowController:
             self.ctx.move_center = (parammod.CENTER_BEARING.default,
                                     parammod.CENTER_ELEV.default)
 
+    @command("sync", tier=OPERATE, args={k: S() for k in syncmod.FIELDS})
     def _cmd_sync(self, m: dict, now: float) -> None:
         """A position from something that already knows -- a CDJ, rekordbox.
 
@@ -2526,6 +2641,7 @@ class ShowController:
     def sync_status(self) -> dict:
         return _sync_status(self)
 
+    @command("sync_off", tier=OPERATE)
     def _cmd_sync_off(self, m: dict, now: float) -> None:
         """Take the clock back by hand.
 
@@ -2545,54 +2661,60 @@ class ShowController:
         if self.player is not None:
             self.player.grab(slots)
 
+    @command("follow", tier=OPERATE, args={"armed": S(bool, required=True)})
     def _cmd_follow(self, m: dict, now: float) -> None:
         """Arm or disarm Follow DJ: whether the timeline may drive the rig."""
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        armed = m.get("armed")
-        if not isinstance(armed, bool):
-            raise ValueError("follow needs armed: true or false")
+        armed = m["armed"]
         self.player.arm(armed)
         self.note("Follow DJ ARMED -- a matched track's timeline drives the rig"
                   if armed else "Follow DJ SAFE -- the DJ feed drives nothing")
 
+    @command("program_grab", tier=OPERATE, args={
+        "slot": S(str, required=True, choices=statemod.SLOTS)})
     def _cmd_program_grab(self, m: dict, now: float) -> None:
         """Take a lane from the timeline without changing what is on it."""
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        slot = m.get("slot")
-        if slot not in statemod.SLOTS:
-            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
+        slot = m["slot"]
         if not self.player.engaged:
             raise ValueError("the timeline is not driving; there is nothing "
                              "to take a lane from")
         self.player.grab({slot})
 
+    @command("template_set", tier=OPERATE, args={
+        "set": S(str, fix="a set's id, or null for none")})
     def _cmd_template_set(self, m: dict, now: float) -> dict:
         """Switch template set -- a vibe, live. It takes over on the next
         downbeat (decided with the user), crossfading over its own transition;
-        `null` turns templates off. Not saved: show.json's `template_set` is
-        what the next start begins with."""
+        `set: null` turns templates off. Not saved: show.json's `template_set`
+        is what the next start begins with."""
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        set_id = m.get("id")
+        # The set used to travel as `id` -- the field a reply is tagged with,
+        # so a client asking for a reply had its set replaced by its own reply
+        # id. A console on a bundle from before the rename still sends `id`
+        # and no `set`, and is read as it meant.
+        set_id = m["set"] if "set" in m else m.get("id")
         if set_id is not None and not isinstance(set_id, str):
-            raise ValueError("template_set needs id: a set's id, or null for none")
+            raise ValueError("template_set needs set: a set's id, or null for none")
         self.player.select_set(set_id)
         names = dict(self.player.sets)
         self.note(f"template set -> {names.get(set_id, set_id) if set_id else 'off'}"
                   f" on the next downbeat")
         return {"pending": set_id}
 
+    @command("program_release", tier=OPERATE, args={"slot": _SLOT})
     def _cmd_program_release(self, m: dict, now: float) -> None:
         """Give a lane (or every lane) back to the timeline."""
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        slot = m.get("slot")
-        if slot is not None and slot not in statemod.SLOTS:
-            raise ValueError(f"slot must be one of {', '.join(statemod.SLOTS)}")
-        self.player.release(slot)
+        self.player.release(m.get("slot"))
 
+    @command("show_latency", tier=CONFIGURE, args={
+        "source": S(str, required=True, non_empty=True, fix='e.g. "rkbx"'),
+        "ms": S(N, required=True, min=-2000, max=2000)})
     def _cmd_show_latency(self, m: dict, now: float) -> dict:
         """How far ahead of a source's position the lights run, in ms. Applied
         at once and saved to the show folder's show.json (decided with the
@@ -2600,13 +2722,9 @@ class ShowController:
         library = self.show_library
         if library is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        source = m.get("source")
-        if not isinstance(source, str) or not source or len(source) > 32:
-            raise ValueError("show_latency needs a source, e.g. \"rkbx\"")
-        ms = m.get("ms")
-        if isinstance(ms, bool) or not isinstance(ms, (int, float)) \
-                or not -2000 <= ms <= 2000:
-            raise ValueError("ms must be a number from -2000 to 2000")
+        source, ms = m["source"], m["ms"]
+        if len(source) > 32:
+            raise ValueError("show_latency's source is a short name, e.g. \"rkbx\"")
         self.transport.latency_s = {**self.transport.latency_s,
                                     source: float(ms) / 1000.0}
         root = library.root
@@ -2626,14 +2744,13 @@ class ShowController:
             raise ValueError("no show folder -- start the engine with --show-dir")
         return self.show_library
 
+    @command("timeline_draft", tier=CONFIGURE, args={"doc": _DOC})
     def _cmd_timeline_draft(self, m: dict, now: float) -> object:
         """Check an unsaved timeline: the format's rules, then a compile
         against THIS rig. Answers with errors, warnings and problems. If the
         designer is driving the rig on that track, the draft is what plays."""
         library = self._need_library()
-        doc = m.get("doc")
-        if not isinstance(doc, dict):
-            raise ValueError("timeline_draft needs the document as doc")
+        doc = m["doc"]
         routines = library.folder.routines
         rigging = self._rigging()
         root, track = library.root, library.folder.tracks.get(doc.get("track"))
@@ -2663,13 +2780,7 @@ class ShowController:
 
     def _save(self, kind: str, m: dict) -> object:
         library = self._need_library()
-        doc = m.get("doc")
-        if not isinstance(doc, dict):
-            raise ValueError(f"{kind}_save needs the document as doc")
-        if not isinstance(m.get("base_rev"), str):
-            raise ValueError('base_rev is required: the rev you opened, or "" '
-                             "for a new file -- so a save never overwrites a "
-                             "change it has not seen")
+        doc = m["doc"]
         path = showfiles.path_for(library.root, kind,
                                   showfiles.doc_ident(kind, doc) or "")
         base = m["base_rev"]
@@ -2685,22 +2796,22 @@ class ShowController:
                                lambda: showfiles.write_doc(path, doc, kind, base),
                                then)
 
+    @command("timeline_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_timeline_save(self, m: dict, now: float) -> object:
         """Write a timeline, refused if the file changed since `base_rev`.
         It applies to the track from its next play, like any folder change."""
         return self._save("timeline", m)
 
+    @command("timeline_delete", tier=CONFIGURE, args={
+        "track": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_timeline_delete(self, m: dict, now: float) -> object:
         """Delete a track's timeline and keep the track: the template set (or
         the operator's show) lights it again. Refused if the file changed
         since `base_rev`. Like a save, it applies from the track's next play:
         one playing now keeps the timeline it started with."""
         library = self._need_library()
-        track, base = m.get("track"), m.get("base_rev")
-        if not isinstance(track, str):
-            raise ValueError("timeline_delete needs track")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        track, base = m["track"], m["base_rev"]
         root = library.root
 
         def work():
@@ -2735,6 +2846,11 @@ class ShowController:
                     f"Release the rig first")
         return None
 
+    @command("track_delete", tier=CONFIGURE, args={
+        "track": _NAME,
+        "base_rev": _BASE_REV,
+        "timeline_rev": S(str, fix="its timeline's rev as you read it, or \"\" "
+                                   "if it had none")})
     def _cmd_track_delete(self, m: dict, now: float) -> object:
         """Take a track out of the show: tracks/<id>.json and, with it, that
         track's timeline and waveform (showfiles.remove_track -- the track's
@@ -2743,15 +2859,8 @@ class ShowController:
         track is on the rig: the deck's, or Studio's preview. Answered with
         the files removed; the audio it names is never touched."""
         library = self._need_library()
-        track, base = m.get("track"), m.get("base_rev")
-        timeline_rev = m.get("timeline_rev", "")
-        if not isinstance(track, str):
-            raise ValueError("track_delete needs track")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
-        if not isinstance(timeline_rev, str):
-            raise ValueError('timeline_rev is the rev of its timeline as you '
-                             'read it, or "" if it had none')
+        track, base = m["track"], m["base_rev"]
+        timeline_rev = m.get("timeline_rev") or ""
         busy = self._on_stage(track, now)
         if busy is not None:
             raise ValueError(f"{track!r} cannot be removed while it is "
@@ -2767,14 +2876,13 @@ class ShowController:
             f"removing track {track}",
             lambda: showfiles.remove_track(root, track, base, timeline_rev), then)
 
+    @command("routine_draft", tier=CONFIGURE, args={"doc": _DOC})
     def _cmd_routine_draft(self, m: dict, now: float) -> object:
         """Check an unsaved routine: the format's rules, then the routine bound
         to THIS rig as it is -- and in each of its variations -- for what will
         not work here (a role no fixture carries, a block with nothing to aim)."""
         self._need_library()
-        doc = m.get("doc")
-        if not isinstance(doc, dict):
-            raise ValueError("routine_draft needs the document as doc")
+        doc = m["doc"]
         rigging = self._rigging()
 
         def work():
@@ -2799,6 +2907,7 @@ class ShowController:
 
         return self._on_worker("checking a routine draft", work, then)
 
+    @command("routine_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_routine_save(self, m: dict, now: float) -> object:
         return self._save("routine", m)
 
@@ -2812,17 +2921,17 @@ class ShowController:
         would leave it naming one that is gone. Runs on the worker."""
         return showfiles.load_folder(root, previous=folder)
 
+    @command("routine_rename", tier=CONFIGURE, args={
+        "routine": _NAME,
+        "to": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_routine_rename(self, m: dict, now: float) -> object:
         """Rename a routine and every reference to it (showfiles.rename_routine:
         new file first, references next, old file last). Answered with the
         files written; the folder reloads after."""
         library = self._need_library()
         # `routine`, not `id`: `id` is the request's own, for its reply.
-        old, new, base = m.get("routine"), m.get("to"), m.get("base_rev")
-        if not isinstance(old, str) or not isinstance(new, str):
-            raise ValueError("routine_rename needs routine and to")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        old, new, base = m["routine"], m["to"], m["base_rev"]
         root, folder = library.root, library.folder
 
         def then(written, respond):
@@ -2835,14 +2944,13 @@ class ShowController:
             lambda: showfiles.rename_routine(root, self._on_disk(root, folder), old, new, base),
             then)
 
+    @command("template_draft", tier=CONFIGURE, args={"doc": _DOC})
     def _cmd_template_draft(self, m: dict, now: float) -> object:
         """Check an unsaved template set: the format's rules, then what it asks
         of the routines (one that is not there, a variation or parameter it
         lacks) -- the same checks a folder load makes, before the save."""
         library = self._need_library()
-        doc = m.get("doc")
-        if not isinstance(doc, dict):
-            raise ValueError("template_draft needs the document as doc")
+        doc = m["doc"]
         folder = library.folder
 
         def work():
@@ -2854,18 +2962,19 @@ class ShowController:
         return self._on_worker("checking a template set", work,
                                lambda value, respond: respond(True, value))
 
+    @command("template_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_template_save(self, m: dict, now: float) -> object:
         """Write a template set, refused if the file changed since `base_rev`."""
         return self._save("template_set", m)
 
+    @command("template_rename", tier=CONFIGURE, args={
+        "template": _NAME,
+        "to": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_template_rename(self, m: dict, now: float) -> object:
         """Rename a template set, and show.json with it if it is the show's."""
         library = self._need_library()
-        old, new, base = m.get("template"), m.get("to"), m.get("base_rev")
-        if not isinstance(old, str) or not isinstance(new, str):
-            raise ValueError("template_rename needs template and to")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        old, new, base = m["template"], m["to"], m["base_rev"]
         root, folder = library.root, library.folder
 
         def then(written, respond):
@@ -2878,14 +2987,13 @@ class ShowController:
                                    root, self._on_disk(root, folder), old, new, base),
                                then)
 
+    @command("template_delete", tier=CONFIGURE, args={
+        "template": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_template_delete(self, m: dict, now: float) -> object:
         """Delete a template set that is not the show's."""
         library = self._need_library()
-        tid, base = m.get("template"), m.get("base_rev")
-        if not isinstance(tid, str):
-            raise ValueError("template_delete needs template")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        tid, base = m["template"], m["base_rev"]
         root, folder = library.root, library.folder
 
         def work():
@@ -2903,31 +3011,29 @@ class ShowController:
 
         return self._on_worker(f"deleting template set {tid}", work, then)
 
+    @command("palette_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_palette_save(self, m: dict, now: float) -> object:
         """Write a library palette. Its copies in timelines and sets are not
         touched: `palette_sync` does that, on request. Its name must be its
         own: copies are found by name, so two library palettes of one name
         would both claim the same copies."""
         library = self._need_library()
-        doc = m.get("doc")
-        if isinstance(doc, dict):
-            pid, name = doc.get("id"), doc.get("name")
-            for other_id, other in library.folder.palettes.items():
-                if other_id != pid and other.get("name") == name:
-                    raise ValueError(f"the library already has a palette called {name!r} "
-                                     f"(palettes/{other_id}.json): copies are found by "
-                                     f"name, so each needs its own")
+        pid, name = m["doc"].get("id"), m["doc"].get("name")
+        for other_id, other in library.folder.palettes.items():
+            if other_id != pid and other.get("name") == name:
+                raise ValueError(f"the library already has a palette called {name!r} "
+                                 f"(palettes/{other_id}.json): copies are found by "
+                                 f"name, so each needs its own")
         return self._save("palette", m)
 
+    @command("palette_delete", tier=CONFIGURE, args={
+        "palette": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_palette_delete(self, m: dict, now: float) -> object:
         """Delete a library palette. Its copies stay where they are -- each
         timeline and set keeps its own -- so nothing goes dark."""
         library = self._need_library()
-        pid, base = m.get("palette"), m.get("base_rev")
-        if not isinstance(pid, str):
-            raise ValueError("palette_delete needs palette")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        pid, base = m["palette"], m["base_rev"]
         root = library.root
 
         def work():
@@ -2941,16 +3047,17 @@ class ShowController:
 
         return self._on_worker(f"deleting palette {pid}", work, then)
 
+    @command("palette_sync", tier=CONFIGURE, args={
+        "palette": _NAME,
+        "files": S(list, required=True, non_empty=True, each=S(str),
+                   fix="the timelines and sets to update, as /api/palettes lists them")})
     def _cmd_palette_sync(self, m: dict, now: float) -> object:
         """Give copies of a library palette its colors: `files` are the
         timelines and sets to update, as /api/palettes lists them."""
         library = self._need_library()
-        pid, files = m.get("palette"), m.get("files")
-        if not isinstance(pid, str):
-            raise ValueError("palette_sync needs palette")
-        if not isinstance(files, list) or not all(isinstance(f, str) for f in files) \
-                or not files or len(files) > 1000:
-            raise ValueError("palette_sync needs files: the timelines and sets to update")
+        pid, files = m["palette"], m["files"]
+        if len(files) > 1000:
+            raise ValueError("palette_sync takes at most 1000 files at a time")
         root, folder = library.root, library.folder
 
         def then(written, respond):
@@ -2961,6 +3068,7 @@ class ShowController:
         return self._on_worker(f"updating copies of palette {pid}",
                                lambda: showfiles.sync_palette(root, folder, pid, files), then)
 
+    @command("show_save", tier=CONFIGURE, args={"doc": _DOC, "base_rev": _BASE_REV})
     def _cmd_show_save(self, m: dict, now: float) -> object:
         """Write show.json: the show's template set, the pause policy and idle
         routine, Follow's start. Refused if it changed since `base_rev` -- the
@@ -2968,16 +3076,15 @@ class ShowController:
         as any change to it does."""
         return self._save("show", m)
 
+    @command("routine_delete", tier=CONFIGURE, args={
+        "routine": _NAME,
+        "base_rev": _BASE_REV})
     def _cmd_routine_delete(self, m: dict, now: float) -> object:
         """Delete a routine nothing uses. One that a timeline, a template set
         or show.json still names is refused with where, so a delete can never
         leave a show playing a routine that is gone."""
         library = self._need_library()
-        rid, base = m.get("routine"), m.get("base_rev")
-        if not isinstance(rid, str):
-            raise ValueError("routine_delete needs routine")
-        if not isinstance(base, str):
-            raise ValueError("base_rev is required: the rev you opened")
+        rid, base = m["routine"], m["base_rev"]
         root, folder = library.root, library.folder
 
         def work():
@@ -3123,6 +3230,11 @@ class ShowController:
         root, folder = library.root, library.folder
         return lambda: self._on_disk(root, folder)
 
+    @command("look_save", tier=CONFIGURE, args={
+        "look": S(dict, required=True),
+        "was": S(str, fix="the look's name as you opened it"),
+        "hides": S(dict, of={"look": S(str, required=True), "note": S(str)}),
+        "base_rev": _BASE_REV})
     def _cmd_look_save(self, m: dict, now: float) -> object:
         """Write one block look: a new one (`was` absent), or a change to the
         one called `was` -- which renames it when `look.name` differs.
@@ -3135,15 +3247,12 @@ class ShowController:
         names until every reference has moved, so a rename stopped part-way
         leaves nothing naming a look that is gone.
         """
-        look = lookstore.clean_look(m.get("look"))
-        was, base = m.get("was"), m.get("base_rev")
-        if was is not None and not isinstance(was, str):
-            raise ValueError("was is the look's name as you opened it")
+        look = lookstore.clean_look(m["look"])
+        was, base = m.get("was"), m["base_rev"]
         # A NEW look may hide another as it is made -- a stored look remade
         # as a block look -- in the same write (`lookstore.save`).
         hides = m.get("hides")
-        if hides is not None and (was is not None or not isinstance(hides, dict)
-                                  or not isinstance(hides.get("look"), str)):
+        if hides is not None and was is not None:
             raise ValueError("hides is {look, note?}, on a new look only: the "
                              "look the new one takes the place of on the picker")
         name = look["name"]
@@ -3168,14 +3277,13 @@ class ShowController:
                                data={"name": name, "warnings": warnings,
                                      "written": []})
 
+    @command("look_delete", tier=CONFIGURE, args={"look": _NAME, "base_rev": _BASE_REV})
     def _cmd_look_delete(self, m: dict, now: float) -> object:
         """Delete a block look nothing names. One a cue, a preset, a routine or
         a timeline still names is refused with where, so a delete can never
         leave a show asking for a look that is gone. A stored look cannot be
         deleted at all -- looks.json is generated -- only hidden."""
-        name, base = m.get("look"), m.get("base_rev")
-        if not isinstance(name, str):
-            raise ValueError("look_delete needs look")
+        name, base = m["look"], m["base_rev"]
         event_dir, entries = self.event_dir, self.library
         cues = tuple(self.cues.cues) if self.cues else ()
         presets, folder_now = self.presets, self._show_folder_now()
@@ -3191,19 +3299,19 @@ class ShowController:
         return self._look_edit(f"deleting look {name}", work,
                                f"deleted look {name!r}", data={"deleted": name})
 
+    @command("look_hide", tier=CONFIGURE, args={
+        "look": _NAME,
+        "hidden": S(bool),
+        "replaced_by": S(str, fix="a look's name"),
+        "note": S(str),
+        "base_rev": _BASE_REV})
     def _cmd_look_hide(self, m: dict, now: float) -> object:
         """Hide a look from the picker (`hidden`, true unless said), or show it
         again. Any look, stored or block: hidden is not removed -- it still
         plays for a cue or a routine that names it, and auto mode skips it."""
-        name, base = m.get("look"), m.get("base_rev")
-        if not isinstance(name, str):
-            raise ValueError("look_hide needs look")
-        hidden = m.get("hidden", True)
-        if not isinstance(hidden, bool):
-            raise ValueError("hidden is true or false")
+        name, base = m["look"], m["base_rev"]
+        hidden = m.get("hidden") is not False
         replaced_by, note = m.get("replaced_by"), m.get("note")
-        if replaced_by is not None and not isinstance(replaced_by, str):
-            raise ValueError("replaced_by is a look's name")
         event_dir, known = self.event_dir, tuple(self.by_name)
         return self._look_edit(
             f"{'hiding' if hidden else 'showing'} look {name}",
@@ -3213,6 +3321,7 @@ class ShowController:
              else f"look {name!r} is back in the picker"),
             data={"name": name, "hidden": hidden})
 
+    @command("looks_reload", tier=CONFIGURE)
     def _cmd_looks_reload(self, m: dict, now: float) -> object:
         """Read both look files again now -- after an edit by hand, or by MCP.
         A file that does not load is said, and the library that is running
@@ -3325,21 +3434,22 @@ class ShowController:
                           f"with the next preset that is saved")
         return moved
 
+    @command("preview_arm", tier=CONFIGURE, args={"track_id": _NAME, "force": S(bool)})
     def _cmd_preview_arm(self, m: dict, now: float) -> dict:
         """The designer takes the stage: its transport drives the rig through
         this track's timeline. Refused while a DJ is playing, unless forced."""
         library = self._need_library()
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        track_id = m.get("track_id")
-        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+        track_id = m["track_id"]
+        if track_id not in library.folder.tracks:
             raise ValueError(f"there is no prepped track {track_id!r}")
         sample = self.transport.sample(now)
         if (not m.get("force") and sample.source not in (None, "designer")
                 and sample.state in (transportmod.PLAYING, transportmod.STALLED)):
             raise ValueError(f"a DJ is playing ({sample.source}); preview with "
                              f"force to take the rig from them anyway")
-        client, _, _ = getattr(self, "_replying", (None, None, None))
+        client = self._sender()
         cid = client.id if client is not None else "local"
         name = client.name if client is not None else "designer"
         preview = playbackmod.Preview(cid, name, track_id,
@@ -3366,12 +3476,15 @@ class ShowController:
         if preview is None:
             raise ValueError("the designer is not driving the rig; arm a "
                              "preview first")
-        client, _, _ = getattr(self, "_replying", (None, None, None))
+        client = self._sender()
         if client is not None and client.id != preview.client:
             raise ValueError(f"{preview.name} is driving the rig, not this "
                              f"console")
         return preview
 
+    @command("preview_transport", tier=CONFIGURE, args={
+        "time_s": S(N, required=True, min=-60, max=14400, fix="seconds into the track"),
+        "playing": S(bool)})
     def _cmd_preview_transport(self, m: dict, now: float) -> None:
         """Where the designer's audio is, and whether it is playing."""
         if self.player is None or self.player.preview is None:
@@ -3381,12 +3494,9 @@ class ShowController:
             # bury the one that said why; the release already said it.
             return
         self._owned_preview()
-        time_s = m.get("time_s")
-        if isinstance(time_s, bool) or not isinstance(time_s, (int, float)) \
-                or not -60.0 <= time_s <= 14400.0:
-            raise ValueError("time_s must be seconds into the track")
-        self.player.preview_position(float(time_s), bool(m.get("playing")), now)
+        self.player.preview_position(float(m["time_s"]), bool(m.get("playing")), now)
 
+    @command("preview_release", tier=CONFIGURE)
     def _cmd_preview_release(self, m: dict, now: float) -> None:
         preview = self.player.preview if self.player is not None else None
         if preview is None:
@@ -3402,6 +3512,11 @@ class ShowController:
             self.note(f"the designer ({preview.name}) disconnected; the rig is "
                       f"back to the show")
 
+    @command("track_link", tier=CONFIGURE, args={
+        "track_id": _NAME,
+        "title": S(str),
+        "artist": S(str),
+        "album": S(str)})
     def _cmd_track_link(self, m: dict, now: float) -> dict:
         """This playing track IS that prepped track -- for a guest's copy the
         matcher could not place (a different tag, a different export).
@@ -3420,8 +3535,8 @@ class ShowController:
         if library is None:
             raise ValueError("no show folder -- start the engine with "
                              "--show-dir to link tracks")
-        track_id = m.get("track_id")
-        if not isinstance(track_id, str) or track_id not in library.folder.tracks:
+        track_id = m["track_id"]
+        if track_id not in library.folder.tracks:
             raise ValueError(f"there is no prepped track {track_id!r} in "
                              f"{library.root}/tracks")
         if any(k in m for k in ("title", "artist", "album")):
@@ -3464,10 +3579,9 @@ class ShowController:
         album). Dictionary lookups on the loaded folder."""
         parts = []
         for name in ("title", "artist", "album"):
-            value = m.get(name, "")
-            if not isinstance(value, str) or len(value) > LINK_TEXT_MAX:
-                raise ValueError(f"{name} must be text, at most "
-                                 f"{LINK_TEXT_MAX} characters")
+            value = m.get(name) or ""
+            if len(value) > LINK_TEXT_MAX:
+                raise ValueError(f"{name} must be at most {LINK_TEXT_MAX} characters")
             parts.append(value.strip())
         title, artist, album = parts
         alias = tracksmod.alias_for(title, artist, album)
@@ -3487,6 +3601,9 @@ class ShowController:
                     f"only one track")
         return title, artist, album
 
+    @command("rekordbox_prep", tier=CONFIGURE, args={
+        "ids": S(list, required=True, non_empty=True, each=S(int, min=0),
+                 fix="rekordbox track ids")})
     def _cmd_rekordbox_prep(self, m: dict, now: float) -> object:
         """Prep tracks from the DJ's rekordbox collection into the show folder:
         what the designer's collection browser picked, by rekordbox id.
@@ -3529,12 +3646,17 @@ class ShowController:
                          daemon=True).start()
         return DEFERRED
 
+    @command("show_reload", tier=CONFIGURE)
     def _cmd_show_reload(self, m: dict, now: float) -> None:
         """Read the show folder again now, rather than at the next poll."""
         if self.show_dir is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
         self.reload_library()
 
+    @command("rate", tier=OPERATE, args={
+        "slot": _SLOT,
+        "value": S(N),
+        "reset": S(bool)})
     def _cmd_rate(self, m: dict, now: float) -> None:
         """How fast one slot's chase runs, relative to everything else.
 
@@ -3554,8 +3676,9 @@ class ShowController:
             self.director.phases.reset()
             self.note("slot rates back to 1x")
             return
-        slot = str(m["slot"])
-        self.director.phases.set_rate(slot, float(m["value"]))
+        if m.get("slot") is None or m.get("value") is None:
+            raise ValueError("rate needs slot and value, or reset: true")
+        self.director.phases.set_rate(m["slot"], float(m["value"]))
 
     def apply_rates(self, rates: dict) -> None:
         """Restore stored slot rates, skipping any the engine does not know.
@@ -3570,6 +3693,7 @@ class ShowController:
             except (ValueError, TypeError) as exc:
                 self.note(f"rate {slot!r}: {exc}")
 
+    @command("patch_apply", tier=CONFIGURE)
     def _cmd_patch_apply(self, m: dict, now: float) -> None:
         self.reload_rig()
 
@@ -3702,6 +3826,17 @@ class ShowController:
         self.note("dropped settings for targets the rig no longer has: "
                   + ", ".join(dropped[:6]))
 
+    @command("patch_add", tier=CONFIGURE, args={
+        "name": _NAME,
+        "manufacturer": _NAME,
+        "model": _NAME,
+        "mode": _NAME,
+        "address": S(int),
+        "universe": S(int),
+        "tags": _TAGS,
+        "position": _XYZ,
+        "beam_deg": S(N),
+        "notes": S(str)})
     def _cmd_patch_add(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.add_fixture(
             cfg, name=m["name"], manufacturer=m["manufacturer"],
@@ -3710,29 +3845,42 @@ class ShowController:
             position=m.get("position"), beam_deg=m.get("beam_deg"),
             notes=m.get("notes", ""), lib=lib))
 
+    @command("patch_remove", tier=CONFIGURE, args={"name": _NAME})
     def _cmd_patch_remove(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.remove_fixture(
             cfg, m["name"], lib=lib))
 
+    @command("patch_address", tier=CONFIGURE, args={
+        "name": _NAME,
+        "address": S(int, required=True),
+        "universe": S(int)})
     def _cmd_patch_address(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.set_address(
             cfg, m["name"], int(m["address"]), m.get("universe"), lib=lib))
 
+    @command("patch_tags", tier=CONFIGURE, args={"name": _NAME, "tags": _TAGS})
     def _cmd_patch_tags(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.set_tags(
             cfg, m["name"], list(m.get("tags", [])), lib=lib))
 
+    @command("patch_position", tier=CONFIGURE, args={
+        "name": _NAME,
+        "position": S(dict, required=True, of=_XYZ.of)})
     def _cmd_patch_position(self, m: dict, now: float) -> None:
         pos = m["position"]
         self._patch(lambda cfg, lib: patchmod.set_position(
             cfg, m["name"], float(pos["x"]), float(pos["y"]), float(pos["z"]),
             lib=lib))
 
+    @command("patch_autopatch", tier=CONFIGURE, args={
+        "start": S(int),
+        "universe": S(int)})
     def _cmd_patch_autopatch(self, m: dict, now: float) -> None:
         self._patch(lambda cfg, lib: patchmod.autopatch(
             cfg, universe=m.get("universe"), start=int(m.get("start", 1)),
             lib=lib))
 
+    @command("venue_save", tier=CONFIGURE)
     def _cmd_venue_save(self, m: dict, now: float) -> None:
         """Write the live venue back to venue.json, preserving its comments.
 
@@ -3778,6 +3926,7 @@ class ShowController:
         configmod.write_json_atomic(path, cfg)
         self.note(f"saved {path.name}")
 
+    @command("hello", tier=VIEW, args={"name": S(str)})
     def _cmd_hello(self, m: dict, now: float) -> None:
         pass                          # name is set by the connection handler
 
@@ -4022,6 +4171,12 @@ class ShowController:
             "last_error": self.runner.last_error,
             "drift": self.last_drift,
         }
+
+
+# Every command, by name: what `apply` dispatches on. Built from the
+# `@command` declarations, so a handler and its tier and arguments are one
+# thing.
+ShowController.COMMANDS = commandsmod.collect(ShowController)
 
 
 # The same failure of the other outputs is said again after this long.
@@ -4291,8 +4446,9 @@ def strict_json(text: str) -> Any:
 
     Python's json.loads also accepts NaN, Infinity and -Infinity, and reads
     1e999 as infinity; JSON.stringify never writes any of them. Refused here,
-    once, for every command -- the per-handler `_finite` checks still catch a
-    number sent as a string ("nan"), which float() reads all the same.
+    once, for every command -- and a command's declared arguments (`@command`)
+    refuse a number sent as a string ("nan"), which float() reads all the same,
+    and a non-finite one that arrives some other way than off the socket.
     """
     return json.loads(text, parse_constant=_no_constant, parse_float=_finite_literal)
 
@@ -4316,15 +4472,13 @@ def _finite(value: Any, what: str, minimum: Optional[float] = None) -> float:
 def _target(m: dict) -> str:
     """The `target` of a color, level or flash: a tag, a fixture name, or "all".
 
-    Checked because it becomes a dict key and a set member that the snapshot
-    publishes. A number there broke the flash set's sorted() on every
-    broadcast, and a NaN or infinite one is a key JSON cannot carry -- either
-    way every console stopped updating until someone cleared it.
+    Declared text (`_TARGET`) because it becomes a dict key and a set member
+    that the snapshot publishes. A number there broke the flash set's sorted()
+    on every broadcast, and a NaN or infinite one is a key JSON cannot carry --
+    either way every console stopped updating until someone cleared it.
     """
-    target = m.get("target", "all")
-    if not isinstance(target, str):
-        raise ValueError(f"target must be a group or fixture name, got {target!r}")
-    return target
+    target = m.get("target")
+    return "all" if target is None else target
 
 
 def reply_id(message: dict) -> Optional[Any]:
