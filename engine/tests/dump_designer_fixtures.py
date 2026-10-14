@@ -18,6 +18,9 @@ than against numbers and names written by hand:
                                      rekordbox's formats, laid on a grid and
                                      shaped: the levels a lane following a
                                      band of the audio is drawn from
+    __fixtures__/outputs.json        where OSC, MIDI and timecode go when
+                                     show.json does not say, and timecode's
+                                     frame rates: what Show settings offers
 
 And one file that is not a fixture but the UI's own source of truth for what a
 block takes, read by the routine editor AND the console's Tweak card:
@@ -46,6 +49,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine import bands, blocks, library, modulate, params, showfiles, tracktime, waves  # noqa: E402
+from engine import outputs as outputsmod  # noqa: E402
 
 FIXTURES = REPO / "ui" / "src" / "designer" / "__fixtures__"
 UI_SRC = REPO / "ui" / "src"
@@ -158,7 +162,8 @@ def render() -> dict[str, str]:
     """Each fixture's file name and exact contents."""
     return {name: json.dumps(data, indent=1) + "\n" for name, data in (
         ("grid-vectors.json", grid_vectors()), ("blocks.json", block_lists()),
-        ("wave-vectors.json", wave_vectors()))} | {
+        ("wave-vectors.json", wave_vectors()),
+        ("outputs.json", outputsmod.defaults()))} | {
         # One line a case: a thousand numbers down the page help nobody.
         "audio-vectors.json": json.dumps(audio_vectors(), separators=(",", ":"))
         .replace('{"name"', '\n{"name"') + "\n"}
