@@ -134,6 +134,7 @@ class Core:
             self.watcher.start(self.show_library.signature
                                if self.show_library is not None else None)
         self.look_watcher.start()
+        self.cue_watcher.start()
         self.runner.start()
 
     def stop(self) -> None:
@@ -142,6 +143,7 @@ class Core:
         if self.watcher is not None:
             self.watcher.stop()
         self.look_watcher.stop()
+        self.cue_watcher.stop()
         self.runner.stop()
         self.worker.stop()
         self.output.close()

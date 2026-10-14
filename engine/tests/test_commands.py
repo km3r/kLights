@@ -127,6 +127,7 @@ CONFIGURE = {
     "template_draft", "template_save", "template_rename", "template_delete",
     "show_save", "palette_save", "palette_delete", "palette_sync",
     "look_save", "look_delete", "look_hide", "looks_reload",
+    "cue_save", "cue_copy", "cue_move", "cue_delete", "cues_name", "cues_reload",
     "preview_arm", "preview_transport", "preview_release",
 }
 VIEW = {"hello"}

@@ -659,7 +659,8 @@ class ShowServer:
                                          self.headers.get("Range"), token_ok,
                                          server.audio_roots,
                                          server.controller.collection, url.query,
-                                         looks=server.controller.looks_public)
+                                         looks=server.controller.looks_public,
+                                         cues=server.controller.cues_public)
                 except OSError as exc:
                     resp = apimod.Response(500, json.dumps(
                         {"error": str(exc)}).encode("utf-8"))

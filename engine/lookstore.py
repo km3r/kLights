@@ -735,7 +735,14 @@ def _renamed_file(path: Path, key: str, old: str, new: str
     if not changed:
         return None, 0, None
     out = {**doc, key: after}
-    return out, changed, relaid(original, doc, out)
+    text = relaid(original, doc, out)
+    if text is None and key == "cues":
+        # A longer name can push a cue's slot onto lines of its own, which
+        # `relaid` cannot follow. The cue list's own editor knows the layout
+        # it writes, so the file stays as Studio's Cues page left it.
+        from . import cuestore              # it imports this module
+        text = cuestore.render_like(original, doc, out)
+    return out, changed, text
 
 
 _NAMING_ARGS = ("color", "colors", "look")

@@ -118,12 +118,25 @@ class Looks:
 
         def job():
             info = work()
-            return self._read_looks(event_dir), info if isinstance(info, dict) else {}
+            # A rename rewrote cues.json where a cue named the look. Read it
+            # here, with the library, so the list that is running and the rev
+            # the Cues page must quote are the file's again at once -- rather
+            # than a save there being refused until the watcher catches up.
+            cues = None
+            if renamed is not None:
+                try:
+                    cues = self._read_cues(event_dir)
+                except Exception:                           # noqa: BLE001
+                    pass            # it does not load: the watcher says why
+            return (self._read_looks(event_dir),
+                    info if isinstance(info, dict) else {}, cues)
 
         def then(result, respond):
-            loaded, info = result
+            loaded, info, cues = result
             try:
                 moved = self._install_looks(*loaded, renamed=renamed)
+                if cues is not None:
+                    self._install_cues(*cues)
             except Exception as exc:                        # noqa: BLE001
                 # The file is written and the library is not installed. Said
                 # to whoever asked, rather than leaving them to time out; the

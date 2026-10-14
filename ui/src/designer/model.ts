@@ -230,6 +230,64 @@ export interface LooksList {
   looks: LookSummary[];
 }
 
+// -- the cue list (engine/cuestore.py, over /api/cues) ------------------------------
+
+/** What a cue restores of the live shape, when it says. */
+export interface CueMacro {
+  size?: number;
+  spread?: number;
+  /** [bearing, elevation] in degrees. */
+  center?: [number, number];
+  reset?: boolean;
+}
+
+/** One cue, as cues.json holds it: a look for each fixture group in each of
+ *  the three slots, a fade and a hold in BEATS (fade 0 is a cut, hold 0 waits
+ *  for GO), and what else it restores. A null leaves that alone when the cue
+ *  is taken -- whatever is dialled in stays. */
+export interface CueDoc {
+  name: string;
+  movement: Record<string, string>;
+  color: Record<string, string>;
+  level: Record<string, string>;
+  fade: number;
+  hold: number;
+  speed: number | null;
+  master: number | null;
+  macro: CueMacro | null;
+  /** Per-slot chase rates, 0-8. */
+  rates: Partial<Record<Slot, number>> | null;
+  /** Tuning by look name. Not null, it is exhaustive over the looks the cue
+   *  names: one it does not list goes back to its authored values. */
+  params: Record<string, Record<string, unknown>> | null;
+  notes: string;
+}
+
+/** A cue on the list, with what the engine says is wrong with it. Said, never
+ *  refused: a cue that names a look the library lacks still loads, and skips it. */
+export interface CueSummary extends CueDoc {
+  /** The looks it names that the library does not have. */
+  missing: string[];
+  flags: string[];
+}
+
+export interface CuesList {
+  event: string;
+  /** The file every edit is written to. */
+  file: string;
+  /** What a save must quote; null when the event has no cue list yet. */
+  rev: string | null;
+  /** The file on disk is not the list that is running (see LooksList.stale). */
+  stale: boolean;
+  problem?: string | null;
+  /** The list's own name: the title of the console's GO card. */
+  name: string | null;
+  /** The rig's fixture groups: the lanes a slot holds a look for. */
+  groups: string[];
+  /** In running order. */
+  cues: CueSummary[];
+}
+
 /** How many things play a look by name. Being hidden in its favour is not one. */
 export function lookUses(u: LookUsage): number {
   return u.cues.length + u.presets.length + u.routines.length + u.timelines.length
