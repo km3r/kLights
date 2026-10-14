@@ -498,6 +498,7 @@ def local_override(raw) -> tuple[Optional[dict], Optional[str]]:
 
 
 MIDI_PORT = 9123            # where the MIDI sidecar listens, by default
+TIMECODE_FPS = 30           # the frame rate timecode runs at, unless told
 
 # name -> (label, default host, default port); timecode also takes an fps.
 _PLACES = {
@@ -505,6 +506,17 @@ _PLACES = {
     "midi": ("MIDI", "127.0.0.1", MIDI_PORT),
     "timecode": ("timecode", "255.255.255.255", artnetmod.ARTNET_PORT),
 }
+
+
+def defaults() -> dict:
+    """Where each output goes when nothing says -- its host, and its port
+    (None: it has none and must be given) -- and the frame rates timecode
+    can run at. For the page that edits show.json's `outputs`: its own table
+    is held to this by a fixture (dump_designer_fixtures.py)."""
+    return {"places": {name: {"host": host, "port": port}
+                       for name, (_, host, port) in _PLACES.items()},
+            "timecode_fps": sorted(artnetmod.TIMECODE_TYPES),
+            "timecode_fps_default": TIMECODE_FPS}
 
 
 class Outputs:
@@ -517,6 +529,10 @@ class Outputs:
         self.timecode: Optional[TimecodeOut] = None
         self.config: dict = {}
         self.problems: list[str] = []
+        # The outputs this machine's klights.local.json sets, which win here
+        # over show.json's: said, so a saved address that "does nothing" on
+        # one machine is not a mystery.
+        self.local: list[str] = []
 
     @property
     def outs(self) -> tuple:
@@ -532,6 +548,8 @@ class Outputs:
         line saying what changed, or None if nothing did. An output whose
         place is unchanged keeps its state -- the cues it knows are on."""
         config = merge(show, local)
+        self.local = sorted(name for name, conf in (local or {}).items()
+                            if isinstance(conf, Mapping) and name in _PLACES)
         if config == self.config:
             return None
         self.config = config
@@ -547,7 +565,7 @@ class Outputs:
         if conf is not None:
             host = conf.get("host", host_default)
             port = conf.get("port", port_default)
-            fps = conf.get("fps", 30)
+            fps = conf.get("fps", TIMECODE_FPS)
             problem = showfiles.host_problem(host)
             if problem is None and not (isinstance(port, int)
                                         and not isinstance(port, bool)
@@ -596,7 +614,7 @@ class Outputs:
         return {name: (out.public() if out is not None else None)
                 for name, out in (("osc", self.osc), ("midi", self.midi),
                                   ("timecode", self.timecode))} | {
-            "problems": list(self.problems)}
+            "problems": list(self.problems), "local": list(self.local)}
 
     def close(self) -> None:
         for out in self.outs:

@@ -416,7 +416,11 @@ layers: signature, rekordbox id (only with an agreeing title), manual alias,
 title + artist + album, title + artist, the last three only where durations
 agree. More than one track at the deciding layer is ambiguous and nothing
 plays. `track_link {track_id}` records the playing description as an alias on
-a prepped track. The deck's own beats are checked against the prepped grid --
+a prepped track (and the deck's signature, when a CDJ sends one). With a
+`title` (and `artist`, `album`) it records that description instead, for
+linking a guest's copy before the night with nothing playing; typed, it is
+refused if the track already answers to it or it already leads to another
+track. The deck's own beats are checked against the prepped grid --
 rkbx_link's bar phase to a tenth of a beat, beat-link's count to a whole beat --
 and two seconds of disagreement shows as `track.grid_warning`.
 
@@ -541,7 +545,9 @@ once in forward play. A timeline with rows for an output owns it for its
 track; the template's rows for it are silent. **OSC** (`OscOut`) sends `on`,
 `off`, and `while` (on change, at most 30 a second) to an IPv4 address from
 show.json's `outputs.osc {host, port}`, overridden per machine by
-klights.local.json's `outputs`; arguments may be `$beat`, `$bar`, `$phase`,
+klights.local.json's `outputs` (output by output, key by key; the snapshot's
+`outputs.local` names the ones this machine sets, so Studio can say a saved
+address is overruled here); arguments may be `$beat`, `$bar`, `$phase`,
 `$progress` and `$value`. A failed send is counted in the snapshot's
 `outputs`, never raised. Follow gates it: disarmed, nothing is cued. The
 outputs run inside the runner's `choose_show` hook, but fenced off from the
@@ -600,7 +606,12 @@ A jump cuts.
 **Studio's side of the wire** ([`api.py`](../engine/api.py)): large reads
 are `GET /api/*` -- `show`, `tracks[/<id>]`, `timelines/<id>`,
 `routines[/<id>]`, `templates[/<id>]`, `waveforms/<id>` -- each document with
-the rev a save must quote, never in the 10 Hz snapshot. `GET /api/audio/<id>`
+the rev a save must quote, never in the 10 Hz snapshot. `/api/show` also
+carries everything wrong in the folder: `errors` and `warnings` as the load
+wrote them, `failed` (files running on their last good version), and
+`problems`, the same as rows of `{level, file, text}` so a page can name the
+file and link to it. A `/api/tracks` line carries its timeline's `rev` and the
+track's `aliases`. `GET /api/audio/<id>`
 streams the track's file with Range (206), needs the token, and only ever serves
 a file the track names (or the same name under this machine's `audio_roots` in
 `klights.local.json`) with an audio extension. `GET /api/rekordbox` is the DJ's
@@ -640,10 +651,27 @@ sidebar (`#studio/rekordbox[/<playlist>]`) and the routines at
 `folder` on the routine) and show where they are used (`used_by` on each
 `/api/routines` line, from `showfiles.routine_usage`); `routine_rename` renames
 one and every reference to it -- new file first, old file last -- and
-`routine_delete` refuses while anything still names it. `#studio/templates`
+`routine_delete` refuses while anything still names it. A track's details
+panel has what can be done to its files, each after saying what it will do:
+`track_link` with a typed description (or the playing deck's);
+`timeline_delete {track, base_rev}`, which deletes its timeline and keeps the
+track, from its next play like a save; and `track_delete {track, base_rev,
+timeline_rev}`, which takes the track out of the show -- its timeline and
+waveform, then `tracks/<id>.json` last (`showfiles.remove_track`), so a
+removal stopped part way still has the track and can be finished. It quotes
+the track's rev and its timeline's ("" for none), so a timeline saved a moment
+ago on another machine is never deleted unseen, and is refused while the track
+is on the rig: on the deck, or under Studio's preview. Neither touches the
+audio, nor the one `.bak` a save leaves beside a file. Over the track list,
+and on `#studio/show`, is what `/api/show` says is wrong in the folder, each
+problem with its file and a link to the page that edits it. `#studio/templates`
 edits template sets (`template_draft` / `template_save` / `template_rename` /
 `template_delete`; the show's own set cannot be deleted), and `#studio/show`
-edits show.json (`show_save`, quoting `show_rev` from `/api/show`).
+edits show.json (`show_save`, quoting `show_rev` from `/api/show`), its
+`outputs` included: OSC, the MIDI sidecar and timecode, each on or off with
+its host, port (and fps). The page says that a machine's klights.local.json
+overrides them, names the outputs this engine's does, and shows where the
+engine is sending now.
 `#studio/palettes` is the show's palette library, `palettes/<id>.json`: a
 library palette is a source that timelines and sets copy by name, never a
 link, so compiling is unchanged; `palette_sync` brings chosen copies up to the

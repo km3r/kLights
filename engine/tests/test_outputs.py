@@ -715,6 +715,10 @@ try:
     check("the snapshot says where OSC goes and how it is doing",
           sc.snapshot()["outputs"]["osc"]["target"] == f"127.0.0.1:{ear.port}"
           and sc.snapshot()["outputs"]["osc"]["sent"] > 0)
+    check("and which outputs this machine's klights.local.json sets, over "
+          "whatever show.json says",
+          sc.snapshot()["outputs"]["local"] == ["osc", "timecode"],
+          f"{sc.snapshot()['outputs'].get('local')}")
 
     t += 2.5
     blt(t, "Unknown Guest Tune", "Guest DJ", "", 240.0, rid=2)

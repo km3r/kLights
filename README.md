@@ -283,7 +283,9 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    palette library and show.json's settings each have a page. So do this
    rig's **looks**: make one from a block, change its arguments, hide the ones
    you no longer want on the picker -- saved to the event, and on the console
-   at once. Undo, Ctrl+S,
+   at once. A track's panel links it to another description (a guest's copy
+   with different tags), deletes its timeline, or removes it from the show,
+   and the track list says what is wrong in the folder, file by file. Undo, Ctrl+S,
    Space and Delete work as you would expect. Every save quotes the version it
    opened, so a change made elsewhere is never overwritten.
 3. **Play.** The engine matches the DJ's track against the folder (CDJs via
@@ -308,8 +310,9 @@ python -m engine.server --show-dir shows/ --sync-port 9000
    small sidecar ([`bridges/midi/`](bridges/midi/README.md)) that owns the
    MIDI port. For a VJ app with its own timeline per track,
    `outputs.timecode` sends Art-Net timecode at the DJ's position in the
-   track -- it jumps with loops and hot cues. Say where under `outputs` in
-   show.json, or per machine in `klights.local.json`. Or skip the VJ app: open
+   track -- it jumps with loops and hot cues. Say where on Studio's Show
+   settings page (`outputs` in show.json), or per machine in
+   `klights.local.json`, which wins on that machine. Or skip the VJ app: open
    **`#visuals`** on a laptop on the projector for kLights' own scenes (wash,
    bars, tunnel, particles, strobe, and videos from the folder's `media/`),
    cued by a Visuals lane or by the template set phrase by phrase.

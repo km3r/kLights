@@ -17,6 +17,45 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Added — Studio does the rest of what a show folder needs
+
+Five things about the show folder that still needed a text editor, the CLI or
+MCP.
+
+- **Remove a track from the show.** A track's details panel has a **⋯** menu.
+  *Remove from the show…* lists exactly the files that will go --
+  `tracks/<id>.json`, and with it that track's timeline and waveform -- and
+  says the audio and rekordbox are not touched. The new `track_delete {track,
+  base_rev, timeline_rev}` (configure) quotes the track's rev and its
+  timeline's, so a timeline saved a moment ago on another machine is never
+  deleted unseen. It removes the track's own file last, so a removal stopped
+  part way can be finished by removing it again. It is refused while the track
+  is on the rig: on the deck, or under Studio's preview.
+- **Delete a track's timeline and keep the track.** *Delete its timeline…*,
+  with a confirm that says what lights the track afterwards. New
+  `timeline_delete {track, base_rev}` (configure). Like a save it applies from
+  the track's next play, so a track playing now keeps the timeline it started
+  with.
+- **Link a track to another description.** *Link another description…* takes
+  a title, artist and album as a guest's copy is tagged, or links what a deck
+  is playing now. `track_link` already did the second; it now also takes a
+  typed `title`, `artist` and `album`, and refuses one the track already
+  answers to or that already leads to another track. The panel lists what a
+  track **also answers to**.
+- **Where OSC, MIDI and timecode go**, on the Show settings page: each output
+  on or off, with its host and port (and timecode's frame rate), saved in
+  show.json's `outputs` with the existing `show_save`. The page says that a
+  machine's `klights.local.json` overrides these, names the outputs this
+  engine's own file sets, and shows where the engine is sending now. The
+  snapshot's `outputs.local` is new, for that.
+- **The folder's own errors and warnings**, over the track list and on the
+  Show settings page: how many, which files are playing their last good
+  version, and each problem with its file -- a link to the page that edits
+  it, where Studio has one. `/api/show` gains `problems`, the errors and
+  warnings as rows of `{level, file, text}`.
+- A `/api/tracks` line now carries its timeline's `rev` and the track's
+  `aliases`.
+
 ### Added — the rig's looks, in Studio
 
 - **Studio has a Looks page** (`#studio/looks`, under *This rig*): every look
