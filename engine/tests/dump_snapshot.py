@@ -60,6 +60,10 @@ def main() -> int:
         time.sleep(0.4)
 
         snapshot = controller.snapshot()
+        # The look list is not in the snapshot: the engine sends it in a frame
+        # of its own (`looks_frame`), and the console holds the two together.
+        # The fixture is the state as the console holds it.
+        snapshot["looks"] = controller.looks_frame()["looks"]
     finally:
         controller.stop()
 

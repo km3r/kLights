@@ -241,7 +241,8 @@ def listed(name):
 
 
 def in_snapshot(name):
-    return next((l for l in sc.snapshot()["looks"] if l["name"] == name), None)
+    """The look as the console has it: the look list it is sent (`looks_frame`)."""
+    return next((l for l in sc.looks_frame()["looks"] if l["name"] == name), None)
 
 
 def on_disk():

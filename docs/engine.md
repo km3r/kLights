@@ -322,8 +322,13 @@ live.
   `dropped <name>: 5 seconds behind and not reading`, and a browser
   reconnects by itself. Until then the client stays in the presence list, and
   a Studio page that is driving the rig keeps it. The clock is per message, so
-  a link too slow to carry one snapshot in 5 seconds (about 12 kB/s with a
-  show folder loaded) is dropped as well.
+  a link too slow to carry one in 5 seconds is dropped as well: a snapshot is
+  about 7 kB, the look list about 50 kB.
+- **The look list is not in the snapshot.** It was 86% of it. A console is
+  sent `{"type": "looks", "rev", "looks"}` as it connects and again whenever
+  the library changes (`library_rev`, bumped as one is installed), kept in
+  order like a reply, ahead of the snapshot that may name a new look. The
+  console holds the two together as its state.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
 - A command may carry an `id` (a short string or an integer). It then gets a

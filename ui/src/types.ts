@@ -524,6 +524,9 @@ export interface EngineState {
    *  absent before F23d. */
   visuals?: VisualsState | null;
   auto: AutoState;
+  /** The look library. Not in the snapshot the engine broadcasts: it arrives
+   *  in a `looks` frame of its own (`LooksFrame`) as the console connects and
+   *  whenever the library changes, and `useEngine` keeps it here. */
   looks: LookInfo[];
   /** What the operator has turned on each parametric look, by look name,
    *  over what parametric_looks.json authored. Sparse — only the keys actually moved — and sent
@@ -736,6 +739,15 @@ export type Command =
   | { type: "preview_arm"; track_id: string; force?: boolean }
   | { type: "preview_transport"; time_s: number; playing: boolean }
   | { type: "preview_release" };
+
+/** The look library, sent apart from the 10 Hz snapshot -- where it was most
+ *  of every frame's bytes -- when a console connects and when it changes. */
+export interface LooksFrame {
+  type: "looks";
+  /** Goes up each time the engine installs a library. */
+  rev: number;
+  looks: LookInfo[];
+}
 
 /** The engine's answer to a command sent with an id (`useEngine.request`). */
 export interface Reply {

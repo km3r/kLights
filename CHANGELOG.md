@@ -17,6 +17,18 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — the 10 Hz snapshot is a ninth of the size: the look list goes once
+
+The look list was 86% of every snapshot -- about 50 kB of 59, sent ten times a
+second to every console to say something that changes when someone edits a
+look. It is now a frame of its own, `{"type": "looks", "rev", "looks"}`, sent
+to a console as it connects and to every console when the library changes
+(`library_rev`), kept in order like a reply so it arrives ahead of a snapshot
+naming a new look. The snapshot is about 7 kB with a show folder loaded, so a
+slow link falls behind far later, and a phone on a weak signal parses a
+ninth of what it did. The console holds the two together, so nothing that
+draws a look changed.
+
 ### Changed — the controller is one module per part, not one 5,000-line file
 
 `engine/server.py` held the HTTP and WebSocket transport and the whole

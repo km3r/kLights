@@ -60,6 +60,10 @@ class Looks:
         self.setlist = (libmod.setlist_for(self.library) if self.library
                         else default_setlist())
         self.by_name = {e.name: e for e in self.library}
+        # Bumped each time a library is installed, after it is: what tells
+        # the broadcast thread to send every console the new list
+        # (`looks_frame`), which the snapshot does not carry.
+        self.library_rev = 0
 
     def looks_public(self) -> dict:
         """The look library, for `GET /api/looks`: every look with what it is
@@ -348,6 +352,7 @@ class Looks:
                 self.note(f"{on_stage!r} was on stage and is no longer in the "
                           f"library: {setlist.current().name!r} is up instead")
         self.library, self.by_name, self.setlist = entries, by_name, setlist
+        self.library_rev += 1
         self.director.setlist = setlist
         self.looks_rev = rev
         self.looks_problem = None
@@ -386,43 +391,64 @@ class Looks:
         return moved
 
     def _public_looks(self) -> dict:
-        """The look library."""
-        by_name = self.by_name
+        """Which look files the library was read from. The library itself is
+        not in the snapshot: see `looks_frame`."""
         return {
-            # `kind` and `slot` let the UI put each look on the tab that owns it
-            # and group within that -- a flat list of 200 is exactly why only a
-            # handful got used. `step_of` files a chase's own steps under the
-            # chase instead of beside it.
-            # `cued` warns that this movement look drives the dimmer itself --
-            # it travels dark. Worth saying on screen: an operator who picks one
-            # and sees the rig start blinking should know that is the routine
-            # and not a fault, and that it will fight a level chase for control.
-            # `block` names the block behind a parametric look, which is what
-            # lets the UI look its arguments up in the generated block table and
-            # render a control panel for a look it has never heard of. Absent on
-            # every ported look, which is the honest answer: a table of DMX has
-            # nothing to tune.
-            # `retired` hides an entry the operator has something better for.
-            # Hidden, never removed -- looks.json is a generated artifact whose
-            # round-trip proof depends on every entry staying in it, and going
-            # back to the original should be one toggle away.
-            "looks": [{"name": l.name, "manual_only": l.manual_only,
-                       "kind": by_name[l.name].kind if l.name in by_name else "look",
-                       "slot": by_name[l.name].slot if l.name in by_name else "movement",
-                       "cued": by_name[l.name].is_cued if l.name in by_name else False,
-                       "groups": list(by_name[l.name].groups) if l.name in by_name else [],
-                       "block": (by_name[l.name].block
-                                 if l.name in by_name else None),
-                       "retired": (by_name[l.name].retired
-                                   if l.name in by_name else False),
-                       "replaced_by": (by_name[l.name].replaced_by
-                                       if l.name in by_name else None),
-                       "args": (dict(by_name[l.name].args)
-                                if l.name in by_name else {}),
-                       "step_of": by_name[l.name].step_of if l.name in by_name else None}
-                      for l in self.setlist.looks],
-            # Which parametric_looks.json the library above was read from. A
+            # Which parametric_looks.json the library was read from. A
             # page that lists the library in full (Studio's Looks, over
             # /api/looks) reads it again when this moves, rather than polling.
             "looks_rev": self.looks_rev or "",
         }
+
+    def looks_frame(self) -> dict:
+        """The look library as the console offers it: a frame of its own,
+        sent to a console when it connects and to every console when the
+        library changes (`library_rev`), never in the 10 Hz snapshot.
+
+        It was 86% of the snapshot -- some 50 kB of a 59 kB state, sent ten
+        times a second to every phone in the room to say something that
+        changes when someone edits a look. The snapshot's size is what decides
+        how long a slow link takes to fall behind (`SEND_DEADLINE_S`).
+
+        Built on the caller's thread from references the output thread only
+        rebinds. The rev is read FIRST: the install bumps it after it rebinds
+        the library, so the library read after it is that rev's or a newer
+        one. Read the other way round, a frame could carry the old library
+        under the new rev, and the broadcast thread would never send the new
+        one -- every console stuck on a list nobody has.
+        """
+        rev = self.library_rev
+        by_name, setlist = self.by_name, self.setlist
+        # `kind` and `slot` let the UI put each look on the tab that owns it
+        # and group within that -- a flat list of 200 is exactly why only a
+        # handful got used. `step_of` files a chase's own steps under the
+        # chase instead of beside it.
+        # `cued` warns that this movement look drives the dimmer itself --
+        # it travels dark. Worth saying on screen: an operator who picks one
+        # and sees the rig start blinking should know that is the routine
+        # and not a fault, and that it will fight a level chase for control.
+        # `block` names the block behind a parametric look, which is what
+        # lets the UI look its arguments up in the generated block table and
+        # render a control panel for a look it has never heard of. Absent on
+        # every ported look, which is the honest answer: a table of DMX has
+        # nothing to tune.
+        # `retired` hides an entry the operator has something better for.
+        # Hidden, never removed -- looks.json is a generated artifact whose
+        # round-trip proof depends on every entry staying in it, and going
+        # back to the original should be one toggle away.
+        looks = [{"name": l.name, "manual_only": l.manual_only,
+                  "kind": by_name[l.name].kind if l.name in by_name else "look",
+                  "slot": by_name[l.name].slot if l.name in by_name else "movement",
+                  "cued": by_name[l.name].is_cued if l.name in by_name else False,
+                  "groups": list(by_name[l.name].groups) if l.name in by_name else [],
+                  "block": (by_name[l.name].block
+                            if l.name in by_name else None),
+                  "retired": (by_name[l.name].retired
+                              if l.name in by_name else False),
+                  "replaced_by": (by_name[l.name].replaced_by
+                                  if l.name in by_name else None),
+                  "args": (dict(by_name[l.name].args)
+                           if l.name in by_name else {}),
+                  "step_of": by_name[l.name].step_of if l.name in by_name else None}
+                 for l in setlist.looks]
+        return {"type": "looks", "rev": rev, "looks": looks}

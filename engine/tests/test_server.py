@@ -257,8 +257,13 @@ check("Sec-WebSocket-Accept is correct", client.accept in client.header)
 welcome = client.recv()
 check("welcome carries a client id", welcome["type"] == "welcome" and welcome["id"])
 
+looks = client.recv()
+check("the look list comes next, in a frame of its own",
+      looks["type"] == "looks" and isinstance(looks["rev"], int), f"{looks.get('type')}")
 state = client.recv()
 check("first state frame arrives immediately", state["type"] == "state")
+check("and it carries no look list: that is sent when it changes, not 10x a second",
+      "looks" not in state, f"{len(json.dumps(state))} bytes")
 check("it describes the rig",
       len(state["fixtures"]) == len(controller.rig.fixtures)
       and state["event"] == "despacio",
@@ -293,12 +298,12 @@ def loaded(state, slot):
 client.send({"type": "select_look", "name": MOVE_A})
 after = client.wait_for(lambda s: MOVE_A in loaded(s, "movement"))
 check("selecting a look takes effect", MOVE_A in loaded(after, "movement"))
-check("the ported library is what is on offer", len(after["looks"]) > 100,
-      f"{len(after['looks'])} looks")
+check("the ported library is what is on offer", len(looks["looks"]) > 100,
+      f"{len(looks['looks'])} looks")
 check("and each carries the kind, slot and groups the UI files it by",
-      all({"kind", "slot", "groups"} <= set(l) for l in after["looks"]),
-      f"slots {sorted({l['slot'] for l in after['looks']})}, "
-      f"groups {sorted({g for l in after['looks'] for g in l['groups']})}")
+      all({"kind", "slot", "groups"} <= set(l) for l in looks["looks"]),
+      f"slots {sorted({l['slot'] for l in looks['looks']})}, "
+      f"groups {sorted({g for l in looks['looks'] for g in l['groups']})}")
 check("and it is held, so auto cannot steal it", after["auto"]["held"] is True)
 
 # -- the three slots do not overwrite each other -----------------------------
@@ -1350,6 +1355,37 @@ check("a reply whose data cannot be sent says so, and the show runs on",
       f"{reply}")
 del controller._cmd_test_unserialisable
 del controller.COMMANDS                 # back to the class's table
+
+# The look list is not in the snapshot, so a change to the library has to
+# reach every console by itself: as a new looks frame, to each, ahead of the
+# snapshot that may name the change. Hidden here (it writes the event copy's
+# parametric_looks.json), then shown again.
+def next_looks(c, after_rev, timeout=6.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "looks" and msg["rev"] > after_rev:
+            return msg
+    raise AssertionError("no new look list")
+
+
+hide = next(e.name for e in controller.library if e.is_color and not e.retired)
+before = controller.library_rev
+client.send({"type": "look_hide", "look": hide, "base_rev": controller.looks_rev or "",
+             "id": "hide"})
+reply = wait_reply(client, "hide")
+fresh = [next_looks(c, before) for c in (client, other)]
+check("hiding a look sends every console the new list",
+      reply["ok"] and all(next(l for l in f["looks"] if l["name"] == hide)["retired"]
+                          for f in fresh), f"{reply}")
+check("once, with a newer rev", all(f["rev"] == before + 1 for f in fresh),
+      f"{[f['rev'] for f in fresh]}")
+client.send({"type": "look_hide", "look": hide, "hidden": False, "id": "show",
+             "base_rev": controller.looks_rev or ""})
+wait_reply(client, "show")
+shown = next_looks(other, before + 1)
+check("and showing it again does too",
+      not next(l for l in shown["looks"] if l["name"] == hide)["retired"])
 other.close()
 
 
@@ -1858,7 +1894,8 @@ check("the shape macros are described the same way",
       {p["name"] for p in table["macros"]} == {"size", "spread", "bearing", "elev"})
 # A parametric look in the snapshot names its block, which is what the console
 # looks up in that table to render a control panel for it.
-orbit_look = next(l for l in snap["looks"] if l["name"] == "Ball Orbit")
+orbit_look = next(l for l in controller.looks_frame()["looks"]
+                  if l["name"] == "Ball Orbit")
 check("a parametric look names its block and carries its arguments",
       orbit_look["block"] == "orbit" and orbit_look["args"]["radius"] == 10.0)
 # The whole point of publishing them: the clamp and the control now read the

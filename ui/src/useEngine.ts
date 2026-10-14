@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Command, ConnectionStatus, EngineState, Reply, Tier } from "./types";
+import type {
+  Command, ConnectionStatus, EngineState, LookInfo, LooksFrame, Reply, Tier,
+} from "./types";
 
 /**
  * The connection to the engine.
@@ -97,6 +99,10 @@ export function useEngine() {
   const alive = useRef(true);
   const nameRef = useRef(name);
   nameRef.current = name;
+  // The look library, from the engine's `looks` frame: sent as this console
+  // connects and when the library changes, and not in each snapshot, so it is
+  // kept here and given to every state that arrives.
+  const looks = useRef<LookInfo[]>([]);
   // Commands sent with an id, waiting for their reply frame.
   const pending = useRef(new Map<string, (r: Reply) => void>());
   const nextId = useRef(0);
@@ -122,7 +128,11 @@ export function useEngine() {
       };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "state") setState(msg as EngineState);
+        if (msg.type === "state") setState({ ...(msg as EngineState), looks: looks.current });
+        else if (msg.type === "looks") {
+          looks.current = (msg as LooksFrame).looks;
+          setState((prev) => (prev ? { ...prev, looks: looks.current } : prev));
+        }
         else if (msg.type === "welcome") {
           if (msg.tier) setTier(msg.tier as Tier);
           if (typeof msg.id === "string") setClientId(msg.id);

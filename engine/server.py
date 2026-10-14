@@ -74,6 +74,9 @@ BROADCAST_HZ = 10.0
 # seconds is longer than a working page stalls, and short enough that a phone
 # which has really gone leaves the presence list, and lets go of a rig it was
 # driving, while someone is still looking at it.
+#
+# The snapshot is about 7 kB now: the look list, 50 kB of the 59, left it for a
+# frame of its own sent when the library changes (`looks_frame`).
 SEND_DEADLINE_S = 5.0
 
 # Replies one client may have waiting. Only a client that sends commands and
@@ -99,9 +102,10 @@ class Connection:
     worthless: one is kept, the newest, and a client that fell behind catches up
     in a single frame instead of replaying everything it missed. A reply answers
     one command and nothing repeats it: every reply is kept, in the order they
-    were made. What goes out is what a plain queue would have sent with the
-    superseded snapshots left out, so a reply still arrives before the first
-    snapshot made after it.
+    were made -- and so is a look-library frame, which is sent only when the
+    library changes and is not in any snapshot. What goes out is what a plain
+    queue would have sent with the superseded snapshots left out, so a reply
+    still arrives before the first snapshot made after it.
 
     Being behind is therefore not a reason to drop anyone. Not reading is: see
     `given_up`.
@@ -133,7 +137,8 @@ class Connection:
             self._wake.notify()
 
     def offer_reply(self, payload: str) -> None:
-        """An answer to one command. Kept until sent, in order.
+        """An answer to one command, or a look-library frame. Kept until sent,
+        in order.
 
         Past `REPLY_BACKLOG` it is not kept, and the client is dropped on the
         next broadcast: a connection that is about to end loses everything
@@ -166,8 +171,10 @@ class Connection:
         whose main thread was busy empties them the moment it is back.
 
         The clock is per message, and nothing restarts it part-way. So a link
-        that cannot carry one snapshot in `SEND_DEADLINE_S` -- about 12 kB/s
-        with a show folder loaded -- counts as not reading, though it is.
+        that cannot carry one message in `SEND_DEADLINE_S` counts as not
+        reading, though it is: a snapshot (about 7 kB) at under 1.5 kB/s, and
+        the look list (about 50 kB, as a console connects and when the
+        library changes) at under 10 kB/s.
         """
         if self.stuck_for(now) >= SEND_DEADLINE_S:
             return f"{SEND_DEADLINE_S:g} seconds behind and not reading"
@@ -310,6 +317,9 @@ class ShowServer:
         self._id_lock = threading.Lock()
         self._stop = threading.Event()
         self.httpd: Optional[ThreadingHTTPServer] = None
+        # The library_rev every console has been sent (`broadcast_loop`). A
+        # console that connects is sent the list then, by its own handler.
+        self._looks_sent = controller.library_rev
         controller.reply_to = self.send_to
         # Where this machine keeps music, for /api/audio when the track file
         # moved (klights.local.json's audio_roots).
@@ -357,6 +367,16 @@ class ShowServer:
         period = 1.0 / BROADCAST_HZ
         while not self._stop.is_set():
             start = time.perf_counter()
+            if self.controller.library_rev != self._looks_sent:
+                # The library changed: every console gets the new list, ahead
+                # of the snapshot that may name a look in it.
+                try:
+                    frame = self.controller.looks_frame()
+                    self.send_all(json.dumps(frame), ordered=True)
+                    self._looks_sent = frame["rev"]
+                except Exception:                           # noqa: BLE001
+                    self.controller.note("look list failed: "
+                                         + traceback.format_exc(limit=1))
             try:
                 payload = json.dumps(self.controller.snapshot())
             except Exception:                               # noqa: BLE001
@@ -367,8 +387,11 @@ class ShowServer:
             elapsed = time.perf_counter() - start
             self._stop.wait(max(0.0, period - elapsed))
 
-    def send_all(self, payload: str) -> None:
+    def send_all(self, payload: str, *, ordered: bool = False) -> None:
         """Hand the payload to each client's own sender. Never blocks.
+
+        A snapshot by default, kept latest-wins; `ordered` for a message every
+        client must receive, which is kept in order like a reply.
 
         This used to call `ws.send` inline, which is a blocking `sendall` on a
         socket with no timeout, from the single broadcast thread. One client
@@ -400,7 +423,7 @@ class ShowServer:
         for cid, conn in list(self.sockets.items()):
             why = conn.given_up(now)
             if why is None:
-                conn.offer_snapshot(payload)
+                (conn.offer_reply if ordered else conn.offer_snapshot)(payload)
                 continue
             who = self.controller.clients.get(cid)
             self.controller.note(f"dropped {who.name if who else cid}: {why}")
@@ -453,6 +476,9 @@ class ShowServer:
             with lock:
                 ws.send(json.dumps({"type": "welcome", "id": cid,
                                     "tier": tier}))
+                # The look list is not in the snapshot: a console is sent it
+                # once as it connects, and again only when it changes.
+                ws.send(json.dumps(self.controller.looks_frame()))
                 ws.send(json.dumps(self.controller.snapshot()))
             while not self._stop.is_set():
                 text = ws.receive()

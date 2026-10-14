@@ -2116,6 +2116,30 @@ describe("the rig's reach", () => {
   });
 });
 
+describe("the look list", () => {
+  // The engine sends it apart from the snapshot -- as a console connects and
+  // when the library changes -- so a new list has to reach the picker by
+  // itself, and the snapshots that follow must not take it away again.
+  it("takes a new list with no new snapshot, and keeps it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Move/);
+    const up = new Set(Object.values(despacioState.selection.movement ?? {}));
+    const first = despacioState.looks.find(
+      (l) => l.slot === "movement" && l.kind === "path"
+             && !l.block && !l.retired && !l.step_of && !up.has(l.name))!;
+    const looks = despacioState.looks.map(
+      (l) => (l === first ? { ...l, name: "Freshly Made" } : l));
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "looks", rev: 2, looks }) }));
+    expect(screen.getByRole("button", { name: /^Freshly Made/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: new RegExp(`^${first.name}`) })).toBeNull();
+
+    const { looks: _, ...snapshot } = despacioState;
+    act(() => socket.onmessage?.({ data: JSON.stringify(snapshot) }));
+    expect(screen.getByRole("button", { name: /^Freshly Made/ })).toBeTruthy();
+  });
+});
+
 describe("retired looks", () => {
   // A ported PATH, not a pose: "path" is first in the Move tab's KIND_ORDER and
   // so is the group the picker opens by default. Retiring a pose would leave it
