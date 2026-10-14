@@ -5,7 +5,7 @@ import { apiFetch, apiUrl } from "../useEngine";
 import type { Engine } from "./Designer";
 import { PHRASE_HUE, decodeWave, mmss, normalizeName, phraseFamily } from "./model";
 import type { TrackLine } from "./model";
-import { draftKey } from "./edit";
+import { draftKey } from "./document";
 import { putPending } from "./pending";
 import { Badge, DetailHead, DetailSection, MoreMenu, Task, useWrite } from "./detail";
 import type { MenuItem } from "./detail";

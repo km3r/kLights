@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { HITS, PLACE_MIME } from "./edit";
-import type { Placeable } from "./edit";
+import { PLACE_MIME } from "./clipboard";
+import type { Placeable } from "./clipboard";
+import { HITS } from "./items";
 import { normalizeName } from "./model";
 import type { PaletteSummary, RoutineSummary } from "./model";
 import type { LookInfo } from "../types";

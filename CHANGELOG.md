@@ -17,6 +17,24 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — Studio's editors share one way to open a document, and edit.tsx is gone
+
+`ui/src/designer/edit.tsx` was 2,700 lines holding everything the timeline,
+routine and template-set editors share -- lane specs, undo history, keys,
+the clipboard, the toolbar and Save, menus, lanes, automation, the shelf,
+the inspector, the cue editors -- behind one `Editor` object. It is thirteen
+modules now, one per concern (see docs/engine.md), each imported by name
+where it is used. The code moved and did not change.
+
+- **One way to open a document** (`useSavedDoc`, in `document.tsx`). The
+  three editors each fetched their document and its rev, started a new one
+  when the folder had none, and took a start handed over from New; they now
+  share it.
+- **A timeline that cannot be read is said, not opened blank.** The track
+  editor treated any failure to read a timeline as "there is none" and opened
+  an empty one; now only "not there" does, as the routine and template-set
+  editors already did, and anything else is an error on the page.
+
 ### Changed — the console is built against the engine's own command list
 
 The console's `Command` type was written by hand beside the engine's

@@ -12,7 +12,7 @@ import type {
 } from "./model";
 import { FIRST_BLOCK, LOOKS_HASH, lookBlocks, startingArgs } from "./Looks";
 import { CUES_HASH, NEW_FADE } from "./Cues";
-import { offeredLooks } from "./edit";
+import { offeredLooks } from "./roles";
 import { newRoutine } from "./RoutineEditor";
 import { newTemplateSet } from "./Templates";
 import { putPending } from "./pending";

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { mayRun } from "../types";
 import type { Engine } from "./Designer";
-import { ROLES } from "./edit";
+import { ROLES } from "./items";
 import { freeId, freeName } from "./model";
 import type { FoundPalette, PaletteDoc, PalettePlace, PaletteSummary } from "./model";
 import { download } from "./Routines";

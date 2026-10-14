@@ -1,8 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { mayRun } from "../types";
-import { ApiError, apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
-import { Editor, FromLibrary, PaletteOrigin, ROLES, RoleBinds, newVisuals, useHistory } from "./edit";
+import { Toolbar, useSavedDoc } from "./document";
+import { Param } from "./inspector";
+import { ROLES, newVisuals } from "./items";
+import { VisualCue } from "./outputCues";
+import { RoleBinds } from "./roles";
+import { FromLibrary, PaletteOrigin } from "./shelf";
 import {
   EXACT_LABELS, ID_RE, NEW_COLORS, PHRASE_FAMILIES, PHRASE_HUE, freeId, phraseFamily, pickFor,
 } from "./model";
@@ -10,7 +14,7 @@ import type {
   PaletteSummary, RoutineSummary, ShowSummary, TemplatePick, TemplateSetDoc, TemplateSummary,
   TrackLine,
 } from "./model";
-import { clearPending, peekPending, putPending } from "./pending";
+import { putPending } from "./pending";
 import { download } from "./Routines";
 import { Badge, DetailHead, DetailSection, MoreMenu, READ_ONLY, Task, useWrite } from "./detail";
 
@@ -109,7 +113,7 @@ function PickVisuals({ label, visuals, onChange }: {
   return (
     <div className="s-pick-visuals" role="group" aria-label={`${label} visuals`}>
       <span className="small muted">Visuals</span>
-      <Editor.VisualCue item={{ id: label, at: 0, len: 0, scene: visuals.scene, params: visuals.params }}
+      <VisualCue item={{ id: label, at: 0, len: 0, scene: visuals.scene, params: visuals.params }}
                         set={(fields) => onChange({ scene: fields.scene ?? visuals.scene,
                                                     params: fields.params ?? visuals.params ?? {} })} />
       <button className="small" aria-label={`no visuals for ${label}`}
@@ -122,29 +126,14 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
   engine: Engine; id: string; routines: RoutineSummary[]; library: PaletteSummary[];
   onDoc: (doc: TemplateSetDoc | null, dirty: boolean, rev: string) => void;
 }) {
-  const history = useHistory<TemplateSetDoc>();
-  const { doc, setBase, apply } = history;
-  const [rev, setRev] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // A set not in the folder is started: from what New handed over, else with
+  // the first routine as its pick for everything.
+  const { history, rev, setRev, loadError } = useSavedDoc<TemplateSetDoc>(
+    "template", id, (handed) => handed ?? newTemplateSet(id, routines));
+  const { doc, apply } = history;
   const [open, setOpen] = useState<string | null>(null);     // a pick whose params show
   const [exact, setExact] = useState("");
   const [palName, setPalName] = useState("");
-  // A start handed over by New: a copy, or a set made from a timeline.
-  const [pending] = useState(() => peekPending("template", id));
-
-  useEffect(() => {
-    apiFetch<{ doc: TemplateSetDoc; rev: string }>(`/api/templates/${id}`)
-      .then((r) => { setBase(r.doc); setRev(r.rev); })
-      .catch((e: Error) => {
-        // Not in the folder: start it, saved with base_rev "" -- a new file.
-        if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(pending?.doc ?? newTemplateSet(id, routines));
-        setRev("");
-        clearPending("template", id);
-      });
-    // Only the id decides what loads; the routines are only a first pick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, setBase]);
   useEffect(() => { onDoc(doc, history.dirty, rev); }, [doc, history.dirty, rev, onDoc]);
   useEffect(() => () => onDoc(null, false, ""), [onDoc]);
 
@@ -228,7 +217,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
     return (
       <div className="s-param-row" role="group" aria-label={`${key} parameters`}>
         {routine && Object.entries(routine.params).map(([name, param]) => (
-          <Editor.Param key={name} name={name} param={param} value={pick.params?.[name]}
+          <Param key={name} name={name} param={param} value={pick.params?.[name]}
                         onChange={(v) => {
                           const params = { ...(pick.params ?? {}) };
                           if (v === undefined) delete params[name]; else params[name] = v;
@@ -264,7 +253,7 @@ function TemplateEditor({ engine, id, routines, library, onDoc }: {
         <span className="muted mono small">templates/{id}.json</span>
         {rev === "" && <span className="s-tag">new</span>}
         <span className="grow" />
-        <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
+        <Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="template" ident={id} />
       </div>
 

@@ -821,11 +821,21 @@ taller, and **Bands** stacks its low, mid and high), then the timeline's rows
 (the higher lane wins), hits, automation and the VJ lane, with the rig's plan and
 "who drives each lane" at the playhead on the right and the selected clip
 below; `#studio/routine/<id>` edits a routine with the same lanes in loop
-mode, plus its roles, open parameters, variations and blocks. Its beat grid,
-block list and automation targets are copies of the engine's, held to them by
-fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale
-fixture fails `test_api`). Everything else -- whether a document is valid,
-what a routine does on this rig -- it asks the engine.
+mode, plus its roles, open parameters, variations and blocks. The format's
+lists -- automation targets and their ranges, parameter types, curves, visuals
+scenes, the id pattern -- are generated from `showfiles` into
+`ui/src/showfiles.generated.ts`; its beat grid, waves and audio bands are its
+own code, held to the engine's by vectors the engine writes. Both come from
+`engine/tests/dump_designer_fixtures.py`, and a stale one fails `test_api`.
+Everything else -- whether a document is valid, what a routine does on this
+rig -- it asks the engine.
+
+The editors are `ui/src/designer/`: the three pages (`Designer.tsx` for a
+track, `RoutineEditor.tsx`, `Templates.tsx`) over the pieces they share, one
+module each -- `document.tsx` (opening a document, `useSavedDoc`; its working
+copy, the engine's verdict, Save), `history.ts`, `keys.ts`, `clipboard.ts`,
+`items.ts`, `menus.tsx`, `roles.tsx`, `laneSpecs.ts`, `laneSvg.tsx`,
+`automation.tsx`, `shelf.tsx`, `inspector.tsx` and `outputCues.tsx`.
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
 behind the MCP server (an event's looks are [`looktools.py`](../engine/looktools.py)

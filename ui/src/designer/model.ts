@@ -11,7 +11,9 @@
  */
 
 import { BLOCK_PARAMS, BLOCK_SLOTS } from "../blocks";
-import { ID_PATTERN, PARAM_TYPES, RIG_BOUND_BLOCKS, VISUAL_PARAMS, VISUAL_SCENES } from "../showfiles.generated";
+import {
+  ID_PATTERN, PARAM_TYPES, RIG_BOUND_BLOCKS, VISUAL_PARAMS, VISUAL_SCENES,
+} from "../showfiles.generated";
 import type { ParamSpec } from "../types";
 
 // The show-folder format's own lists, generated from engine/showfiles.py.

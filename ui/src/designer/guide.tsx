@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { GuideBody } from "../Guide";
 import type { Guide } from "../Guide";
-import { typing, useKeys } from "./edit";
+import { typing, useKeys } from "./keys";
 
 /**
  * The designer's own guides, in its own chunk: they are about a desk surface

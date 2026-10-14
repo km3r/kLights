@@ -10,10 +10,10 @@ import {
   TrackAudio, blocksFor, curveValue, decodeWave, draftFromTemplate, freeName, hexColor, laneValue,
   newTimeline, phraseMatch, templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
-import {
-  PLACE_MIME, copyRange, cutRange, defaultAudio, defaultWave, gapStart,
-  paramSpec, pasteBoard, routineLaneSpecs, snapDown, splitAt, swing, timelineLaneSpecs,
-} from "../designer/edit";
+import { defaultAudio, defaultWave, swing } from "../designer/automation";
+import { PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt } from "../designer/clipboard";
+import { gapStart, snapDown } from "../designer/items";
+import { paramSpec, routineLaneSpecs, timelineLaneSpecs } from "../designer/laneSpecs";
 import { WAVE_HEIGHT } from "../designer/lanes";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
@@ -714,6 +714,41 @@ function reply(socket: MockSocket, type: string, ok: boolean, data?: unknown, er
                                                         data, error }) }));
   return sent!;
 }
+
+describe("opening a document", () => {
+  // `useSavedDoc`, which the timeline, routine and template-set editors open
+  // through: one the folder does not have is started, to be saved as a new
+  // file; one that could not be read is said, never opened blank -- a blank
+  // document saved over the real one is the failure this exists to prevent.
+  it("starts a track's timeline when the folder has none", async () => {
+    await open("#studio/track/kolsch-night-drive");
+    // Not written yet, so unsaved as it stands.
+    expect(await screen.findByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.queryByText(/no \/api\/timelines/)).toBeNull();
+  });
+
+  it("says so, rather than opening it blank, when it cannot be read", async () => {
+    const served = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (new URL(url, "http://engine").pathname === "/api/timelines/synth-128") {
+        return { ok: false, status: 500, json: async () => ({ error: "the disk is unreadable" }) };
+      }
+      return served(url);
+    }));
+    await open();
+    expect(await screen.findByText("the disk is unreadable")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Save/ })).toBeNull();
+  });
+
+  it("opens a new routine as New handed it over, and only once", async () => {
+    sessionStorage.setItem("klights.studio.pending", JSON.stringify({
+      kind: "routine", id: "brand-new", at: Date.now(),
+      doc: { ...structuredClone(fanDrop), id: "brand-new", name: "Brand New" } }));
+    await open("#studio/routine/brand-new");
+    expect(await screen.findByDisplayValue("Brand New")).toBeInTheDocument();
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+});
 
 describe("designer", () => {
   it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
