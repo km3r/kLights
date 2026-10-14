@@ -15,18 +15,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine.output.artnet import ARTNET_PORT, ArtNetOutput, build_artdmx, parse_targets
 from engine.output.base import FanOut, NullOutput
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def listener() -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -130,10 +122,4 @@ except ValueError:
 check("only OSError is treated as an output dropping out -- a ValueError is a bug "
       "in the caller and is not hidden", escaped)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("artnet: all checks pass")
+finish("artnet")

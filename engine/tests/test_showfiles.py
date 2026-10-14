@@ -20,20 +20,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import config as configmod  # noqa: E402
 from engine import showfiles as sf  # noqa: E402
 
 EXAMPLE = REPO / "shared" / "show-example"
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def load(rel):
     return json.loads((EXAMPLE / rel).read_text(encoding="utf-8"))
@@ -831,10 +823,4 @@ for good in ("@primary", "@accent", "#ff2d6f", [1, 0, 0.5], "MH Pink"):
 for bad in ("@tertiary", "#ff2d6", [1, 0], [2, 0, 0], [True, 0, 0], "", 7):
     check(f"not a color: {bad!r}", sf.color_problem(bad) is not None)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("showfiles: all checks pass")
+finish("showfiles")

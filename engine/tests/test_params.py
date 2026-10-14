@@ -19,18 +19,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import params as parammod
 from engine.params import MACROS, Param, ParamError, resolve
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 print("\n1. a number clamps rather than refusing")
 radius = Param("radius_deg", "Radius", 12.0, min=0.0, max=45.0)
@@ -170,10 +162,4 @@ check("and nothing else is -- a shape number marked musical is never varied",
 check("musical is engine-side only, not published to the console",
       "musical" not in cycles[0].public())
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("params: all checks pass")
+finish("params")

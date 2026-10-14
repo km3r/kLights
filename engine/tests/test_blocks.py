@@ -28,21 +28,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod
 from engine import params as parammod
 from engine import rig as rigmod
 from engine import state as statemod
 from engine.blocks import BLOCKS, OFFSETS, PARAMS, SLOT_OF
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 class Ctx:
     """The fields a movement offset reads -- and nothing else, so a shape can be
@@ -249,10 +241,4 @@ try:
 except parammod.ParamError:
     check("an unknown kind is refused", True)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("blocks: all checks pass")
+finish("blocks")

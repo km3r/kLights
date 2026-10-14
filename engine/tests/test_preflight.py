@@ -25,19 +25,12 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("preflight", REPO / "scripts" / "preflight.py")
 preflight = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(preflight)
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def run(cmd: list[str], home: Path) -> subprocess.CompletedProcess:
     # Path.home() reads USERPROFILE on Windows and HOME elsewhere. Point both at
@@ -112,10 +105,4 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("preflight: all checks pass")
+finish("preflight")

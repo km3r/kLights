@@ -27,18 +27,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import calibrate, geometry as geo
 from engine.rig import load_rig
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 rig = load_rig(REPO / "events" / "despacio")
 venue = rig.venue
@@ -417,10 +409,4 @@ with tempfile.TemporaryDirectory() as tmp:
     check("history with none says where it looked", code == 0 and "no snapshots" in out)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("calibrate: all checks pass")
+finish("calibrate")

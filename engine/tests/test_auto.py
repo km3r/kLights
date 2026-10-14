@@ -20,6 +20,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import auto as autom
 from engine import clock as clockmod
@@ -27,15 +28,6 @@ from engine import motion
 from engine import state as statemod
 from engine.rig import load_rig
 from engine.runner import Runner
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 rig = load_rig(REPO / "events" / "despacio")
 
@@ -457,10 +449,4 @@ check("reset puts every slot back to 1x",
       f"{slots.phases.rate}")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("auto: all checks pass")
+finish("auto")

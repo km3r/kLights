@@ -27,21 +27,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 sys.path.insert(0, str(REPO / "bridges" / "rekordbox"))
 
 import anlz  # noqa: E402
 import prep  # noqa: E402
 from engine import showfiles as sf  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 # -- an independent ANLZ writer -----------------------------------------------
 
@@ -481,10 +473,4 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("prep: all checks pass")
+finish("prep")

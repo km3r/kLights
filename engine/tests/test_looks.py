@@ -14,15 +14,14 @@ ones that arrive after the worker finishes -- is checked exactly.
 Run: python engine/tests/test_looks.py
 """
 
-import atexit
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish, isolated_event  # noqa: E402
 
 from engine import api as apimod  # noqa: E402
 from engine import config as configmod  # noqa: E402
@@ -32,22 +31,8 @@ from engine import patch as patchmod  # noqa: E402
 from engine import rig as rigmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
-
-TMP = Path(tempfile.mkdtemp(prefix="klights-looks-"))
-atexit.register(shutil.rmtree, TMP, ignore_errors=True)
-_SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
-EVENT = TMP / "despacio"
-shutil.copytree(REPO / "events" / "despacio", EVENT, ignore=_SKIP)
-shutil.copytree(rigmod.VENUE_LIBRARY, TMP / "venues", ignore=_SKIP)
-rigmod.VENUE_LIBRARY = patchmod.VENUES = TMP / "venues"
+EVENT = isolated_event("despacio")
+TMP = EVENT.parent
 SHOWS = TMP / "shows"
 shutil.copytree(REPO / "shared" / "show-example", SHOWS)
 FILE = EVENT / "parametric_looks.json"
@@ -1013,10 +998,4 @@ try:
 finally:
     sc.worker.stop()
 
-print()
-if failures:
-    print(f"{len(failures)} FAILED:")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("all look-library tests passed")
+finish("looks")

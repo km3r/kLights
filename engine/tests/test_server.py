@@ -9,7 +9,6 @@ of the framing, so a bug shared between encoder and decoder cannot hide.
 Run: python engine/tests/test_server.py
 """
 
-import atexit
 import base64
 import copy
 import errno
@@ -28,6 +27,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish, isolated_event  # noqa: E402
 
 from engine import patch as patchmod
 from engine import rig as rigmod
@@ -49,25 +49,7 @@ from engine.server import ShowController, ShowServer
 # suite runs in its own interpreter (see engine/tests/__main__.py).
 #
 # Named "despacio" because the engine reports the folder name as the event.
-EVENT_TMP = Path(tempfile.mkdtemp(prefix="klights-server-"))
-atexit.register(shutil.rmtree, EVENT_TMP, ignore_errors=True)
-_SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
-EVENT = EVENT_TMP / "despacio"
-shutil.copytree(REPO / "events" / "despacio", EVENT, ignore=_SKIP)
-shutil.copytree(rigmod.VENUE_LIBRARY, EVENT_TMP / "venues", ignore=_SKIP)
-rigmod.VENUE_LIBRARY = patchmod.VENUES = EVENT_TMP / "venues"
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        # With the detail: `python -m engine.tests` (and so CI) shows only the
-        # tail of a failing suite, which is this list -- a label alone says
-        # which check failed but not by how much.
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
+EVENT = isolated_event("despacio")
 
 # -- an independent client ----------------------------------------------------
 
@@ -2860,10 +2842,4 @@ finally:
     sc.worker.stop()
     shutil.rmtree(shows_tmp, ignore_errors=True)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("server: all checks pass")
+finish("server")

@@ -21,6 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod  # noqa: E402
 from engine import library as libmod  # noqa: E402
@@ -30,15 +31,6 @@ from engine import showfiles as sf  # noqa: E402
 from engine import state as statemod  # noqa: E402
 from engine import timeline as tl  # noqa: E402
 from engine import waves  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 RIGGING = programmod.load_rigging(REPO / "events" / "despacio")
 RIG = RIGGING.rig
@@ -607,10 +599,4 @@ check("a frame of the example show costs a few milliseconds at most "
       "(the frame is 25)", per < 5.0, f"{per:.2f} ms")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("program: all checks pass")
+finish("program")

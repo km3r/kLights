@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import geometry as geo
 from engine import safety
@@ -30,15 +31,6 @@ CFG = safety.TaperConfig()
 CROWD = CFG.crowd_level          # what a beam over the crowd is dimmed TO
 band_mid = (crowd.head_band_min + crowd.head_band_max) / 2.0
 center_x, center_z = venue.width / 2, venue.depth / 2
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 # -- 1. a beam aimed into the crowd is held down to crowd_level ---------------
 #
@@ -436,10 +428,4 @@ check("and it stays off rather than resuming as a duty cycle",
       all(v == 0 for v in limited[lit + 2:]),
       f"{sum(1 for v in limited[lit + 2:] if v > 0)} frames resumed")
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("safety: all checks pass")
+finish("safety")

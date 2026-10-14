@@ -17,17 +17,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine.worker import Worker  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 class Owner:
     """Stands in for the output thread: a queue of posted callables that only
@@ -164,10 +156,4 @@ check("a job that never returns cannot hang shutdown",
       elapsed < 1.0, f"{elapsed:.2f} s")
 hang.set()
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("worker: all checks pass")
+finish("worker")

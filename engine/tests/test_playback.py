@@ -24,6 +24,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod  # noqa: E402
 from engine import playback as playbackmod  # noqa: E402
@@ -31,15 +32,6 @@ from engine import program as programmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import state as statemod  # noqa: E402
 from engine import templates as templatesmod  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 tmp = Path(tempfile.mkdtemp(prefix="klights-playback-"))
 shows = tmp / "shows"
@@ -844,10 +836,4 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("playback: all checks pass")
+finish("playback")

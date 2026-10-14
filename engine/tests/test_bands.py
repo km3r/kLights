@@ -19,18 +19,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import bands  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def close(a, b, tol=1e-9):
     return abs(a - b) <= tol
@@ -222,10 +214,4 @@ check("bands.py imports only the standard library, as timeline.py needs of it",
       imported <= STDLIB, f"{sorted(imported - STDLIB)}")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("bands: all checks pass")
+finish("bands")

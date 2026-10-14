@@ -19,20 +19,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod
 from engine import modulate as modmod
 from engine import params as parammod
 from engine.modulate import Modulator, ModulatorError, Rack
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 BARS = [b / 32.0 for b in range(0, 32 * 4 + 1)]      # four cycles at bars=1
 
@@ -207,10 +199,4 @@ for key, bad in (("bars", "fast"), ("low", True), ("phase", [0.5])):
 check("a numeric string still builds, as it did before",
       modmod.build({"shape": "sine", "bars": "4"}, radius).bars == 4.0)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("modulate: all checks pass")
+finish("modulate")

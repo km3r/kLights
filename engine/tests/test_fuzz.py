@@ -45,6 +45,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import auto as autom  # noqa: E402
 from engine import config as configmod  # noqa: E402
@@ -57,15 +58,6 @@ from engine import state as statemod  # noqa: E402
 from engine import sync  # noqa: E402
 from engine import timeline as timelinemod  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 # Fixed seeds, so CI and a failure report always agree on the input. To look
 # for new trouble rather than re-check the old, shift every seed at once:
@@ -817,10 +809,4 @@ finally:
     sc.stop()
 
 
-print()
-if failures:
-    print(f"fuzz: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("fuzz: all checks pass")
+finish("fuzz")

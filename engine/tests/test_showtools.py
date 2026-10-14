@@ -24,18 +24,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import showfiles  # noqa: E402
 from engine import showtools as st  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 TMP = Path(tempfile.mkdtemp(prefix="klights-showtools-"))
 SHOW = TMP / "shows"
@@ -346,10 +338,4 @@ finally:
     shutil.rmtree(TMP, ignore_errors=True)
 
 
-print()
-if failures:
-    print(f"showtools: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("showtools: all checks pass")
+finish("showtools")

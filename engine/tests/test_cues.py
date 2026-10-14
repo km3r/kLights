@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import cues as cuesmod
 from engine import library as libmod
@@ -24,15 +25,6 @@ from engine import state as statemod
 from engine.server import ShowController
 
 EVENT = REPO / "events" / "despacio"
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
-
 print("\n1. the list loads and every look it names exists")
 cue_list = cuesmod.load(EVENT / "cues.json")
 known = [e.name for e in libmod.load_entries(EVENT / "looks.json")]
@@ -209,10 +201,4 @@ try:
 finally:
     controller.stop()
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("cues: all checks pass")
+finish("cues")

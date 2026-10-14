@@ -34,20 +34,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 sys.path.insert(0, str(REPO / "shared" / "tools"))
 
 from engine.output import artnet as engine_artnet  # noqa: E402
 import artnet_listener  # noqa: E402
 import artnet_sender  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 def run(*argv, timeout=60) -> tuple[int, str]:
     # UTF-8 on the child's pipes, as launcher/core.py does: a Windows child
@@ -227,10 +219,4 @@ for script in ("shared/tools/gen_models.py", "shared/tools/gen_previz_parity.py"
     check(f"{script} --check", code == 0, "" if code == 0 else out[-300:])
 
 
-print()
-if failures:
-    print(f"cli: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("cli: all checks pass")
+finish("cli")

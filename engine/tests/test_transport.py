@@ -17,17 +17,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import transport as tp  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def rkbx_track(t: tp.TrackTransport, at: float, title: str, artist="A", album="B"):
     """rkbx_link's way: three messages a few milliseconds apart."""
@@ -225,10 +217,4 @@ check("the deck, on-air and bar phase ride along for the console and the "
 t.clear()
 check("taking the clock back forgets the track", t.sample(0.3).state == tp.NO_TRACK)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("transport: all checks pass")
+finish("transport")

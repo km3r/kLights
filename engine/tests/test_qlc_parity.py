@@ -27,21 +27,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import library as libmod
 from engine import rig as rigmod
 from shared.tools import qlc_parity as parity
 
 EVENT = REPO / "events" / "despacio"
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
-
 print("\n1. the comparison is broad enough to mean something")
 diffs, sampled, unmatched = parity.run_check(EVENT)
 looks = {s.entry.name for s in sampled}
@@ -154,10 +146,4 @@ check("the engine never contradicts a channel it does model",
       "silent about it rather than asserting something else")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("qlc parity: all checks pass")
+finish("qlc parity")

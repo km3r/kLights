@@ -24,17 +24,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import websocket as ws  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 def client_frame(payload: bytes, opcode: int = ws.OP_TEXT, fin: bool = True,
                  masked: bool = True, mask: bytes = b"\x37\xfa\x21\x3d",
@@ -340,10 +332,4 @@ check("and close afterwards does not raise", p.ws.closed)
 p.close()
 
 
-print()
-if failures:
-    print(f"websocket: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("websocket: all checks pass")
+finish("websocket")
