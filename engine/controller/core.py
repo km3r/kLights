@@ -338,6 +338,7 @@ class Core:
                 f"{client.tier}. Open the URL the engine printed, including "
                 f"its ?token=, or restart with --no-token")
         cmd.check(message)
+        message = cmd.absent_nulls(message)
         previous = self._call
         self._call = commandsmod.Call(cmd, client, reply_id(message))
         try:

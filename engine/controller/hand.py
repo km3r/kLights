@@ -11,7 +11,7 @@ before the master and the safety pass, so neither is outrun.
 from __future__ import annotations
 
 from .. import state as statemod
-from ..commands import OPERATE, command
+from ..commands import OPERATE, command, nullable
 from .common import N, S, _TARGET
 
 
@@ -72,7 +72,7 @@ class Hand:
     @command("color", tier=OPERATE, args={
         "target": _TARGET,
         "color": S(list, required=True, each=S(N), fix="[r, g, b], each 0 to 1"),
-        "white": S(N),
+        "white": nullable(S(N, fix="0 to 1; null puts the white back to the look's")),
         "clear": S(bool)})
     def _cmd_color(self, m: dict, now: float) -> None:
         """Per-fixture picker and global quick palette, in one command.

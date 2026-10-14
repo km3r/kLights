@@ -448,7 +448,12 @@ tier, and no default tier for one that forgot. The arguments are checked before
 the handler runs with the same `Spec` the config files use: a missing key, text
 where a number belongs, NaN, `true` as a number, or a value outside `choices` is
 refused as `master: value is required but missing -- 0 to 1, ...`. Unknown keys
-pass, as in a file, and a null reads as absent. What a handler still checks is
+pass, as in a file. A null is absent: the handler is given the message without
+it, so its defaults and presence tests mean what they say -- except for an
+argument declared `nullable(...)`, where null means something of its own
+(`white: null` resets a white, `set: null` turns templates off) and is passed
+through. Only those three are offered null in the console's types. What a
+handler still checks is
 what only it can judge -- whether the look exists, whether the timeline is
 driving.
 

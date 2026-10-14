@@ -248,12 +248,47 @@ print("\n7. the console's copy")
 ts = commandsmod.typescript(COMMANDS)
 check("every command is in the generated TypeScript, with its tier",
       all(f'  {n}: "{c.tier}",' in ts for n, c in COMMANDS.items()))
-check("a required argument is required there, an optional one may be null",
-      "    value: number;" in ts and "    hold?: boolean | null;" in ts)
+check("a required argument is required there, an optional one optional",
+      "    value: number;" in ts and "    hold?: boolean;" in ts)
+nullable_args = sorted(f"{n}.{a}" for n, c in COMMANDS.items()
+                       for a, s in c.args.items() if commandsmod.is_nullable(s))
+check("null is offered only where it means something",
+      nullable_args == ["color.white", "preset_save.routine", "template_set.set"]
+      and ts.split("export interface CommandReplies {")[0].count("| null") == 3,
+      nullable_args)
 check("a choice is a union of its values",
       '"movement" | "color" | "level"' in ts)
 check("and an answer is typed by its command",
       "export interface CommandReplies {" in ts and "  timeline_save: {" in ts
       and "  master: {" not in ts.split("export interface CommandReplies {")[1])
+
+
+print("\n8. a null is absent")
+# The check reads a null as absent, and so does the handler: it is given the
+# message without it, so a default or a presence test means what it says.
+controller = servermod.ShowController(isolated_event("despacio"))
+controller.apply({"type": "energy", "source": "phrase"}, None)
+controller.apply({"type": "energy", "source": None, "value": 0.7}, None)
+from engine import auto as automod  # noqa: E402
+check("energy with a null source is manual, the default -- not phrase",
+      isinstance(controller.director.energy_source, automod.ManualEnergy)
+      and controller.director.energy_source.value == 0.7)
+taper = controller.ctx.taper
+controller.apply({"type": "taper", "crowd_level": None, "margin_deg": 8}, None)
+check("a null taper setting is left as it was, not a TypeError",
+      controller.ctx.taper.crowd_level == taper.crowd_level
+      and controller.ctx.taper.margin_deg == 8)
+heads = [f.name for f in controller.rig.fixtures if f.head is not None][:2]
+for name in heads:
+    controller.apply({"type": "jog", "fixture": name, "pan": 100, "tilt": 100}, None)
+controller.apply({"type": "jog_clear", "fixture": None}, None)
+check("jog_clear with a null fixture clears every head, as absent does",
+      controller.jog == {}, f"{controller.jog}")
+controller.apply({"type": "color", "target": "all", "color": [1, 0, 0], "white": 0.6}, None)
+controller.apply({"type": "color", "target": "all", "color": [1, 0, 0], "white": None}, None)
+check("where null means something, the handler is given it: white: null resets",
+      "all" not in controller.white_overrides, f"{controller.white_overrides}")
+said = refusal({"type": "color", "target": "all", "color": [1, 0, 0], "white": True})
+check("and a nullable number still refuses true", "true/false" in said, said)
 
 finish("commands")

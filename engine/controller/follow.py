@@ -22,7 +22,7 @@ from .. import showlibrary
 from .. import state as statemod
 from .. import tracks as tracksmod
 from .. import transport as transportmod
-from ..commands import CONFIGURE, OPERATE, command
+from ..commands import CONFIGURE, OPERATE, command, nullable
 from .common import N, S, _NAME, _SLOT
 
 if TYPE_CHECKING:                   # the class these helpers are given
@@ -279,10 +279,10 @@ class Follow:
         self.player.grab({slot})
 
     @command("template_set", tier=OPERATE,
-             reply={"pending": S(str, fix="the set taking over on the next downbeat; "
-                                          "null for none")},
+             reply={"pending": nullable(S(str, fix="the set taking over on the next "
+                                                   "downbeat; null for none"))},
              args={
-        "set": S(str, fix="a set's id, or null for none")})
+        "set": nullable(S(str, fix="a set's id, or null for none"))})
     def _cmd_template_set(self, m: dict, now: float) -> dict:
         """Switch template set -- a vibe, live. It takes over on the next
         downbeat (decided with the user), crossfading over its own transition;
@@ -290,12 +290,18 @@ class Follow:
         is what the next start begins with."""
         if self.player is None:
             raise ValueError("no show folder -- start the engine with --show-dir")
-        # The set used to travel as `id` -- the field a reply is tagged with,
-        # so a client asking for a reply had its set replaced by its own reply
-        # id. A console on a bundle from before the rename still sends `id`
-        # and no `set`, and is read as it meant.
-        set_id = m["set"] if "set" in m else m.get("id")
-        if set_id is not None and not isinstance(set_id, str):
+        if "set" in m:
+            set_id = m["set"]
+        elif m.get("id") in dict(self.player.sets):
+            # The set used to travel as `id` -- the field a reply is tagged
+            # with, so a client asking for a reply had its set replaced by its
+            # own reply id. A console on a bundle from before the rename sends
+            # `id` and no `set`, and is read as it meant when `id` names a set.
+            # Remove once no bundle older than the rename can be open.
+            set_id = m["id"]
+        else:
+            # Not "off": a message that names no set at all is a mistake, and
+            # turning the templates off is not a guess to make for it.
             raise ValueError("template_set needs set: a set's id, or null for none")
         self.player.select_set(set_id)
         names = dict(self.player.sets)

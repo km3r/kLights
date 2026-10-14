@@ -276,6 +276,22 @@ try:
     except ValueError as exc:
         refused = "no template set" in str(exc)
     check("an unknown set is refused", refused)
+    for message, what in (({"type": "template_set"}, "naming no set at all"),
+                          ({"type": "template_set", "id": "r12"},
+                           "carrying only a reply id")):
+        before = (sc.player.set_id, sc.player.pending)
+        try:
+            sc.apply(message, None, t)
+            said = ""
+        except ValueError as exc:
+            said = str(exc)
+        check(f"a template_set {what} is refused, not read as 'off'",
+              "needs set" in said and (sc.player.set_id, sc.player.pending) == before,
+              said)
+    # A console on a bundle from before `set` sends the set as `id`.
+    sc.apply({"type": "template_set", "id": "club"}, None, t)
+    check("one from an older console, with the set as `id`, is read as it meant",
+          sc.player.pending == "club", f"{sc.player.pending}")
     sc.apply({"type": "template_set", "set": "club"}, None, t)
     settle()
     play(12, 2.5)

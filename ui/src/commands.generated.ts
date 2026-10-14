@@ -10,8 +10,8 @@
 
 export type Tier = "view" | "operate" | "configure";
 
-/** Each command's arguments, by name. An optional argument may also be null,
- *  which the engine reads as absent. */
+/** Each command's arguments, by name. Null is offered only where it means
+ *  something; anywhere else the engine reads it as absent. */
 export interface CommandArgs {
   auto: {
     axis: "timing" | "look_changes" | "palette" | "energy";
@@ -23,7 +23,7 @@ export interface CommandArgs {
     value: number;
   };
   blackout: {
-    on?: boolean | null;
+    on?: boolean;
   };
   bpm: {
     value: number;
@@ -33,26 +33,27 @@ export interface CommandArgs {
     fixture: string;
     /** [x, y, z] in millimetres */
     target: number[];
-    label?: string | null;
-    pan?: number | null;
-    tilt?: number | null;
+    label?: string;
+    pan?: number;
+    tilt?: number;
   };
   capture_clear: {
-    fixture?: string | null;
+    fixture?: string;
   };
   clear_panic: {};
   clear_slot: {
     slot: "movement" | "color" | "level";
-    group?: string | null;
+    group?: string;
   };
   /** Per-fixture picker and global quick palette, in one command. */
   color: {
     /** a group, a fixture name, or "all" */
-    target?: string | null;
+    target?: string;
     /** [r, g, b], each 0 to 1 */
     color: number[];
+    /** 0 to 1; null puts the white back to the look's */
     white?: number | null;
-    clear?: boolean | null;
+    clear?: boolean;
   };
   /** Jump straight to a cue. Fades like any other take. */
   cue: {
@@ -64,7 +65,7 @@ export interface CommandArgs {
    */
   cue_copy: {
     cue: string;
-    to?: string | null;
+    to?: string;
     /** the rev you opened, or "" for a new file -- so a save never overwrites
      *  a change it has not seen
      */
@@ -101,9 +102,9 @@ export interface CommandArgs {
   cue_save: {
     cue: object;
     /** the cue's name as you opened it */
-    was?: string | null;
+    was?: string;
     /** a place in the running order, 0 for first; last when not said */
-    at?: number | null;
+    at?: number;
     /** the rev you opened, or "" for a new file -- so a save never overwrites
      *  a change it has not seen
      */
@@ -111,7 +112,7 @@ export interface CommandArgs {
   };
   /** Name the cue list itself: the title of the console's GO card. */
   cues_name: {
-    name?: string | null;
+    name?: string;
     /** the rev you opened, or "" for a new file -- so a save never overwrites
      *  a change it has not seen
      */
@@ -125,17 +126,17 @@ export interface CommandArgs {
   /** Compare fresh ball readings against the stored calibration. */
   drift: {
     /** one [pan, tilt] per head, in rig order */
-    readings?: number[][] | null;
+    readings?: number[][];
   };
   energy: {
-    source?: "manual" | "phrase" | null;
-    value?: number | null;
+    source?: "manual" | "phrase";
+    value?: number;
   };
   /** Momentary bump on a group, a fixture, or everything. */
   flash: {
     /** a group, a fixture name, or "all" */
-    target?: string | null;
-    on?: boolean | null;
+    target?: string;
+    on?: boolean;
   };
   /** Release every bump. */
   flash_clear: {};
@@ -145,7 +146,7 @@ export interface CommandArgs {
   };
   go: {};
   hello: {
-    name?: string | null;
+    name?: string;
   };
   /** Drive one head at literal DMX so it can be aimed by eye. */
   jog: {
@@ -154,15 +155,15 @@ export interface CommandArgs {
     tilt: number;
   };
   jog_clear: {
-    fixture?: string | null;
+    fixture?: string;
   };
   /** Dim one fixture, one group, or everything, by hand. */
   level: {
     /** a group, a fixture name, or "all" */
-    target?: string | null;
+    target?: string;
     /** 0-1, a multiplier on the look */
-    value?: number | null;
-    clear?: boolean | null;
+    value?: number;
+    clear?: boolean;
   };
   /** Delete a block look nothing names. One a cue, a preset, a routine or a
    *  timeline still names is refused with where, so a delete can never leave
@@ -182,10 +183,10 @@ export interface CommandArgs {
    */
   look_hide: {
     look: string;
-    hidden?: boolean | null;
+    hidden?: boolean;
     /** a look's name */
-    replaced_by?: string | null;
-    note?: string | null;
+    replaced_by?: string;
+    note?: string;
     /** the rev you opened, or "" for a new file -- so a save never overwrites
      *  a change it has not seen
      */
@@ -196,8 +197,8 @@ export interface CommandArgs {
     /** a look's name, as the picker lists it */
     name: string;
     /** argument -> value, as the block declares them */
-    values?: object | null;
-    reset?: boolean | null;
+    values?: object;
+    reset?: boolean;
   };
   /** Write one block look: a new one (`was` absent), or a change to the one
    *  called `was` -- which renames it when `look.name` differs.
@@ -205,11 +206,11 @@ export interface CommandArgs {
   look_save: {
     look: object;
     /** the look's name as you opened it */
-    was?: string | null;
+    was?: string;
     hides?: {
       look: string;
-      note?: string | null;
-    } | null;
+      note?: string;
+    };
     /** the rev you opened, or "" for a new file -- so a save never overwrites
      *  a change it has not seen
      */
@@ -222,11 +223,11 @@ export interface CommandArgs {
   looks_reload: {};
   /** Live shape controls over whatever movement look is up. */
   macro: {
-    size?: number | null;
-    spread?: number | null;
+    size?: number;
+    spread?: number;
     /** [bearing, elevation] in degrees */
-    center?: number[] | null;
-    reset?: boolean | null;
+    center?: number[];
+    reset?: boolean;
   };
   master: {
     /** 0 to 1, the show's overall level */
@@ -235,19 +236,19 @@ export interface CommandArgs {
   /** Bind a parameter to a musical waveform. */
   modulate: {
     param: string;
-    look?: string | null;
-    shape?: "sine" | "triangle" | "ramp" | "saw" | "square" | "hold" | "energy" | null;
-    bars?: number | null;
-    low?: number | null;
-    high?: number | null;
-    phase?: number | null;
-    seed?: number | null;
+    look?: string;
+    shape?: "sine" | "triangle" | "ramp" | "saw" | "square" | "hold" | "energy";
+    bars?: number;
+    low?: number;
+    high?: number;
+    phase?: number;
+    seed?: number;
   };
   /** Stop one modulator, or all of them. */
   modulate_clear: {
-    param?: string | null;
-    look?: string | null;
-    all?: boolean | null;
+    param?: string;
+    look?: string;
+    all?: boolean;
   };
   /** Stack another movement routine on top of the one that is up. */
   movement_add: {
@@ -255,8 +256,8 @@ export interface CommandArgs {
     name: string;
   };
   movement_remove: {
-    name?: string | null;
-    all?: boolean | null;
+    name?: string;
+    all?: boolean;
   };
   next_look: {};
   nudge_phase: {
@@ -302,27 +303,27 @@ export interface CommandArgs {
     manufacturer: string;
     model: string;
     mode: string;
-    address?: number | null;
-    universe?: number | null;
-    tags?: string[] | null;
+    address?: number;
+    universe?: number;
+    tags?: string[];
     /** {"x", "y", "z"} in millimetres, y up, from the front-left floor */
     position?: {
       x: number;
       y: number;
       z: number;
-    } | null;
-    beam_deg?: number | null;
-    notes?: string | null;
+    };
+    beam_deg?: number;
+    notes?: string;
   };
   patch_address: {
     name: string;
     address: number;
-    universe?: number | null;
+    universe?: number;
   };
   patch_apply: {};
   patch_autopatch: {
-    start?: number | null;
-    universe?: number | null;
+    start?: number;
+    universe?: number;
   };
   patch_position: {
     name: string;
@@ -337,7 +338,7 @@ export interface CommandArgs {
   };
   patch_tags: {
     name: string;
-    tags?: string[] | null;
+    tags?: string[];
   };
   preset_apply: {
     name: string;
@@ -348,15 +349,15 @@ export interface CommandArgs {
   /** Put a preset on a different pad, SWAPPING with whatever is there. */
   preset_move: {
     name: string;
-    bank?: number | null;
-    cell?: number | null;
+    bank?: number;
+    cell?: number;
   };
   /** Snapshot all three slots plus the tempo feel under one name. */
   preset_save: {
     name: string;
-    bank?: number | null;
-    cell?: number | null;
-    tags?: string[] | null;
+    bank?: number;
+    cell?: number;
+    tags?: string[];
     /** {"id": "<routine id>", "variation"?, "params"?}, or null for a pad of
      *  looks only
      */
@@ -364,21 +365,21 @@ export interface CommandArgs {
   };
   preset_tag: {
     name: string;
-    tags?: string[] | null;
+    tags?: string[];
   };
   /** The designer takes the stage: its transport drives the rig through this
    *  track's timeline. Refused while a DJ is playing, unless forced.
    */
   preview_arm: {
     track_id: string;
-    force?: boolean | null;
+    force?: boolean;
   };
   preview_release: {};
   /** Where the designer's audio is, and whether it is playing. */
   preview_transport: {
     /** seconds into the track */
     time_s: number;
-    playing?: boolean | null;
+    playing?: boolean;
   };
   /** Take a lane from the timeline without changing what is on it. */
   program_grab: {
@@ -386,13 +387,13 @@ export interface CommandArgs {
   };
   /** Give a lane (or every lane) back to the timeline. */
   program_release: {
-    slot?: "movement" | "color" | "level" | null;
+    slot?: "movement" | "color" | "level";
   };
   /** How fast one slot's chase runs, relative to everything else. */
   rate: {
-    slot?: "movement" | "color" | "level" | null;
-    value?: number | null;
-    reset?: boolean | null;
+    slot?: "movement" | "color" | "level";
+    value?: number;
+    reset?: boolean;
   };
   /** Prep tracks from the DJ's rekordbox collection into the show folder:
    *  what the designer's collection browser picked, by rekordbox id.
@@ -445,8 +446,8 @@ export interface CommandArgs {
   select_look: {
     /** a look's name, as the picker lists it */
     name: string;
-    slot?: "movement" | "color" | "level" | null;
-    hold?: boolean | null;
+    slot?: "movement" | "color" | "level";
+    hold?: boolean;
   };
   /** How far ahead of a source's position the lights run, in ms. Applied at
    *  once and saved to the show folder's show.json (decided with the user,
@@ -474,43 +475,43 @@ export interface CommandArgs {
   };
   /** Solve from the captures taken so far, optionally writing them. */
   solve: {
-    write?: boolean | null;
+    write?: boolean;
   };
   speed: {
     value: number;
   };
   /** A position from something that already knows -- a CDJ, rekordbox. */
   sync: {
-    bpm?: unknown | null;
-    beat?: unknown | null;
-    beat_in_bar?: unknown | null;
-    phrase_measured?: unknown | null;
-    phrase_label?: unknown | null;
-    phrase_ends_in?: unknown | null;
-    phrase_into?: unknown | null;
-    source?: unknown | null;
-    deck?: unknown | null;
-    track?: unknown | null;
-    track_time?: unknown | null;
-    title?: unknown | null;
-    artist?: unknown | null;
-    album?: unknown | null;
-    duration?: unknown | null;
-    bpm_original?: unknown | null;
-    pitch?: unknown | null;
-    playing?: unknown | null;
-    on_air?: unknown | null;
-    master?: unknown | null;
-    rekordbox_id?: unknown | null;
-    signature?: unknown | null;
-    beat_number?: unknown | null;
-    loaded_deck?: unknown | null;
-    loaded_title?: unknown | null;
-    loaded_artist?: unknown | null;
-    loaded_album?: unknown | null;
-    loaded_duration?: unknown | null;
-    loaded_rekordbox_id?: unknown | null;
-    loaded_signature?: unknown | null;
+    bpm?: unknown;
+    beat?: unknown;
+    beat_in_bar?: unknown;
+    phrase_measured?: unknown;
+    phrase_label?: unknown;
+    phrase_ends_in?: unknown;
+    phrase_into?: unknown;
+    source?: unknown;
+    deck?: unknown;
+    track?: unknown;
+    track_time?: unknown;
+    title?: unknown;
+    artist?: unknown;
+    album?: unknown;
+    duration?: unknown;
+    bpm_original?: unknown;
+    pitch?: unknown;
+    playing?: unknown;
+    on_air?: unknown;
+    master?: unknown;
+    rekordbox_id?: unknown;
+    signature?: unknown;
+    beat_number?: unknown;
+    loaded_deck?: unknown;
+    loaded_title?: unknown;
+    loaded_artist?: unknown;
+    loaded_album?: unknown;
+    loaded_duration?: unknown;
+    loaded_rekordbox_id?: unknown;
+    loaded_signature?: unknown;
   };
   /** Take the clock back by hand. */
   sync_off: {};
@@ -520,10 +521,10 @@ export interface CommandArgs {
    *  floor-sweep pose.
    */
   taper: {
-    crowd_level?: number | null;
-    margin_deg?: number | null;
-    slew_per_second?: number | null;
-    enabled?: boolean | null;
+    crowd_level?: number;
+    margin_deg?: number;
+    slew_per_second?: number;
+    enabled?: boolean;
   };
   /** Delete a template set that is not the show's. */
   template_delete: {
@@ -613,40 +614,40 @@ export interface CommandArgs {
      */
     base_rev: string;
     /** its timeline's rev as you read it, or "" if it had none */
-    timeline_rev?: string | null;
+    timeline_rev?: string;
   };
   /** This playing track IS that prepped track -- for a guest's copy the
    *  matcher could not place (a different tag, a different export).
    */
   track_link: {
     track_id: string;
-    title?: string | null;
-    artist?: string | null;
-    album?: string | null;
+    title?: string;
+    artist?: string;
+    album?: string;
   };
   /** Nudge a routine's numbers around, reproducibly. */
   vary: {
     /** a look's name, as the picker lists it */
     name: string;
     /** 0-1: how much of each range to move within */
-    amount?: number | null;
-    seed?: number | null;
+    amount?: number;
+    seed?: number;
   };
   /** Edit the crowd zone and canopy live, from the phone at load-in. */
   venue: {
     crowd?: {
-      min_x?: number | null;
-      max_x?: number | null;
-      min_z?: number | null;
-      max_z?: number | null;
-      head_band_min?: number | null;
-      head_band_max?: number | null;
-    } | null;
+      min_x?: number;
+      max_x?: number;
+      min_z?: number;
+      max_z?: number;
+      head_band_min?: number;
+      head_band_max?: number;
+    };
     canopy?: {
-      enabled?: boolean | null;
-      height?: number | null;
-      radius?: number | null;
-    } | null;
+      enabled?: boolean;
+      height?: number;
+      radius?: number;
+    };
   };
   /** Write the live venue back to venue.json, preserving its comments. */
   venue_save: {};
@@ -658,68 +659,68 @@ export interface CommandReplies {
   cue_copy: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   cue_delete: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   cue_move: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   cue_save: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   cues_name: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   cues_reload: {
     /** cues.json's rev now */
     rev: string;
-    name?: string | null;
-    warnings?: string[] | null;
-    deleted?: string | null;
+    name?: string;
+    warnings?: string[];
+    deleted?: string;
     /** where the cue is now in the running order, 0 first */
-    index?: number | null;
+    index?: number;
     /** how many cues the list holds */
-    count?: number | null;
+    count?: number;
   };
   look_delete: {
     /** parametric_looks.json's rev now */
@@ -728,12 +729,12 @@ export interface CommandReplies {
     cues: number;
     /** presets a rename moved to the new name */
     presets: number;
-    name?: string | null;
-    warnings?: string[] | null;
+    name?: string;
+    warnings?: string[];
     /** show-folder files a rename rewrote */
-    written?: string[] | null;
-    deleted?: string | null;
-    hidden?: boolean | null;
+    written?: string[];
+    deleted?: string;
+    hidden?: boolean;
   };
   look_hide: {
     /** parametric_looks.json's rev now */
@@ -742,12 +743,12 @@ export interface CommandReplies {
     cues: number;
     /** presets a rename moved to the new name */
     presets: number;
-    name?: string | null;
-    warnings?: string[] | null;
+    name?: string;
+    warnings?: string[];
     /** show-folder files a rename rewrote */
-    written?: string[] | null;
-    deleted?: string | null;
-    hidden?: boolean | null;
+    written?: string[];
+    deleted?: string;
+    hidden?: boolean;
   };
   look_save: {
     /** parametric_looks.json's rev now */
@@ -756,12 +757,12 @@ export interface CommandReplies {
     cues: number;
     /** presets a rename moved to the new name */
     presets: number;
-    name?: string | null;
-    warnings?: string[] | null;
+    name?: string;
+    warnings?: string[];
     /** show-folder files a rename rewrote */
-    written?: string[] | null;
-    deleted?: string | null;
-    hidden?: boolean | null;
+    written?: string[];
+    deleted?: string;
+    hidden?: boolean;
   };
   looks_reload: {
     /** parametric_looks.json's rev now */
@@ -770,12 +771,12 @@ export interface CommandReplies {
     cues: number;
     /** presets a rename moved to the new name */
     presets: number;
-    name?: string | null;
-    warnings?: string[] | null;
+    name?: string;
+    warnings?: string[];
     /** show-folder files a rename rewrote */
-    written?: string[] | null;
-    deleted?: string | null;
-    hidden?: boolean | null;
+    written?: string[];
+    deleted?: string;
+    hidden?: boolean;
   };
   palette_delete: {
     /** the file removed, in the show folder */
@@ -810,7 +811,7 @@ export interface CommandReplies {
       artist: string;
       reason: string;
     }[];
-    show_dir?: string | null;
+    show_dir?: string;
   };
   routine_delete: {
     /** the file removed, in the show folder */

@@ -24,9 +24,11 @@ what only it can judge: whether the look exists, whether the timeline is
 driving, whether two values agree with each other.
 
 Unknown keys are allowed, as in a file: `type` and `id` are the wire's, and a
-newer console may send a field this engine does not read yet. A null is read as
-absent, so a handler that means something by null (`routine: null` clears a
-pad's routine) still sees it.
+newer console may send a field this engine does not read yet. **A null is
+absent**: the check reads it so, and the handler is given the message without
+it, so `m.get("amount", 0.3)` and `"fixture" in m` mean what they say. The
+exception is an argument declared `nullable`, where null means something of its
+own -- `routine: null` clears a pad's routine -- and the handler sees it.
 
 **A command that answers with data declares that too** (`reply`), in the same
 `Spec`. The engine checks each answer against it as it goes out: a mismatch is
@@ -43,7 +45,7 @@ from __future__ import annotations
 
 import json
 import textwrap
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Optional
 
@@ -64,6 +66,18 @@ STRICT = False
 
 class CommandError(ValueError):
     """A message whose arguments do not fit its command's declaration."""
+
+
+def nullable(spec: configmod.Spec) -> configmod.Spec:
+    """`spec`, for an argument where null means something rather than nothing
+    -- `white: null` resets a white -- so the handler is given the null, and
+    the console's type says it may send one."""
+    types = spec.types if isinstance(spec.types, tuple) else (spec.types,)
+    return replace(spec, types=(*types, type(None)))
+
+
+def is_nullable(spec: configmod.Spec) -> bool:
+    return isinstance(spec.types, tuple) and type(None) in spec.types
 
 
 def _one_line(problems: list[str]) -> str:
@@ -87,6 +101,12 @@ class Command:
         problems = configmod.problems(dict(message), dict(self.args))
         if problems:
             raise CommandError(f"{self.name}: " + _one_line(problems))
+
+    def absent_nulls(self, message: Mapping[str, Any]) -> dict:
+        """The message as its handler is given it: a null for an argument that
+        is not `nullable` is taken out, since a null is absent."""
+        return {k: v for k, v in message.items()
+                if not (v is None and k in self.args and not is_nullable(self.args[k]))}
 
     def reply_problems(self, data: Any) -> Optional[str]:
         """What is wrong with an answer to this command, or None."""
@@ -196,8 +216,9 @@ def _comment(text: str, indent: str) -> list[str]:
 
 
 def _ts_object(fields: Mapping[str, configmod.Spec], indent: str) -> str:
-    """Fields as a TypeScript object type. An optional field may be null: the
-    engine reads a null as absent."""
+    """Fields as a TypeScript object type. Only a `nullable` one may be null:
+    for any other, a null would be read as absent, and the type says so by
+    not offering it."""
     if not fields:
         return "{}"
     inner = indent + "  "
@@ -205,10 +226,7 @@ def _ts_object(fields: Mapping[str, configmod.Spec], indent: str) -> str:
     for key, spec in fields.items():
         lines += _comment(spec.fix, inner)
         kind = _ts(spec, inner)
-        if spec.required:
-            lines.append(f"{inner}{key}: {kind};")
-        else:
-            lines.append(f"{inner}{key}?: {kind} | null;")
+        lines.append(f"{inner}{key}{'' if spec.required else '?'}: {kind};")
     lines.append(f"{indent}}}")
     return "\n".join(lines)
 
@@ -229,8 +247,8 @@ def typescript(table: Mapping[str, Command]) -> str:
 
 export type Tier = "view" | "operate" | "configure";
 
-/** Each command's arguments, by name. An optional argument may also be null,
- *  which the engine reads as absent. */
+/** Each command's arguments, by name. Null is offered only where it means
+ *  something; anywhere else the engine reads it as absent. */
 export interface CommandArgs {''']
     for name in names:
         cmd = table[name]

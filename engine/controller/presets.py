@@ -16,7 +16,7 @@ from .. import config as configmod
 from .. import program as programmod
 from .. import state as statemod
 from .. import templates as templatesmod
-from ..commands import OPERATE, command
+from ..commands import OPERATE, command, nullable
 from .common import S, _NAME, _TAGS, _finite
 
 if TYPE_CHECKING:                   # the class these helpers are given
@@ -127,8 +127,8 @@ class Presets:
         "bank": S(int),
         "cell": S(int),
         "tags": _TAGS,
-        "routine": S(dict, fix='{"id": "<routine id>", "variation"?, "params"?}, '
-                               'or null for a pad of looks only')})
+        "routine": nullable(S(dict, fix='{"id": "<routine id>", "variation"?, "params"?}, '
+                                        'or null for a pad of looks only'))})
     def _cmd_preset_save(self, m: dict, now: float) -> None:
         """Snapshot all three slots plus the tempo feel under one name.
 
