@@ -1885,6 +1885,29 @@ describe("designer guide", () => {
 
 type TSaved = { doc: TimelineDoc; base_rev: string };
 
+describe("a Studio page older than the engine", () => {
+  // As the console: a page open across an update says so on every Studio page.
+  it("asks to be reloaded, in the library and in the editors", async () => {
+    const entry = document.createElement("script");
+    entry.setAttribute("src", "./assets/index-OLDHASH1.js");
+    document.head.append(entry);
+    try {
+      for (const hash of ["#studio", "#studio/track/synth-128", "#studio/routine/fan-drop"]) {
+        const socket = await open(hash);
+        expect(screen.queryByRole("alert")).toBeNull();
+        act(() => socket.onmessage?.({ data: JSON.stringify(
+          { type: "welcome", id: "c1", tier: "configure", bundle: "assets/index-NEWHASH2.js" }) }));
+        const banner = await screen.findByRole("alert");
+        expect(banner).toHaveTextContent(/engine has been updated since this page was opened/);
+        expect(within(banner).getByRole("button", { name: "Reload" })).toBeInTheDocument();
+        cleanup();
+      }
+    } finally {
+      entry.remove();
+    }
+  });
+});
+
 describe("studio routes", () => {
   it("rewrites the old designer's addresses to Studio's", async () => {
     await open("#designer");

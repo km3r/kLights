@@ -27,7 +27,7 @@ import { StartDialog } from "./Start";
 import type { PrepPick, StartTrack } from "./Start";
 import { PanelToggle, usePanels } from "./panels";
 import { useDesignerGuide } from "./guide";
-import { DetailEmpty, Said } from "./detail";
+import { DetailEmpty, ReloadBanner, Said } from "./detail";
 import { FolderProblems } from "./Problems";
 import "./designer.css";
 
@@ -417,6 +417,7 @@ export default function Studio({ engine, route }: {
         {side != null && (
           <PanelToggle open={panels.side} side="right" label="details" onToggle={() => toggle("side")} />)}
       </header>
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
       <div className="s-body">
         {panels.nav && (

@@ -400,7 +400,16 @@ live.
   sent `{"type": "looks", "rev", "looks"}` as it connects and again whenever
   the library changes (`library_rev`, bumped as one is installed), kept in
   order like a reply, ahead of the snapshot that may name a new look. The
-  console holds the two together as its state.
+  console holds the two together as its state, and on each connection keeps
+  the highest `rev` it has seen, so a list overtaken by a newer one is not
+  taken. (The snapshot carries an empty `looks` for a console older than
+  this; remove it once none can be open.)
+- **The welcome says which console the engine serves**:
+  `{"type": "welcome", "id", "tier", "bundle"}`, where `bundle` is the entry
+  script ui/dist/index.html names now (`assets/index-<hash>.js`, or null with
+  no build). A page left open across an update reconnects by itself and goes
+  on running its old bundle; when that differs from `bundle`, it shows a
+  banner asking to be reloaded.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
 - A command may carry an `id` (a short string or an integer). It then gets a

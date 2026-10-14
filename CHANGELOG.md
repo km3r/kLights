@@ -67,6 +67,21 @@ slow link falls behind far later, and a phone on a weak signal parses a
 ninth of what it did. The console holds the two together, so nothing that
 draws a look changed.
 
+- **Reload any console that was open across this update.** A page reconnects
+  by itself and keeps running the bundle it loaded. One from before this
+  change reads the look list from the snapshot, so the snapshot still
+  carries an empty `looks` for it: it stays up, with no looks to pick, until
+  it is reloaded. Remove that once no bundle that old can be open.
+- **From here on a page says when it needs a reload.** The welcome frame
+  carries `bundle`, the console the engine serves now
+  (`assets/index-<hash>.js`, read from ui/dist/index.html per connection), and
+  a page running a different one shows a banner with a Reload button -- on
+  the console and on every Studio page.
+- **An older look list cannot overwrite a newer one.** The list a console is
+  sent as it connects could be overtaken by the broadcast of a library
+  installed meanwhile; the console now keeps the higher `rev` on each
+  connection.
+
 ### Changed — the controller is one module per part, not one 5,000-line file
 
 `engine/server.py` held the HTTP and WebSocket transport and the whole

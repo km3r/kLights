@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import secrets
 import socket
 import sys
@@ -84,6 +85,9 @@ SEND_DEADLINE_S = 5.0
 # cap is what keeps that client from growing the engine's memory until
 # SEND_DEADLINE_S catches up with it.
 REPLY_BACKLOG = 256
+
+# The script an index.html loads: the bundle a page that loaded it is running.
+ENTRY_RE = re.compile(r'<script[^>]*\bsrc="\.?/?(assets/[^"]+\.js)"')
 
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript",
         ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml",
@@ -335,6 +339,17 @@ class ShowServer:
         return secrets.compare_digest(supplied.encode("utf-8"),
                                       self.token.encode("utf-8"))
 
+    def bundle(self) -> Optional[str]:
+        """The console's entry script as ui/dist/index.html names it now
+        (`assets/index-<hash>.js`), or None without one. Read per connection,
+        not once: a rebuild while the engine runs is a new console."""
+        try:
+            html = (self.ui_dir / "index.html").read_text(encoding="utf-8")
+        except OSError:
+            return None
+        found = ENTRY_RE.search(html)
+        return found.group(1) if found else None
+
     def new_client_id(self) -> str:
         with self._id_lock:
             self._next_id += 1
@@ -474,8 +489,11 @@ class ShowServer:
         self.controller.add_client(client)
         try:
             with lock:
+                # `bundle`: the console this engine serves now, so a page
+                # still running an older one -- open since before an update,
+                # reconnected by itself -- can tell, and ask to be reloaded.
                 ws.send(json.dumps({"type": "welcome", "id": cid,
-                                    "tier": tier}))
+                                    "tier": tier, "bundle": self.bundle()}))
                 # The look list is not in the snapshot: a console is sent it
                 # once as it connects, and again only when it changes.
                 ws.send(json.dumps(self.controller.looks_frame()))

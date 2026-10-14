@@ -24,7 +24,7 @@ import { EditTags, Reach, offeredLooks, rigTags } from "./roles";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
-import { SideSection } from "./detail";
+import { ReloadBanner, SideSection } from "./detail";
 import "./designer.css";
 
 /**
@@ -123,6 +123,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
         <header className="d-top"><a className="d-link" href="#studio/routines">Studio</a></header>
+        <ReloadBanner stale={engine.stale} />
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -174,6 +175,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
         <PanelToggle open={panels.edit} side="right" label="side panel"
                      onToggle={() => togglePanel("edit")} />
       </header>
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
 
       <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>

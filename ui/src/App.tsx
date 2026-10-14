@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useEngine, useWakeLock } from "./useEngine";
 import { ModeProvider, useMode } from "./mode";
-import { Banner, BeatDots, Fader } from "./components";
+import { Banner, BeatDots, Fader, RELOAD_TEXT } from "./components";
 import { GuideView, Welcome, guideFromHash, readWelcomed, writeWelcomed } from "./Guide";
 import type { GuideId } from "./guideContent";
 import { ShowTab } from "./tabs/Show";
@@ -91,7 +91,7 @@ function tabFromHash(hash: string, mode: string): TabId | null {
 }
 
 function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
-  const { state, status, send, name, setName, tier } = engine;
+  const { state, status, send, name, setName, tier, stale } = engine;
   const [mode, setMode] = useMode();
   // Keep the tab in the URL hash so a reload, or a phone waking up, comes back
   // where it was rather than to the front page mid-set. Read when the state is
@@ -213,7 +213,7 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
               a one-tap release whenever it IS engaged. */}
         </div>
 
-        <Banners state={state} status={status} send={send} tier={tier} />
+        <Banners state={state} status={status} send={send} tier={tier} stale={stale} />
       </header>
 
       <main className="main" ref={mainRef}>
@@ -269,11 +269,23 @@ function Console({ engine }: { engine: ReturnType<typeof useEngine> }) {
  * silently disables the safety taper, which is the one state nobody should be
  * in without knowing.
  */
-export function Banners({ state, status, send, tier }: {
+export function Banners({ state, status, send, tier, stale = false }: {
   state: EngineState | null; status: string; send: (c: Command) => void;
-  tier: Tier;
+  tier: Tier; stale?: boolean;
 }) {
   const banners = [];
+
+  // A page open since before an update reconnects by itself and carries on
+  // running the old console against the new engine, which may not read what
+  // it is now sent. Only a reload fixes that, and nothing else would say so.
+  if (stale) {
+    banners.push(
+      <Banner key="stale" kind="warn">
+        {RELOAD_TEXT}
+        <button className="small" style={{ marginLeft: "auto" }}
+                onClick={() => location.reload()}>Reload</button>
+      </Banner>);
+  }
 
   // Say it up front. Without this, a client that arrived without the token gets
   // a console that looks completely normal and quietly ignores every press —

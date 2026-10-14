@@ -75,6 +75,11 @@ export function Toggle({ label, hint, on, onChange }: {
   );
 }
 
+/** What every page says while the engine serves a newer bundle than the one
+ *  it is running (`useEngine`'s `stale`). */
+export const RELOAD_TEXT =
+  "The engine has been updated since this page was opened. Reload it to get the current console.";
+
 export function Banner({ kind, children }: {
   kind: "bad" | "warn" | "info"; children: ReactNode;
 }) {

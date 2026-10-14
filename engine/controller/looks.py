@@ -422,6 +422,14 @@ class Looks:
             # page that lists the library in full (Studio's Looks, over
             # /api/looks) reads it again when this moves, rather than polling.
             "looks_rev": self.looks_rev or "",
+            # Empty, for a console still running a bundle from before the
+            # list had its own frame: that one reads `state.looks` and would
+            # throw on its absence, blanking the page mid-show. Empty, it shows
+            # no looks and stays up, and the reload it needs anyway (which the
+            # new bundle asks for, see `bundle` in the welcome) fixes it. A
+            # current console takes the list from the frame and ignores this.
+            # Remove once no bundle that old can be open.
+            "looks": [],
         }
 
     def looks_frame(self) -> dict:

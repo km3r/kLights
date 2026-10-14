@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Command, EngineState, Request, Tier } from "../types";
 import { apiFetch, apiUrl } from "../useEngine";
-import { SideSection } from "./detail";
+import { ReloadBanner, SideSection } from "./detail";
 import { PlanSvg } from "../Plan";
 import {
   BEATS_PER_BAR, DESIGNER_CHUNK, Grid, TrackAudio, barBeat, clock, decodeWave, draftFromTemplate,
@@ -68,6 +68,8 @@ export interface Engine {
   tier: Tier;
   /** This console's id on the engine, once it has said hello. */
   clientId?: string | null;
+  /** The engine serves a newer bundle than this page is running. */
+  stale?: boolean;
 }
 
 const HEADER_W = 170;
@@ -428,6 +430,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
         <header className="d-top"><a className="d-link" href="#studio">Studio</a></header>
+        <ReloadBanner stale={engine.stale} />
         <p className="d-error">{loadError ?? docError}</p>
       </div>
     );
@@ -657,6 +660,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             <button onClick={() => void arm(true)}>Take the rig anyway</button>)}
         </div>
       )}
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
       {audioState === "none" && (
         <div className="d-banner">

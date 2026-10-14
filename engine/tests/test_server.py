@@ -23,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -257,6 +258,15 @@ check("Sec-WebSocket-Accept is correct", client.accept in client.header)
 
 welcome = client.recv()
 check("welcome carries a client id", welcome["type"] == "welcome" and welcome["id"])
+entry = servermod.ENTRY_RE.search((server.ui_dir / "index.html").read_text(encoding="utf-8"))
+check("... and the console bundle this engine serves, so an older page can tell",
+      entry is not None and welcome.get("bundle") == entry.group(1)
+      and welcome["bundle"].startswith("assets/index-"), f"{welcome.get('bundle')}")
+# (Not a second ShowServer: constructing one takes over the controller's replies.)
+blank = Path(tempfile.mkdtemp())
+check("... or none, where there is no built console to name",
+      ShowServer.bundle(types.SimpleNamespace(ui_dir=blank)) is None)
+shutil.rmtree(blank, ignore_errors=True)
 
 looks = client.recv()
 check("the look list comes next, in a frame of its own",
@@ -264,7 +274,9 @@ check("the look list comes next, in a frame of its own",
 state = client.recv()
 check("first state frame arrives immediately", state["type"] == "state")
 check("and it carries no look list: that is sent when it changes, not 10x a second",
-      "looks" not in state, f"{len(json.dumps(state))} bytes")
+      state.get("looks") == [], f"{len(json.dumps(state))} bytes")
+check("... only an empty one, so a console from before the frame stays up",
+      isinstance(state["looks"], list))
 check("it describes the rig",
       len(state["fixtures"]) == len(controller.rig.fixtures)
       and state["event"] == "despacio",
