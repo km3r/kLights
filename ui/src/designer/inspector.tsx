@@ -1,6 +1,7 @@
 import type { EngineState } from "../types";
 import type { Engine } from "./Designer";
-import { clipOps, itemOf } from "./clipboard";
+import { clipOps } from "./clipboard";
+import { itemOf } from "./ids";
 import { rememberBack } from "./document";
 import type { Edits, History, RowsDoc } from "./history";
 import { FADES, ROLES } from "./items";

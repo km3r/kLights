@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { parseAudioId, parsePointId, parseWaveId } from "./automation";
+import { itemOf, parseAudioId, parsePointId, parseWaveId, rowOf } from "./ids";
 import type { Edits, RowsDoc } from "./history";
 import { uniqueId } from "./model";
 import type { Item, Row } from "./model";
@@ -238,15 +238,3 @@ export type Placeable =
   /** This rig's own: a look from its library, or a preset as a snapshot. */
   | { kind: "look"; name: string }
   | { kind: "snapshot"; preset: string };
-
-export function rowOf(doc: RowsDoc, id: string): Row | undefined {
-  return doc.rows.find((r) => r.id === id);
-}
-
-export function itemOf(doc: RowsDoc, id: string): Item | undefined {
-  for (const r of doc.rows) {
-    const it = (r.items ?? []).find((i) => i.id === id);
-    if (it) return it;
-  }
-  return undefined;
-}

@@ -11,12 +11,11 @@ import type {
   PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave, WaveformDoc,
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
-import {
-  AudioInspector, PointInspector, WaveInspector, parseAudioId, parsePointId, parseWaveId,
-} from "./automation";
+import { AudioInspector, PointInspector, WaveInspector } from "./automation";
 import { clipOps, copyRange, cutRange, setClipBoard, useClipBoard } from "./clipboard";
 import type { Placeable } from "./clipboard";
 import { Toolbar, rememberBack, useSavedDoc } from "./document";
+import { parseAudioId, parsePointId, parseWaveId } from "./ids";
 import type { RowsDoc } from "./history";
 import { Inspector } from "./inspector";
 import { HITS, gapStart, newHit } from "./items";

@@ -4,7 +4,8 @@ import {
   uniqueId,
 } from "./model";
 import type { AudioBand, Grid, Item, Row, TrackDoc, Wave } from "./model";
-import { AutoSvg, audioId, defaultAudio, defaultWave, laneTitle, waveId } from "./automation";
+import { AutoSvg, defaultAudio, defaultWave, laneTitle } from "./automation";
+import { audioId, waveId } from "./ids";
 import type { Placeable } from "./clipboard";
 import type { Edits } from "./history";
 import { gapStart, newVisuals } from "./items";

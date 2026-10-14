@@ -3,6 +3,9 @@ import { AUTOMATION_RANGES } from "../showfiles.generated";
 import { BLOCK_ARGS } from "./model";
 import type { Point, PointValue, Row, TrackAudio } from "./model";
 
+/** The height every lane is drawn at, clips and automation alike. */
+export const LANE_H = 40;
+
 /**
  * What an automation lane drives, as a lane draws and edits it: the macros'
  * fixed ranges, a routine's open parameters, and the block arguments an `arg.`

@@ -848,8 +848,10 @@ The editors are `ui/src/designer/`: the three pages (`Designer.tsx` for a
 track, `RoutineEditor.tsx`, `Templates.tsx`) over the pieces they share, one
 module each -- `document.tsx` (opening a document, `useSavedDoc`; its working
 copy, the engine's verdict, Save), `history.ts`, `keys.ts`, `clipboard.ts`,
-`items.ts`, `menus.tsx`, `roles.tsx`, `laneSpecs.ts`, `laneSvg.tsx`,
-`automation.tsx`, `shelf.tsx`, `inspector.tsx` and `outputCues.tsx`.
+`ids.ts` (what is selected, by id), `items.ts`, `menus.tsx`, `roles.tsx`,
+`laneSpecs.ts`, `laneSvg.tsx`, `automation.tsx`, `shelf.tsx`, `inspector.tsx`
+and `outputCues.tsx`. None of them imports another that imports it back
+(`ui/src/test/imports.test.ts`).
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
 behind the MCP server (an event's looks are [`looktools.py`](../engine/looktools.py)

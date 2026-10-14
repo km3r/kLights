@@ -22,7 +22,7 @@ the commit messages keep those labels.
 `ui/src/designer/edit.tsx` was 2,700 lines holding everything the timeline,
 routine and template-set editors share -- lane specs, undo history, keys,
 the clipboard, the toolbar and Save, menus, lanes, automation, the shelf,
-the inspector, the cue editors -- behind one `Editor` object. It is thirteen
+the inspector, the cue editors -- behind one `Editor` object. It is fourteen
 modules now, one per concern (see docs/engine.md), each imported by name
 where it is used. The code moved and did not change.
 
@@ -34,6 +34,11 @@ where it is used. The code moved and did not change.
   editor treated any failure to read a timeline as "there is none" and opened
   an empty one; now only "not there" does, as the routine and template-set
   editors already did, and anything else is an error on the page.
+- **No import cycle among them.** Automation, the clipboard and the lanes
+  each reached into another for a selection id or the lane height -- the
+  kind of loop that works until the bundler orders it differently and a
+  `const` is read before it exists. The ids are in `ids.ts`, `LANE_H` in
+  `laneSpecs.ts`, and a test fails on any runtime cycle in `ui/src`.
 
 ### Changed — the console is built against the engine's own command list
 

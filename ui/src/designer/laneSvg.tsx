@@ -1,9 +1,10 @@
 import { useContext, useState } from "react";
 import { AutomationMenu } from "./automation";
-import { PLACE_MIME, itemOf, placeable, rowOf } from "./clipboard";
+import { PLACE_MIME, placeable } from "./clipboard";
 import type { Placeable } from "./clipboard";
 import type { Edits, History, RowsDoc } from "./history";
-import { ParamLanes } from "./laneSpecs";
+import { itemOf, rowOf } from "./ids";
+import { LANE_H, ParamLanes } from "./laneSpecs";
 import { barBeat, itemName, itemSub, uniqueId } from "./model";
 import type { Item, Row } from "./model";
 
@@ -11,8 +12,6 @@ import type { Item, Row } from "./model";
  * A lane of clips, drawn and edited: its items, its gap rule, its menu,
  * and adding a lane.
  */
-export const LANE_H = 40;
-
 export function LaneSvg({ row, x, width, zoom, selected, onSelect, history, onMenu, onDropItem, onAdd,
                    noun }: {
   row: Row; x: (b: number) => number; width: number; zoom: number;

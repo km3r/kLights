@@ -1,12 +1,11 @@
 import { useContext, useMemo, useState } from "react";
 import { WAVE_SHAPES } from "../blocks";
 import { AUTOMATION_RANGES, CURVES } from "../showfiles.generated";
-import { rowOf } from "./clipboard";
+import { pointId, rowOf } from "./ids";
 import type { Edits, RowsDoc } from "./history";
 import { ROLES } from "./items";
-import { ARG_TARGET, LaneAudio, PARAM_TARGET, laneSpec, useLaneSpec } from "./laneSpecs";
+import { ARG_TARGET, LANE_H, LaneAudio, PARAM_TARGET, laneSpec, useLaneSpec } from "./laneSpecs";
 import type { LaneSpec, LaneSpecs } from "./laneSpecs";
-import { LANE_H } from "./laneSvg";
 import {
   AUDIO_BANDS, AUDIO_STEP, BEATS_PER_BAR, barBeat, curveValue, laneValue, uniqueId, waveLevel,
 } from "./model";
@@ -16,26 +15,6 @@ import type { AudioBand, AudioSpec, Point, PointValue, Row, WaveSpec } from "./m
  * An automation lane: its points, its wave and the band of the track's
  * audio it follows, drawn and edited, and the menu of what a lane can drive.
  */
-/** A point's selection id: points have no ids of their own, so the row and
- *  the beat name one. */
-export function pointId(rowId: string, beat: number): string {
-  return `pt:${rowId}:${beat}`;
-}
-
-export function parsePointId(id: string | null): { row: string; beat: number } | null {
-  const m = id ? /^pt:(.+):(-?[\d.]+(?:e-?\d+)?)$/.exec(id) : null;
-  return m ? { row: m[1]!, beat: Number(m[2]) } : null;
-}
-
-/** A lane's wave's selection id: a row has at most one. */
-export function waveId(rowId: string): string {
-  return `wave:${rowId}`;
-}
-
-export function parseWaveId(id: string | null): string | null {
-  return id?.startsWith("wave:") ? id.slice(5) : null;
-}
-
 /**
  * A new wave for a lane, sized to stay in range: a number lane's swings a
  * quarter of its drawn range, upward if its points leave more room above
@@ -52,15 +31,6 @@ export function defaultWave(row: Row, spec: LaneSpec): WaveSpec {
   const quarter = (spec.hi - spec.lo) / 4;
   const depth = up >= down ? Math.min(up, quarter) : -Math.min(down, quarter);
   return { shape: "sine", bars: 4, depth: Math.round(depth * 100) / 100 };
-}
-
-/** A lane's audio band's selection id: a row has at most one. */
-export function audioId(rowId: string): string {
-  return `audio:${rowId}`;
-}
-
-export function parseAudioId(id: string | null): string | null {
-  return id?.startsWith("audio:") ? id.slice(6) : null;
 }
 
 /** How far a row's wave and audio band can lower its points, and lift them

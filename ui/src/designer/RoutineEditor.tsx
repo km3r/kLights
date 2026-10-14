@@ -6,9 +6,8 @@ import {
   blocksFor, findItem, hexColor, itemName, uniqueId,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
-import {
-  AutomationMenu, PointInspector, WaveInspector, parsePointId, parseWaveId,
-} from "./automation";
+import { AutomationMenu, PointInspector, WaveInspector } from "./automation";
+import { parsePointId, parseWaveId } from "./ids";
 import { Toolbar, backHash, useSavedDoc } from "./document";
 import type { History } from "./history";
 import { EventList } from "./inspector";

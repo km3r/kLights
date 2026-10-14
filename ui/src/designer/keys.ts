@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { parsePointId } from "./automation";
 import { clipBoard, clipOps, removeSelected } from "./clipboard";
 import type { ClipKind } from "./clipboard";
+import { parsePointId } from "./ids";
 import type { Edits } from "./history";
 
 /**
