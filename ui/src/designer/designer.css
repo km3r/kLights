@@ -632,6 +632,31 @@ a.s-use:hover b { color: var(--accent); }
 .s-slot.m { border-color: rgba(90, 169, 255, 0.5); }
 .s-slot.c { border-color: rgba(255, 120, 190, 0.5); }
 .s-slot.l { border-color: rgba(255, 182, 72, 0.5); }
+/* the Cues page */
+.s-cue-now { margin: 0; font-size: 13px; }
+.s-table td.s-cue-looks { min-width: 240px; }
+.s-cue-slot { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
+.s-cue-slot .s-slot { flex: none; min-width: 66px; text-align: center; }
+.s-cue-held { display: flex; flex-direction: column; white-space: nowrap; }
+.s-table td.s-cue-timing { white-space: nowrap; }
+.s-cue-timing > span { display: block; }
+.s-cue-missing { color: var(--warn); }
+.designer select.s-cue-missing { border-color: var(--warn); }
+.s-cue-notes { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-table .s-cue-order { white-space: nowrap; text-align: right; }
+.designer .s-cue-order .s-icon { min-height: 22px; min-width: 22px; padding: 0 4px; font-size: 10px; }
+.s-table.s-cues tr[draggable="true"] { cursor: grab; }
+.s-table.s-cues tr.s-drop td { box-shadow: 0 2px 0 var(--accent) inset; }
+.s-cue-lanes { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.s-cue-lane { display: grid; grid-template-columns: minmax(70px, 110px) minmax(0, 1fr) auto; gap: 6px; align-items: center; width: 100%; }
+.s-cue-lane select { min-width: 0; width: 100%; }
+.s-cue-row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.s-num { display: flex; flex-direction: column; gap: 2px; }
+.designer .s-num input { width: 92px; }
+.s-cue-opt { display: flex; flex-direction: column; gap: 6px; }
+.s-cue-opt-body { display: flex; flex-direction: column; gap: 6px; padding-left: 20px; }
+.s-cue-tune { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid #1e2430; }
+.s-cue-flags { margin: 4px 0; padding-left: 18px; font-size: 12px; }
 .s-args { display: flex; flex-direction: column; gap: 6px; }
 .s-args .d-arg > span:first-child { min-width: 84px; }
 .designer .s-notes { width: 100%; resize: vertical; font: inherit; font-size: 12px; }

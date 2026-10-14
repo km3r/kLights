@@ -22,6 +22,8 @@ the show.
     /api/looks                the EVENT's look library, not the show folder's:
                               every look, what it is and what names it (so it
                               answers with no show folder too)
+    /api/cues                 the EVENT's cue list, in running order: every
+                              cue in full, and what is wrong with each
     /api/waveforms/<id>       a track's waveform, read from disk on request
     /api/audio/<id>           the track's audio file, with Range (206)
     /api/rekordbox            the DJ's rekordbox collection: playlists and
@@ -65,7 +67,7 @@ VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
 
 _ID = r"[a-z0-9][a-z0-9_-]{0,63}"
 _ROUTE = re.compile(rf"^/api/(show|tracks|timelines|routines|templates|waveforms"
-                    rf"|audio|rekordbox|palettes|looks)(?:/({_ID}))?/?$")
+                    rf"|audio|rekordbox|palettes|looks|cues)(?:/({_ID}))?/?$")
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 _MEDIA = re.compile(r"^/api/media(?:/([^/]*))?/?$")
 
@@ -95,10 +97,12 @@ def handle(library, path: str, range_header: Optional[str] = None,
            audio_roots: Sequence[str] = (),
            collection: Optional["collectionmod.Collection"] = None,
            query: str = "",
-           looks: Optional[Callable[[], dict]] = None) -> Response:
+           looks: Optional[Callable[[], dict]] = None,
+           cues: Optional[Callable[[], dict]] = None) -> Response:
     """Answer one GET. `library` is the controller's current
     `showlibrary.Library`, or None without a show folder. `looks` answers
-    /api/looks: the controller's own description of its look library."""
+    /api/looks, and `cues` /api/cues: the controller's own description of its
+    look library and of its cue list."""
     media = _MEDIA.match(path)
     if media is not None:
         return _media(library, media.group(1), range_header, token_ok)
@@ -120,6 +124,18 @@ def handle(library, path: str, range_header: Optional[str] = None,
             # server as a dropped connection, which a page can only show as
             # "failed to fetch".
             return _error(500, f"the look library could not be described: "
+                               f"{type(exc).__name__}: {exc}")
+    if match.group(1) == "cues":
+        # The event's too, and answered the same way.
+        if match.group(2) is not None:
+            return _error(404, "/api/cues takes no id: a cue is found by "
+                               "name, in the list")
+        if cues is None:
+            return _error(503, "this engine has no cue list to read")
+        try:
+            return _json(cues())
+        except Exception as exc:                            # noqa: BLE001
+            return _error(500, f"the cue list could not be described: "
                                f"{type(exc).__name__}: {exc}")
     if library is None:
         return _error(503, "no show folder -- start the engine with --show-dir")

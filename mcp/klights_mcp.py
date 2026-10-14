@@ -11,7 +11,8 @@ needed is three methods.
 
 **Everything it can change goes through `engine.patch`** (the rig),
 **`engine.showtools`** (the show folder: tracks, timelines, routines, template
-sets) **or `engine.looktools`** (an event's looks). This file is a
+sets), **`engine.looktools`** (an event's looks) **or `engine.cuetools`** (its
+cue list). This file is a
 translation layer and nothing else: no validation rules live here, so the answer
 to "is this patch legal" cannot drift between saying it in chat, typing it at
 the CLI, and tapping it in the UI.
@@ -31,6 +32,8 @@ Two deliberate restrictions:
     An event's LOOKS are like the show folder: the engine watches the look
     files and reads an edit by itself. Only a rename is refused mid-show --
     it has presets and a cue list to move that the engine holds in memory.
+    An event's CUE LIST is watched too, and nothing about it is refused
+    mid-show: the engine reads the edit and keeps its place in the list.
 
 Stdout is the transport, so nothing may print to it. Diagnostics go to stderr.
 """
@@ -45,6 +48,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from engine import cuetools                                # noqa: E402
 from engine import looktools                               # noqa: E402
 from engine import patch                                   # noqa: E402
 from engine import showtools                               # noqa: E402
@@ -221,6 +225,58 @@ LOOK_TOOLS = [
                              **_LOOK_REV, **_WRITE}, ["name"])},
 ]
 
+_CUE_REV = {"base_rev": {**_STR, "description":
+                         "the rev list_cues or get_cue gave, so a change made "
+                         "elsewhere since is refused rather than overwritten. "
+                         "\"\" when the event has no cues.json yet. Required "
+                         "to write."}}
+
+CUE_TOOLS = [
+    {"name": "list_cues",
+     "description": "An event's cue list in running order, a line each: the "
+                    "night as the console's GO button steps through it. Each "
+                    "cue's looks by slot and fixture group, its fade and hold "
+                    "in beats, and flags for anything wrong with it (a look "
+                    "the library lacks, a look in the wrong slot). Also the "
+                    "rev a write must quote.",
+     "inputSchema": _schema({**_EVENT}, [])},
+    {"name": "get_cue",
+     "description": "One cue in full: the look in each slot (movement, color, "
+                    "level) per fixture group, fade and hold in beats, and "
+                    "what else it restores -- macro, rates, per-look params, "
+                    "speed, master -- its notes, where it is in the order, "
+                    "and what is wrong with it.",
+     "inputSchema": _schema({**_EVENT, "name": _STR}, ["name"])},
+    {"name": "put_cue",
+     "description": "Check a cue and, with write=true and base_rev, save it. "
+                    "cue: {name, movement?, color?, level?, fade?, hold?, "
+                    "speed?, master?, macro?, rates?, params?, notes?} -- each "
+                    "slot is {fixture group: look name}; fade and hold are "
+                    "BEATS (fade 0 is a cut, hold 0 waits for GO); macro is "
+                    "{size?, spread?, center?: [bearing, elevation]}; rates is "
+                    "{slot: 0-8}; params is {look name: {argument: value}}. "
+                    "Without `was` it is a NEW cue, at place `at` in the "
+                    "running order (0 is first; last when omitted). With "
+                    "`was` it changes the cue of that name -- renaming it "
+                    "when cue.name differs, moving it when `at` is given. A "
+                    "look the library lacks is a warning, not a refusal. A "
+                    "running engine reads the save by itself and keeps its "
+                    "place in the list.",
+     "inputSchema": _schema({**_EVENT, "cue": {"type": "object"},
+                             "was": {**_STR, "description":
+                                     "the cue's name as you read it; omit to "
+                                     "make a new cue"},
+                             "at": {**_INT, "description":
+                                    "its place in the running order, 0 for "
+                                    "first"},
+                             **_CUE_REV, **_WRITE}, ["cue"])},
+    {"name": "delete_cue",
+     "description": "Delete a cue. The last one cannot go: a cue list cannot "
+                    "be empty.",
+     "inputSchema": _schema({**_EVENT, "name": _STR, **_CUE_REV, **_WRITE},
+                            ["name"])},
+]
+
 TOOLS = [
     {
         "name": "describe_rig",
@@ -323,7 +379,7 @@ TOOLS = [
                        "it survives a fresh clone and can be patched.",
         "inputSchema": _schema({"path": _STR}, ["path"]),
     },
-] + SHOW_TOOLS + LOOK_TOOLS
+] + SHOW_TOOLS + LOOK_TOOLS + CUE_TOOLS
 
 
 # ------------------------------------------------------------------- tools --
@@ -424,6 +480,23 @@ def call_look_tool(name: str, args: dict) -> "dict | None":
     return None
 
 
+def call_cue_tool(name: str, args: dict) -> "dict | None":
+    """The cue-list tools, or None for a name that is not one."""
+    event = args.get("event", "despacio")
+    write = bool(args.get("write", False))
+    if name == "list_cues":
+        return cuetools.list_cues(event)
+    if name == "get_cue":
+        return cuetools.get_cue(args["name"], event)
+    if name == "put_cue":
+        return cuetools.put_cue(args["cue"], args.get("was"), args.get("at"),
+                                args.get("base_rev"), write, event)
+    if name == "delete_cue":
+        return cuetools.delete_cue(args["name"], args.get("base_rev"), write,
+                                   event)
+    return None
+
+
 def call_tool(name: str, args: dict) -> dict:
     shown = call_show_tool(name, args)
     if shown is not None:
@@ -431,6 +504,9 @@ def call_tool(name: str, args: dict) -> dict:
     looked = call_look_tool(name, args)
     if looked is not None:
         return looked
+    cued = call_cue_tool(name, args)
+    if cued is not None:
+        return cued
     if name == "describe_rig":
         return patch.describe(args.get("event", "despacio"))
     if name == "list_profiles":

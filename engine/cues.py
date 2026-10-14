@@ -184,7 +184,22 @@ CUES_SCHEMA = {
 
 
 def load(path: Path) -> CueList:
-    cfg = configmod.load(Path(path), CUES_SCHEMA)
+    return _build(configmod.load(Path(path), CUES_SCHEMA), path)
+
+
+def parse(cfg: dict, path: Path) -> CueList:
+    """The cue list a document would load as -- or why it would not.
+
+    Everything `load` does to a file once it is read, for a document that is
+    not a file yet: an editor (`cuestore`) holds what it is about to write to
+    this, so a save can never write a cues.json the next start refuses. Like a
+    load, it drops an optional key set to null from `cfg`.
+    """
+    configmod.validate(cfg, CUES_SCHEMA, Path(path), drop=True)
+    return _build(cfg, path)
+
+
+def _build(cfg: dict, path: Path) -> CueList:
     cues = [Cue(name=c["name"],
                 movement=dict(c.get("movement", {})),
                 color=dict(c.get("color", {})),

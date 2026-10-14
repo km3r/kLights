@@ -109,6 +109,92 @@ test("a look made and changed in Studio is written to the event, and a console's
     await expect(looks.getByRole("button", { name: "By Hand" })).toBeVisible({ timeout: 10_000 });
   });
 
+test("a cue changed, made and moved in Studio is in cues.json, and on a console's GO card at once",
+  async ({ page, browser, engine }) => {
+    type Cue = { name: string; fade: number; movement?: Record<string, string> };
+    const file = join(engine.eventDir, "cues.json");
+    const read = () => JSON.parse(readFileSync(file, "utf8")) as { cues: Cue[]; _comment: string[];
+                                                                     $schema: string; name: string };
+    const night = read();
+    await page.goto(engine.url("studio/cues"));
+    await page.getByRole("button", { name: "Not now" }).click();
+    const cues = page.getByRole("region", { name: "cues" });
+    const where = cues.getByRole("status", { name: "where the list is" });
+    await expect(cues.getByRole("button", { name: "Warm Up", exact: true })).toBeVisible();
+    await expect(where).toContainText("Not started");
+
+    // A console, open the whole time and two cues into the night.
+    const phone = await browser.newContext();
+    await phone.addInitScript(() => localStorage.setItem("klights.guide.welcomed", "1"));
+    const console_ = await phone.newPage();
+    try {
+      await console_.goto(engine.url());
+      const card = console_.locator(".card")
+        .filter({ has: console_.getByRole("button", { name: /all \d+ cues$/ }) });
+      await card.getByRole("button", { name: "GO — Warm Up" }).click();
+      await card.getByRole("button", { name: "GO — Idle" }).click();
+      await expect(card).toContainText("Now: Idle");
+      // Studio says which cue is live, from the same snapshot.
+      await expect(where).toContainText("Now: Idle (2 of 9) · GO takes Deep");
+
+      // A cue changed in its panel: another look, a shorter fade.
+      await cues.getByRole("button", { name: "Deep", exact: true }).click();
+      const panel = page.getByLabel("selected cue");
+      await panel.getByLabel("movement look for corner movers").selectOption("Ball Wave");
+      await panel.getByLabel("fade").fill("4");
+      await panel.getByRole("button", { name: "Save the cue" }).click();
+      await expect(page.getByText(/Saved Deep/)).toBeVisible();
+      let saved = read();
+      expect(saved.cues.find((c) => c.name === "Deep"))
+        .toMatchObject({ movement: { "corner movers": "Ball Wave" }, fade: 4 });
+      // The file keeps what was in it by hand: its comments, its schema line,
+      // its name, and every other cue exactly.
+      expect(saved._comment).toEqual(night._comment);
+      expect(saved.$schema).toBe(night.$schema);
+      expect(saved.name).toBe("Night");
+      expect(saved.cues.filter((c) => c.name !== "Deep"))
+        .toEqual(night.cues.filter((c) => c.name !== "Deep"));
+
+      // A new cue, at a place in the running order.
+      await cues.getByRole("button", { name: "New cue…" }).click();
+      const dialog = page.getByRole("dialog", { name: "New cue" });
+      await dialog.getByLabel("name").fill("E2E Haze");
+      await dialog.getByLabel("where in the running order").selectOption({ label: "after Idle" });
+      await dialog.getByRole("button", { name: "Make it" }).click();
+      await expect(page.getByText(/Made E2E Haze/)).toBeVisible();
+      expect(read().cues.map((c) => c.name).slice(0, 4)).toEqual(["Warm Up", "Idle", "E2E Haze", "Deep"]);
+      // No restart: the console lists ten, is still on the cue it was on, and
+      // GO now takes the new one.
+      await expect(card.getByRole("button", { name: "Show all 10 cues" })).toBeVisible();
+      await expect(card).toContainText("Now: Idle");
+      await expect(card.getByRole("button", { name: "GO — E2E Haze" })).toBeVisible();
+
+      // The LIVE cue moved up the order: the console stays on it.
+      await cues.getByRole("button", { name: "move Idle up" }).click();
+      await expect(page.getByText(/Moved Idle to 1 of 10/)).toBeVisible();
+      expect(read().cues.map((c) => c.name).slice(0, 2)).toEqual(["Idle", "Warm Up"]);
+      await expect(card).toContainText("Now: Idle");
+      await expect(card.getByRole("button", { name: "GO — Warm Up" })).toBeVisible();
+
+      // The console takes the changed cue as it was saved.
+      await card.getByRole("button", { name: "Show all 10 cues" }).click();
+      const tile = card.getByRole("button", { name: /^4\. Deep/ });
+      await expect(tile).toContainText("4 beat fade");
+      await tile.click();
+      await expect(card).toContainText("Now: Deep");
+      await expect(cues.locator("tr").filter({ has: page.getByRole("button", { name: "Deep", exact: true }) }))
+        .toContainText("Live");
+      await console_.goto(engine.url("move"));
+      await expect(console_.getByRole("button", { name: "Ball Wave" }).first()).toHaveClass(/on/);
+
+      // And Studio rewinds the list, which no console had a button for.
+      await cues.getByRole("button", { name: "Reset" }).click();
+      await expect(where).toContainText("Not started · GO takes Idle");
+    } finally {
+      await phone.close();
+    }
+  });
+
 test("a clip edited in the inspector is checked by the engine and saved to the file",
   async ({ page, engine }) => {
     const file = join(engine.showDir!, "timelines", "synth-128.json");

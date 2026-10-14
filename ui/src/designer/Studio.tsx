@@ -3,6 +3,8 @@ import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } fr
 import { PaletteDetail, PalettesView } from "./Palettes";
 import { LookDetail, LooksView } from "./Looks";
 import type { LookDraft } from "./Looks";
+import { CueDetail, CuesView } from "./Cues";
+import type { CueDraft } from "./Cues";
 import { NewDialog, NewMenu } from "./New";
 import type { NewKind } from "./New";
 import { TemplateAside, TemplatesView } from "./Templates";
@@ -12,7 +14,9 @@ import { apiFetch } from "../useEngine";
 import type { StudioRoute } from "../studioRoute";
 import type { Engine } from "./Designer";
 import { DESIGNER_CHUNK } from "./model";
-import type { CatalogueTrack, LooksList, RoutineSummary, ShowSummary, TrackLine } from "./model";
+import type {
+  CatalogueTrack, CuesList, LooksList, RoutineSummary, ShowSummary, TrackLine,
+} from "./model";
 import { ALL, Coverage, RekordboxNav, RekordboxView, loadCatalogue } from "./Collection";
 import { TrackDetail, TracksView } from "./Library";
 import type { ActiveSet } from "./Library";
@@ -26,8 +30,8 @@ import { DetailEmpty, Said } from "./detail";
 import "./designer.css";
 
 /**
- * Studio's library: the show folder's tracks and routines, this rig's looks,
- * and the DJ's rekordbox collection to add tracks from.
+ * Studio's library: the show folder's tracks and routines, this rig's looks
+ * and cue list, and the DJ's rekordbox collection to add tracks from.
  *
  *   top        Studio, the event, what the rig is doing, the console
  *   left       the sidebar: the library, then rekordbox's playlists
@@ -53,6 +57,9 @@ interface Library {
   /** This rig's looks: the event's, read apart from the show folder. */
   looks: LooksList | null;
   looksError: string | null;
+  /** This rig's cue list: the event's too, with a rev of its own. */
+  cues: CuesList | null;
+  cuesError: string | null;
   reload: () => void;
 }
 
@@ -99,9 +106,21 @@ function useLibrary(engine: Engine): Library {
       .catch((e: Error) => { if (live) setLooksError(e.message); });
     return () => { live = false; };
   }, [looksRev, folderRev, asked]);
+  // The cue list is read again when the engine says cues.json changed -- and
+  // when the looks do, since what is wrong with a cue is judged against them.
+  const [cues, setCues] = useState<CuesList | null>(null);
+  const [cuesError, setCuesError] = useState<string | null>(null);
+  const cuesRev = engine.state?.cues_rev;
+  useEffect(() => {
+    let live = true;
+    apiFetch<CuesList>("/api/cues")
+      .then((r) => { if (live) { setCues(r); setCuesError(null); } })
+      .catch((e: Error) => { if (live) setCuesError(e.message); });
+    return () => { live = false; };
+  }, [cuesRev, looksRev, asked]);
   const reload = useCallback(() => setAsked((n) => n + 1), []);
   return { tracks, error, routines, show, sets, palettes: palettes.palettes,
-           found: palettes.found, looks, looksError, reload };
+           found: palettes.found, looks, looksError, cues, cuesError, reload };
 }
 
 interface Dialog { title: string; prep?: PrepPick[]; tracks?: StartTrack[]; ran?: boolean }
@@ -158,6 +177,19 @@ export default function Studio({ engine, route }: {
   // whatever is next given that name.
   const unsavedLooks = useMemo(() => new Set(Object.keys(lookDrafts).filter((name) =>
     lib.looks?.looks.some((x) => x.name === name && x.source === "block"))), [lookDrafts, lib.looks]);
+  // The cue on screen, by name, and what is unsaved on the Cues page, by cue:
+  // the same arrangement as the looks, for the same reason.
+  const [cueName, setCueName] = useState<string | null>(null);
+  const [cueDrafts, setCueDrafts] = useState<Record<string, CueDraft>>({});
+  const keepCueDraft = useCallback((name: string, draft: CueDraft | null) => setCueDrafts((d) => {
+    if (draft != null) return { ...d, [name]: draft };
+    if (!(name in d)) return d;
+    const rest = { ...d };
+    delete rest[name];
+    return rest;
+  }), []);
+  const unsavedCues = useMemo(() => new Set(Object.keys(cueDrafts).filter((name) =>
+    lib.cues?.cues.some((x) => x.name === name))), [cueDrafts, lib.cues]);
   // Said on one page, gone on the next -- unless it was said about a thing
   // just made from another page, which is on its way to the page it is on.
   const saidAhead = useRef(false);
@@ -266,6 +298,29 @@ export default function Studio({ engine, route }: {
           : "No looks yet. Make one with New look."}</DetailEmpty>}
       </>
     );
+  } else if (route.view === "cues") {
+    const done = (said: string) => { setSetSaid(said); lib.reload(); };
+    main = (
+      <CuesView engine={engine} list={lib.cues} error={lib.cuesError} selected={cueName}
+                unsaved={unsavedCues}
+                onSelect={(name) => { setSetSaid(null); setCueName(name); }}
+                onNew={() => openNew("cue")} onDone={done} />
+    );
+    const at = lib.cues?.cues.findIndex((x) => x.name === cueName) ?? -1;
+    const cue = at >= 0 ? lib.cues!.cues[at]! : null;
+    side = (
+      <>
+        <Said text={setSaid} />
+        {cue && lib.cues ? (
+          <CueDetail key={cue.name} engine={engine} c={cue} index={at} list={lib.cues}
+                     looks={lib.looks}
+                     draft={unsavedCues.has(cue.name) ? cueDrafts[cue.name] : undefined}
+                     onDraft={(draft) => keepCueDraft(cue.name, draft)}
+                     onSelect={setCueName} onDone={done} />
+        ) : <DetailEmpty>{lib.cues?.cues.length ? "Select a cue to see what it takes, and to change it."
+          : "No cues yet. Make one with New cue."}</DetailEmpty>}
+      </>
+    );
   } else if (route.view === "show") {
     main = (
       <>
@@ -361,6 +416,9 @@ export default function Studio({ engine, route }: {
             <a className={`s-nav-item${route.view === "looks" ? " on" : ""}`} href="#studio/looks"
                aria-current={route.view === "looks" ? "page" : undefined}>
               <span className="s-nav-name">Looks</span><span className="s-n">{lib.looks?.looks.length || ""}</span></a>
+            <a className={`s-nav-item${route.view === "cues" ? " on" : ""}`} href="#studio/cues"
+               aria-current={route.view === "cues" ? "page" : undefined}>
+              <span className="s-nav-name">Cues</span><span className="s-n">{lib.cues?.cues.length || ""}</span></a>
             <div className="s-sec">Show</div>
             <a className={`s-nav-item${route.view === "show" ? " on" : ""}`} href="#studio/show"
                aria-current={route.view === "show" ? "page" : undefined}>
@@ -378,10 +436,14 @@ export default function Studio({ engine, route }: {
       {making && (
         <NewDialog engine={engine} kind={making} tracks={tracks} routines={lib.routines ?? []}
                    sets={lib.sets} showSet={setId} palettes={lib.palettes ?? []} found={lib.found}
-                   looks={lib.looks}
+                   looks={lib.looks} cues={lib.cues}
                    onLook={(name, said) => {
                      saidAhead.current = route.view !== "looks";
                      setLookName(name); setSetSaid(said); lib.reload();
+                   }}
+                   onCue={(name, said) => {
+                     saidAhead.current = route.view !== "cues";
+                     setCueName(name); setSetSaid(said); lib.reload();
                    }}
                    onClose={() => setMaking(null)}
                    onPalette={(id, said) => {

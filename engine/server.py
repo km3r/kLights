@@ -54,6 +54,7 @@ from . import calibrate as calibmod
 from . import collection as collectionmod
 from . import config as configmod
 from . import cues as cuesmod
+from . import cuestore
 from . import clock as clockmod
 from . import geometry as geo
 from . import library as libmod
@@ -169,6 +170,11 @@ TIER: dict[str, str] = {
     # the look library: parametric_looks.json, in the event folder
     "look_save": "configure", "look_delete": "configure",
     "look_hide": "configure", "looks_reload": "configure",
+    # the cue list: cues.json, in the event folder. Taking a cue is `operate`;
+    # changing what the cues ARE outlives the night.
+    "cue_save": "configure", "cue_copy": "configure", "cue_move": "configure",
+    "cue_delete": "configure", "cues_name": "configure",
+    "cues_reload": "configure",
     "preview_arm": "configure", "preview_transport": "configure", "preview_release": "configure",
     # GO is `operate`: driving the night is the job, not configuration.
     # everything not listed is `operate` -- see apply()
@@ -586,13 +592,26 @@ class ShowController:
         # The cue list, if this event has one. Optional: a show driven entirely
         # by hand off the look picker is still a show, and the despacio night
         # was one for its whole first run.
+        #
+        # Read with the rev a save of it must quote, from the one read
+        # (`cuestore.read_list`), and watched as the look files are: an edit
+        # by hand, by the MCP server or by a look being renamed is read
+        # without a restart, and the list keeps its place (`_install_cues`).
         self.cues: Optional[cuesmod.CueList] = None
-        cue_path = self.event_dir / "cues.json"
-        if cue_path.exists():
-            try:
-                self.cues = cuesmod.load(cue_path)
-            except configmod.ConfigError as exc:
-                self.notices.append(f"cues.json not loaded: {exc}")
+        self.cues_rev: Optional[str] = None
+        # Why cues.json on disk is not the list that is running, when it would
+        # not load. None while they agree.
+        self.cues_problem: Optional[str] = None
+        cues_seen = cuestore.signature(self.event_dir)
+        try:
+            self.cues, self.cues_rev = cuestore.read_list(self.event_dir)
+        except configmod.ConfigError as exc:
+            self.cues_problem = str(exc)
+            self.notices.append(f"cues.json not loaded: {exc}")
+        self.cue_watcher = showlibrary.Watcher(
+            self.event_dir, on_change=self.reload_cues,
+            report=lambda text: self.submit_call(lambda: self.note(text)),
+            scan=cuestore.signature, what="cue file", seen=cues_seen)
         # Profiles, resolved once. The patch editor needs to size a fixture's
         # channel footprint to answer "does this address clash", and rescanning
         # shared/fixtures/ per keystroke on a phone is not the way.
@@ -687,6 +706,7 @@ class ShowController:
             self.watcher.start(self.show_library.signature
                                if self.show_library is not None else None)
         self.look_watcher.start()
+        self.cue_watcher.start()
         self.runner.start()
 
     def stop(self) -> None:
@@ -695,6 +715,7 @@ class ShowController:
         if self.watcher is not None:
             self.watcher.stop()
         self.look_watcher.stop()
+        self.cue_watcher.stop()
         self.runner.stop()
         self.worker.stop()
         self.output.close()
@@ -2891,6 +2912,236 @@ class ShowController:
 
         return self._on_worker(f"deleting routine {rid}", work, then)
 
+    # the cue list (Studio's Cues page) ----------------------------------------
+    #
+    # Every edit is an edit to cues.json (`cuestore`): written on the worker,
+    # quoting the rev the editor read, then read again there and installed
+    # here. Installing is NOT taking: the list keeps its place by name, and
+    # what is on stage stays as it is until a cue is taken again.
+
+    def cues_public(self) -> dict:
+        """The cue list, for `GET /api/cues`: every cue in full, in running
+        order, with what is wrong with each (`cuestore.flags`).
+
+        Built on the caller's thread (an HTTP one), from references the output
+        thread only ever REBINDS -- the cue list, the library -- so it reads
+        one whole list or the next, never half of each.
+        """
+        cues, by_name = self.cues, self.by_name
+        groups = cuestore.known_groups(self.rig)
+        return {
+            "event": self.rig.name, "file": cuestore.FILE,
+            # What a save must quote: the file this list was READ from. None
+            # when the event has no cue list yet.
+            "rev": self.cues_rev,
+            # The file has changed since and the engine has not read it yet
+            # (it watches, so that is a second or two) -- or it does not load,
+            # and `problem` says why. Until they agree a save is refused.
+            "stale": (self.cues_problem is not None
+                      or cuestore.file_rev(self.event_dir) != self.cues_rev),
+            "problem": self.cues_problem,
+            "name": cues.name if cues is not None else None,
+            # The lanes a slot can hold a look for: the rig's fixture groups.
+            "groups": list(self.rig.tags()),
+            "cues": [cuestore.describe(c, by_name, groups)
+                     for c in (cues.cues if cues is not None else ())],
+        }
+
+    @staticmethod
+    def _read_cues(event_dir: Path) -> tuple:
+        """The cue list as the file is now: (the list or None, the rev a save
+        must quote, what the watcher will see). On the worker. The signature
+        is read BEFORE the file: one that changes in between then reads as
+        out of date, and is read again."""
+        seen = cuestore.signature(event_dir)
+        cue_list, rev = cuestore.read_list(event_dir)
+        return cue_list, rev, seen
+
+    def _install_cues(self, cue_list: Optional[cuesmod.CueList],
+                      rev: Optional[str], seen: Optional[tuple] = None, *,
+                      renamed: Optional[tuple[str, str]] = None) -> None:
+        """Make a freshly read cue list the one that is running, WITHOUT
+        losing the place in it.
+
+        On the output thread, at a frame boundary. The cue that is current
+        stays current by name, wherever it moved to and whatever it was
+        renamed (`cuestore.carry`), and its hold keeps counting from when it
+        was taken. If it was deleted, the list sits on the nearest cue before
+        it that is left, so GO takes what would have come next -- and a hold
+        on that one counts from now, not from a GO that was for another cue.
+
+        Nothing on stage changes: a cue that was edited is on stage as it was
+        TAKEN, until it is taken again.
+
+        A new list is bound, never the running one edited: the snapshot and
+        `/api/cues` read it from other threads.
+        """
+        old = self.cues
+        if cue_list is not None:
+            index, lost = cuestore.carry(old, cue_list.cues, renamed)
+            entered = (old.entered_beat if old is not None and lost is None
+                       else self.ctx.beat)
+            cue_list = cuesmod.CueList(name=cue_list.name, cues=cue_list.cues,
+                                       index=index,
+                                       entered_beat=entered if index >= 0 else 0.0)
+            if lost is not None:
+                after = cue_list.next
+                self.note(f"cue {lost!r} was the current one and is no longer "
+                          f"in the list: " + (
+                              f"the list is at {cue_list.current.name!r}"
+                              if cue_list.current is not None
+                              else "the list is back before its first cue")
+                          + (f", and GO takes {after.name!r}" if after is not None
+                             else ", which is its end")
+                          + ". What is on stage has not changed")
+        self.cues = cue_list
+        self.cues_rev = rev
+        self.cues_problem = None
+        if seen is not None:
+            # What this load read, so the watcher does not read it again.
+            self.cue_watcher.seen = seen
+
+    def _cue_edit(self, label: str, work: Callable[[], Any], said: str, *,
+                  renamed: Optional[tuple[str, str]] = None,
+                  data: Optional[dict] = None) -> object:
+        """One edit to the cue list: `work` writes the file on the worker
+        (what it returns rides back in the reply), the list is read again
+        there, and installed here."""
+        event_dir = self.event_dir
+
+        def job():
+            info = work()
+            return self._read_cues(event_dir), info if isinstance(info, dict) else {}
+
+        def then(result, respond):
+            loaded, info = result
+            try:
+                self._install_cues(*loaded, renamed=renamed)
+            except Exception as exc:                        # noqa: BLE001
+                # Written and not installed: said to whoever asked, rather
+                # than leaving them to time out. The watcher sees the file is
+                # not the list that is running and reads it again by itself.
+                self.note(f"{label} wrote the file, but the engine could not "
+                          f"take it up: {exc}")
+                respond(False, error=f"{cuestore.FILE} was written, but the "
+                                     f"engine could not take it up ({exc}). It "
+                                     f"reads the file again by itself; check "
+                                     f"the cue, then the notices")
+                return
+            respond(True, {**(data or {}), **info, "rev": loaded[1] or ""})
+            self.note(said)
+
+        return self._on_worker(label, job, then)
+
+    def reload_cues(self) -> None:
+        """cues.json changed on disk: read it, and make it the list. Called
+        on the watcher's thread, so the read goes to the worker and the
+        install to the output thread -- and a file that does not load changes
+        nothing but what `/api/cues` says about it."""
+        event_dir = self.event_dir
+
+        def job():
+            try:
+                return self._read_cues(event_dir)
+            except Exception as exc:                        # noqa: BLE001
+                return exc
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                self.cues_problem = str(result)
+                first = (result.problems[0] if isinstance(result, configmod.ConfigError)
+                         and result.problems else str(result)).strip().splitlines()[0]
+                self.note("cues.json changed on disk and does not load, so the "
+                          "cue list that was running runs on: " + first)
+                return
+            self._install_cues(*result)
+            self.note("cues read again: cues.json changed on disk"
+                      if result[0] is not None
+                      else "cues.json is gone: this event has no cue list now")
+
+        self.worker.submit(job, done, label="reading the cues again")
+
+    def _cmd_cue_save(self, m: dict, now: float) -> object:
+        """Write one cue: a new one (`was` absent) at place `at` in the
+        running order, last when not said -- or a change to the one called
+        `was`, which renames it when `cue.name` differs and moves it when `at`
+        is given.
+
+        The looks it names are not required to exist: what is wrong with the
+        cue rides back as `warnings`, and is on the Cues page.
+        """
+        cue = cuestore.clean_cue(m.get("cue"))
+        was, base, at = m.get("was"), m.get("base_rev"), m.get("at")
+        if was is not None and not isinstance(was, str):
+            raise ValueError("was is the cue's name as you opened it")
+        name = cue["name"]
+        renamed = (was, name) if was is not None and was != name else None
+        event_dir = self.event_dir
+        warnings = cuestore.flags(cue, self.by_name, cuestore.known_groups(self.rig))
+        said = (f"renamed cue {was!r} to {name!r}" if renamed
+                else f"saved cue {name!r}" if was is not None
+                else f"added cue {name!r}")
+        return self._cue_edit(
+            f"saving cue {name}",
+            lambda: cuestore.save(event_dir, cue, was, base, at=at), said,
+            renamed=renamed, data={"name": name, "warnings": warnings})
+
+    def _cmd_cue_copy(self, m: dict, now: float) -> object:
+        """Duplicate the cue called `cue` as `to`, straight after it: the
+        entry as the file has it, under the new name."""
+        name, to, base = m.get("cue"), m.get("to"), m.get("base_rev")
+        if not isinstance(name, str):
+            raise ValueError("cue_copy needs cue: the name of the one to copy")
+        fresh = cuestore.clean_name(to, "the copy")
+        event_dir = self.event_dir
+        return self._cue_edit(
+            f"duplicating cue {name}",
+            lambda: cuestore.duplicate(event_dir, name, fresh, base),
+            f"duplicated cue {name!r} as {fresh!r}", data={"name": fresh})
+
+    def _cmd_cue_move(self, m: dict, now: float) -> object:
+        """Move the cue called `cue` to place `to` in the running order (0 is
+        first). The list keeps its place: the current cue stays current."""
+        name, to, base = m.get("cue"), m.get("to"), m.get("base_rev")
+        if not isinstance(name, str):
+            raise ValueError("cue_move needs cue: the name of the one to move")
+        if isinstance(to, bool) or not isinstance(to, int):
+            raise ValueError("cue_move needs to: a place in the running order, "
+                             "0 for first")
+        event_dir = self.event_dir
+        return self._cue_edit(
+            f"moving cue {name}", lambda: cuestore.move(event_dir, name, to, base),
+            f"moved cue {name!r} to {to + 1} in the running order",
+            data={"name": name})
+
+    def _cmd_cue_delete(self, m: dict, now: float) -> object:
+        """Delete the cue called `cue`. Not the last one: a cue list cannot
+        be empty. If it was the current cue, the list falls back to the cue
+        before it and what is on stage stays."""
+        name, base = m.get("cue"), m.get("base_rev")
+        if not isinstance(name, str):
+            raise ValueError("cue_delete needs cue: the name of the one to delete")
+        event_dir = self.event_dir
+        return self._cue_edit(
+            f"deleting cue {name}", lambda: cuestore.delete(event_dir, name, base),
+            f"deleted cue {name!r}", data={"deleted": name})
+
+    def _cmd_cues_name(self, m: dict, now: float) -> object:
+        """Name the cue list itself: the title of the console's GO card."""
+        fresh = cuestore.clean_name(m.get("name"), "the cue list")
+        base, event_dir = m.get("base_rev"), self.event_dir
+        return self._cue_edit(
+            "naming the cue list",
+            lambda: cuestore.rename_list(event_dir, fresh, base),
+            f"the cue list is called {fresh!r}")
+
+    def _cmd_cues_reload(self, m: dict, now: float) -> object:
+        """Read cues.json again now -- after an edit by hand, or by MCP. A
+        file that does not load is said, and the list that is running runs
+        on."""
+        return self._cue_edit("reading the cues again", lambda: None,
+                              "cues read again from the event folder")
+
     # the look library (Studio's Looks page) -----------------------------------
     #
     # Every edit is an edit to parametric_looks.json (`lookstore`): written on
@@ -2952,12 +3203,25 @@ class ShowController:
 
         def job():
             info = work()
-            return self._read_looks(event_dir), info if isinstance(info, dict) else {}
+            # A rename rewrote cues.json where a cue named the look. Read it
+            # here, with the library, so the list that is running and the rev
+            # the Cues page must quote are the file's again at once -- rather
+            # than a save there being refused until the watcher catches up.
+            cues = None
+            if renamed is not None:
+                try:
+                    cues = self._read_cues(event_dir)
+                except Exception:                           # noqa: BLE001
+                    pass            # it does not load: the watcher says why
+            return (self._read_looks(event_dir),
+                    info if isinstance(info, dict) else {}, cues)
 
         def then(result, respond):
-            loaded, info = result
+            loaded, info, cues = result
             try:
                 moved = self._install_looks(*loaded, renamed=renamed)
+                if cues is not None:
+                    self._install_cues(*cues)
             except Exception as exc:                        # noqa: BLE001
                 # The file is written and the library is not installed. Said
                 # to whoever asked, rather than leaving them to time out; the
@@ -3826,6 +4090,9 @@ class ShowController:
             # page that lists the library in full (Studio's Looks, over
             # /api/looks) reads it again when this moves, rather than polling.
             "looks_rev": self.looks_rev or "",
+            # And which cues.json `cues` above was read from, for Studio's
+            # Cues page over /api/cues. "" when the event has no cue list.
+            "cues_rev": self.cues_rev or "",
             # Parameters that are moving on their own. A list rather than a map,
             # because the UI shows them as a rack of running modulators and a
             # (look, param) key is not a JSON object key.
@@ -4639,7 +4906,8 @@ class ShowServer:
                                          self.headers.get("Range"), token_ok,
                                          server.audio_roots,
                                          server.controller.collection, url.query,
-                                         looks=server.controller.looks_public)
+                                         looks=server.controller.looks_public,
+                                         cues=server.controller.cues_public)
                 except OSError as exc:
                     resp = apimod.Response(500, json.dumps(
                         {"error": str(exc)}).encode("utf-8"))

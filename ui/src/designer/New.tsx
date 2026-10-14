@@ -6,10 +6,11 @@ import {
   templateFromTimeline,
 } from "./model";
 import type {
-  FoundPalette, LooksList, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, Slot,
+  CuesList, FoundPalette, LooksList, PaletteDoc, PaletteSummary, RoutineDoc, RoutineSummary, Slot,
   TemplateSetDoc, TemplateSummary, TimelineDoc, TrackDoc, TrackLine,
 } from "./model";
 import { FIRST_BLOCK, LOOKS_HASH, lookBlocks, startingArgs } from "./Looks";
+import { CUES_HASH, NEW_FADE } from "./Cues";
 import { offeredLooks } from "./edit";
 import { newRoutine } from "./RoutineEditor";
 import { newTemplateSet } from "./Templates";
@@ -17,17 +18,19 @@ import { putPending } from "./pending";
 
 /**
  * Studio's + New: one way in to making anything, from any library page -- a
- * timeline for a track, a routine, a template set, a palette, a look -- each
- * with the starts that make sense for it.
+ * timeline for a track, a routine, a template set, a palette, a look, a cue --
+ * each with the starts that make sense for it.
  *
  * A timeline, a routine or a set opens in its editor UNSAVED, its start
  * applied as an edit there: nothing is written until Save, as with any new
  * file. A palette has no editor page of its own, so it is written to the
  * library at once, the same as the Palettes page's own New. So is a look: it
  * is written to the event, and changed in the Looks page's panel from there.
+ * And so is a cue: written into the event's cue list, at a place in the
+ * running order, and changed in the Cues page's panel.
  */
 
-export type NewKind = "timeline" | "routine" | "template" | "palette" | "look";
+export type NewKind = "timeline" | "routine" | "template" | "palette" | "look" | "cue";
 
 const KINDS: { kind: NewKind; title: string; text: string; key: string }[] = [
   { kind: "timeline", title: "A timeline for a track", text: "For a track already in the show", key: "t" },
@@ -35,6 +38,7 @@ const KINDS: { kind: NewKind; title: string; text: string; key: string }[] = [
   { kind: "template", title: "A template set", text: "Phrase to routine, to draft timelines from", key: "s" },
   { kind: "palette", title: "A palette", text: "Into the library: primary, secondary, accent", key: "p" },
   { kind: "look", title: "A look", text: "For this rig's console: one block, to turn live", key: "l" },
+  { kind: "cue", title: "A cue", text: "For this rig's GO list: looks, a fade, a hold", key: "c" },
 ];
 
 export function NewMenu({ onPick }: { onPick: (kind: NewKind) => void }) {
@@ -106,7 +110,7 @@ function Options({ options, value, onChange, children }: {
 }
 
 export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palettes, found,
-                           looks, onClose, onPalette, onLook }: {
+                           looks, cues, onClose, onPalette, onLook, onCue }: {
   engine: Engine; kind: NewKind;
   tracks: TrackLine[]; routines: RoutineSummary[]; sets: TemplateSummary[];
   /** show.json's set: the first choice for a draft. */
@@ -119,6 +123,10 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   onPalette: (id: string, said: string) => void;
   /** A look was written to the event: show it. */
   onLook: (name: string, said: string) => void;
+  /** This rig's cue list, once read. */
+  cues: CuesList | null;
+  /** A cue was written to the event: show it. */
+  onCue: (name: string, said: string) => void;
 }) {
   const dialog = useRef<HTMLElement | null>(null);
   // The name field takes focus where there is one; else the dialog itself.
@@ -129,17 +137,18 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const [error, setError] = useState<string | null>(null);
   const canWrite = engine.tier === "configure";
   const title = { timeline: "New timeline", routine: "New routine", template: "New template set",
-                  palette: "New palette", look: "New look" }[kind];
+                  palette: "New palette", look: "New look", cue: "New cue" }[kind];
 
   // -- what each kind is started from
   const bare = tracks.filter((t) => !t.has_timeline).sort((a, b) => a.title.localeCompare(b.title));
   const drawn = tracks.filter((t) => t.has_timeline).sort((a, b) => a.title.localeCompare(b.title));
   const [trackId, setTrackId] = useState(bare[0]?.id ?? "");
   const [start, setStart] = useState<string>(
-    kind === "timeline" ? (sets.length ? "draft" : "empty") : kind === "look" ? "block" : "blank");
+    kind === "timeline" ? (sets.length ? "draft" : "empty") : kind === "look" ? "block"
+      : kind === "cue" ? "empty" : "blank");
   const [setId, setSetId] = useState(showSet && sets.some((s) => s.id === showSet) ? showSet : sets[0]?.id ?? "");
   const [copyTrack, setCopyTrack] = useState(drawn[0]?.id ?? "");
-  const [name, setName] = useState(kind === "palette" || kind === "look" ? ""
+  const [name, setName] = useState(kind === "palette" || kind === "look" || kind === "cue" ? ""
     : kind === "routine" ? "New routine" : "New set");
   const [idEdited, setIdEdited] = useState<string | null>(null);
   const takenIds = kind === "routine" ? routines.map((r) => r.id)
@@ -182,6 +191,17 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
   const groupsPicked = lookGroups ?? lookSource?.groups ?? [];
   const lookSlot: Slot | null = start === "block" ? BLOCK_SLOT[block] ?? null : lookSource?.slot ?? null;
   const lookNameTaken = kind === "look" && lookNames.includes(name.trim());
+  // -- a new cue: empty, what is on stage now, or a copy of a cue
+  const cueList = cues?.cues ?? [];
+  const cueNames = cueList.map((c) => c.name);
+  const cueLabel = name.trim().replace(/\s+/g, " ");
+  const cueNameTaken = kind === "cue" && cueNames.includes(cueLabel);
+  const [copyCuePicked, setCopyCue] = useState<string | null>(null);
+  const copyCue = copyCuePicked ?? cueList[0]?.name ?? "";
+  // Where it goes in the running order, as a place in it: "" is last.
+  const [cuePlace, setCuePlace] = useState("");
+  const stage = engine.state?.selection;
+  const onStage = SLOTS.some((slot) => Object.keys(stage?.[slot] ?? {}).length > 0);
   const [copySet, setCopySet] = useState(sets[0]?.id ?? "");
   const [fromTimeline, setFromTimeline] = useState(drawn[0]?.id ?? "");
   const [copyPalette, setCopyPalette] = useState(palettes[0]?.id ?? "");
@@ -264,6 +284,26 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
     location.hash = LOOKS_HASH;
     onLook(label, `Made ${label}. It is on the console's picker now; change it here.`);
+    onClose();
+  });
+  const goCue = () => run(async () => {
+    const base_rev = cues?.rev ?? "";
+    let reply;
+    if (start === "copy") {
+      reply = await engine.request({ type: "cue_copy", cue: copyCue, to: cueLabel, base_rev });
+    } else {
+      const at = cuePlace === "" ? undefined : Number(cuePlace);
+      const slots = start === "stage" && stage
+        ? Object.fromEntries(SLOTS.filter((slot) => Object.keys(stage[slot] ?? {}).length > 0)
+          .map((slot) => [slot, stage[slot]]))
+        : {};
+      reply = await engine.request({
+        type: "cue_save", base_rev, ...(at === undefined ? {} : { at }),
+        cue: { name: cueLabel, ...slots, fade: NEW_FADE } });
+    }
+    if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
+    location.hash = CUES_HASH;
+    onCue(cueLabel, `Made ${cueLabel}. It is on the console's GO card now; change it here.`);
     onClose();
   });
   const goPalette = () => run(async () => {
@@ -485,6 +525,52 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
         )}
       </>
     );
+  } else if (kind === "cue") {
+    go = () => void goCue();
+    goLabel = "Make it";
+    ready = !!cueLabel && !cueNameTaken && cues != null && !cues.stale
+      && (start !== "copy" || !!copyCue);
+    foot = cues?.stale ? `${cues.file} changed on disk: read the cues again on the Cues page first.`
+      : `Written to ${cues?.event ?? "the event"}'s ${cues?.file ?? "cue list"} now, and on the `
+        + "console's GO card at once. The console stays on the cue it is on.";
+    body = (
+      <>
+        <div className="s-name-row">
+          <label className="s-field">Name
+            <input value={name} aria-label="name" autoFocus placeholder="On the GO card"
+                   onChange={(e) => setName(e.target.value)} />
+          </label>
+          {cueNameTaken && <span className="small d-error">there is already a cue of that name</span>}
+        </div>
+        <b className="small">Start from</b>
+        <Options value={start} onChange={setStart} options={[
+          { id: "empty", title: "Empty", text: "A name and a fade of 8 beats: pick its looks on the Cues page." },
+          ...(onStage ? [{ id: "stage", title: "What is on stage now",
+                           text: "The looks the rig is running, slot by slot, as a preset would hold them." }] : []),
+          ...(cueList.length ? [{ id: "copy", title: "A copy of a cue",
+                                  text: "Everything it holds, under the new name, straight after it." }] : []),
+        ]}>{{
+          stage: (
+            <span className="muted small">{SLOTS.flatMap((slot) => Object.values(stage?.[slot] ?? {}))
+              .filter((n, i, all) => all.indexOf(n) === i).join(" · ")}</span>),
+          copy: (
+            <select value={copyCue} aria-label="copy of" onChange={(e) => setCopyCue(e.target.value)}>
+              {cueList.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>),
+        }}</Options>
+        {start !== "copy" && cueList.length > 0 && (
+          <label className="s-field">Where in the running order
+            <select value={cuePlace} aria-label="where in the running order"
+                    onChange={(e) => setCuePlace(e.target.value)}>
+              <option value="">last</option>
+              <option value="0">first</option>
+              {cueList.slice(0, -1).map((c, i) => (
+                <option key={i} value={String(i + 1)}>after {c.name}</option>))}
+            </select>
+          </label>
+        )}
+      </>
+    );
   } else if (kind === "template") {
     go = () => void goTemplate();
     // A set is a routine per phrase: with no routine to pick, a blank one could
@@ -548,8 +634,8 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
     );
   }
 
-  // A palette and a look have no editor to open unsaved in: Go writes them.
-  const writesNow = kind === "palette" || kind === "look";
+  // A palette, a look and a cue have no editor to open unsaved in: Go writes them.
+  const writesNow = kind === "palette" || kind === "look" || kind === "cue";
   return (
     <div className="s-modal" role="presentation"
          onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); onClose(); } }}>
@@ -565,7 +651,7 @@ export function NewDialog({ engine, kind, tracks, routines, sets, showSet, palet
         </div>
         <footer className="s-dialog-foot">
           <span className="muted small grow">{writesNow && !canWrite
-            ? `This writes the ${kind === "look" ? "event" : "show folder"}: open Studio from the link `
+            ? `This writes the ${kind === "palette" ? "show folder" : "event"}: open Studio from the link `
               + "the engine printed." : foot}</span>
           <button onClick={onClose} disabled={busy}>Cancel</button>
           <button className="d-primary" disabled={!go || !ready || busy || (writesNow && !canWrite)}

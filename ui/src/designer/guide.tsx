@@ -60,6 +60,10 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
           <>This rig's looks are made and changed on Studio's <b>Looks</b> page:
             a look is one block, saved to the event, and on the console's
             picker as soon as it is saved.</>,
+          <>The night's cue list is on the <b>Cues</b> page: the running order
+            behind the console's GO button, each cue's looks, fade and hold. A
+            save is on the GO card at once, and the console stays on the cue
+            it is on.</>,
           <>Select a routine clip to see which fixtures each of its roles plays
             on. <b>Plays on</b> picks another tag, or one fixture, for that clip
             only. Tags are set on the console's Setup tab.</>,
