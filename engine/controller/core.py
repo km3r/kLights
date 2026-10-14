@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import queue
+import threading
 import time
 from typing import Any, Callable, Optional
 
@@ -98,9 +99,13 @@ class Core:
         # the engine only, (callable, None, time): see `submit_call`.
         self.commands: "queue.Queue[tuple[Any, Optional[Client], float]]" = queue.Queue()
         # Who is connected. Written by the HTTP threads as clients arrive and
-        # leave, through `add_client` / `remove_client` -- never edited in
-        # place, since the snapshot walks it on the broadcast thread.
+        # leave, and by the broadcast thread as it drops one that stopped
+        # reading, through `add_client` / `remove_client`: never edited in
+        # place, since the snapshot walks it on the broadcast thread, and the
+        # writers take `_clients_lock` -- a copy-and-rebind is a read, then a
+        # write, and two writers at once would each rebind over the other.
         self.clients: dict[str, Client] = {}
+        self._clients_lock = threading.Lock()
         # How a reply reaches the one client that asked for it. Set by the
         # ShowServer that owns the sockets; None when there is no server (the
         # tests that drive a controller directly), and then nothing is sent.
@@ -270,13 +275,17 @@ class Core:
 
     def add_client(self, client: Client) -> None:
         """A browser connected. Called on its HTTP thread: rebinds, so a
-        snapshot walking the presence list never sees it change size."""
-        self.clients = {**self.clients, client.id: client}
+        snapshot walking the presence list never sees it change size, under
+        the writers' lock, so a browser leaving at the same moment cannot
+        rebind over this one's arrival."""
+        with self._clients_lock:
+            self.clients = {**self.clients, client.id: client}
 
     def remove_client(self, cid: str) -> None:
-        """A browser went away. Rebinds, as `add_client` does."""
-        if cid in self.clients:
-            self.clients = {k: c for k, c in self.clients.items() if k != cid}
+        """A browser went away. Rebinds under the lock, as `add_client` does."""
+        with self._clients_lock:
+            if cid in self.clients:
+                self.clients = {k: c for k, c in self.clients.items() if k != cid}
 
     def _sender(self) -> Optional[Client]:
         """Who sent the command being applied; None for one from inside the

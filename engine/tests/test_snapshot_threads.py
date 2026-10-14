@@ -118,7 +118,37 @@ def clients(c, i):
 collide("clients", clients)
 
 
-print("\n4. the snapshot is every part's section, each key said once")
+print("\n4. clients arriving while others leave")
+# The other half of rebinding: a copy-and-rebind is a read then a write, and
+# arrivals (HTTP threads) and departures (HTTP threads, and the broadcast
+# thread dropping a client that stopped reading) happen at once after an engine
+# restart, when every phone reconnects. Without a lock between the writers one
+# rebinds over the other: a console that is connected goes missing from the
+# presence list, or one that left stays on it.
+controller = servermod.ShowController(EVENT)
+before = sys.getswitchinterval()
+sys.setswitchinterval(1e-6)
+lost = ghosts = 0
+try:
+    for run in range(10):
+        controller.clients = {}
+        for k in range(300):
+            controller.add_client(servermod.Client(id=f"gone{k}"))
+        arrive = threading.Thread(target=lambda: [
+            controller.add_client(servermod.Client(id=f"new{i}")) for i in range(300)])
+        leave = threading.Thread(target=lambda: [
+            controller.remove_client(f"gone{k}") for k in range(300)])
+        arrive.start(); leave.start()
+        arrive.join(); leave.join()
+        lost += 300 - sum(1 for k in controller.clients if k.startswith("new"))
+        ghosts += sum(1 for k in controller.clients if k.startswith("gone"))
+finally:
+    sys.setswitchinterval(before)
+check("no arrival is lost and no departure comes back", lost == 0 and ghosts == 0,
+      f"{lost} arrivals lost, {ghosts} departures back, over 10 runs")
+
+
+print("\n5. the snapshot is every part's section, each key said once")
 # Each part of the controller publishes its own section (`_public_*`). Merged
 # into one dict, two parts naming the same key would have the later one win
 # silently, and a part whose section is not merged would publish nothing.
