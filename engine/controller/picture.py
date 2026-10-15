@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import replace
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from .. import auto as autom
 from .. import blocks as blocksmod
@@ -103,6 +103,24 @@ class Picture:
         return {"primary": current,
                 "secondary": colors[(here + 1) % len(colors)],
                 "accent": colors[(here + 2) % len(colors)]}
+
+    def fill_slot(self, slot: str, looks: Mapping[str, str]) -> list[str]:
+        """Put `looks` (group -> look name) in the color or level slot, in
+        place of everything it held, leaving out any the library does not have.
+
+        Those are returned, for the caller to say in its own words: a preset
+        or a cue naming a look since re-ported away applies the rest rather
+        than failing whole -- half a shortcut beats an error mid-set.
+        """
+        kept: dict[str, str] = {}
+        missing: list[str] = []
+        for group, name in looks.items():
+            if name in self.by_name:
+                kept[group] = name
+            else:
+                missing.append(name)
+        self.slots[slot] = kept
+        return missing
 
     def slot_entries(self, slot: str) -> list[libmod.LibraryEntry]:
         """The distinct looks filling one slot across all groups.

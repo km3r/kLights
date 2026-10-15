@@ -449,7 +449,7 @@ snapshot (`_public_hand`):
 @command("master", tier=OPERATE, args={
     "value": S(N, required=True, fix="0 to 1, the show's overall level")})
 def _cmd_master(self, m: dict, now: float) -> None:
-    self.master = max(0.0, min(1.0, float(m["value"])))
+    self.set_master(float(m["value"]))
 ```
 
 `apply` dispatches only on these declarations, so there is no command without a

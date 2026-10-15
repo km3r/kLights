@@ -103,6 +103,11 @@ lines.
 The code was moved, not rewritten: every line of the old file is in the new
 ones, and nothing a client sends or receives changed.
 
+A part writes only its own state; another part asks it. Presets and cues used
+to fill the picture's slots, set the master and hold auto mode by assigning to
+them, each with its own copy of the clamp; they now call `fill_slot`,
+`set_master` and `director.hold`. What a preset or cue does is unchanged.
+
 ### Changed — every command declares who may send it and what it takes
 
 Each of the 94 console commands now states its tier and the shape of its

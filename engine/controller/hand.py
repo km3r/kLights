@@ -53,7 +53,11 @@ class Hand:
     @command("master", tier=OPERATE, args={
         "value": S(N, required=True, fix="0 to 1, the show's overall level")})
     def _cmd_master(self, m: dict, now: float) -> None:
-        self.master = max(0.0, min(1.0, float(m["value"])))
+        self.set_master(float(m["value"]))
+
+    def set_master(self, value: float) -> None:
+        """The master, held to 0..1 -- from the fader, a preset or a cue."""
+        self.master = max(0.0, min(1.0, value))
 
     @command("blackout", tier=OPERATE, args={"on": S(bool)})
     def _cmd_blackout(self, m: dict, now: float) -> None:

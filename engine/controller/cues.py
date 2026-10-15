@@ -101,12 +101,8 @@ class Cues:
         for slot in ("color", "level"):
             wanted = getattr(cue, slot)
             if wanted:
-                self.slots[slot] = {}
-                for group, look in wanted.items():
-                    if self.entry(look) is None:
-                        self.note(f"cue {cue.name!r}: no look {look!r}")
-                        continue
-                    self.slots[slot][group] = look
+                for look in self.fill_slot(slot, wanted):
+                    self.note(f"cue {cue.name!r}: no look {look!r}")
         for look in cue.movement.values():
             if self.entry(look) is None:
                 self.note(f"cue {cue.name!r}: no look {look!r}")
@@ -119,7 +115,7 @@ class Cues:
         if cue.speed is not None:
             self.clock.set_speed(cue.speed, self.runner.now())
         if cue.master is not None:
-            self.master = max(0.0, min(1.0, cue.master))
+            self.set_master(cue.master)
         if cue.macro is not None:
             self._cmd_macro(dict(cue.macro), 0.0)
         if cue.rates is not None:

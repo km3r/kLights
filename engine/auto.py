@@ -296,6 +296,11 @@ class AutoDirector:
         self._show = None
         return self.rebuild()
 
+    def hold(self) -> None:
+        """Keep the look that is up, as `select` keeps one picked by hand --
+        for a preset that sets the picture without naming a movement."""
+        self.held = True
+
     def release(self) -> None:
         """Resume automatic look changes at the next boundary.
 

@@ -312,15 +312,12 @@ class Presets:
         speed, master = self._preset_numbers(preset)
         # A preset naming a look that has since been re-ported away applies the
         # rest rather than failing whole -- a preset is a shortcut, and half a
-        # shortcut beats an error message mid-set.
+        # shortcut beats an error message mid-set. An empty name is no look,
+        # not a missing one.
         missing = []
         for slot in ("color", "level"):
-            self.slots[slot] = {}
-            for group, value in (preset.get(slot) or {}).items():
-                if value in self.by_name:
-                    self.slots[slot][group] = value
-                elif value:
-                    missing.append(value)
+            missing += [name for name in self.fill_slot(slot, preset.get(slot) or {})
+                        if name]
         movement = next(iter((preset.get("movement") or {}).values()), None)
         if movement in self.by_name:
             self.director.select(movement, hold=True)
@@ -335,8 +332,8 @@ class Presets:
         if speed is not None:
             self.clock.set_speed(speed, now)
         if master is not None:
-            self.master = max(0.0, min(1.0, master))
-        self.director.held = True
+            self.set_master(master)
+        self.director.hold()
         self._grab(statemod.SLOTS)
         self._recompose()
 

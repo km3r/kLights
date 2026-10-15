@@ -23,11 +23,14 @@ behind them, and its own section of the 10 Hz snapshot (its `_public_*`):
     showfolder    Studio's writes to the show folder
     looks         the event's look library, and Studio's edits to it
 
-The parts share one object -- a command that applies a preset changes the
-picture's slots, a rig reload prunes the hand's targets -- so a part may read
-and call another's. What each part's `_init_*` creates is that part's to
-write, and everything the snapshot reads is rebound by its writer, never
-edited in place (`test_snapshot_threads`).
+The parts share one object, so a part may read and call another's. What
+each part's `_init_*` creates is that part's to write: a preset or a cue
+fills the picture's slots through `fill_slot`, sets the master through
+`set_master` and holds auto mode through `director.hold` -- the owner's rule,
+said once. Taking a rig or a library live (`reload_rig`, `_install_looks`)
+is the exception, reconciling every part with what changed under it.
+Everything the snapshot reads is rebound by its writer, never edited in
+place (`test_snapshot_threads`).
 
 Two structural rules hold across all of them, set by `core`:
 
