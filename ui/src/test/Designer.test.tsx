@@ -2,7 +2,7 @@ import {
   act, cleanup, createEvent, fireEvent, render, screen, waitFor, within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
@@ -675,6 +675,15 @@ function serve(path: string): [number, unknown] {
   if (path === "/api/media") return [200, { media: [{ file: "loop-1.mp4", size: 5120 }] }];
   return [404, { error: `no ${path}` }];
 }
+
+// Studio is a lazy chunk (App.tsx), so whichever test opens it first would
+// spend its findBy budget compiling the editor's modules cold: 0.7s on a
+// laptop, past the 1s default on a CI runner, and a failure that moves to
+// whatever test happens to run first. Import it once up front, as a browser
+// that has the chunk cached would; these tests are about what Studio shows.
+beforeAll(async () => {
+  await import("../designer/Designer");
+});
 
 beforeEach(() => {
   localStorage.clear();
