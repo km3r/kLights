@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import geometry as geo
 from engine import rig
@@ -25,15 +26,6 @@ from engine.rig import load_rig
 from engine.runner import Runner
 
 EVENT = REPO / "events" / "despacio"
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
-
 def event_copy(tmp: str, **edits) -> Path:
     """A throwaway event folder, optionally with edited JSON.
 
@@ -187,10 +179,4 @@ check("last good frame is held on evaluation failure", after == first,
 check("the held frame is not blank", any(any(f) for f in after.values()))
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("review fixes: all checks pass")
+finish("review fixes")

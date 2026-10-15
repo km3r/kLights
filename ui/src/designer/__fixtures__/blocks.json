@@ -117,45 +117,5 @@
   "linear",
   "ease_in_out",
   "ease_out"
- ],
- "automation": {
-  "master": [
-   0.0,
-   1.0
-  ],
-  "size": [
-   0.0,
-   3.0
-  ],
-  "spread": [
-   -1.0,
-   1.0
-  ],
-  "center.bearing": [
-   -180.0,
-   180.0
-  ],
-  "center.elevation": [
-   -90.0,
-   90.0
-  ],
-  "rate.movement": [
-   0.0,
-   8.0
-  ],
-  "rate.color": [
-   0.0,
-   8.0
-  ],
-  "rate.level": [
-   0.0,
-   8.0
-  ]
- },
- "param_types": [
-  "color",
-  "number",
-  "rate",
-  "look"
  ]
 }

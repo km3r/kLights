@@ -34,6 +34,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 sys.path.insert(0, str(REPO / "shared" / "tools"))
 
 from engine import config as configmod  # noqa: E402
@@ -61,15 +62,6 @@ MH = dict(manufacturer="MingJie", model="MJ-OS-018 60W Beam", mode="11 Channel")
 PIN = dict(manufacturer="UKing", model="ZQ-B93 Pinspot RGBW", mode="6-channel")
 BAR90 = dict(manufacturer="YeeSite", model="60W RGB Pixel Light Bar",
              mode="90 Channel (Pixel)")
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 ORIGINAL = configmod.load(EVENT / "rig.json", configmod.RIG)
 
@@ -676,10 +668,4 @@ code, out = tool("--csv", str(TMP / "missing.csv"))
 check_cli("a sheet that is not there fails", code == 1 and "not found" in out, out)
 
 
-print()
-if failures:
-    print(f"patch: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("patch: all checks pass")
+finish("patch")

@@ -45,6 +45,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import auto as autom  # noqa: E402
 from engine import config as configmod  # noqa: E402
@@ -57,15 +58,6 @@ from engine import state as statemod  # noqa: E402
 from engine import sync  # noqa: E402
 from engine import timeline as timelinemod  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
 
 # Fixed seeds, so CI and a failure report always agree on the input. To look
 # for new trouble rather than re-check the old, shift every seed at once:
@@ -429,14 +421,12 @@ rigmod.VENUE_LIBRARY = patchmod.VENUES = CTRL_TMP / "venues"
 
 from engine import server as servermod  # noqa: E402
 
-source = (REPO / "engine" / "server.py").read_text(encoding="utf-8")
-FIELDS_OF: dict[str, list[str]] = {}
-for match in re.finditer(r"\n    def _cmd_(\w+)\(self, m: dict, now: float\)[^\n]*\n(.*?)(?=\n    def |\nclass |\Z)",
-                         source, re.S):
-    name, body = match.group(1), match.group(2)
-    keys = set(re.findall(r'\bm\["(\w+)"\]', body)) | set(re.findall(r'\bm\.get\("(\w+)"', body))
-    FIELDS_OF[name] = sorted(keys)
-check("the command list read from engine/server.py is the whole list",
+# Every command and every argument it declares, from the registry the
+# controller dispatches on -- including the keys a handler reads through a
+# helper, which reading server.py's source for `m["..."]` used to miss.
+FIELDS_OF: dict[str, list[str]] = {
+    name: sorted(cmd.args) for name, cmd in servermod.ShowController.COMMANDS.items()}
+check("the command list is the registry's whole list",
       len(FIELDS_OF) >= 80 and "go" in FIELDS_OF and "master" in FIELDS_OF,
       f"{len(FIELDS_OF)} commands")
 
@@ -817,10 +807,4 @@ finally:
     sc.stop()
 
 
-print()
-if failures:
-    print(f"fuzz: {len(failures)} FAILED")
-    for f in failures:
-        print(f"  - {f}")
-    sys.exit(1)
-print("fuzz: all checks pass")
+finish("fuzz")

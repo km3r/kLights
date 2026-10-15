@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, apiFetch } from "../useEngine";
+import { apiFetch } from "../useEngine";
 import type { Engine } from "./Designer";
 import {
-  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES,
-  RIG_BOUND, SLOTS, barBeat, blocksFor, findItem, hexColor, itemName,
+  BEATS_PER_BAR, BLOCK_ARGS, BLOCK_SLOT, DESIGNER_CHUNK, PARAM_TYPES, RIG_BOUND, SLOTS, barBeat,
+  blocksFor, findItem, hexColor, itemName, uniqueId,
 } from "./model";
 import type { ArgSpec, Item, ParamDef, RoutineDoc, Row, Slot } from "./model";
-import {
-  AutomationMenu, EditTags, Editor, FADES, HITS, ParamLanes, PickMenu, ROLES, Reach, backHash,
-  externalRow, gapStart, newHit, offeredLooks, parsePointId, parseWaveId, rigTags,
-  routineLaneSpecs, uniqueId,
-  useEditorKeys, useHistory, useMenuDismiss,
-} from "./edit";
-import type { History, LaneSpecs, PickEntry } from "./edit";
+import { AutomationMenu, PointInspector, WaveInspector } from "./automation";
+import { parsePointId, parseWaveId } from "./ids";
+import { Toolbar, backHash, useSavedDoc } from "./document";
+import type { History } from "./history";
+import { EventList } from "./inspector";
+import { FADES, HITS, ROLES, gapStart, newHit } from "./items";
+import { useEditorKeys } from "./keys";
+import { ParamLanes, routineLaneSpecs } from "./laneSpecs";
+import type { LaneSpecs } from "./laneSpecs";
+import { externalRow } from "./laneSvg";
+import { PickMenu, useMenuDismiss } from "./menus";
+import type { PickEntry } from "./menus";
+import { MidiCue, OscCue, VisualCue } from "./outputCues";
+import { EditTags, Reach, offeredLooks, rigTags } from "./roles";
 import { Lane, Ruler } from "./lanes";
 import { useDesignerGuide } from "./guide";
 import { PanelToggle, usePanels } from "./panels";
-import { SideSection } from "./detail";
-import { clearPending, peekPending } from "./pending";
+import { ReloadBanner, SideSection } from "./detail";
 import "./designer.css";
 
 /**
@@ -83,10 +89,11 @@ function useLoop(length: number, bpm: number) {
 }
 
 export default function RoutineEditor({ engine, routineId }: { engine: Engine; routineId: string }) {
-  const history = useHistory<Doc>();
-  const { doc, setBase, setSnap } = history;
-  const [rev, setRev] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // A routine not in the folder is started: from what New handed over, else
+  // blank under this id.
+  const { history, rev, setRev, loadError } = useSavedDoc<Doc>(
+    "routine", routineId, (handed) => handed ?? newRoutine(routineId));
+  const { doc, setSnap } = history;
   const [zoom, setZoom] = useState(16);
   const [bpm, setBpm] = useState(128);
   const [selected, setSelected] = useState<string | null>(null);
@@ -95,22 +102,8 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
   const [back] = useState(backHash);
   const guide = useDesignerGuide("routines");
   const [panels, togglePanel] = usePanels();
-  // A start handed over by New: a copy, a look wrapped, a blank with settings.
-  const [pending] = useState(() => peekPending("routine", routineId));
 
-  useEffect(() => {
-    setSnap("beat");
-    apiFetch<{ doc: Doc; rev: string }>(`/api/routines/${routineId}`)
-      .then((r) => { setBase(r.doc); setRev(r.rev); })
-      .catch((e: Error) => {
-        // Not in the folder: start it. Saved with base_rev "" -- a new file,
-        // refused if one appeared meanwhile (or is there but unreadable).
-        if (!(e instanceof ApiError && e.status === 404)) { setLoadError(e.message); return; }
-        setBase(pending?.doc ?? newRoutine(routineId));
-        setRev("");
-        clearPending("routine", routineId);
-      });
-  }, [routineId, setBase, setSnap]);
+  useEffect(() => { setSnap("beat"); }, [setSnap]);
 
   const length = (doc?.bars ?? 4) * BEATS_PER_BAR;
   const loop = useLoop(length, bpm);
@@ -129,6 +122,7 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
         <header className="d-top"><a className="d-link" href="#studio/routines">Studio</a></header>
+        <ReloadBanner stale={engine.stale} />
         <p className="d-error">{loadError}</p>
       </div>
     );
@@ -174,12 +168,13 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
             {ZOOMS.map((z) => <option key={z} value={z}>{z * 4} px/bar</option>)}
           </select>
         </label>
-        <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
+        <Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="routine" ident={routineId} />
         {guide.button}
         <PanelToggle open={panels.edit} side="right" label="side panel"
                      onToggle={() => togglePanel("edit")} />
       </header>
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
 
       <div className={`d-body${guide.open ? " d-with-guide" : ""}${panels.edit ? "" : " d-no-side"}`}>
@@ -215,11 +210,11 @@ export default function RoutineEditor({ engine, routineId }: { engine: Engine; r
       </div>
 
       {history.listView
-        ? <Editor.EventList history={history} />
+        ? <EventList history={history} />
         : waveRow
-          ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
+          ? <WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow
-          ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
+          ? <PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                    onSelect={setSelected} />
           : <BlockInspector history={history} doc={doc} engine={engine} selected={selected}
                             onDeleted={() => setSelected(null)} />}
@@ -716,11 +711,11 @@ function BlockInspector({ history, doc, engine, selected, onDeleted }: PanelProp
         </div>
         <div className="d-insp-grid">
           {row.output === "osc" &&
-            <Editor.OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+            <OscCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
           {row.output === "midi" &&
-            <Editor.MidiCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+            <MidiCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
           {(row.output === "visuals" || row.output === "vj") &&
-            <Editor.VisualCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
+            <VisualCue item={it} set={(fields) => set((t) => { Object.assign(t, fields); })} />}
         </div>
       </footer>
     );

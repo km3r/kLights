@@ -1,5 +1,5 @@
 import table from "./blocks.generated.json";
-import type { ParamSpec, Slot } from "./types";
+import type { CommandArgs, ParamSpec, Slot } from "./types";
 
 /**
  * What every block takes, as the engine declares it.
@@ -34,8 +34,10 @@ export const BLOCK_SLOTS: Record<string, Slot | null> = Object.fromEntries(
 /** The four shape macros, described exactly as a block's arguments are. */
 export const MACRO_PARAMS = table.macros as unknown as ParamSpec[];
 
-/** The waveforms a modulator can follow. */
-export const MODULATOR_SHAPES: string[] = table.modulator_shapes;
+/** The waveforms a modulator can follow: `modulate`'s `shape`, which the
+ *  command contract (commands.generated.ts) lists from the same engine list. */
+export const MODULATOR_SHAPES = table.modulator_shapes as
+  NonNullable<CommandArgs["modulate"]["shape"]>[];
 
 /** The waveforms an automation lane's wave can follow (`waves.SHAPES`): the
  *  modulator's, less `energy`, which a show folder has no room to listen to. */

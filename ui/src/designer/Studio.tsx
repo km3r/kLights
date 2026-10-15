@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { mayRun } from "../types";
 import type { FoundPalette, PaletteSummary, TemplateSetDoc, TemplateSummary } from "./model";
 import { PaletteDetail, PalettesView } from "./Palettes";
 import { LookDetail, LooksView } from "./Looks";
@@ -26,7 +27,7 @@ import { StartDialog } from "./Start";
 import type { PrepPick, StartTrack } from "./Start";
 import { PanelToggle, usePanels } from "./panels";
 import { useDesignerGuide } from "./guide";
-import { DetailEmpty, Said } from "./detail";
+import { DetailEmpty, ReloadBanner, Said } from "./detail";
 import { FolderProblems } from "./Problems";
 import "./designer.css";
 
@@ -236,7 +237,7 @@ export default function Studio({ engine, route }: {
   const liveTrack = engine.state?.track?.match?.track_id ?? null;
   const tracks = lib.tracks ?? [];
   const sel = tracks.find((t) => t.id === selected) ?? null;
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "track_delete");
   // What is wrong in the folder, over the track list and on Show settings.
   const pages = { tracks: tracks.map((t) => t.id), routines: (lib.routines ?? []).map((r) => r.id),
                   templates: lib.sets.map((s) => s.id),
@@ -416,6 +417,7 @@ export default function Studio({ engine, route }: {
         {side != null && (
           <PanelToggle open={panels.side} side="right" label="details" onToggle={() => toggle("side")} />)}
       </header>
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
       <div className="s-body">
         {panels.nav && (
@@ -504,7 +506,7 @@ export function LivePill({ engine }: { engine: Engine }) {
       <span className="s-live-pill warn" role="status"><i />
         {s.preview.client === engine.clientId ? "This page" : s.preview.name} is driving the rig
         on {s.preview.track_id}
-        {engine.tier === "configure" && (
+        {mayRun(engine.tier, "preview_release") && (
           <button className="s-pill-btn" onClick={() => engine.send({ type: "preview_release" })}>
             Release</button>)}
       </span>

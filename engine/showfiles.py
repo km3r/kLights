@@ -82,8 +82,11 @@ SUBDIR = {"track": "tracks", "timeline": "timelines", "routine": "routines",
 # case-sensitivity cannot disagree about whether "Fan-Drop" and "fan-drop" are
 # one routine or two.
 # `\Z`, not `$`: `$` also matches before a trailing newline, and "fan\n" would
-# pass as an id -- and become a file name with a newline in it.
-ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
+# pass as an id -- and become a file name with a newline in it. The pattern
+# alone is what the console checks a new id against (showfiles.generated.ts),
+# anchored there with JavaScript's own `^` and `$`.
+ID_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
+ID_RE = re.compile(rf"^{ID_PATTERN}\Z")
 ID_FIX = ("lower-case letters, digits, '-' and '_', starting with a letter or "
           "digit, at most 64 characters. It is also the file name")
 
@@ -115,7 +118,7 @@ def timeline_channels(row: Mapping) -> tuple[str, ...]:
 #
 # The CENTRE ranges are the portable fallback (`params.CENTER_*`), not the
 # run-time clamp. At run time the centre is bounded by the playing rig's reach
-# (`server.rig_reach`), which on a real rig is often wider on one side and
+# (`controller.core.rig_reach`), which on a real rig is often wider on one side and
 # narrower on the other. A show folder does not know which rig will play it, so
 # it is authored against the range every rig can be expected to understand.
 #
@@ -134,15 +137,12 @@ AUTOMATION_RANGES: dict[str, tuple[float, float]] = {
     "rate.level": (0.0, 8.0),
 }
 
-# The building blocks a routine's rows are made of. `engine/blocks.py` (F19h)
-# implements exactly these; a test holds the two lists together. `look` and
-# `snapshot` are the rig-bound adapters -- a routine using either must name its
-# rig, which is what "this rig only" means.
-BLOCK_NAMES = ("offset", "fan_sweep", "orbit", "pendulum", "figure8", "spiral",
-               "scatter", "aim_points", "solid", "color_chase", "hue_cycle", "duo",
-               "chase", "pulse", "breathe", "dim", "strobe",
-               "look", "snapshot")
-RIG_BOUND_BLOCKS = ("look", "snapshot")
+# The building blocks a routine's rows are made of: exactly the ones
+# `engine/blocks.py` (F19h) builds. `look` and `snapshot` are the rig-bound
+# adapters -- a routine using either must name its rig, which is what "this rig
+# only" means.
+BLOCK_NAMES = blocksmod.BLOCKS
+RIG_BOUND_BLOCKS = blocksmod.RIG_BOUND
 
 COLOR_FIX = ('a palette role ("@primary", "@secondary", "@accent"), a hex '
              'color like "#ff2d6f", [r, g, b] from 0 to 1, or a color look '

@@ -27,20 +27,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import geometry as geo
 from engine import rig as rigmod
 from engine import scene
 from engine import servo as servomod
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 DESPACIO = REPO / "events" / "despacio"
 WORDS = [0, 1, 255, 256, 8191, 12288, 32767, 32768, 32769, 40000, 52000, 65279, 65534, 65535]
@@ -375,10 +367,4 @@ for tool in ("gen_previz_parity.py", "gen_models.py"):
                             capture_output=True, text=True)
     check(f"{tool} --check", result.returncode == 0, (result.stdout + result.stderr).strip())
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("scene: all checks pass")
+finish("scene")

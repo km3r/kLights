@@ -19,19 +19,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import bands  # noqa: E402
 from engine import showfiles  # noqa: E402
 from engine import timeline as tl  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def clip(ident, at, length, fade=0, **extra):
     return {"id": ident, "at": at, "len": length, "fade": fade, **extra}
@@ -438,10 +430,4 @@ for bad, why in (({"rows": "no"}, "list of rows"),
     check(f"refuses {why}", ok)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("timeline: all checks pass")
+finish("timeline")

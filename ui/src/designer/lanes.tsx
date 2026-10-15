@@ -1,13 +1,18 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import {
   BEATS_PER_BAR, PHRASE_HUE, VISUAL_SCENES, barBeat, curveValue, laneValue, phraseFamily,
+  uniqueId,
 } from "./model";
 import type { AudioBand, Grid, Item, Row, TrackDoc, Wave } from "./model";
-import {
-  Editor, LaneAudio, PickMenu, audioId, defaultAudio, defaultWave, gapStart, laneTitle,
-  newVisuals, useLaneSpec, useMenuDismiss, waveId,
-} from "./edit";
-import type { Edits, PickEntry, Placeable } from "./edit";
+import { AutoSvg, defaultAudio, defaultWave, laneTitle } from "./automation";
+import { audioId, waveId } from "./ids";
+import type { Placeable } from "./clipboard";
+import type { Edits } from "./history";
+import { gapStart, newVisuals } from "./items";
+import { LaneAudio, useLaneSpec } from "./laneSpecs";
+import { GapToggle, LaneMenu, LaneSvg } from "./laneSvg";
+import { PickMenu, useMenuDismiss } from "./menus";
+import type { PickEntry } from "./menus";
 
 /**
  * The designer's lanes and bands, shared by the track designer and the routine
@@ -284,7 +289,7 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
     return (
       <div className="d-row d-external">
         <div className="d-head">{row.label ?? `${row.output ?? "external"} · ${row.id}`}
-          <Editor.LaneMenu row={row} index={index} history={history} /></div>
+          <LaneMenu row={row} index={index} history={history} /></div>
         <div className="d-empty muted small" style={{ width }}>
           Output: {row.output} -- kept in the file; not editable here</div>
       </div>
@@ -312,10 +317,10 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
             {roles.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         )}
-        {!roles && !hits && <Editor.GapToggle row={row} history={history} />}
-        <Editor.LaneMenu row={row} index={index} history={history} />
+        {!roles && !hits && <GapToggle row={row} history={history} />}
+        <LaneMenu row={row} index={index} history={history} />
       </div>
-      <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
+      <LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                       onSelect={onSelect} history={history} onMenu={onMenu}
                       onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))}
                       onAdd={onAdd && ((at, cx, cy) => onAdd(row.id, at, cx, cy))} noun={noun} />
@@ -357,7 +362,7 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
   const addCue = (at: number, cue: Partial<Item> = newCue(row.output ?? "")) => {
     if (!history.doc) return;
     // Named first: the edit itself runs later, inside React's update.
-    const id = Editor.uniqueId(history.doc, "cue");
+    const id = uniqueId(history.doc, "cue");
     history.apply((d) => {
       const r = d.rows.find((q) => q.id === row.id);
       if (!r) return;
@@ -398,12 +403,12 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
         {!curve && (
           <button className="small" aria-label={`add a cue to ${row.id}`}
                     onClick={() => addCue(Math.max(0, history.snapBeat(beat)))}>+ cue</button>)}
-        <Editor.LaneMenu row={row} index={index} history={history} />
+        <LaneMenu row={row} index={index} history={history} />
       </div>
       {curve
-        ? <Editor.AutoSvg row={row} x={x} width={width} history={history}
+        ? <AutoSvg row={row} x={x} width={width} history={history}
                           selected={selected} onSelect={onSelect} />
-        : <Editor.LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
+        : <LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                           onSelect={onSelect} history={history} noun="a cue"
                           onAdd={addable ? (at, cx, cy) => setAdding({
                             at: at == null ? Math.max(0, history.snapBeat(beat))
@@ -468,9 +473,9 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
                     }
                     onSelect?.(audioId(row.id));
                   }}>♪</button>)}
-        <Editor.LaneMenu row={row} index={-1} history={history} />
+        <LaneMenu row={row} index={-1} history={history} />
       </div>
-      <Editor.AutoSvg row={row} x={x} width={width} history={history}
+      <AutoSvg row={row} x={x} width={width} history={history}
                       selected={selected} onSelect={onSelect} />
     </div>
   );

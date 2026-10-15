@@ -6,14 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { Command } from "../types";
 import {
-  AUDIO_BANDS, AUDIO_STEP, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid, PARAM_TYPES,
+  AUDIO_BANDS, AUDIO_STEP, BLOCK_ARGS, BLOCK_SLOT, CHASE_ORDERS, EASINGS, Grid,
   TrackAudio, blocksFor, curveValue, decodeWave, draftFromTemplate, freeName, hexColor, laneValue,
   newTimeline, phraseMatch, templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
-import {
-  AUTOMATION_RANGES, PLACE_MIME, copyRange, cutRange, defaultAudio, defaultWave, gapStart,
-  paramSpec, pasteBoard, routineLaneSpecs, snapDown, splitAt, swing, timelineLaneSpecs,
-} from "../designer/edit";
+import { defaultAudio, defaultWave, swing } from "../designer/automation";
+import { PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt } from "../designer/clipboard";
+import { gapStart, snapDown } from "../designer/items";
+import { paramSpec, routineLaneSpecs, timelineLaneSpecs } from "../designer/laneSpecs";
 import { WAVE_HEIGHT } from "../designer/lanes";
 import { WAVE_SHAPES } from "../blocks";
 import { resetCatalogue } from "../designer/Collection";
@@ -87,8 +87,6 @@ describe("designer model", () => {
     }
     expect(CHASE_ORDERS).toEqual(blockLists.orders);
     expect(EASINGS).toEqual(blockLists.easings);
-    expect(AUTOMATION_RANGES).toEqual(blockLists.automation);
-    expect([...PARAM_TYPES]).toEqual(blockLists.param_types);
   });
 
   it("takes every block's defaults, steps and ranges from the engine", () => {
@@ -716,6 +714,41 @@ function reply(socket: MockSocket, type: string, ok: boolean, data?: unknown, er
                                                         data, error }) }));
   return sent!;
 }
+
+describe("opening a document", () => {
+  // `useSavedDoc`, which the timeline, routine and template-set editors open
+  // through: one the folder does not have is started, to be saved as a new
+  // file; one that could not be read is said, never opened blank -- a blank
+  // document saved over the real one is the failure this exists to prevent.
+  it("starts a track's timeline when the folder has none", async () => {
+    await open("#studio/track/kolsch-night-drive");
+    // Not written yet, so unsaved as it stands.
+    expect(await screen.findByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.queryByText(/no \/api\/timelines/)).toBeNull();
+  });
+
+  it("says so, rather than opening it blank, when it cannot be read", async () => {
+    const served = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (new URL(url, "http://engine").pathname === "/api/timelines/synth-128") {
+        return { ok: false, status: 500, json: async () => ({ error: "the disk is unreadable" }) };
+      }
+      return served(url);
+    }));
+    await open();
+    expect(await screen.findByText("the disk is unreadable")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Save/ })).toBeNull();
+  });
+
+  it("opens a new routine as New handed it over, and only once", async () => {
+    sessionStorage.setItem("klights.studio.pending", JSON.stringify({
+      kind: "routine", id: "brand-new", at: Date.now(),
+      doc: { ...structuredClone(fanDrop), id: "brand-new", name: "Brand New" } }));
+    await open("#studio/routine/brand-new");
+    expect(await screen.findByDisplayValue("Brand New")).toBeInTheDocument();
+    expect(sessionStorage.getItem("klights.studio.pending")).toBeNull();
+  });
+});
 
 describe("designer", () => {
   it("lays the track out as lanes: phrases, clips, hits, automation, the OSC lanes", async () => {
@@ -1851,6 +1884,29 @@ describe("designer guide", () => {
 });
 
 type TSaved = { doc: TimelineDoc; base_rev: string };
+
+describe("a Studio page older than the engine", () => {
+  // As the console: a page open across an update says so on every Studio page.
+  it("asks to be reloaded, in the library and in the editors", async () => {
+    const entry = document.createElement("script");
+    entry.setAttribute("src", "./assets/index-OLDHASH1.js");
+    document.head.append(entry);
+    try {
+      for (const hash of ["#studio", "#studio/track/synth-128", "#studio/routine/fan-drop"]) {
+        const socket = await open(hash);
+        expect(screen.queryByRole("alert")).toBeNull();
+        act(() => socket.onmessage?.({ data: JSON.stringify(
+          { type: "welcome", id: "c1", tier: "configure", bundle: "assets/index-NEWHASH2.js" }) }));
+        const banner = await screen.findByRole("alert");
+        expect(banner).toHaveTextContent(/engine has been updated since this page was opened/);
+        expect(within(banner).getByRole("button", { name: "Reload" })).toBeInTheDocument();
+        cleanup();
+      }
+    } finally {
+      entry.remove();
+    }
+  });
+});
 
 describe("studio routes", () => {
   it("rewrites the old designer's addresses to Studio's", async () => {

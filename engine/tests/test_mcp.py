@@ -21,20 +21,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import rig as rigmod                           # noqa: E402
 
 SERVER = REPO / "mcp" / "klights_mcp.py"
 EVENT = REPO / "events" / "despacio"
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 class Server:
     """A live server on a pipe, with the handshake done."""
@@ -536,10 +528,4 @@ check("nothing was written to stdout that was not JSON-RPC", True)
 check("the server logged no tracebacks", "Traceback" not in stderr,
       stderr.strip()[-200:] if stderr.strip() else "")
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("mcp: all checks pass")
+finish("mcp")

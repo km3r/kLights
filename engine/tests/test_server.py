@@ -9,7 +9,6 @@ of the framing, so a bug shared between encoder and decoder cannot hide.
 Run: python engine/tests/test_server.py
 """
 
-import atexit
 import base64
 import copy
 import errno
@@ -24,16 +23,21 @@ import sys
 import tempfile
 import threading
 import time
+import types
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish, isolated_event  # noqa: E402
 
 from engine import patch as patchmod
 from engine import rig as rigmod
 from engine import state as statemod
 from engine import websocket as wsmod
 from engine import blocks as blocksmod
+from engine import commands as commandsmod
+from engine import config as configmod
+from engine.controller import presets as presetsmod
 from engine import params as parammod
 from engine import server as servermod
 from engine.server import ShowController, ShowServer
@@ -49,25 +53,7 @@ from engine.server import ShowController, ShowServer
 # suite runs in its own interpreter (see engine/tests/__main__.py).
 #
 # Named "despacio" because the engine reports the folder name as the event.
-EVENT_TMP = Path(tempfile.mkdtemp(prefix="klights-server-"))
-atexit.register(shutil.rmtree, EVENT_TMP, ignore_errors=True)
-_SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
-EVENT = EVENT_TMP / "despacio"
-shutil.copytree(REPO / "events" / "despacio", EVENT, ignore=_SKIP)
-shutil.copytree(rigmod.VENUE_LIBRARY, EVENT_TMP / "venues", ignore=_SKIP)
-rigmod.VENUE_LIBRARY = patchmod.VENUES = EVENT_TMP / "venues"
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        # With the detail: `python -m engine.tests` (and so CI) shows only the
-        # tail of a failing suite, which is this list -- a label alone says
-        # which check failed but not by how much.
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
+EVENT = isolated_event("despacio")
 
 # -- an independent client ----------------------------------------------------
 
@@ -272,9 +258,25 @@ check("Sec-WebSocket-Accept is correct", client.accept in client.header)
 
 welcome = client.recv()
 check("welcome carries a client id", welcome["type"] == "welcome" and welcome["id"])
+entry = servermod.ENTRY_RE.search((server.ui_dir / "index.html").read_text(encoding="utf-8"))
+check("... and the console bundle this engine serves, so an older page can tell",
+      entry is not None and welcome.get("bundle") == entry.group(1)
+      and welcome["bundle"].startswith("assets/index-"), f"{welcome.get('bundle')}")
+# (Not a second ShowServer: constructing one takes over the controller's replies.)
+blank = Path(tempfile.mkdtemp())
+check("... or none, where there is no built console to name",
+      ShowServer.bundle(types.SimpleNamespace(ui_dir=blank)) is None)
+shutil.rmtree(blank, ignore_errors=True)
 
+looks = client.recv()
+check("the look list comes next, in a frame of its own",
+      looks["type"] == "looks" and isinstance(looks["rev"], int), f"{looks.get('type')}")
 state = client.recv()
 check("first state frame arrives immediately", state["type"] == "state")
+check("and it carries no look list: that is sent when it changes, not 10x a second",
+      state.get("looks") == [], f"{len(json.dumps(state))} bytes")
+check("... only an empty one, so a console from before the frame stays up",
+      isinstance(state["looks"], list))
 check("it describes the rig",
       len(state["fixtures"]) == len(controller.rig.fixtures)
       and state["event"] == "despacio",
@@ -309,12 +311,12 @@ def loaded(state, slot):
 client.send({"type": "select_look", "name": MOVE_A})
 after = client.wait_for(lambda s: MOVE_A in loaded(s, "movement"))
 check("selecting a look takes effect", MOVE_A in loaded(after, "movement"))
-check("the ported library is what is on offer", len(after["looks"]) > 100,
-      f"{len(after['looks'])} looks")
+check("the ported library is what is on offer", len(looks["looks"]) > 100,
+      f"{len(looks['looks'])} looks")
 check("and each carries the kind, slot and groups the UI files it by",
-      all({"kind", "slot", "groups"} <= set(l) for l in after["looks"]),
-      f"slots {sorted({l['slot'] for l in after['looks']})}, "
-      f"groups {sorted({g for l in after['looks'] for g in l['groups']})}")
+      all({"kind", "slot", "groups"} <= set(l) for l in looks["looks"]),
+      f"slots {sorted({l['slot'] for l in looks['looks']})}, "
+      f"groups {sorted({g for l in looks['looks'] for g in l['groups']})}")
 check("and it is held, so auto cannot steal it", after["auto"]["held"] is True)
 
 # -- the three slots do not overwrite each other -----------------------------
@@ -451,29 +453,29 @@ controller.apply({"type": "flash_clear"}, None)
 
 # The pure layout rules first, where every branch is reachable without a socket.
 check("a preset with no bank lands on the first free pad",
-      [(p["bank"], p["cell"]) for p in servermod.arrange_presets(
+      [(p["bank"], p["cell"]) for p in presetsmod.arrange_presets(
           [{"name": "a"}, {"name": "b"}])] == [(1, 0), (1, 1)])
 check("one that names a pad keeps it, and is not shuffled by its neighbours",
-      [(p["name"], p["bank"], p["cell"]) for p in servermod.arrange_presets(
+      [(p["name"], p["bank"], p["cell"]) for p in presetsmod.arrange_presets(
           [{"name": "a"}, {"name": "pinned", "bank": 1, "cell": 0}])]
       == [("pinned", 1, 0), ("a", 1, 1)])
 check("two presets claiming one pad: first claim wins, second is rehomed",
-      {p["name"]: p["cell"] for p in servermod.arrange_presets(
+      {p["name"]: p["cell"] for p in presetsmod.arrange_presets(
           [{"name": "first", "bank": 1, "cell": 2},
            {"name": "second", "bank": 1, "cell": 2}])}
       == {"first": 2, "second": 0})
 # Being told "your banks are full" while building a show is not a thing a
 # console gets to do, so the last bank grows instead.
-nine = servermod.arrange_presets([{"name": f"p{i}"} for i in range(9)])
+nine = presetsmod.arrange_presets([{"name": f"p{i}"} for i in range(9)])
 check("a ninth preset opens a second bank rather than refusing",
       (nine[-1]["bank"], nine[-1]["cell"]) == (2, 0),
       f"{nine[-1]['bank']}.{nine[-1]['cell']}")
 check("garbage in the presets list is skipped, not crashed on",
-      [p["name"] for p in servermod.arrange_presets(
+      [p["name"] for p in presetsmod.arrange_presets(
           [{"name": "ok"}, {"nameless": True}, "not a dict", None])] == ["ok"])
 # `bank: true` is an int to isinstance and would sail through as bank 1.
 check("a boolean where a bank number should be is rehomed",
-      servermod.arrange_presets(
+      presetsmod.arrange_presets(
           [{"name": "a", "bank": True, "cell": 0}])[0]["bank"] == 1)
 
 # Then the behaviour that actually matters at the desk: re-recording a preset
@@ -1356,6 +1358,9 @@ wait_reply(client, "s3")
 
 # A handler whose answer JSON cannot carry must not stop the frame it was sent
 # from -- the reply is built on the output thread.
+controller.COMMANDS = {**controller.COMMANDS, "test_unserialisable": commandsmod.Command(
+    "test_unserialisable", commandsmod.OPERATE, {}, "_cmd_test_unserialisable", "",
+    reply={"when": configmod.Spec()})}
 controller._cmd_test_unserialisable = lambda m, now: {"when": object()}
 client.send({"type": "test_unserialisable", "id": "u1"})
 reply = wait_reply(client, "u1")
@@ -1363,6 +1368,38 @@ check("a reply whose data cannot be sent says so, and the show runs on",
       reply["ok"] is True and "not serialisable" in reply.get("error", ""),
       f"{reply}")
 del controller._cmd_test_unserialisable
+del controller.COMMANDS                 # back to the class's table
+
+# The look list is not in the snapshot, so a change to the library has to
+# reach every console by itself: as a new looks frame, to each, ahead of the
+# snapshot that may name the change. Hidden here (it writes the event copy's
+# parametric_looks.json), then shown again.
+def next_looks(c, after_rev, timeout=6.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        msg = c.recv()
+        if msg.get("type") == "looks" and msg["rev"] > after_rev:
+            return msg
+    raise AssertionError("no new look list")
+
+
+hide = next(e.name for e in controller.library if e.is_color and not e.retired)
+before = controller.library_rev
+client.send({"type": "look_hide", "look": hide, "base_rev": controller.looks_rev or "",
+             "id": "hide"})
+reply = wait_reply(client, "hide")
+fresh = [next_looks(c, before) for c in (client, other)]
+check("hiding a look sends every console the new list",
+      reply["ok"] and all(next(l for l in f["looks"] if l["name"] == hide)["retired"]
+                          for f in fresh), f"{reply}")
+check("once, with a newer rev", all(f["rev"] == before + 1 for f in fresh),
+      f"{[f['rev'] for f in fresh]}")
+client.send({"type": "look_hide", "look": hide, "hidden": False, "id": "show",
+             "base_rev": controller.looks_rev or ""})
+wait_reply(client, "show")
+shown = next_looks(other, before + 1)
+check("and showing it again does too",
+      not next(l for l in shown["looks"] if l["name"] == hide)["retired"])
 other.close()
 
 
@@ -1871,7 +1908,8 @@ check("the shape macros are described the same way",
       {p["name"] for p in table["macros"]} == {"size", "spread", "bearing", "elev"})
 # A parametric look in the snapshot names its block, which is what the console
 # looks up in that table to render a control panel for it.
-orbit_look = next(l for l in snap["looks"] if l["name"] == "Ball Orbit")
+orbit_look = next(l for l in controller.looks_frame()["looks"]
+                  if l["name"] == "Ball Orbit")
 check("a parametric look names its block and carries its arguments",
       orbit_look["block"] == "orbit" and orbit_look["args"]["radius"] == 10.0)
 # The whole point of publishing them: the clamp and the control now read the
@@ -2729,7 +2767,7 @@ try:
     # Refusals first.
     for bad, why in (({"track_id": "nope"}, "no prepped track"),
                      ({"track_id": "../x"}, "no prepped track"),
-                     ({}, "no prepped track")):
+                     ({}, "track_id is required")):
         try:
             sc.apply({"type": "track_link", **bad}, None, at(t))
             refused = False
@@ -2860,10 +2898,4 @@ finally:
     sc.worker.stop()
     shutil.rmtree(shows_tmp, ignore_errors=True)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("server: all checks pass")
+finish("server")

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { mayRun } from "../types";
 import type { ReactNode } from "react";
 import { apiFetch, apiUrl } from "../useEngine";
 import type { Engine } from "./Designer";
 import { PHRASE_HUE, decodeWave, mmss, normalizeName, phraseFamily } from "./model";
 import type { TrackLine } from "./model";
-import { draftKey } from "./edit";
+import { draftKey } from "./document";
 import { putPending } from "./pending";
 import { Badge, DetailHead, DetailSection, MoreMenu, Task, useWrite } from "./detail";
 import type { MenuItem } from "./detail";
@@ -344,7 +345,7 @@ export function TrackDetail({ engine, t, set, playing, sets, live, onDone }: {
 }) {
   const heights = useWaveform(t);
   const audio = useAudioCheck(t);
-  const canWrite = engine.tier === "configure";
+  const canWrite = mayRun(engine.tier, "track_delete");
   const [draftSet, setDraftSet] = useState<string>(set.id ?? sets[0]?.id ?? "");
   useEffect(() => {
     if (!draftSet && (set.id || sets[0])) setDraftSet(set.id ?? sets[0]!.id);

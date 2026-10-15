@@ -22,6 +22,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
 from engine import server as servermod
+from engine.controller import presets as presetsmod
 from engine.server import ShowController
 
 OUT = REPO / "ui" / "src" / "__fixtures__" / "despacio.json"
@@ -59,6 +60,10 @@ def main() -> int:
         time.sleep(0.4)
 
         snapshot = controller.snapshot()
+        # The look list is not in the snapshot: the engine sends it in a frame
+        # of its own (`looks_frame`), and the console holds the two together.
+        # The fixture is the state as the console holds it.
+        snapshot["looks"] = controller.looks_frame()["looks"]
     finally:
         controller.stop()
 
@@ -88,7 +93,7 @@ def main() -> int:
     # bank layout is still the engine's, not this file's.
     live = snapshot["selection"]
     slots = {s: dict(live[s]) for s in ("movement", "color", "level")}
-    snapshot["presets"] = servermod.arrange_presets([
+    snapshot["presets"] = presetsmod.arrange_presets([
         # Bank 1 with a gap in it, and a second bank: between them these cover
         # every branch of the grid -- occupied pad, empty pad, page turn.
         {"name": "opener", **slots, "level": {}, "speed": 1.0, "master": 0.9,
@@ -98,7 +103,7 @@ def main() -> int:
         {"name": "landing", **slots, "color": {}, "speed": 0.5, "master": 0.6,
          "bank": 2, "cell": 0, "tags": ["ambient"]},
     ])
-    snapshot["preset_banks"] = {"size": servermod.BANK_SIZE, "count": 2}
+    snapshot["preset_banks"] = {"size": presetsmod.BANK_SIZE, "count": 2}
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")

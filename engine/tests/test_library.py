@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import geometry as geo
 from engine import library as libmod
@@ -24,15 +25,6 @@ from engine.rig import load_rig
 from shared.tools.port_library import NS, Porter, parse_values, snap_bars
 
 EVENT = REPO / "events" / "despacio"
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
-
 rig = load_rig(EVENT)
 entries = libmod.load_entries(EVENT / "looks.json")
 by_name = {e.name: e for e in entries}
@@ -810,10 +802,4 @@ far = pose("Far", [[45.0 + 300.0, 0.0], [-45.0 + 300.0, 0.0],
 check("a fit outside the centre macro's range is refused",
       audit.fit_pose(far, cross) is None)
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("library: all checks pass")
+finish("library")

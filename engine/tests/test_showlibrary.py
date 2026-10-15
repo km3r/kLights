@@ -19,20 +19,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import showfiles  # noqa: E402
 from engine import showlibrary as sl  # noqa: E402
 from engine import tracks as tr  # noqa: E402
 from engine import transport as tp  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 EXAMPLE = REPO / "shared" / "show-example"
 tmp = Path(tempfile.mkdtemp(prefix="klights-showlib-"))
@@ -339,10 +331,4 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("showlibrary: all checks pass")
+finish("showlibrary")

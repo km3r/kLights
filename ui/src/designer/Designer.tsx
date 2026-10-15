@@ -1,23 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Command, EngineState, Reply, Tier } from "../types";
+import type { Command, EngineState, Request, Tier } from "../types";
 import { apiFetch, apiUrl } from "../useEngine";
-import { SideSection } from "./detail";
+import { ReloadBanner, SideSection } from "./detail";
 import { PlanSvg } from "../Plan";
 import {
   BEATS_PER_BAR, DESIGNER_CHUNK, Grid, TrackAudio, barBeat, clock, decodeWave, draftFromTemplate,
-  findItem, itemName, whoDrives,
+  findItem, itemName, uniqueId, whoDrives,
 } from "./model";
 import type {
   PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave, WaveformDoc,
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
-import {
-  Editor, HITS, LaneAudio, ParamLanes, PickMenu, clipOps, copyRange, cutRange, gapStart, newHit,
-  offeredLooks, parseAudioId, parsePointId, parseWaveId,
-  rememberBack, setClipBoard, timelineLaneSpecs, uniqueId, useClipBoard, useEditorKeys,
-  useHistory, useMenuDismiss,
-} from "./edit";
-import type { PickEntry, Placeable, RowsDoc } from "./edit";
+import { AudioInspector, PointInspector, WaveInspector } from "./automation";
+import { clipOps, copyRange, cutRange, setClipBoard, useClipBoard } from "./clipboard";
+import type { Placeable } from "./clipboard";
+import { Toolbar, rememberBack, useSavedDoc } from "./document";
+import { parseAudioId, parsePointId, parseWaveId } from "./ids";
+import type { RowsDoc } from "./history";
+import { Inspector } from "./inspector";
+import { HITS, gapStart, newHit } from "./items";
+import { useEditorKeys } from "./keys";
+import { LaneAudio, ParamLanes, timelineLaneSpecs } from "./laneSpecs";
+import { AddLane } from "./laneSvg";
+import { PickMenu, useMenuDismiss } from "./menus";
+import type { PickEntry } from "./menus";
+import { offeredLooks } from "./roles";
+import { Shelf } from "./shelf";
 import { Browser } from "./Browser";
 import { Lane, Phrases, Ruler, WaveLane } from "./lanes";
 import RoutineEditor from "./RoutineEditor";
@@ -54,10 +62,13 @@ export interface Engine {
   state: EngineState | null;
   status: string;
   send: (c: Command) => void;
-  request: (c: Command, timeoutMs?: number) => Promise<Reply>;
+  /** Answered with what the command declares (`ReplyData`). */
+  request: Request;
   tier: Tier;
   /** This console's id on the engine, once it has said hello. */
   clientId?: string | null;
+  /** The engine serves a newer bundle than this page is running. */
+  stale?: boolean;
 }
 
 const HEADER_W = 170;
@@ -218,9 +229,10 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   const [routines, setRoutines] = useState<RoutineSummary[]>([]);
   const [wave, setWave] = useState<Wave | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const history = useHistory();
-  const { doc, setBase } = history;
-  const [rev, setRev] = useState<string>("");
+  // A track with no timeline yet starts an empty one, saved as a new file.
+  const { history, rev, setRev, loadError: docError } = useSavedDoc<TimelineDoc>(
+    "timeline", trackId, () => ({ kind: "klights.timeline", version: 1, track: trackId, rows: [] }));
+  const { doc } = history;
   const [zoom, setZoom] = useState(6);
   const [selected, setSelected] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(apiUrl(`/api/audio/${trackId}`));
@@ -243,20 +255,13 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
   useEffect(() => {
     apiFetch<{ doc: TrackDoc }>(`/api/tracks/${trackId}`)
       .then((r) => setTrack(r.doc)).catch((e: Error) => setLoadError(e.message));
-    apiFetch<{ doc: TimelineDoc; rev: string }>(`/api/timelines/${trackId}`)
-      .then((r) => { setBase(r.doc); setRev(r.rev); })
-      .catch(() => {
-        // No timeline yet: start one. Saved with base_rev "" (a new file).
-        setBase({ kind: "klights.timeline", version: 1, track: trackId, rows: [] });
-        setRev("");
-      });
     apiFetch<{ routines: RoutineSummary[] }>("/api/routines")
       .then((r) => setRoutines(r.routines)).catch(() => setRoutines([]));
     apiFetch<{ palettes: PaletteSummary[] }>("/api/palettes")
       .then((r) => setLibrary(r.palettes)).catch(() => setLibrary([]));
     apiFetch<{ doc: WaveformDoc }>(`/api/waveforms/${trackId}`)
       .then((r) => setWave(decodeWave(r.doc))).catch(() => setWave(null));
-  }, [trackId, setBase]);
+  }, [trackId]);
 
   // "Draft from" in the library: the draft is made here, once the timeline has
   // loaded, as one undoable edit -- nothing is written until Save.
@@ -420,11 +425,12 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                                playing: transport.playing });
   };
 
-  if (loadError) {
+  if (loadError ?? docError) {
     return (
       <div className="designer" data-chunk={DESIGNER_CHUNK}>
         <header className="d-top"><a className="d-link" href="#studio">Studio</a></header>
-        <p className="d-error">{loadError}</p>
+        <ReloadBanner stale={engine.stale} />
+        <p className="d-error">{loadError ?? docError}</p>
       </div>
     );
   }
@@ -604,7 +610,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             {ZOOMS.map((z) => <option key={z} value={z}>{z * 4} px/bar</option>)}
           </select>
         </label>
-        <Editor.Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
+        <Toolbar history={history} rev={rev} setRev={setRev} engine={engine}
                         kind="timeline" ident={trackId} />
         {driving
           ? <button className="on" onClick={release}>Release the rig</button>
@@ -653,6 +659,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
             <button onClick={() => void arm(true)}>Take the rig anyway</button>)}
         </div>
       )}
+      <ReloadBanner stale={engine.stale} />
       {guide.banner}
       {audioState === "none" && (
         <div className="d-banner">
@@ -704,7 +711,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                     onDropItem={(rowId, what, at) => place(what, at, rowId)}
                     onAdd={(rowId, at, cx, cy) => setAdding({ row: rowId, at, x: cx, y: cy })} />
             ))}
-            <Editor.AddLane history={history} />
+            <AddLane history={history} />
             {section && (
               <div className="d-section-mark" aria-hidden="true"
                    style={{ left: HEADER_W + x(section.start), width: x(section.end) - x(section.start) }} />)}
@@ -750,19 +757,19 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
               </tbody>
             </table>
           </SideSection>
-          <Editor.Shelf history={history} routines={routines} beat={beat} track={track} />
+          <Shelf history={history} routines={routines} beat={beat} track={track} />
         </aside>}
         {guide.drawer}
       </div>
 
       {waveRow && !history.listView
-        ? <Editor.WaveInspector row={waveRow} history={history} onSelect={setSelected} />
+        ? <WaveInspector row={waveRow} history={history} onSelect={setSelected} />
         : audioRow && !history.listView
-        ? <Editor.AudioInspector row={audioRow} history={history} onSelect={setSelected} />
+        ? <AudioInspector row={audioRow} history={history} onSelect={setSelected} />
         : selectedPoint && pointRow && !history.listView
-        ? <Editor.PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
+        ? <PointInspector row={pointRow} beat={selectedPoint.beat} history={history}
                                  onSelect={setSelected} />
-        : <Editor.Inspector history={history} item={selectedItem} routines={routines}
+        : <Inspector history={history} item={selectedItem} routines={routines}
                             engine={engine} onDeleted={() => setSelected(null)}
                             beat={beat} onSelect={setSelected} />}
 

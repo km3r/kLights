@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import cues as cuesmod
 from engine import library as libmod
@@ -24,15 +25,6 @@ from engine import state as statemod
 from engine.server import ShowController
 
 EVENT = REPO / "events" / "despacio"
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
-
 print("\n1. the list loads and every look it names exists")
 cue_list = cuesmod.load(EVENT / "cues.json")
 known = [e.name for e in libmod.load_entries(EVENT / "looks.json")]
@@ -206,13 +198,58 @@ try:
 
     controller.apply({"type": "look_params", "name": "Ball Orbit",
                       "reset": True}, None)
+
+    print("\n5. a cue or a preset naming a look the library no longer has")
+    # Both apply the rest: a cue list or a preset outlives any one port of the
+    # library. They differ on purpose in what an absent slot means, and both
+    # differences are held here.
+    COLOR = next(e.name for e in controller.library if e.is_color)
+    LEVEL = next(e.name for e in controller.library if e.kind == "level_path")
+    MOVE_A, MOVE_B = [e.name for e in controller.library if e.is_movement][:2]
+    controller.apply({"type": "select_look", "name": LEVEL}, None)
+    level_before = dict(controller.slots["level"])
+    controller.director.release()
+    controller.notices.clear()
+    controller.take_cue(cuesmod.Cue(
+        name="Lost", fade=0.0, color={"pinspots": COLOR, "corner movers": "Nope"},
+        movement={"corner movers": "Gone", "pinspots": MOVE_B}))
+    check("a cue fills its color slot with the looks there are, and only those",
+          controller.slots["color"] == {"pinspots": COLOR}, f"{controller.slots['color']}")
+    check("... leaves a slot it does not name as it was",
+          controller.slots["level"] == level_before and level_before,
+          f"{level_before} -> {controller.slots['level']}")
+    check("... takes the first movement it names that exists, and holds it",
+          controller.setlist.current().name == MOVE_B and controller.director.held)
+    check("... and says each look it could not find",
+          [n for n in controller.notices if "cue 'Lost'" in n]
+          == ["cue 'Lost': no look 'Nope'", "cue 'Lost': no look 'Gone'"],
+          f"{controller.notices}")
+
+    controller.take_cue(cuesmod.Cue(name="Loud", fade=0.0, master=1.5))
+    check("a cue's master is held to 0..1", controller.master == 1.0, f"{controller.master}")
+
+    controller.director.release()
+    controller.notices.clear()
+    controller._apply_preset_looks(
+        {"name": "Pad", "color": {"movers": COLOR, "pinspots": "Nope", "wash": ""},
+         "movement": {"corner movers": "Gone"}, "master": -0.5},
+        controller.runner.now())
+    check("a preset fills its color slot with the looks there are",
+          controller.slots["color"] == {"movers": COLOR}, f"{controller.slots['color']}")
+    check("... and empties a slot it does not name: a preset is the whole picture",
+          controller.slots["level"] == {}, f"{controller.slots['level']}")
+    check("... says what is missing in one notice, and an empty name is not missing",
+          [n for n in controller.notices if "preset 'Pad'" in n]
+          == ["preset 'Pad': Nope, Gone no longer exist(s)"], f"{controller.notices}")
+    check("... holds auto mode though its movement is gone",
+          controller.director.held and controller.setlist.current().name == MOVE_B)
+    check("... and its master is held to 0..1 too", controller.master == 0.0,
+          f"{controller.master}")
+    controller._apply_preset_looks({"name": "Up", "movement": {"m": MOVE_A}, "master": 0.6},
+                                   controller.runner.now())
+    check("a preset that names a movement takes it",
+          controller.setlist.current().name == MOVE_A and controller.master == 0.6)
 finally:
     controller.stop()
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("cues: all checks pass")
+finish("cues")

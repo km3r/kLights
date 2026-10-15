@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import library as libmod  # noqa: E402
 from engine import program as programmod  # noqa: E402
@@ -24,15 +25,6 @@ from engine import state as statemod  # noqa: E402
 from engine import templates as tm  # noqa: E402
 from engine import timeline as tl  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 RIGGING = programmod.load_rigging(REPO / "events" / "despacio")
 RIG = RIGGING.rig
@@ -251,10 +243,4 @@ check("a frame mid-crossfade (two picks) costs a few ms at most", per < 5.0,
       f"{per:.2f} ms")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("templates: all checks pass")
+finish("templates")

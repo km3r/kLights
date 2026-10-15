@@ -16,18 +16,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import tracks as tr  # noqa: E402
 from engine import tracktime  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 SIG_A = "a" * 40
 SIG_B = "b" * 40
@@ -249,10 +241,4 @@ feed_phase(c, 0.5, seconds=1.5, start=12.0, at0=1.5)
 check("reset (a jump) restarts the window", c.warning is None, f"{c.warning}")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("tracks: all checks pass")
+finish("tracks")

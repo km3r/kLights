@@ -17,20 +17,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import modulate  # noqa: E402
 from engine import motion  # noqa: E402
 from engine import tracktime  # noqa: E402
 from engine import waves  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def numeric_area(shape, a, b, seed=0, steps_per_cycle=4000):
     """∫ unit from a to b by the midpoint rule, split at every half cycle so
@@ -115,10 +107,4 @@ check("a triangle modulator is the same triangle",
           (bar / 4.0 + 0.1) % 1.0)) < 1e-12 for bar in (0.0, 1.3, 2.2, 9.9)))
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("waves: all checks pass")
+finish("waves")

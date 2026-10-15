@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { BLOCK_PARAMS } from "../blocks";
 import type { EngineState } from "../types";
@@ -68,6 +68,49 @@ describe("connection", () => {
     installMockSocket();
     render(<App />);
     expect(screen.getByText(/Waiting for the engine/i)).toBeInTheDocument();
+  });
+});
+
+describe("a page older than the engine", () => {
+  // The bundle this page loaded, as a built index.html names it.
+  const entry = document.createElement("script");
+  entry.setAttribute("src", "./assets/index-OLDHASH1.js");
+  beforeEach(() => { document.head.append(entry); });
+  afterEach(() => { entry.remove(); });
+
+  const welcome = (socket: ReturnType<typeof mount>, bundle?: string) =>
+    act(() => socket.onmessage?.({ data: JSON.stringify(
+      { type: "welcome", id: "c1", tier: "configure", bundle }) }));
+
+  it("is told to reload when the engine serves a newer bundle", async () => {
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...location, reload });
+    try {
+      const socket = mount();
+      welcome(socket, "assets/index-NEWHASH2.js");
+      const banner = screen.getByText(/engine has been updated since this page was opened/)
+        .closest(".banner") as HTMLElement;
+      await user.click(within(banner).getByRole("button", { name: "Reload" }));
+      expect(reload).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("is not, when it is running what the engine serves -- or the engine does not say", () => {
+    const socket = mount();
+    welcome(socket, "assets/index-OLDHASH1.js");
+    expect(screen.queryByText(/engine has been updated/)).toBeNull();
+    welcome(socket);
+    expect(screen.queryByText(/engine has been updated/)).toBeNull();
+  });
+
+  it("is not, under the dev server, where no built bundle is loaded", () => {
+    entry.remove();
+    const socket = mount();
+    welcome(socket, "assets/index-NEWHASH2.js");
+    expect(screen.queryByText(/engine has been updated/)).toBeNull();
   });
 });
 
@@ -1236,7 +1279,7 @@ describe("follow dj (track card)", () => {
     expect(within(sets).getByRole("button", { name: "Club" }))
       .toHaveAttribute("aria-pressed", "true");
     await user.click(within(sets).getByRole("button", { name: "Chill" }));
-    expect(socket.last()).toEqual({ type: "template_set", id: "chill" });
+    expect(socket.last()).toEqual({ type: "template_set", set: "chill" });
     act(() => socket.push(program((p) => {
       Object.assign(p, { armed: true, engaged: true, mode: "template", set: "club",
                          pending: "off", sets: [{ id: "club", name: "Club" }] });
@@ -1244,7 +1287,7 @@ describe("follow dj (track card)", () => {
     expect(within(screen.getByRole("group", { name: "template set" }))
       .getByRole("button", { name: /Off · next downbeat/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Off/ }));
-    expect(socket.last()).toEqual({ type: "template_set", id: null });
+    expect(socket.last()).toEqual({ type: "template_set", set: null });
   });
 
   it("lists what the other decks have loaded, and whether their shows are built", () => {
@@ -2113,6 +2156,57 @@ describe("the rig's reach", () => {
     const up = screen.getByLabelText("Up") as HTMLInputElement;
     expect(Number(up.value)).toBeCloseTo(-25, 0);
     expect([up.min, up.max]).toEqual(["-275", "452"]);
+  });
+});
+
+describe("the look list", () => {
+  // The engine sends it apart from the snapshot -- as a console connects and
+  // when the library changes -- so a new list has to reach the picker by
+  // itself, and the snapshots that follow must not take it away again.
+  it("takes a new list with no new snapshot, and keeps it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Move/);
+    const up = new Set(Object.values(despacioState.selection.movement ?? {}));
+    const first = despacioState.looks.find(
+      (l) => l.slot === "movement" && l.kind === "path"
+             && !l.block && !l.retired && !l.step_of && !up.has(l.name))!;
+    const looks = despacioState.looks.map(
+      (l) => (l === first ? { ...l, name: "Freshly Made" } : l));
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "looks", rev: 2, looks }) }));
+    expect(screen.getByRole("button", { name: /^Freshly Made/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: new RegExp(`^${first.name}`) })).toBeNull();
+
+    const { looks: _, ...snapshot } = despacioState;
+    act(() => socket.onmessage?.({ data: JSON.stringify(snapshot) }));
+    expect(screen.getByRole("button", { name: /^Freshly Made/ })).toBeTruthy();
+  });
+
+  // The frame a console is sent as it connects can be overtaken by the
+  // broadcast of a library installed meanwhile. The older must not win.
+  it("keeps a newer list over an older one that arrives after it", async () => {
+    const user = userEvent.setup();
+    const socket = mount();
+    await goTo(user, /Move/);
+    const up = new Set(Object.values(despacioState.selection.movement ?? {}));
+    const first = despacioState.looks.find(
+      (l) => l.slot === "movement" && l.kind === "path"
+             && !l.block && !l.retired && !l.step_of && !up.has(l.name))!;
+    const newer = despacioState.looks.map(
+      (l) => (l === first ? { ...l, name: "Freshly Made" } : l));
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "looks", rev: 5, looks: newer }) }));
+    act(() => socket.onmessage?.({ data: JSON.stringify(
+      { type: "looks", rev: 4, looks: despacioState.looks }) }));
+    expect(screen.getByRole("button", { name: /^Freshly Made/ })).toBeTruthy();
+
+    // A new connection is a new count: a restarted engine starts from its own.
+    act(() => socket.close());
+    await act(async () => { await new Promise((r) => setTimeout(r, 450)); });
+    const again = currentSocket();
+    expect(again).not.toBe(socket);
+    act(() => again.open());
+    expect(screen.queryByRole("button", { name: /^Freshly Made/ })).toBeNull();
+    expect(screen.getByRole("button", { name: new RegExp(`^${first.name}`) })).toBeTruthy();
   });
 });
 

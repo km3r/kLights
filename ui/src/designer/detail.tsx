@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useHelp } from "../components";
+import { RELOAD_TEXT, useHelp } from "../components";
+import type { Command } from "../types";
 import type { Engine } from "./Designer";
 
 /**
@@ -166,7 +167,7 @@ export function useWrite(engine: Engine, onDone: (said: string) => void) {
       setBusy(false);
     }
   };
-  const ask = async (command: Parameters<Engine["request"]>[0]) => {
+  const ask = async <C extends Command>(command: C) => {
     const reply = await engine.request(command);
     if (!reply.ok) throw new Error(reply.error ?? "the engine refused");
     return reply.data;
@@ -196,6 +197,18 @@ function readFolded(): string[] {
   } catch {
     return [];
   }
+}
+
+/** Above every Studio page while the engine serves a newer bundle than this
+ *  page is running, as the console says it in its banners. */
+export function ReloadBanner({ stale }: { stale?: boolean }) {
+  if (!stale) return null;
+  return (
+    <div className="d-banner" role="alert">
+      {RELOAD_TEXT}
+      <button onClick={() => location.reload()}>Reload</button>
+    </div>
+  );
 }
 
 /**

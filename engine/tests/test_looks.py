@@ -14,15 +14,14 @@ ones that arrive after the worker finishes -- is checked exactly.
 Run: python engine/tests/test_looks.py
 """
 
-import atexit
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish, isolated_event  # noqa: E402
 
 from engine import api as apimod  # noqa: E402
 from engine import config as configmod  # noqa: E402
@@ -31,23 +30,10 @@ from engine import lookstore  # noqa: E402
 from engine import patch as patchmod  # noqa: E402
 from engine import rig as rigmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
+from engine.controller import looks as ctl_looks  # noqa: E402
 
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label + (f"  -- {detail}" if detail else ""))
-
-
-TMP = Path(tempfile.mkdtemp(prefix="klights-looks-"))
-atexit.register(shutil.rmtree, TMP, ignore_errors=True)
-_SKIP = shutil.ignore_patterns("__pycache__", "*.bak", ".engine.lock", "backups")
-EVENT = TMP / "despacio"
-shutil.copytree(REPO / "events" / "despacio", EVENT, ignore=_SKIP)
-shutil.copytree(rigmod.VENUE_LIBRARY, TMP / "venues", ignore=_SKIP)
-rigmod.VENUE_LIBRARY = patchmod.VENUES = TMP / "venues"
+EVENT = isolated_event("despacio")
+TMP = EVENT.parent
 SHOWS = TMP / "shows"
 shutil.copytree(REPO / "shared" / "show-example", SHOWS)
 FILE = EVENT / "parametric_looks.json"
@@ -255,7 +241,8 @@ def listed(name):
 
 
 def in_snapshot(name):
-    return next((l for l in sc.snapshot()["looks"] if l["name"] == name), None)
+    """The look as the console has it: the look list it is sent (`looks_frame`)."""
+    return next((l for l in sc.looks_frame()["looks"] if l["name"] == name), None)
 
 
 def on_disk():
@@ -932,17 +919,18 @@ try:
     sc.apply({"type": "select_look", "name": "Rolling Breathe"}, None)
     sc.apply({"type": "preset_save", "name": "breathe pad"}, None)
     rolling = next(l for l in on_disk()["looks"] if l["name"] == "Rolling Breathe")
-    real_save_presets = servermod.save_presets
+    # Patched where the install looks it up: the looks part's own import.
+    real_save_presets = ctl_looks.save_presets
 
     def disk_full(event_dir, presets):
         raise OSError("disk full")
 
-    servermod.save_presets = disk_full
+    ctl_looks.save_presets = disk_full
     try:
         r = ask({"type": "look_save", "was": "Rolling Breathe", "base_rev": sc.looks_rev,
                  "look": {**rolling, "name": "Rolling"}})
     finally:
-        servermod.save_presets = real_save_presets
+        ctl_looks.save_presets = real_save_presets
     check("a rename whose presets cannot be written is still installed and still "
           "answered: the library, the slot and the presets in memory follow, and a "
           "notice says the file did not",
@@ -1013,10 +1001,4 @@ try:
 finally:
     sc.worker.stop()
 
-print()
-if failures:
-    print(f"{len(failures)} FAILED:")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("all look-library tests passed")
+finish("looks")

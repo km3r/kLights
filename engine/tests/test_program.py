@@ -21,6 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod  # noqa: E402
 from engine import library as libmod  # noqa: E402
@@ -30,15 +31,6 @@ from engine import showfiles as sf  # noqa: E402
 from engine import state as statemod  # noqa: E402
 from engine import timeline as tl  # noqa: E402
 from engine import waves  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 RIGGING = programmod.load_rigging(REPO / "events" / "despacio")
 RIG = RIGGING.rig
@@ -117,8 +109,12 @@ SOLID = lambda color, role="movers": routine(  # noqa: E731
 
 # -- 0. the parts agree -------------------------------------------------------
 print("\n0. the parts agree")
-check("blocks.py builds exactly the blocks the format allows",
-      blocksmod.BLOCKS == sf.BLOCK_NAMES)
+# The format takes its block list from blocks.py, so what is left to hold is
+# that blocks.py can build every block it lists.
+check("blocks.py has a builder for every block the format allows",
+      sf.BLOCK_NAMES is blocksmod.BLOCKS
+      and all(name in {**blocksmod._MOVES, **blocksmod._LAYERS, **blocksmod._ADAPTERS}
+              for name in sf.BLOCK_NAMES))
 folder = sf.load_folder(REPO / "shared" / "show-example")
 example_tl = tl.Timeline.from_doc(folder.timelines["synth-128"],
                                   sf.timeline_channels)
@@ -607,10 +603,4 @@ check("a frame of the example show costs a few milliseconds at most "
       "(the frame is 25)", per < 5.0, f"{per:.2f} ms")
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("program: all checks pass")
+finish("program")

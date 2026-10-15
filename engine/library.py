@@ -554,7 +554,7 @@ def resolve_args(entry: LibraryEntry) -> dict:
     `parametric_looks.json` hand-edited at a venue against a slightly older
     engine should lose the key it does not understand and still light the
     room. A command from the console is the opposite case and is strict -- see
-    `server._cmd_look_params`.
+    `controller.picture._cmd_look_params`.
 
     Values are NOT clamped to the declared range, for the same reason a routine
     file's are not (`blocks.PARAMS`): the range describes the controls; what an

@@ -22,20 +22,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import api as apimod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import showfiles  # noqa: E402
 from engine import state as statemod  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 tmp = Path(tempfile.mkdtemp(prefix="klights-api-"))
 shows = tmp / "shows"
@@ -911,10 +903,4 @@ check("they too are a chunk of their own, loaded only from #visuals -- and not "
           if js.name != Path(entries[0]).name) if entries else False)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("api: all checks pass")
+finish("api")

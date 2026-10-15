@@ -115,7 +115,10 @@ def _check(value: Any, spec: Spec, where: str, out: list[str],
 
     # bool is a subclass of int in Python, so a bare isinstance check lets
     # `"enabled": true` satisfy a numeric field and `"height": true` sail past.
-    wants_number = spec.types == Number or spec.types is float or spec.types is int
+    # Any spec that takes a number counts -- a command's nullable number is
+    # (int, float, None) -- unless it takes true/false as well.
+    types = spec.types if isinstance(spec.types, tuple) else (spec.types,)
+    wants_number = (int in types or float in types) and bool not in types
     if wants_number and isinstance(value, bool):
         out.append(f"{where} must be a number, got {value!r} (true/false)"
                    + (f"\n      fix: {spec.fix}" if spec.fix else ""))
@@ -189,6 +192,15 @@ def _check_object(cfg: dict, schema: dict[str, Spec], prefix: str,
                 del cfg[key]
             continue
         _check(cfg[key], spec, where, out, drop)
+
+
+def problems(obj: dict, schema: dict[str, Spec]) -> list[str]:
+    """Everything wrong with one object against a schema, without raising and
+    without touching it -- for something that is not a file, such as a command
+    off the socket (`commands.Command.check`)."""
+    out: list[str] = []
+    _check_object(obj, schema, "", out)
+    return out
 
 
 def validate(cfg: Any, schema: dict[str, Spec], path: Path,

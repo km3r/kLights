@@ -28,6 +28,11 @@ set process-wide timing, and one suite's leftovers must never decide another's
 result. The runner prints the tail of a failing suite, so a check's detail says
 by how much it failed, not just that it did.
 
+What the suites share is [`engine/tests/harness.py`](../engine/tests/harness.py):
+`check(label, ok, detail)` for each assertion, `finish(name)` as a suite's last
+line, and `isolated_event()` for a throwaway copy of an event and the venue
+library with the lookups pointed at it.
+
 The suites assert **failure paths**: a refused command, a corrupt config, a
 crash mid-write, a rig that cannot load. A test that only proves the happy path
 passes when the feature is deleted.
@@ -66,8 +71,8 @@ the three doors into a running show:
 2. **Config and show-folder files.** Every schema and kind is mutated. The
    validator must say no or yes without raising. Whatever it *accepts*, the engine
    must load, because that is the reason the validator exists.
-3. **Console commands.** Messages are built from the fields each `_cmd_*`
-   handler reads, taken from `engine/server.py` itself, and sent through `submit()`
+3. **Console commands.** Messages are built from the arguments each command
+   declares (`ShowController.COMMANDS`, see `engine/commands.py`), and sent through `submit()`
    onto the real output thread. Afterwards every frame must still render, the
    clock must stay a number, the snapshot must stay strict JSON (one `NaN` there
    and every phone's `JSON.parse` fails), and the DMX thread must still be alive.

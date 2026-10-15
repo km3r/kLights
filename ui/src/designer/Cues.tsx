@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mayRun } from "../types";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Engine } from "./Designer";
 import { BLOCK_ARGS, SLOTS, freeName } from "./model";
@@ -146,7 +147,7 @@ export function CuesView({ engine, list, error, selected, unsaved, onSelect, onN
   const live = engine.state?.cues ?? null;
   const at = live?.index ?? -1;
   const started = at >= 0;
-  const canWrite = engine.tier === "configure" && !!list && !list.stale;
+  const canWrite = mayRun(engine.tier, "cue_save") && !!list && !list.stale;
   const canMove = canWrite && !busy;
 
   const move = (name: string, to: number) => run(async () => {
@@ -176,7 +177,7 @@ export function CuesView({ engine, list, error, selected, unsaved, onSelect, onN
           <MoreMenu label="the cue list" items={[
             { label: "Rename the list…", onClick: () => { setError(null); setNaming(list.name ?? ""); } },
           ]} />)}
-        <button disabled={!started || engine.tier === "view" || engine.status !== "open"}
+        <button disabled={!started || !mayRun(engine.tier, "cue_reset") || engine.status !== "open"}
                 title="Rewind to before the first cue. Nothing is taken: what is on stage stays"
                 onClick={() => engine.send({ type: "cue_reset" })}>Reset</button>
         <button onClick={onNew}>New cue…</button>
@@ -190,17 +191,17 @@ export function CuesView({ engine, list, error, selected, unsaved, onSelect, onN
             : "The engine reads it again by itself in a moment. What is listed here is the "
               + "list that is running; a save before then would be refused."}
           <div className="d-form">
-            <button className="d-primary" disabled={busy || engine.tier !== "configure"}
+            <button className="d-primary" disabled={busy || !mayRun(engine.tier, "cue_save")}
                     onClick={() => void run(async () => {
                       await ask({ type: "cues_reload" });
                       return `Read ${list.file} again.`;
                     })}>Read the cues again</button>
-            {engine.tier !== "configure" && <span className="muted small">{READ_ONLY}</span>}
+            {!mayRun(engine.tier, "cue_save") && <span className="muted small">{READ_ONLY}</span>}
           </div>
         </div>
       )}
       {naming != null && (
-        <Task title="Rename the cue list" readOnly={engine.tier !== "configure"}
+        <Task title="Rename the cue list" readOnly={!mayRun(engine.tier, "cues_name")}
               onCancel={() => { setNaming(null); setError(null); }}>
           <form className="d-form" onSubmit={(e) => { e.preventDefault(); if (tidy(naming) && canWrite) void rename(); }}>
             <input value={naming} aria-label="name of the cue list" autoFocus
@@ -412,7 +413,7 @@ export function CueDetail({ engine, c, index, list, looks, draft, onDraft, onDon
   onDone: (said: string) => void;
   onSelect: (name: string | null) => void;
 }) {
-  const canWrite = engine.tier === "configure" && !list.stale;
+  const canWrite = mayRun(engine.tier, "cue_save") && !list.stale;
   const rev = list.rev ?? "";
   const names = list.cues.map((x) => x.name);
   const library = looks?.looks ?? [];
@@ -450,8 +451,8 @@ export function CueDetail({ engine, c, index, list, looks, draft, onDraft, onDon
   const nameTaken = name !== c.name && names.includes(name);
   const valid = !!name && !nameTaken && edit.fade != null && edit.fade >= 0 && (edit.hold ?? 0) >= 0;
   const flags = dirty ? editFlags(edit, looks?.looks) : c.flags;
-  const noted = (data: unknown) => {
-    const warnings = (data as { warnings?: string[] } | undefined)?.warnings ?? [];
+  const noted = (data: { warnings?: string[] | null } | undefined) => {
+    const warnings = data?.warnings ?? [];
     setWarning(warnings.length ? warnings.join(". ") + "." : null);
   };
 
@@ -685,13 +686,13 @@ export function CueDetail({ engine, c, index, list, looks, draft, onDraft, onDon
           <button className="d-primary" disabled={!valid || busy || !canWrite}
                   onClick={() => void save()}>{name !== c.name ? "Save and rename" : "Save the cue"}</button>
           <button onClick={() => { setEdit(saved); setError(null); }}>Revert</button>
-          {engine.tier !== "configure" && <span className="muted small">{READ_ONLY}</span>}
+          {!mayRun(engine.tier, "cue_save") && <span className="muted small">{READ_ONLY}</span>}
         </div>
       )}
 
       <DetailSection title="On the rig">
         <div className="d-form">
-          <button disabled={dirty || engine.tier === "view" || engine.status !== "open"}
+          <button disabled={dirty || !mayRun(engine.tier, "cue") || engine.status !== "open"}
                   onClick={() => engine.send({ type: "cue", index })}>
             {isLive ? "Take it again" : "Take it on the rig"}</button>
         </div>

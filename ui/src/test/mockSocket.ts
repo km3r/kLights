@@ -6,7 +6,8 @@ import fixture from "../__fixtures__/despacio.json";
  * A fake WebSocket that behaves like the engine.
  *
  * The state it serves is `src/__fixtures__/despacio.json`, captured from a real
- * running engine by `engine/tests/dump_snapshot.py`. A hand-written fixture
+ * running engine by `engine/tests/dump_snapshot.py`: its snapshot, with the look
+ * list the engine sends apart from it folded in, as `useEngine` holds it. A hand-written fixture
  * would drift from the protocol silently and then these tests would pass
  * against a shape the engine no longer produces; regenerating is one command.
  *
@@ -45,8 +46,12 @@ export class MockSocket {
     this.push(state);
   }
 
+  /** Deliver a state the way the engine does: the look list in a frame of its
+   *  own, then the snapshot, which does not carry it. */
   push(state: EngineState) {
-    this.onmessage?.({ data: JSON.stringify(state) });
+    const { looks, ...snapshot } = state;
+    this.onmessage?.({ data: JSON.stringify({ type: "looks", rev: 1, looks }) });
+    this.onmessage?.({ data: JSON.stringify(snapshot) });
   }
 
   /** Commands sent since the hello handshake. */

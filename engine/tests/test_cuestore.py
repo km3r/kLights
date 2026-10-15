@@ -487,10 +487,10 @@ try:
           r and r["ok"] is False and "needs configure" in r["error"], f"{r}")
     for kind in ("cue_save", "cue_copy", "cue_move", "cue_delete", "cues_name", "cues_reload"):
         check(f"{kind} is in the tier table as configure",
-              servermod.TIER.get(kind) == "configure" and hasattr(sc, f"_cmd_{kind}"))
+              sc.COMMANDS[kind].tier == "configure" and hasattr(sc, f"_cmd_{kind}"))
     check("taking, stepping back and rewinding the list stay operate-tier: running "
           "the night is not configuration",
-          all(servermod.TIER.get(k, "operate") == "operate" for k in ("go", "cue_back", "cue", "cue_reset")))
+          all(sc.COMMANDS[k].tier == "operate" for k in ("go", "cue_back", "cue", "cue_reset")))
     r = ask({"type": "cue_save", "cue": haze, "base_rev": "r:000000000000"})
     check("a save quoting a rev that is not the file's is refused, and nothing is written",
           r["ok"] is False and "changed since you opened it" in r["error"]
@@ -594,7 +594,8 @@ try:
     check("a move to a place that is not there is refused",
           r["ok"] is False and "place in the running order" in r["error"])
     r = ask({"type": "cue_move", "cue": "Deep", "to": "first", "base_rev": sc.cues_rev})
-    check("and so is one that names no place", r["ok"] is False and "cue_move needs to" in r["error"])
+    check("and so is one that names no place",
+          r["ok"] is False and "cue_move: to must be a whole number" in r["error"], f"{r}")
     r = ask({"type": "cue_save", "was": "Deep", "base_rev": sc.cues_rev,
              "cue": as_sent("Deep", name="Deeper")})
     check("renamed, it is current under its new name",

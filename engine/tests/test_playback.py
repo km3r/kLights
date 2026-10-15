@@ -24,6 +24,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import blocks as blocksmod  # noqa: E402
 from engine import playback as playbackmod  # noqa: E402
@@ -31,15 +32,6 @@ from engine import program as programmod  # noqa: E402
 from engine import server as servermod  # noqa: E402
 from engine import state as statemod  # noqa: E402
 from engine import templates as templatesmod  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 tmp = Path(tempfile.mkdtemp(prefix="klights-playback-"))
 shows = tmp / "shows"
@@ -270,7 +262,7 @@ try:
           and st["template"]["routine"] == "build-rise"
           and abs(st["template"]["start"] - (said_at - 6.0)) < 1e-6, f"{st}")
 
-    sc.apply({"type": "template_set", "id": None}, None, t)
+    sc.apply({"type": "template_set", "set": None}, None, t)
     check("switching set waits for the next downbeat",
           sc.player.pending == playbackmod.NO_SET and sc.player.set_id == "club")
     play(10.3, 2.5)
@@ -279,12 +271,28 @@ try:
           st["mode"] == "fallback" and st["set"] is None and st["pending"] is None,
           f"{st}")
     try:
-        sc.apply({"type": "template_set", "id": "nope"}, None, t)
+        sc.apply({"type": "template_set", "set": "nope"}, None, t)
         refused = False
     except ValueError as exc:
         refused = "no template set" in str(exc)
     check("an unknown set is refused", refused)
+    for message, what in (({"type": "template_set"}, "naming no set at all"),
+                          ({"type": "template_set", "id": "r12"},
+                           "carrying only a reply id")):
+        before = (sc.player.set_id, sc.player.pending)
+        try:
+            sc.apply(message, None, t)
+            said = ""
+        except ValueError as exc:
+            said = str(exc)
+        check(f"a template_set {what} is refused, not read as 'off'",
+              "needs set" in said and (sc.player.set_id, sc.player.pending) == before,
+              said)
+    # A console on a bundle from before `set` sends the set as `id`.
     sc.apply({"type": "template_set", "id": "club"}, None, t)
+    check("one from an older console, with the set as `id`, is read as it meant",
+          sc.player.pending == "club", f"{sc.player.pending}")
+    sc.apply({"type": "template_set", "set": "club"}, None, t)
     settle()
     play(12, 2.5)
     check("and back on at the next downbeat", status()["set"] == "club"
@@ -558,7 +566,7 @@ try:
     sc.reload_library()
     settle()
     errors_before = sc.runner.stats.eval_errors
-    sc.apply({"type": "template_set", "id": "chill"}, None, t)
+    sc.apply({"type": "template_set", "set": "chill"}, None, t)
     (shows / "templates" / "chill.json").unlink()
     sc.reload_library()
     settle()
@@ -583,7 +591,7 @@ try:
 
     templatesmod.compile_set = broken_compile_set
     try:
-        sc.apply({"type": "template_set", "id": "chill"}, None, t)
+        sc.apply({"type": "template_set", "set": "chill"}, None, t)
         settle()
     finally:
         templatesmod.compile_set = real_compile_set
@@ -606,7 +614,7 @@ try:
     try:
         gate.clear()
         hold_worker()
-        sc.apply({"type": "template_set", "id": "chill"}, None, t)
+        sc.apply({"type": "template_set", "set": "chill"}, None, t)
         sc.player.recompile()
         gate.set()
         settle()
@@ -620,7 +628,7 @@ try:
     play(65, 2.5)
     check("which then takes over on its downbeat", status()["set"] == "chill",
           f"{status()}")
-    sc.apply({"type": "template_set", "id": "club"}, None, t)
+    sc.apply({"type": "template_set", "set": "club"}, None, t)
     settle()
     play(68, 2.5)
     t += 2.5
@@ -844,10 +852,4 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("playback: all checks pass")
+finish("playback")

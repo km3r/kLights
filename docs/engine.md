@@ -394,8 +394,22 @@ live.
   `dropped <name>: 5 seconds behind and not reading`, and a browser
   reconnects by itself. Until then the client stays in the presence list, and
   a Studio page that is driving the rig keeps it. The clock is per message, so
-  a link too slow to carry one snapshot in 5 seconds (about 12 kB/s with a
-  show folder loaded) is dropped as well.
+  a link too slow to carry one in 5 seconds is dropped as well: a snapshot is
+  about 7 kB, the look list about 50 kB.
+- **The look list is not in the snapshot.** It was 86% of it. A console is
+  sent `{"type": "looks", "rev", "looks"}` as it connects and again whenever
+  the library changes (`library_rev`, bumped as one is installed), kept in
+  order like a reply, ahead of the snapshot that may name a new look. The
+  console holds the two together as its state, and on each connection keeps
+  the highest `rev` it has seen, so a list overtaken by a newer one is not
+  taken. (The snapshot carries an empty `looks` for a console older than
+  this; remove it once none can be open.)
+- **The welcome says which console the engine serves**:
+  `{"type": "welcome", "id", "tier", "bundle"}`, where `bundle` is the entry
+  script ui/dist/index.html names now (`assets/index-<hash>.js`, or null with
+  no build). A page left open across an update reconnects by itself and goes
+  on running its old bundle; when that differs from `bundle`, it shows a
+  banner asking to be reloaded.
 - Commands are queued and applied at a **frame boundary**, so nothing lands
   mid-evaluation.
 - A command may carry an `id` (a short string or an integer). It then gets a
@@ -422,6 +436,60 @@ run and embedded in the printed URL.
 
 Panic is deliberately `operate`: the cost of it being unavailable to the wrong
 person exceeds the cost of it being available, and pressing it again undoes it.
+
+### Adding a command
+
+A command is declared on the method that applies it, with its tier and the
+shape of its arguments ([`commands.py`](../engine/commands.py)), in the part of
+the controller it belongs to ([`engine/controller/`](../engine/controller/__init__.py)):
+`hand.py` here, beside the master's state (`_init_hand`) and its line in the
+snapshot (`_public_hand`):
+
+```python
+@command("master", tier=OPERATE, args={
+    "value": S(N, required=True, fix="0 to 1, the show's overall level")})
+def _cmd_master(self, m: dict, now: float) -> None:
+    self.set_master(float(m["value"]))
+```
+
+`apply` dispatches only on these declarations, so there is no command without a
+tier, and no default tier for one that forgot. The arguments are checked before
+the handler runs with the same `Spec` the config files use: a missing key, text
+where a number belongs, NaN, `true` as a number, or a value outside `choices` is
+refused as `master: value is required but missing -- 0 to 1, ...`. Unknown keys
+pass, as in a file. A null is absent: the handler is given the message without
+it, so its defaults and presence tests mean what they say -- except for an
+argument declared `nullable(...)`, where null means something of its own
+(`white: null` resets a white, `set: null` turns templates off) and is passed
+through. Only those three are offered null in the console's types. What a
+handler still checks is
+what only it can judge -- whether the look exists, whether the timeline is
+driving.
+
+[`test_commands.py`](../engine/tests/test_commands.py) holds three things in
+place: every `_cmd_` method is declared; a declaration names every argument its
+handler reads (the fuzz suite builds its messages from the declarations, so an
+undeclared one would go unfuzzed); and the `configure` tier is written out in
+the test, so moving a command between tiers is a change someone reviews. `type`
+and `id` belong to the wire and cannot be arguments: `id` is what a reply is
+tagged with.
+
+A command that answers with data says what, with `reply=` in the same `Spec`
+(`timeline_save` answers `{rev, path}`). Each answer is checked as it goes
+out: at a show a mismatch is a notice and the answer is sent all the same;
+under the suites (`commands.STRICT`, set by `engine/tests/harness.py`) it is
+refused, so the test that sent the command fails and a declaration cannot drift
+from what its handler sends.
+
+**The console is built against these declarations.**
+`engine/tests/dump_designer_fixtures.py` writes them out as
+[`ui/src/commands.generated.ts`](../ui/src/commands.generated.ts): the
+`Command` type every `send` is checked against, each command's reply type --
+so `request({type: "timeline_save", ...})` resolves to a reply whose `data`
+is `{rev, path}` -- and `mayRun(tier, command)`, the engine's own rule for
+whether a control should be enabled. `test_api` fails while the file is stale,
+so a command added or changed here does not compile in the console until the
+file is written again.
 
 ## Configuration
 
@@ -578,7 +646,7 @@ operate tier) until released. `follow {armed}` is operate tier;
 `show_latency {source, ms}` is configure and is saved to show.json.
 
 With a template set active (show.json's `template_set`, or switched live with
-`template_set {id | null}`, operate tier) the chain is timeline, then template,
+`template_set {set | null}`, operate tier) the chain is timeline, then template,
 then the operator's show -- still only while a DJ track plays with Follow
 armed. A matched track's template follows its own phrases in track beats (bars
 on its grid if it has none); a guest's follows the deck's live phrase in clock
@@ -767,11 +835,23 @@ taller, and **Bands** stacks its low, mid and high), then the timeline's rows
 (the higher lane wins), hits, automation and the VJ lane, with the rig's plan and
 "who drives each lane" at the playhead on the right and the selected clip
 below; `#studio/routine/<id>` edits a routine with the same lanes in loop
-mode, plus its roles, open parameters, variations and blocks. Its beat grid,
-block list and automation targets are copies of the engine's, held to them by
-fixtures the engine writes (`engine/tests/dump_designer_fixtures.py`; a stale
-fixture fails `test_api`). Everything else -- whether a document is valid,
-what a routine does on this rig -- it asks the engine.
+mode, plus its roles, open parameters, variations and blocks. The format's
+lists -- automation targets and their ranges, parameter types, curves, visuals
+scenes, the id pattern -- are generated from `showfiles` into
+`ui/src/showfiles.generated.ts`; its beat grid, waves and audio bands are its
+own code, held to the engine's by vectors the engine writes. Both come from
+`engine/tests/dump_designer_fixtures.py`, and a stale one fails `test_api`.
+Everything else -- whether a document is valid, what a routine does on this
+rig -- it asks the engine.
+
+The editors are `ui/src/designer/`: the three pages (`Designer.tsx` for a
+track, `RoutineEditor.tsx`, `Templates.tsx`) over the pieces they share, one
+module each -- `document.tsx` (opening a document, `useSavedDoc`; its working
+copy, the engine's verdict, Save), `history.ts`, `keys.ts`, `clipboard.ts`,
+`ids.ts` (what is selected, by id), `items.ts`, `menus.tsx`, `roles.tsx`,
+`laneSpecs.ts`, `laneSvg.tsx`, `automation.tsx`, `shelf.tsx`, `inspector.tsx`
+and `outputCues.tsx`. None of them imports another that imports it back
+(`ui/src/test/imports.test.ts`).
 
 **In conversation** the same folder is [`showtools.py`](../engine/showtools.py)
 behind the MCP server (an event's looks are [`looktools.py`](../engine/looktools.py)
@@ -803,6 +883,8 @@ the folder may be written while a show runs.
 | the cue list, and edits to it from Studio and from an assistant | [`cues.py`](../engine/cues.py), [`cuestore.py`](../engine/cuestore.py), [`cuetools.py`](../engine/cuetools.py) |
 | the frame clock and Art-Net | [`runner.py`](../engine/runner.py), [`output/`](../engine/output/) |
 | console HTTP + WebSocket | [`server.py`](../engine/server.py), [`websocket.py`](../engine/websocket.py) |
+| what a console command does, and the snapshot | [`controller/`](../engine/controller/__init__.py): one module per part -- `picture`, `hand`, `presets`, `cues`, `calibration`, `room`, `patching`, `tempo`, `follow`, `showfolder`, `looks`, over `core` |
+| which commands exist, who may send them, what they take | [`commands.py`](../engine/commands.py) |
 | editing the patch | [`patch.py`](../engine/patch.py) |
 | DJ tempo ingest | [`sync.py`](../engine/sync.py) |
 | which track, and where in it | [`transport.py`](../engine/transport.py), [`tracks.py`](../engine/tracks.py) |

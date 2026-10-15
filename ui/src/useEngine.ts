@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Command, ConnectionStatus, EngineState, Reply, Tier } from "./types";
+import type {
+  Command, ConnectionStatus, EngineState, LookInfo, LooksFrame, Reply, ReplyData,
+  Request, Tier,
+} from "./types";
 
 /**
  * The connection to the engine.
@@ -69,6 +72,20 @@ function socketUrl(): string {
   return `${proto}//${location.host}/ws${t ? `?token=${encodeURIComponent(t)}` : ""}`;
 }
 
+/**
+ * The bundle this page is running: the entry script its index.html loaded, in
+ * the engine's terms (`assets/index-<hash>.js`, see `bundle` in the welcome).
+ * Null under the dev server and in tests, where no built bundle is loaded and
+ * so none can be out of date.
+ */
+export function ownBundle(): string | null {
+  for (const script of document.querySelectorAll("script[src]")) {
+    const found = /^\.?\/?(assets\/[^?#]+\.js)$/.exec(script.getAttribute("src") ?? "");
+    if (found?.[1]) return found[1];
+  }
+  return null;
+}
+
 function clientName(): string {
   const stored = localStorage.getItem("klights.name");
   if (stored) return stored;
@@ -91,12 +108,25 @@ export function useEngine() {
   // This console's id on the engine, from its welcome: how the designer tells
   // its own preview from another console's.
   const [clientId, setClientId] = useState<string | null>(null);
+  // Whether the engine serves a newer console than this page is running: a
+  // page left open across an update reconnects by itself, and goes on running
+  // the old bundle against the new engine until someone reloads it.
+  const [stale, setStale] = useState(false);
   const [name, setNameState] = useState<string>(clientName);
   const socket = useRef<WebSocket | null>(null);
   const backoff = useRef(RECONNECT_MIN);
   const alive = useRef(true);
   const nameRef = useRef(name);
   nameRef.current = name;
+  // The look library, from the engine's `looks` frame: sent as this console
+  // connects and when the library changes, and not in each snapshot, so it is
+  // kept here and given to every state that arrives.
+  const looks = useRef<LookInfo[]>([]);
+  // The rev of the list held, on this connection. An older one arriving after
+  // a newer -- the frame a console is sent as it connects, overtaken by the
+  // broadcast of a library installed meanwhile -- is not taken. Per
+  // connection: a restarted engine counts from its own start.
+  const looksRev = useRef(-1);
   // Commands sent with an id, waiting for their reply frame.
   const pending = useRef(new Map<string, (r: Reply) => void>());
   const nextId = useRef(0);
@@ -109,6 +139,7 @@ export function useEngine() {
       setStatus("connecting");
       const ws = new WebSocket(socketUrl());
       socket.current = ws;
+      looksRev.current = -1;
 
       ws.onopen = () => {
         backoff.current = RECONNECT_MIN;
@@ -122,10 +153,19 @@ export function useEngine() {
       };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "state") setState(msg as EngineState);
+        if (msg.type === "state") setState({ ...(msg as EngineState), looks: looks.current });
+        else if (msg.type === "looks") {
+          const frame = msg as LooksFrame;
+          if (frame.rev < looksRev.current) return;
+          looksRev.current = frame.rev;
+          looks.current = frame.looks;
+          setState((prev) => (prev ? { ...prev, looks: looks.current } : prev));
+        }
         else if (msg.type === "welcome") {
           if (msg.tier) setTier(msg.tier as Tier);
           if (typeof msg.id === "string") setClientId(msg.id);
+          const own = ownBundle();
+          setStale(typeof msg.bundle === "string" && own != null && msg.bundle !== own);
         }
         else if (msg.type === "reply") {
           const done = pending.current.get(String(msg.id));
@@ -171,8 +211,8 @@ export function useEngine() {
    * few whose result is not visible in the broadcast state: a save's new rev,
    * a draft's validation, a refusal and its reason.
    */
-  const request = useCallback((command: Command, timeoutMs = 20000): Promise<Reply> =>
-    new Promise((resolve) => {
+  const request: Request = useCallback(<C extends Command>(command: C, timeoutMs = 20000) =>
+    new Promise<Reply<ReplyData<C["type"]>>>((resolve) => {
       const ws = socket.current;
       const id = `r${++nextId.current}`;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -183,7 +223,12 @@ export function useEngine() {
         pending.current.delete(id);
         resolve({ type: "reply", id, ok: false, error: "the engine did not answer" });
       }, timeoutMs);
-      pending.current.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      // The engine holds each answer to its command's declaration
+      // (`@command(reply=)`), which is what ReplyData says it is.
+      pending.current.set(id, (r) => {
+        clearTimeout(timer);
+        resolve(r as Reply<ReplyData<C["type"]>>);
+      });
       ws.send(JSON.stringify({ ...command, id }));
     }), []);
 
@@ -196,7 +241,7 @@ export function useEngine() {
     }
   }, []);
 
-  return { state, status, send, request, name, setName, tier, clientId };
+  return { state, status, send, request, name, setName, tier, clientId, stale };
 }
 
 /**

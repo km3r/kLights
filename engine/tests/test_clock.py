@@ -20,21 +20,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import clock as clockmod
 from engine import motion
 from engine import state as statemod
 from engine.rig import load_rig
 from engine.runner import Runner
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 # -- 1. the timeline runs at the tempo ----------------------------------------
 print("\n1. free-running timeline")
@@ -307,10 +299,4 @@ check("and none exceeds its own taper",
       all(s[fid].intensity <= s[fid].safety.taper + 1e-9 for s in steps))
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("clock and motion: all checks pass")
+finish("clock and motion")

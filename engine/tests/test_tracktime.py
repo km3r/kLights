@@ -15,17 +15,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import tracktime as tt  # noqa: E402
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 def close(a, b, eps=1e-9):
     return abs(a - b) <= eps
@@ -128,10 +120,4 @@ for label, bad in [
     except tt.GridError as exc:
         check(f"refused: {label}", True, str(exc)[:70])
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("tracktime: all checks pass")
+finish("tracktime")

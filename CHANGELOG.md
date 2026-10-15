@@ -17,6 +17,130 @@ F19's milestones 2 and 3 are **F22** (templates, pads, pre-matching) and
 before F20 (the standalone previz) and F21 (parametric looks) reached main;
 the commit messages keep those labels.
 
+### Changed — Studio's editors share one way to open a document, and edit.tsx is gone
+
+`ui/src/designer/edit.tsx` was 2,700 lines holding everything the timeline,
+routine and template-set editors share -- lane specs, undo history, keys,
+the clipboard, the toolbar and Save, menus, lanes, automation, the shelf,
+the inspector, the cue editors -- behind one `Editor` object. It is fourteen
+modules now, one per concern (see docs/engine.md), each imported by name
+where it is used. The code moved and did not change.
+
+- **One way to open a document** (`useSavedDoc`, in `document.tsx`). The
+  three editors each fetched their document and its rev, started a new one
+  when the folder had none, and took a start handed over from New; they now
+  share it.
+- **A timeline that cannot be read is said, not opened blank.** The track
+  editor treated any failure to read a timeline as "there is none" and opened
+  an empty one; now only "not there" does, as the routine and template-set
+  editors already did, and anything else is an error on the page.
+- **No import cycle among them.** Automation, the clipboard and the lanes
+  each reached into another for a selection id or the lane height -- the
+  kind of loop that works until the bundler orders it differently and a
+  `const` is read before it exists. The ids are in `ids.ts`, `LANE_H` in
+  `laneSpecs.ts`, and a test fails on any runtime cycle in `ui/src`.
+
+### Changed — the console is built against the engine's own command list
+
+The console's `Command` type was written by hand beside the engine's
+declarations, and what a command answered with was `unknown`, cast at each
+use. Both now come from the engine: `ui/src/commands.generated.ts`, written
+by `engine/tests/dump_designer_fixtures.py` from every `@command`, holds each
+command's arguments, what it answers with, and its tier. `test_api` fails
+while it is stale.
+
+- **Answers are declared.** A command that answers with data says what
+  (`reply=`), and each answer is checked as it goes out: a mismatch is a
+  notice at a show, and refused under the test suites, so a declaration
+  cannot drift from its handler.
+- **`request` is typed by its command.** A save resolves to `{rev, path}`, a
+  draft check to `{errors, warnings, problems}`; the casts are gone.
+- **Controls ask the engine's rule.** Studio's pages enabled their writes on
+  `tier === "configure"`; they ask `mayRun(tier, "cue_save")` and the like.
+- Stricter on one argument: `modulate`'s `shape` is one of the engine's
+  shapes, where the console's own type said any string.
+
+### Changed — the 10 Hz snapshot is a ninth of the size: the look list goes once
+
+The look list was 86% of every snapshot -- about 50 kB of 59, sent ten times a
+second to every console to say something that changes when someone edits a
+look. It is now a frame of its own, `{"type": "looks", "rev", "looks"}`, sent
+to a console as it connects and to every console when the library changes
+(`library_rev`), kept in order like a reply so it arrives ahead of a snapshot
+naming a new look. The snapshot is about 7 kB with a show folder loaded, so a
+slow link falls behind far later, and a phone on a weak signal parses a
+ninth of what it did. The console holds the two together, so nothing that
+draws a look changed.
+
+- **Reload any console that was open across this update.** A page reconnects
+  by itself and keeps running the bundle it loaded. One from before this
+  change reads the look list from the snapshot, so the snapshot still
+  carries an empty `looks` for it: it stays up, with no looks to pick, until
+  it is reloaded. Remove that once no bundle that old can be open.
+- **From here on a page says when it needs a reload.** The welcome frame
+  carries `bundle`, the console the engine serves now
+  (`assets/index-<hash>.js`, read from ui/dist/index.html per connection), and
+  a page running a different one shows a banner with a Reload button -- on
+  the console and on every Studio page.
+- **An older look list cannot overwrite a newer one.** The list a console is
+  sent as it connects could be overtaken by the broadcast of a library
+  installed meanwhile; the console now keeps the higher `rev` on each
+  connection.
+
+### Changed — the controller is one module per part, not one 5,000-line file
+
+`engine/server.py` held the HTTP and WebSocket transport and the whole
+`ShowController`: 94 command handlers and the state of every feature, in one
+file that two-fifths of all commits touched. The controller is now
+`engine/controller/`, one module per part of what the console does -- the
+picture, the hand overrides, presets, the cue list, calibration, the room, the
+patch, tempo, following the DJ, Studio's show-folder writes, the look library
+-- over a `core` holding the rig, the clock, the runner and the command queue.
+Each module holds that part's state (`_init_*`), its commands, and its own
+section of the snapshot (`_public_*`). server.py is the transport, at 951
+lines.
+
+The code was moved, not rewritten: every line of the old file is in the new
+ones, and nothing a client sends or receives changed.
+
+A part writes only its own state; another part asks it. Presets and cues used
+to fill the picture's slots, set the master and hold auto mode by assigning to
+them, each with its own copy of the clamp; they now call `fill_slot`,
+`set_master` and `director.hold`. What a preset or cue does is unchanged.
+
+### Changed — every command declares who may send it and what it takes
+
+Each of the 94 console commands now states its tier and the shape of its
+arguments on the handler that applies it (`engine/commands.py`), and the
+engine dispatches only on those declarations. Before, the tiers were a table
+apart from the handlers, and a command missing from it was `operate`: a new
+command that should have needed `configure` was open to anyone with a phone.
+No command's tier changed.
+
+- **Arguments are refused before anything runs**, with one kind of message:
+  `master: value is required but missing -- 0 to 1, the show's overall level`.
+  Text where a number belongs (`"0.5"`), NaN, `true` as a number and a value
+  outside a command's choices are refused the same way for every command;
+  31 hand-written checks that did this one handler at a time are gone.
+- **`template_set` takes `set`**, not `id`. `id` is what a reply is tagged
+  with, so a client asking for a reply had its set replaced by its own reply
+  id. A console still on an older bundle sends `id` and is read as it meant.
+- `test_commands` holds the table complete (a handler reading an argument its
+  declaration leaves out fails), and writes out which commands are
+  `configure`, so a change of tier is a change someone reviews. The fuzz suite
+  now builds its messages from the declarations, which cover the arguments a
+  handler reads through a helper -- reading server.py's source missed those.
+
+### Fixed — a color pick or a phone joining could lose a broadcast
+
+The 10 Hz snapshot walks the hand colors and the presence list on its own
+thread. A color picked, or a browser connecting or leaving, while it did so
+changed that dict's size under it: the broadcast was lost with a
+"snapshot failed" notice. Both are now replaced whole on each change rather
+than edited, as the rest of what the snapshot reads already was, and
+`test_snapshot_threads` makes the threads collide on purpose -- it failed on
+the first snapshot before the fix.
+
 ### Added — the cue list, in Studio
 
 - **Studio has a Cues page** (`#studio/cues`, under *This rig*, beside

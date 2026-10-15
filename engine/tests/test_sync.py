@@ -23,18 +23,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+from engine.tests.harness import check, finish  # noqa: E402
 
 from engine import clock as clockmod
 from engine import sync as syncmod
-
-failures: list[str] = []
-
-
-def check(label, ok, detail=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
-    if not ok:
-        failures.append(label)
-
 
 # -- 1. the bar grid, which is the thing a beat packet is for -----------------
 print("\n1. align_bar")
@@ -725,10 +717,4 @@ check("a negative beats-into is refused rather than trusted",
 osc_sink.stop()
 
 
-print()
-if failures:
-    print(f"{len(failures)} FAILURE(S):")
-    for f in failures:
-        print(f"  {f}")
-    sys.exit(1)
-print("sync: all checks pass")
+finish("sync")
