@@ -385,6 +385,11 @@
                 "required": [
                   "band"
                 ]
+              },
+              "lane": {
+                "type": "string",
+                "minLength": 1,
+                "description": "the id of the clips lane this row drives alone; leave it out to drive the whole track"
               }
             },
             "required": [

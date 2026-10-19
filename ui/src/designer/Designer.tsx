@@ -11,7 +11,7 @@ import type {
   PaletteSummary, Row, RoutineSummary, TemplateSetDoc, TimelineDoc, TrackDoc, Wave, WaveformDoc,
 } from "./model";
 import { PHRASE_HUE, phraseFamily, phraseMatch } from "./model";
-import { AudioInspector, PointInspector, WaveInspector } from "./automation";
+import { AudioInspector, PointInspector, WaveInspector, laneOrder } from "./automation";
 import { clipOps, copyRange, cutRange, setClipBoard, useClipBoard } from "./clipboard";
 import type { Placeable } from "./clipboard";
 import { Toolbar, rememberBack, useSavedDoc } from "./document";
@@ -703,7 +703,7 @@ function TrackDesigner({ engine, trackId }: { engine: Engine; trackId: string })
                      onPick={(start, end, label) => setSection(
                        section?.start === start ? null : { start, end, label })} />
             <WaveLane wave={wave} grid={grid} duration={duration} x={x} width={width} />
-            {doc.rows.map((row, index) => (
+            {laneOrder(doc.rows).map(({ row, index }) => (
               <Lane key={row.id} row={row} index={index} x={x} width={width}
                     zoom={zoom} selected={selected} onSelect={setSelected}
                     history={history} beat={beat}

@@ -1,0 +1,44 @@
+{
+ "slots": {
+  "center.bearing": "movement",
+  "center.elevation": "movement",
+  "master": "level",
+  "rate.color": "color",
+  "rate.level": "level",
+  "rate.movement": "movement",
+  "size": "movement",
+  "spread": "movement",
+  "param.width": null
+ },
+ "attachable": {
+  "scene": [
+   "center.bearing",
+   "center.elevation",
+   "master",
+   "rate.color",
+   "rate.level",
+   "rate.movement",
+   "size",
+   "spread",
+   "param.width"
+  ],
+  "movement": [
+   "center.bearing",
+   "center.elevation",
+   "rate.movement",
+   "size",
+   "spread",
+   "param.width"
+  ],
+  "color": [
+   "rate.color",
+   "param.width"
+  ],
+  "level": [
+   "master",
+   "rate.level",
+   "param.width"
+  ],
+  "palette": []
+ }
+}

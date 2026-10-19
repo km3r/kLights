@@ -358,6 +358,28 @@ check("two curves for one target: the higher row wins",
 check("an unautomated target is None, not zero",
       t.automation("size", 10) is None)
 
+t = tl.Timeline.from_rows([
+    {"id": "a", "type": "clips", "target": "level", "items": []},
+    {"id": "m1", "type": "automation", "target": "master", "points": [[0, 0.3]],
+     "lane": "a"},
+    {"id": "m2", "type": "automation", "target": "master", "points": [[0, 0.9]]},
+])
+check("a row attached to a lane is that lane's, apart from the track's",
+      close(t.automation("master", 10), 0.9) and close(t.automation("master", 10, "a"), 0.3)
+      and t.automation("master", 10, "b") is None and t.lane_curves[("a", "master")][0] == "m1")
+check("and its frame and explanation say so, by lane",
+      close(t.at(10).lanes["a"]["master"], 0.3)
+      and t.explain(10)["lanes"] == {"a": {"master": 0.3}}
+      and "lanes" not in tl.Timeline.from_rows([]).explain(0))
+for bad, why in (("nope", "not a clips row"), ("", "must name a clips row")):
+    try:
+        tl.Timeline.from_rows([{"id": "m", "type": "automation", "target": "master",
+                                "points": [[0, 1]], "lane": bad}])
+        ok = False
+    except tl.TimelineError as exc:
+        ok = why in str(exc)
+    check(f"a row attached to {bad!r} is refused", ok)
+
 
 # -- 6. hits ------------------------------------------------------------------
 print("\n6. hits")

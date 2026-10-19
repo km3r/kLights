@@ -536,6 +536,95 @@ check("with both a timeline and a routine rate curve, a jump to a beat lands "
       f"{direct} vs {played}")
 
 
+# -- 6b. automation attached to one lane --------------------------------------
+print("\n6b. automation attached to one lane")
+
+
+def auto(rid, target, points, lane=None):
+    row = {"id": rid, "type": "automation", "target": target, "points": points}
+    return row | {"lane": lane} if lane else row
+
+
+dim_pins = routine("dimp", [clips("l", "level", [block("d", "dim", 0, 32, level=0.2)])
+                            | {"role": "pins"}])
+dim_movers = routine("dimm", [clips("l", "level", [block("d", "dim", 0, 32, level=0.5)])
+                              | {"role": "movers"}])
+two_levels = [clips("top", "level", [use("p", "dimp", 0, 64)]),
+              clips("low", "level", [use("m", "dimm", 0, 64)])]
+s = frame(build(two_levels + [auto("lm", "master", [[0, 0.5]], "low")],
+                [dim_pins, dim_movers]), 4)
+check("a master attached to a lane dims that lane's clips and nothing else",
+      all(close(s[f.fid].intensity, 0.25) for f in MOVERS)
+      and all(close(s[f.fid].intensity, 0.2) for f in PINS),
+      f"{[round(s[f.fid].intensity, 3) for f in RIG.fixtures]}")
+s = frame(build(two_levels + [auto("lm", "master", [[0, 0.5]], "top")],
+                [dim_pins, dim_movers]), 4)
+check("and the fixtures its clip leaves to the lanes below keep their level "
+      "(per-fixture fall-through)",
+      all(close(s[f.fid].intensity, 0.1) for f in PINS)
+      and all(close(s[f.fid].intensity, 0.5) for f in MOVERS),
+      f"{[round(s[f.fid].intensity, 3) for f in RIG.fixtures]}")
+s = frame(build(two_levels + [auto("tm", "master", [[0, 0.5]]),
+                              auto("lm", "master", [[0, 0.5]], "low")],
+                [dim_pins, dim_movers]), 4)
+check("a lane's master stacks on the track's",
+      all(close(s[f.fid].intensity, 0.125) for f in MOVERS)
+      and all(close(s[f.fid].intensity, 0.1) for f in PINS))
+
+pins_in = routine("pinsin", [clips("l", "level", [block("d", "dim", 0, 32, fade=8, level=1.0)])
+                             | {"role": "pins"}])
+s = frame(build([clips("top", "level", [use("p", "pinsin", 0, 64)]),
+                 clips("low", "level", [use("q", "dimp", 0, 64)]),
+                 auto("lm", "master", [[0, 0.0]], "top")], [pins_in, dim_pins]), 4)
+check("where a routine's own clip fades in over the lanes below, a lane's master "
+      "dims only the clip's share (half of 0.2 shows through, the clip's half is 0)",
+      all(close(s[f.fid].intensity, 0.1) for f in PINS),
+      f"{[round(s[f.fid].intensity, 3) for f in PINS]}")
+
+orbit_lanes = [clips("a", "movement", [use("o", "orb", 0, 64)]),
+               clips("b", "movement", [])]
+p = build(orbit_lanes + [auto("ls", "size", [[0, 0.5]], "a")], [orbit])
+check("a size attached to a lane scales its clips' movement",
+      close(bearing_at(p, 1), 10.0, 1e-6), f"{bearing_at(p, 1)}")
+p = build(orbit_lanes + [auto("ls", "size", [[0, 0.5]], "b")], [orbit])
+check("and one attached to another lane leaves them alone",
+      close(bearing_at(p, 1), 20.0, 1e-6), f"{bearing_at(p, 1)}")
+p = build(orbit_lanes + [auto("ts", "size", [[0, 0.5]]),
+                         auto("ls", "size", [[0, 0.5]], "a")], [orbit])
+check("a lane's size multiplies the track's",
+      close(bearing_at(p, 1), 5.0, 1e-6), f"{bearing_at(p, 1)}")
+one_head = routine("orb1", orbit["rows"], roles={"movers": {"default": MOVERS[0].name}})
+p = build([clips("a", "movement", [use("o", "orb1", 0, 64)]),
+           clips("b", "movement", [use("o2", "orb", 0, 64)]),
+           auto("ls", "size", [[0, 0.5]], "a")], [one_head, orbit])
+s = frame(p, 1)
+check("the heads a sized lane leaves to the lanes below move at their own size",
+      close(offset(s[MOVERS[0].fid], MOVERS[0])[0], 10.0, 1e-6)
+      and close(offset(s[MOVERS[1].fid], MOVERS[1])[0], 20.0, 1e-6),
+      f"{[round(offset(s[f.fid], f)[0], 3) for f in MOVERS]}")
+
+p = build(orbit_lanes + [auto("lr", "rate.movement", [[0, 2.0]], "a")], [orbit])
+check("a rate attached to a lane speeds its clips",
+      close(bearing_at(p, 1.3), bearing_at(slow, 2.6), 1e-6))
+p = build(orbit_lanes + [auto("tr", "rate.movement", [[0, 2.0]]),
+                         auto("lr", "rate.movement", [[0, 1.5]], "a")], [orbit])
+check("and multiplies the track's rate (2 x 1.5)",
+      close(bearing_at(p, 1.3), bearing_at(slow, 3.9), 1e-6),
+      f"{bearing_at(p, 1.3)} vs {bearing_at(slow, 3.9)}")
+
+tint_lanes = [clips("a", "scene", [use("t", "tint", 0, 64)]), clips("b", "scene", [])]
+s = frame(build(tint_lanes + [auto("tc", "param.color", [[0, "#ff0000"]]),
+                              auto("lc", "param.color", [[0, "#0000ff"]], "a")],
+                [tinted]), 4)
+check("a param attached to a lane beats the track's for the routines on it",
+      rgb_close(s[MOVERS[0].fid].color, (0, 0, 1)), f"{s[MOVERS[0].fid].color}")
+s = frame(build(tint_lanes + [auto("tc", "param.color", [[0, "#ff0000"]]),
+                              auto("lc", "param.color", [[0, "#0000ff"]], "b")],
+                [tinted]), 4)
+check("and the track's still drives the routines on other lanes",
+      rgb_close(s[MOVERS[0].fid].color, (1, 0, 0)), f"{s[MOVERS[0].fid].color}")
+
+
 # -- 7. hits, safety, the strobe policy ---------------------------------------
 print("\n7. hits, and what still runs after them")
 hits_row = {"id": "h", "type": "hits", "items": [

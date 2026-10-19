@@ -125,6 +125,9 @@ export interface Row {
   points?: Point[];
   wave?: WaveSpec;
   audio?: AudioSpec;
+  /** An automation row in a track's timeline: the clips lane it drives alone
+   *  (its id); without it, the row drives the whole track. */
+  lane?: string;
   /** An external row's output: osc, midi, visuals (`vj` is read as visuals). */
   output?: string;
   /** OSC: where a curve's value goes, and what it sends (default `$value`). */

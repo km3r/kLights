@@ -21,6 +21,9 @@ than against numbers and names written by hand:
     __fixtures__/outputs.json        where OSC, MIDI and timecode go when
                                      show.json does not say, and timecode's
                                      frame rates: what Show settings offers
+    __fixtures__/lane-slots.json     which automation can be attached to which
+                                     kind of clips lane, as the engine's own
+                                     validation decides it
 
 And one file that is not a fixture but the UI's own source of truth for what a
 block takes, read by the routine editor AND the console's Tweak card:
@@ -90,6 +93,36 @@ def block_lists() -> dict:
         "orders": list(blocks._ORDERS),
         "easings": list(library.EASINGS),
     }
+
+
+# A parameter stands for every `param.<name>`: the lane rule for it does not
+# depend on the name, and a timeline does not range-check one in-file.
+LANE_SAMPLE_PARAM = "param.width"
+
+
+def lane_slots() -> dict:
+    """For each automation target and each kind of clips lane, whether a row
+    attached to such a lane passes `showfiles.validate` -- the engine's
+    verdict, not a copy of its rule -- and the slot `lane_slot` names."""
+    targets = sorted(showfiles.AUTOMATION_RANGES) + [LANE_SAMPLE_PARAM]
+    allowed: dict[str, list[str]] = {}
+    for kind in showfiles.CLIP_TARGETS:
+        ok = []
+        for target in targets:
+            lo = showfiles.AUTOMATION_RANGES.get(target, (0.0, 1.0))[0]
+            doc = {"kind": "klights.timeline", "version": 1, "track": "t",
+                   "rows": [{"id": "lane", "type": "clips", "target": kind,
+                             "items": []},
+                            {"id": "auto", "type": "automation", "target": target,
+                             "points": [[0, lo]], "lane": "lane"}]}
+            errors = showfiles.validate("timeline", doc).errors
+            if not errors:
+                ok.append(target)
+            elif not any("lane" in e for e in errors):
+                raise AssertionError(f"{target} on a {kind} lane: {errors}")
+        allowed[kind] = ok
+    return {"slots": {t: showfiles.lane_slot(t) for t in targets},
+            "attachable": allowed}
 
 
 def wave_vectors() -> dict:
@@ -168,7 +201,8 @@ def render() -> dict[str, str]:
     return {name: json.dumps(data, indent=1) + "\n" for name, data in (
         ("grid-vectors.json", grid_vectors()), ("blocks.json", block_lists()),
         ("wave-vectors.json", wave_vectors()),
-        ("outputs.json", outputsmod.defaults()))} | {
+        ("outputs.json", outputsmod.defaults()),
+        ("lane-slots.json", lane_slots()))} | {
         # One line a case: a thousand numbers down the page help nobody.
         "audio-vectors.json": json.dumps(audio_vectors(), separators=(",", ":"))
         .replace('{"name"', '\n{"name"') + "\n"}

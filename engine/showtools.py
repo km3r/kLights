@@ -150,7 +150,7 @@ def edit_timeline(track: str, ops: Sequence[Mapping], base_rev: Optional[str] = 
 
     ops, each a dict with "op":
       add_row      {row: {...}, index?}           a lane; index 0 is the top
-      remove_row   {row: id}
+      remove_row   {row: id}                      and the automation attached to it
       add_item     {row: id, item: {...}}         a clip or hit on a lane
       update_item  {id, set: {...}}               e.g. {"at": 160, "fade": 4}
       remove_item  {id}
@@ -160,6 +160,8 @@ def edit_timeline(track: str, ops: Sequence[Mapping], base_rev: Optional[str] = 
       set_audio    {row: id, audio: {band, depth, floor, ceiling, release} | null}
                                                   a band of the track's audio
                                                   on top of the points
+      set_lane     {row: id, lane: id | null}     attach an automation row to one
+                                                  clips lane, or (null) the track
       set          {key: "palette" | "palettes" | "grid_rev", value}
     """
     root = _root(show_dir)
@@ -241,6 +243,10 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                 continue
             rows.remove(r)
             changes.append(f"removed lane {r['id']!r}")
+            for a in [a for a in rows if a.get("type") == "automation"
+                      and a.get("lane") == r["id"]]:
+                rows.remove(a)
+                changes.append(f"removed {a['id']!r}, which was attached to it")
         elif kind == "add_item":
             r = row(op.get("row"))
             new = op.get("item")
@@ -306,6 +312,17 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
                                f"{op['audio'].get('band')} band"
                                if isinstance(op["audio"], dict)
                                else f"set audio on {r['id']!r}")
+        elif kind == "set_lane":
+            r = row(op.get("row"))
+            if r is None or r.get("type") != "automation":
+                problems.append(f"{at}: needs an existing automation row")
+                continue
+            if op.get("lane") is None:
+                r.pop("lane", None)
+                changes.append(f"{r['id']!r} drives the whole track")
+            else:
+                r["lane"] = op["lane"]
+                changes.append(f"{r['id']!r} drives lane {op['lane']!r} alone")
         elif kind == "set":
             key = op.get("key")
             if key not in ("palette", "palettes", "grid_rev"):
@@ -316,7 +333,7 @@ def apply_ops(doc: dict, ops: Sequence[Mapping]) -> tuple[list[str], list[str]]:
         else:
             problems.append(f"{at}: unknown op; one of add_row, remove_row, "
                             f"add_item, update_item, remove_item, set_points, set_wave, "
-                            f"set_audio, set")
+                            f"set_audio, set_lane, set")
     return changes, problems
 
 

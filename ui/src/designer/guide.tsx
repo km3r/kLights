@@ -78,6 +78,10 @@ export const DESIGNER_GUIDES: (Guide & { id: DesignerGuideId })[] = [
             master, size, spread, centre or rate, or for a parameter of the
             routines on this track. A <code>$name</code> lane drives that
             parameter on every routine that has it.</>,
+          <><b>+ auto</b> on a lane adds a curve for that lane alone, drawn under
+            it: its master dims only its clips, its size and rate only theirs,
+            on top of the track's. Under a curve, <b>whole track</b> or{" "}
+            <b>only …</b> says which it drives, and changes it.</>,
           <>On a curve, click to add a point and drag to move it. Select a
             point to choose how it arrives: linear, step or ease.</>,
           <><b>∿</b> on a curve adds a wave on top of its points: a sine,

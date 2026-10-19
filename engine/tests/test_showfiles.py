@@ -160,6 +160,40 @@ warned("timeline: a second automation row for one target is never heard",
        "timeline", edit(TIMELINE, lambda d: d["rows"].append(
            {"id": "master2", "type": "automation", "target": "master",
             "points": [[0, 0.2]]})), "never heard")
+
+def attached(target, lane, rid="att"):
+    return lambda d: d["rows"].append({"id": rid, "type": "automation", "target": target,
+                                       "points": [[0, 0.5]], "lane": lane})
+
+
+check("timeline: a master attached to the scene lane is fine",
+      errors_of("timeline", edit(TIMELINE, attached("master", "scene"))) == [])
+warned("timeline: a second row for one target on one lane is never heard",
+       "timeline", edit(TIMELINE, lambda d: (attached("size", "move")(d),
+                                             attached("size", "move", "att2")(d))),
+       "on lane 'move'")
+check("timeline: but one for the whole track and one for a lane both play",
+      not any("never heard" in w for w in sf.validate("timeline", edit(
+          TIMELINE, attached("size", "move"))).warnings))
+refused("timeline: automation attached to a lane that is not there",
+        "timeline", edit(TIMELINE, attached("master", "nope")), "which is no row here")
+refused("timeline: or to a row that is not a clips lane",
+        "timeline", edit(TIMELINE, attached("master", "hits")), "a hits row here")
+refused("timeline: a master on a lane that drives no level",
+        "timeline", edit(TIMELINE, attached("master", "move")),
+        "master acts on level, and lane 'move' drives only movement")
+refused("timeline: a rate on a lane that drives another slot",
+        "timeline", edit(TIMELINE, attached("rate.color", "move")), "acts on color")
+refused("timeline: a param lane on the palette lane",
+        "timeline", edit(TIMELINE, attached("param.width", "palette")),
+        "holds palette changes")
+refused("timeline: an empty lane name",
+        "timeline", edit(TIMELINE, attached("master", "")), "lane")
+refused("routine: a routine's automation cannot be attached to one of its lanes",
+        "routine", edit(FAN, lambda d: d["rows"].append(
+            {"id": "att", "type": "automation", "target": "size",
+             "points": [[0, 0.5]], "lane": d["rows"][0]["id"]})),
+        "a routine's automation drives all of it")
 refused("timeline: automation that goes back in time",
         "timeline", edit(TIMELINE, lambda d: row(d, "master")["points"].append([10, 0.5])),
         "not after the previous point")
@@ -521,6 +555,16 @@ check("timeline: or with its wave, when the two together do",
 w = lane_warnings("param.color", [[0, 0.5]])
 check("timeline: a number lane for a param every routine has as a color",
       sum("not a color" in x for x in w) >= 2, f"{w}")
+w = sf.param_lane_problems(edit(TIMELINE, lambda d: (
+    d["rows"].append({"id": "empty", "type": "clips", "target": "scene", "items": []}),
+    d["rows"].append(lane("param.width", [[0, 40]]) | {"lane": "empty"}))), ROUTINES)
+check("timeline: a param lane attached to a lane with no routine that has it "
+      "does nothing there, and says so",
+      any("no routine on lane 'empty'" in x for x in w), f"{w}")
+w = sf.param_lane_problems(edit(TIMELINE, lambda d: d["rows"].append(
+    lane("param.width", [[0, 130]]) | {"lane": "scene"})), ROUTINES)
+check("timeline: and one attached to a lane is held to the routines on it",
+      any("'fan-drop'" in x and "above the maximum 120" in x for x in w), f"{w}")
 w = lane_warnings("param.wdith", [[0, 40]])
 check("timeline: a lane no placed routine has does nothing, and says so",
       any("does nothing" in x for x in w), f"{w}")

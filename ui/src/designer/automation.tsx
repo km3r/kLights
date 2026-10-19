@@ -638,30 +638,137 @@ export function automationRow(d: RowsDoc, target: string, params: LaneSpecs = {}
            points: [[0, laneSpec(target, params).start]] };
 }
 
+// -- automation attached to one lane -------------------------------------------
+
+/** The slots a timeline clips lane drives (`showfiles.timeline_channels`). */
+function laneChannels(lane: Row): string[] {
+  return lane.target === "scene" ? ["movement", "color", "level"] : [lane.target ?? ""];
+}
+
+/** The slot a lane's own automation of `target` acts on
+ *  (`showfiles.lane_slot`): null for a parameter, which acts on whatever its
+ *  routines do. */
+export function laneSlot(target: string): string | null {
+  if (target === "master") return "level";
+  if (target.startsWith("rate.")) return target.slice("rate.".length);
+  if (target in AUTOMATION_RANGES) return "movement";
+  return null;
+}
+
+/** Whether `target` does anything attached to `lane`, as the engine checks it. */
+export function attachable(target: string, lane: Row): boolean {
+  if (lane.type !== "clips") return false;
+  const channels = laneChannels(lane);
+  const slot = laneSlot(target);
+  return slot === null ? !channels.includes("palette") : channels.includes(slot);
+}
+
+/** The clips lane an automation row is attached to, if it is here. */
+export function laneOf(rows: Row[], row: Row): Row | undefined {
+  if (row.type !== "automation" || !row.lane) return undefined;
+  return rows.find((r) => r.id === row.lane && r.type === "clips");
+}
+
+/** The rows as the editor shows them: each automation row attached to a lane
+ *  right under that lane (in file order among themselves), the rest in file
+ *  order. `index` is the row's place in the file. */
+export function laneOrder(rows: Row[]): { row: Row; index: number; attached: boolean }[] {
+  const out: { row: Row; index: number; attached: boolean }[] = [];
+  rows.forEach((row, index) => {
+    if (laneOf(rows, row)) return;
+    out.push({ row, index, attached: false });
+    if (row.type !== "clips") return;
+    rows.forEach((a, i) => {
+      if (a.type === "automation" && a.lane === row.id) out.push({ row: a, index: i, attached: true });
+    });
+  });
+  return out;
+}
+
+/** Rebuild the file in the order it is shown: every attached row right after
+ *  its lane. Run after any edit that moves rows. */
+export function settleAttached(d: RowsDoc): void {
+  d.rows = laneOrder(d.rows).map((e) => e.row);
+}
+
+/** Which clips an automation row drives: the whole track's, or one lane's.
+ *  Attaching moves the row under its lane; letting go leaves it where it is
+ *  shown, so its place among the track's rows -- which one wins -- is the
+ *  one it was seen in. */
+export function AttachSelect({ row, history }: { row: Row; history: Edits }) {
+  const rows = history.doc?.rows ?? [];
+  const target = row.target ?? "";
+  const lanes = rows.filter((r) => attachable(target, r));
+  const lost = row.lane && !lanes.some((l) => l.id === row.lane);
+  return (
+    <select className="small d-attach" value={row.lane ?? ""} aria-label={`${row.id} drives`}
+            title={row.lane ? `Drives only the clips on ${row.lane}` : "Drives the whole track"}
+            onChange={(e) => {
+              const lane = e.target.value;
+              history.apply((d) => {
+                settleAttached(d);
+                const r = d.rows.find((q) => q.id === row.id);
+                if (!r) return;
+                if (lane) r.lane = lane;
+                else delete r.lane;
+                settleAttached(d);
+              });
+            }}>
+      <option value="">whole track</option>
+      {lost && <option value={row.lane}>{row.lane} (missing)</option>}
+      {lanes.map((l) => <option key={l.id} value={l.id}>only {l.id}</option>)}
+    </select>
+  );
+}
+
+/** The routines placed on one lane. */
+export function routinesOn(lane: Row): Set<string> {
+  return new Set((lane.items ?? []).filter((i) => i.kind === "routine")
+    .map((i) => String(i.routine)));
+}
+
 /**
  * "+ automation": a lane for each macro and each open parameter not already
  * automated here. Parameters are listed by name and unit, and in a track's
  * timeline with the routines on it that have them, since one lane drives the
  * parameter on all of them.
+ *
+ * With `lane`, the same for one clips lane: what it drives (a master on a lane
+ * with a level, a rate for its slot, the parameters of the routines on it),
+ * attached to it and placed under it.
  */
-export function AutomationMenu({ history, params }: {
-  history: Edits & { doc: RowsDoc | null }; params: LaneSpecs;
+export function AutomationMenu({ history, params, lane }: {
+  history: Edits & { doc: RowsDoc | null }; params: LaneSpecs; lane?: Row;
 }) {
   const doc = history.doc;
   if (!doc) return null;
-  const automated = new Set(doc.rows.filter((r) => r.type === "automation").map((r) => r.target));
-  const macros = Object.keys(AUTOMATION_RANGES).filter((t) => !automated.has(t));
-  const free = Object.entries(params).filter(([t]) => !automated.has(t));
+  const automated = new Set(doc.rows
+    .filter((r) => r.type === "automation" && (r.lane ?? null) === (lane?.id ?? null))
+    .map((r) => r.target));
+  const fits = (t: string) => !automated.has(t) && (!lane || attachable(t, lane));
+  const macros = Object.keys(AUTOMATION_RANGES).filter(fits);
+  const placed = lane ? routinesOn(lane) : null;
+  const free = Object.entries(params).filter(([t, spec]) => fits(t)
+    && (!placed || (spec.reaches ?? []).some((r) => placed.has(r))));
   const open = free.filter(([t]) => t.startsWith(PARAM_TARGET))
     .sort(([a], [b]) => a.localeCompare(b));
-  const args = free.filter(([t]) => t.startsWith(ARG_TARGET));
+  const args = lane ? [] : free.filter(([t]) => t.startsWith(ARG_TARGET));
+  if (lane && !macros.length && !open.length) return null;
   return (
-    <select aria-label="add automation" value=""
+    <select aria-label={lane ? `automate ${lane.id}` : "add automation"} value=""
+            className={lane ? "small d-lane-auto" : undefined}
+            title={lane ? `Automation for the clips on ${lane.id} alone` : undefined}
             onChange={(e) => {
               const target = e.target.value;
-              if (target) history.apply((d) => { d.rows.push(automationRow(d, target, params)); });
+              if (!target) return;
+              history.apply((d) => {
+                const row = automationRow(d, target, params);
+                if (lane) row.lane = lane.id;
+                d.rows.push(row);
+                settleAttached(d);
+              });
             }}>
-      <option value="">+ automation</option>
+      <option value="">{lane ? "+ auto" : "+ automation"}</option>
       <optgroup label="Macros">
         {macros.map((t) => <option key={t} value={t}>{t}</option>)}
       </optgroup>
