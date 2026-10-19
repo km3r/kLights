@@ -194,6 +194,21 @@ try:
     check("set_audio names the band the lane now follows",
           not pr and "follows the audio's low band" in ch[0]
           and row_of(doc, "size")["audio"]["release"] == 0.5)
+    doc, ch, pr = apply({"op": "set_lane", "row": "size", "lane": "move"})
+    check("set_lane attaches an automation row to one lane",
+          not pr and row_of(doc, "size")["lane"] == "move" and "lane 'move' alone" in ch[0])
+    doc, ch, pr = apply({"op": "set_lane", "row": "size", "lane": "move"},
+                        {"op": "set_lane", "row": "size", "lane": None})
+    check("and a null lane gives it the whole track again",
+          not pr and "lane" not in row_of(doc, "size") and "whole track" in ch[1])
+    doc, ch, pr = apply({"op": "set_lane", "row": "size", "lane": "move"},
+                        {"op": "remove_row", "row": "move"})
+    check("removing a lane removes the automation attached to it",
+          not pr and all(r["id"] not in ("move", "size") for r in doc["rows"])
+          and "attached to it" in ch[2], f"{ch}")
+    doc, ch, pr = apply({"op": "set_lane", "row": "scene", "lane": "move"})
+    check("set_lane on a lane that is not automation is a problem",
+          pr and "automation row" in pr[0])
     doc, ch, pr = apply({"op": "set_audio", "row": "size", "audio": {"band": "low"}},
                         {"op": "set_audio", "row": "size", "audio": None})
     check("a null audio takes it off again", not pr and "audio" not in row_of(doc, "size")

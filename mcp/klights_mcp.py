@@ -128,9 +128,13 @@ SHOW_TOOLS = [
                     "low|mid|high|all, depth, floor?, ceiling?, release? "
                     "(beats)} or null -- a frequency band of the track's own "
                     "audio added on top of a number lane's points; the track "
-                    "needs a waveform}, set {key: palette|palettes|"
-                    "grid_rev, value}. Rows are lanes, top first; the higher "
-                    "lane wins.",
+                    "needs a waveform}, set_lane {row, lane: a clips row's id "
+                    "or null} -- the automation row then drives only that "
+                    "lane's clips (master/size/spread/center/rate on top of "
+                    "the track's; param.<name> instead of the track's), set "
+                    "{key: palette|palettes|grid_rev, value}. remove_row on a "
+                    "clips lane removes the automation attached to it. Rows "
+                    "are lanes, top first; the higher lane wins.",
      "inputSchema": _schema({**_SHOW, "track": _STR,
                              "ops": {"type": "array", "items": {"type": "object"}},
                              **_REV, **_WRITE}, ["track", "ops"])},

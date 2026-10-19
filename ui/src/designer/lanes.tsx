@@ -4,12 +4,14 @@ import {
   uniqueId,
 } from "./model";
 import type { AudioBand, Grid, Item, Row, TrackDoc, Wave } from "./model";
-import { AutoSvg, defaultAudio, defaultWave, laneTitle } from "./automation";
+import {
+  AttachSelect, AutoSvg, AutomationMenu, defaultAudio, defaultWave, laneOf, laneTitle, routinesOn,
+} from "./automation";
 import { audioId, waveId } from "./ids";
 import type { Placeable } from "./clipboard";
 import type { Edits } from "./history";
 import { gapStart, newVisuals } from "./items";
-import { LaneAudio, useLaneSpec } from "./laneSpecs";
+import { LaneAudio, ParamLanes, useLaneSpec } from "./laneSpecs";
 import { GapToggle, LaneMenu, LaneSvg } from "./laneSvg";
 import { PickMenu, useMenuDismiss } from "./menus";
 import type { PickEntry } from "./menus";
@@ -255,6 +257,26 @@ export function WaveLane({ wave, grid, duration, x, width }: {
 
 // -- the lanes ------------------------------------------------------------------
 
+/**
+ * A lane's head: two lines that fit in the lane's own height -- its name with
+ * its ↑ ↓ ×, and under them what the lane has to set -- so a head never makes
+ * its row taller than the lane it names.
+ */
+function LaneHead({ name, title, menu, children, className }: {
+  name: React.ReactNode; title: string; menu: React.ReactNode;
+  children?: React.ReactNode; className?: string;
+}) {
+  return (
+    <div className={`d-head d-lane-head${className ? ` ${className}` : ""}`}>
+      <div className="d-lh-top">
+        <span className="d-lh-name" title={title}>{name}</span>
+        {menu}
+      </div>
+      <div className="d-lh-tools">{children}</div>
+    </div>
+  );
+}
+
 const TARGET_LABEL: Record<string, string> = {
   scene: "Scene", movement: "Movement", color: "Color", level: "Level",
   palette: "Palette",
@@ -275,9 +297,11 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
    *  there: at a beat, or null for the playhead. */
   onAdd?: (rowId: string, beat: number | null, clientX: number, clientY: number) => void;
 }) {
+  const params = useContext(ParamLanes);
   if (row.type === "automation") {
+    // A routine's automation drives all of it; a track's can be one lane's.
     return <AutoLane row={row} x={x} width={width} history={history} beat={beat}
-                     selected={selected} onSelect={onSelect} />;
+                     selected={selected} onSelect={onSelect} attach={!roles} />;
   }
   if (row.type === "external") {
     if (row.output === "osc" || row.output === "midi" || row.output === "visuals"
@@ -286,10 +310,11 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
                            selected={selected} onSelect={onSelect} history={history}
                            beat={beat} addable={!!onAdd} />;
     }
+    const name = row.label ?? `${row.output ?? "external"} · ${row.id}`;
     return (
       <div className="d-row d-external">
-        <div className="d-head">{row.label ?? `${row.output ?? "external"} · ${row.id}`}
-          <LaneMenu row={row} index={index} history={history} /></div>
+        <LaneHead name={name} title={name}
+                  menu={<LaneMenu row={row} index={index} history={history} />} />
         <div className="d-empty muted small" style={{ width }}>
           Output: {row.output} -- kept in the file; not editable here</div>
       </div>
@@ -299,11 +324,12 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
   // What a click on the empty lane adds, for the lane to say so.
   const noun = hits ? "a hit" : roles ? "a block" : row.target === "palette" ? "a palette"
     : "a routine or look";
+  const label = hits ? "Hits" : TARGET_LABEL[row.target ?? ""] ?? row.target;
   return (
     <div className={`d-row ${hits ? "d-hits" : "d-clips"}`}>
-      <div className="d-head">
-        <span>{hits ? "Hits" : TARGET_LABEL[row.target ?? ""] ?? row.target}
-          <span className="muted small"> · {row.id}</span></span>
+      <LaneHead name={<>{label}<span className="muted small"> · {row.id}</span></>}
+                title={`${label} · ${row.id}`}
+                menu={<LaneMenu row={row} index={index} history={history} />}>
         {roles && !hits && (
           <select className="small" value={row.role ?? ""} aria-label={`${row.id} role`}
                   onChange={(e) => {
@@ -318,8 +344,8 @@ export function Lane({ row, index, x, width, zoom, selected, onSelect, history, 
           </select>
         )}
         {!roles && !hits && <GapToggle row={row} history={history} />}
-        <LaneMenu row={row} index={index} history={history} />
-      </div>
+        {!roles && !hits && <AutomationMenu history={history} params={params} lane={row} />}
+      </LaneHead>
       <LaneSvg row={row} x={x} width={width} zoom={zoom} selected={selected}
                       onSelect={onSelect} history={history} onMenu={onMenu}
                       onDropItem={onDropItem && ((what, at) => onDropItem(row.id, what, at))}
@@ -381,12 +407,13 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
   const entries: PickEntry[] = visuals
     ? VISUAL_SCENES.map((s) => ({ key: s, label: s, add: add(newVisuals(s)) }))
     : [{ key: "cue", label: midi ? "A MIDI note" : "An OSC cue", add: add() }];
+  const label = OUTPUT_LABEL[row.output ?? ""] ?? row.output;
   return (
     <div className={`d-row ${curve ? "d-auto" : "d-clips"} d-external`}>
-      <div className="d-head">
-        <span>{OUTPUT_LABEL[row.output ?? ""] ?? row.output}
-          <span className="muted small"> · {row.label ?? row.id}</span>
-          {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</span>
+      <LaneHead name={<>{label}<span className="muted small"> · {row.label ?? row.id}</span>
+                        {now != null && <span className="muted small mono"> {now.toFixed(2)}</span>}</>}
+                title={`${label} · ${row.label ?? row.id}`}
+                menu={<LaneMenu row={row} index={index} history={history} />}>
         {curve && !midi && (
           <input className="small mono d-osc-address" aria-label={`${row.id} address`}
                  value={row.address ?? ""} placeholder="/address"
@@ -403,8 +430,7 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
         {!curve && (
           <button className="small" aria-label={`add a cue to ${row.id}`}
                     onClick={() => addCue(Math.max(0, history.snapBeat(beat)))}>+ cue</button>)}
-        <LaneMenu row={row} index={index} history={history} />
-      </div>
+      </LaneHead>
       {curve
         ? <AutoSvg row={row} x={x} width={width} history={history}
                           selected={selected} onSelect={onSelect} />
@@ -422,10 +448,12 @@ function ExternalLane({ row, index, x, width, zoom, selected, onSelect, history,
   );
 }
 
-export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
+export function AutoLane({ row, x, width, history, beat, selected, onSelect, attach }: {
   row: Row; x: (b: number) => number; width: number;
   history: Edits; beat: number;
   selected?: string | null; onSelect?: (id: string | null) => void;
+  /** A track's lane: it may drive one clips lane's clips rather than all. */
+  attach?: boolean;
 }) {
   const spec = useLaneSpec(row);
   const audio = useContext(LaneAudio);
@@ -437,13 +465,22 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
   // Following the audio is a track's own: offered on a timeline's number
   // lanes, and on any lane that already follows, so it can be seen and removed.
   const canFollow = audio !== undefined && spec.kind === "number";
+  // Attached to a lane, a parameter reaches only the routines on that lane.
+  const lane = laneOf(history.doc?.rows ?? [], row);
+  const placed = lane ? routinesOn(lane) : null;
+  const reaches = spec.reaches?.filter((r) => !placed || placed.has(r));
+  const title = laneTitle(row.target ?? "", spec);
   return (
-    <div className="d-row d-auto">
-      <div className="d-head">
-        <span title={spec.reaches ? `drives $${spec.label} on ${spec.reaches.join(", ")}` : undefined}>
-          {laneTitle(row.target ?? "", spec)}
-          <span className="muted small mono">
-            {" "}{now == null ? "" : typeof now === "number" ? now.toFixed(2) : String(now)}</span></span>
+    <div className={`d-row d-auto${lane ? " d-attached" : ""}`}>
+      <LaneHead className={lane ? "d-attached-head" : undefined}
+                name={<>{lane && <span className="d-attached-mark" aria-hidden="true">↳ </span>}
+                        {title}
+                        <span className="muted small mono">
+                          {" "}{now == null ? "" : typeof now === "number" ? now.toFixed(2) : String(now)}</span></>}
+                title={[lane ? `${title}, for ${lane.id} alone` : title,
+                        reaches?.length ? `drives $${spec.label} on ${reaches.join(", ")}` : ""]
+                  .filter(Boolean).join(" -- ")}
+                menu={<LaneMenu row={row} index={-1} history={history} />}>
         <button className={`small d-wave-btn${row.wave ? " on" : ""}`}
                 aria-label={`wave on ${row.id}`}
                 title={row.wave ? `${row.wave.shape} every ${row.wave.bars} bars -- edit it`
@@ -473,8 +510,8 @@ export function AutoLane({ row, x, width, history, beat, selected, onSelect }: {
                     }
                     onSelect?.(audioId(row.id));
                   }}>♪</button>)}
-        <LaneMenu row={row} index={-1} history={history} />
-      </div>
+        {attach && <AttachSelect row={row} history={history} />}
+      </LaneHead>
       <AutoSvg row={row} x={x} width={width} history={history}
                       selected={selected} onSelect={onSelect} />
     </div>

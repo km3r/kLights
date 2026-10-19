@@ -10,7 +10,7 @@ import {
   TrackAudio, blocksFor, curveValue, decodeWave, draftFromTemplate, freeName, hexColor, laneValue,
   newTimeline, phraseMatch, templateFromTimeline, waveUnit, whoDrives,
 } from "../designer/model";
-import { defaultAudio, defaultWave, swing } from "../designer/automation";
+import { attachable, defaultAudio, defaultWave, laneSlot, swing } from "../designer/automation";
 import { PLACE_MIME, copyRange, cutRange, pasteBoard, splitAt } from "../designer/clipboard";
 import { gapStart, snapDown } from "../designer/items";
 import { paramSpec, routineLaneSpecs, timelineLaneSpecs } from "../designer/laneSpecs";
@@ -25,8 +25,9 @@ import blockLists from "../designer/__fixtures__/blocks.json";
 import waveVectors from "../designer/__fixtures__/wave-vectors.json";
 import audioVectors from "../designer/__fixtures__/audio-vectors.json";
 import outputDefaults from "../designer/__fixtures__/outputs.json";
+import laneSlots from "../designer/__fixtures__/lane-slots.json";
 import type {
-  AudioBand, FolderProblem, Point, RoutineDoc, ShowSummary, TemplateSetDoc, TimelineDoc,
+  AudioBand, FolderProblem, Point, RoutineDoc, Row, ShowSummary, TemplateSetDoc, TimelineDoc,
   WaveformDoc,
 } from "../designer/model";
 import vectors from "../designer/__fixtures__/grid-vectors.json";
@@ -87,6 +88,18 @@ describe("designer model", () => {
     }
     expect(CHASE_ORDERS).toEqual(blockLists.orders);
     expect(EASINGS).toEqual(blockLists.easings);
+  });
+
+  it("offers automation on a lane exactly where the engine accepts it", () => {
+    // lane-slots.json is the engine's own validation, run on every pair
+    for (const [target, slot] of Object.entries(laneSlots.slots)) {
+      expect(laneSlot(target), target).toBe(slot);
+    }
+    for (const [kind, allowed] of Object.entries(laneSlots.attachable)) {
+      const lane: Row = { id: "lane", type: "clips", target: kind, items: [] };
+      const offered = Object.keys(laneSlots.slots).filter((t) => attachable(t, lane));
+      expect(offered, kind).toEqual(allowed);
+    }
   });
 
   it("takes every block's defaults, steps and ranges from the engine", () => {
@@ -1324,6 +1337,40 @@ describe("designer", () => {
     await user.selectOptions(menu, "param.radius");
     const radius = within(lanes).getByLabelText("automation param.radius");
     expect(within(radius).getByLabelText("point at bar 1.1: 10")).toBeInTheDocument();
+  });
+
+  it("attaches automation to one lane: drawn under it, moved and removed with it", async () => {
+    const user = userEvent.setup();
+    const socket = await open();
+    const lanes = await screen.findByRole("region", { name: "lanes" });
+    const names = () => [...lanes.querySelectorAll(".d-lh-name")].map((e) => e.textContent ?? "");
+    // a lane offers only what does something there: no master for a movement lane
+    const onMove = within(lanes).getByLabelText("automate move");
+    expect(within(onMove).queryByRole("option", { name: "master" })).toBeNull();
+    expect(within(onMove).getByRole("option", { name: "size" })).toBeInTheDocument();
+    expect(within(lanes).queryByLabelText("automate palette")).toBeNull();
+
+    await user.selectOptions(within(lanes).getByLabelText("automate scene"), "master");
+    const drives = within(lanes).getByLabelText("master-2 drives") as HTMLSelectElement;
+    expect(drives.value).toBe("scene");
+    expect(names()[names().indexOf("Scene · scene") + 1]).toMatch(/^↳ Master/);
+    await waitFor(() => expect(socket.sent.some((c) => c.type === "timeline_draft")).toBe(true),
+                  { timeout: 2000 });
+    const draft = [...socket.sent].reverse().find((c) => c.type === "timeline_draft") as
+      unknown as { doc: TimelineDoc };
+    expect(draft.doc.rows.find((r) => r.id === "master-2")).toMatchObject(
+      { type: "automation", target: "master", lane: "scene" });
+
+    // the lane moves past its neighbour, and what is attached goes with it
+    await user.click(within(lanes).getByLabelText("move scene up"));
+    expect(names().slice(0, 3)).toEqual(["Scene · scene", "↳ Master 1.00", "Movement · move"]);
+    // let go, it drives the whole track again, from where it was seen
+    await user.selectOptions(within(lanes).getByLabelText("master-2 drives"), "");
+    expect(names().slice(0, 2)).toEqual(["Scene · scene", "Master 1.00"]);
+    await user.selectOptions(within(lanes).getByLabelText("master-2 drives"), "scene");
+    // and removing the lane removes it
+    await user.click(within(lanes).getByLabelText("remove lane scene"));
+    expect(within(lanes).queryByLabelText("master-2 drives")).toBeNull();
   });
 
   it("drags the waveform taller, shows its bands, and remembers both", async () => {

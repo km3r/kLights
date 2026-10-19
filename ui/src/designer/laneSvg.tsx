@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { AutomationMenu } from "./automation";
+import { AutomationMenu, laneOrder, settleAttached } from "./automation";
 import { PLACE_MIME, placeable } from "./clipboard";
 import type { Placeable } from "./clipboard";
 import type { Edits, History, RowsDoc } from "./history";
@@ -161,22 +161,35 @@ export function GapToggle({ row, history }: { row: Row; history: Edits }) {
   );
 }
 
+/** A lane's ↑ ↓ ×. A lane moves past the lanes beside it as they are shown --
+ *  the automation attached to one goes with it -- and takes its attached
+ *  automation with it when it goes. */
 export function LaneMenu({ row, index, history }: { row: Row; index: number; history: Edits }) {
   const move = (delta: number) => history.apply((d) => {
-    const i = d.rows.findIndex((r) => r.id === row.id);
+    const top = laneOrder(d.rows).filter((e) => !e.attached).map((e) => e.row);
+    const i = top.findIndex((r) => r.id === row.id);
     const j = i + delta;
-    if (i < 0 || j < 0 || j >= d.rows.length) return;
-    const [r] = d.rows.splice(i, 1);
-    d.rows.splice(j, 0, r!);
+    if (i < 0 || j < 0 || j >= top.length) return;
+    const [r] = top.splice(i, 1);
+    top.splice(j, 0, r!);
+    d.rows = [...top, ...d.rows.filter((q) => !top.includes(q))];
+    settleAttached(d);
   });
   return (
     <span className="d-lane-menu">
       {index >= 0 && <>
-        <button className="small" aria-label={`move ${row.id} up`} onClick={() => move(-1)}>↑</button>
-        <button className="small" aria-label={`move ${row.id} down`} onClick={() => move(1)}>↓</button>
+        <button className="small" aria-label={`move ${row.id} up`} title="Move the lane up"
+                onClick={() => move(-1)}>↑</button>
+        <button className="small" aria-label={`move ${row.id} down`} title="Move the lane down"
+                onClick={() => move(1)}>↓</button>
       </>}
       <button className="small" aria-label={`remove lane ${row.id}`}
-              onClick={() => history.apply((d) => { d.rows = d.rows.filter((r) => r.id !== row.id); })}>
+              title={row.type === "clips" ? "Remove the lane and the automation attached to it"
+                : "Remove the lane"}
+              onClick={() => history.apply((d) => {
+                d.rows = d.rows.filter((r) => r.id !== row.id
+                  && !(row.type === "clips" && r.type === "automation" && r.lane === row.id));
+              })}>
         ×</button>
     </span>
   );

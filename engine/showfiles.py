@@ -398,7 +398,11 @@ _ROW = S(dict, of=_ROW_COMMON, variants=("type", {
     "automation": {"target": S(str, required=True, non_empty=True),
                    "points": S(list, required=True,
                                fix='[[beat, value], [beat, value, "ease"], ...]'),
-                   "wave": _WAVE, "audio": _AUDIO},
+                   "wave": _WAVE, "audio": _AUDIO,
+                   "lane": S(str, non_empty=True,
+                             fix="the id of the clips lane this row drives "
+                                 "alone; leave it out to drive the whole "
+                                 "track")},
     "external": _EXTERNAL_ROW,
 }))
 
@@ -609,20 +613,57 @@ def _unique_ids(rows: list, result: Result, what: str) -> None:
 
 
 def _shadowed_automation(rows: list, result: Result) -> None:
-    """Two automation rows for one target: legal, but only the higher one is
-    ever heard, which is worth saying."""
-    first: dict[str, str] = {}
+    """Two automation rows for one target (on one lane, or the whole track):
+    legal, but only the higher one is ever heard, which is worth saying."""
+    first: dict[tuple, str] = {}
     for row in rows:
         if row["type"] != "automation" or not isinstance(row.get("target"), str):
             continue
         target = row["target"]
-        if target in first:
+        key = (row.get("lane"), target)
+        if key in first:
+            on = f" on lane {key[0]!r}" if key[0] is not None else ""
             result.warnings.append(
-                f"row {row['id']!r} automates {target}, as {first[target]!r} "
+                f"row {row['id']!r} automates {target}{on}, as {first[key]!r} "
                 f"above it already does; the higher row wins, so this one is "
                 f"never heard")
         else:
-            first[target] = row["id"]
+            first[key] = row["id"]
+
+
+def lane_slot(target: str) -> Optional[str]:
+    """The slot a lane's own automation of `target` acts on, or None for one
+    that acts on whatever its routines do (`param.<name>`)."""
+    if target == "master":
+        return "level"
+    if target.startswith("rate."):
+        return target[len("rate."):]
+    if target in AUTOMATION_RANGES:
+        return "movement"                # size, spread, centre
+    return None
+
+
+def _check_lane(row: dict, rows: list, result: Result, where: str) -> None:
+    """An automation row attached to one lane: the lane is a clips lane here,
+    and drives what the row's target acts on -- a master on a color lane, or
+    a param lane on the palette lane, would draw a curve and change nothing."""
+    lane = row["lane"]
+    target = row["target"]
+    other = next((r for r in rows if r.get("id") == lane), None)
+    if other is None or other.get("type") != "clips":
+        what = "no row" if other is None else f"a {other.get('type')} row"
+        result.errors.append(f"{where} is attached to lane {lane!r}, which is "
+                             f"{what} here; it must name a clips lane")
+        return
+    channels = timeline_channels(other)
+    slot = lane_slot(target)
+    if slot is None and "palette" in channels:
+        result.errors.append(f"{where}: lane {lane!r} holds palette changes, "
+                             f"which have no {target}")
+    elif slot is not None and slot not in channels:
+        result.errors.append(f"{where}: {target} acts on {slot}, and lane "
+                             f"{lane!r} drives only {', '.join(channels)}; "
+                             f"attach it to a {slot} or scene lane")
 
 
 def _check_items(row: dict, result: Result, where: str) -> None:
@@ -1092,11 +1133,15 @@ def param_lane_problems(timeline: Mapping,
     reaches no routine is said too: it does nothing, which is nearly always a
     typo or a routine since taken off the timeline."""
     rows = timeline.get("rows") or []
-    used = sorted({item.get("routine") for row in rows
-                   if row.get("type") == "clips"
-                   for item in row.get("items") or []
-                   if item.get("kind") == "routine"
-                   and isinstance(item.get("routine"), str)})
+
+    def placed(lane: Optional[str]) -> list[str]:
+        """The routines on the timeline, or on one lane of it."""
+        return sorted({item.get("routine") for row in rows
+                       if row.get("type") == "clips"
+                       and (lane is None or row.get("id") == lane)
+                       for item in row.get("items") or []
+                       if item.get("kind") == "routine"
+                       and isinstance(item.get("routine"), str)})
     out: list[str] = []
     for row in rows:
         if row.get("type") != "automation":
@@ -1105,12 +1150,14 @@ def param_lane_problems(timeline: Mapping,
         if name is None:
             continue
         where = f"row {row.get('id')!r}"
+        lane = row.get("lane") if isinstance(row.get("lane"), str) else None
         decls = [(rid, ((routines.get(rid) or {}).get("params") or {}).get(name))
-                 for rid in used]
+                 for rid in placed(lane)]
         decls = [(rid, p) for rid, p in decls if isinstance(p, dict)]
         if not decls:
-            out.append(f"{where}: no routine on this timeline has ${name}, so "
-                       f"its lane does nothing")
+            on = f"lane {lane!r}" if lane is not None else "this timeline"
+            out.append(f"{where}: no routine on {on} has ${name}, so its lane "
+                       f"does nothing")
             continue
         for rid, param in decls:
             if param.get("type") == "look":
@@ -1255,6 +1302,8 @@ def _semantic_timeline(doc: dict, result: Result) -> None:
             continue
         if kind == "automation":
             _check_points(row, result, where, None)
+            if row.get("lane") is not None:
+                _check_lane(row, rows, result, where)
             continue
         _check_items(row, result, where)
         if kind == "hits":
@@ -1355,6 +1404,11 @@ def _semantic_routine(doc: dict, result: Result) -> None:
         where = f"row {row['id']!r}"
         if row["type"] == "automation":
             _check_points(row, result, where, params, rows)
+            if row.get("lane") is not None:
+                result.errors.append(
+                    f"{where} is attached to lane {row['lane']!r}: a routine's "
+                    f"automation drives all of it -- attach the lane on the "
+                    f"track's timeline, where the routine is placed")
             continue
         if row["type"] == "external":
             _check_external(row, result, where)

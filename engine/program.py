@@ -47,6 +47,13 @@ automation stacks on top for its own fixtures only. The timeline's
 routine's own `param.<name>` lane drives it in that routine's beats wherever
 the timeline does not.
 
+An automation row ATTACHED to a lane (`lane`) is that lane's alone, on top of
+the track's: its `master` scales the level its clips give, before what is under
+them blends in; `size`, `spread` and `center` scale and shift its clips'
+movement as the track's do the whole slot's; `rate.<slot>` multiplies the
+track's rate for its clips. Its `param.<name>` overrides the track's for the
+routines on that lane.
+
 Hits -- flash, strobe, blackout -- come from the timeline's hit rows and from
 the hit rows of any routine clip on top of a lane, scaled by its weight. Flash
 sets intensity up, strobe opens the shutter, blackout goes last and takes
@@ -94,24 +101,35 @@ Palette = dict[str, tuple[float, float, float]]
 
 class Warp:
     """Beats of motion a clip has run, `local` beats after it started:
-    ∫ T(at + x) · R(x) dx, T the timeline's rate curve and R the routine's.
+    ∫ T(at + x) · L(at + x) · R(x) dx, T the timeline's rate curve, L its
+    lane's and R the routine's.
 
-    Exact (closed-form `Curve.integral`) when either is absent, which is
-    nearly always; tabulated at compile time when both vary, since their
+    Exact (closed-form `Curve.integral`) when only one of them is there, which
+    is nearly always; tabulated at compile time when more vary, since their
     product has no closed form. Either way a pure function of the beat."""
 
     def __init__(self, at: float, timeline_rate: Optional[timelinemod.Curve],
                  routine_rate: Optional[timelinemod.Curve], loop_len: Optional[float],
-                 horizon: float):
+                 horizon: float, lane_rate: Optional[timelinemod.Curve] = None):
         self.at = at
-        self.T = timeline_rate
+        # The track's curves, on the track's beats: its own and its lane's.
+        self._ts = tuple(c for c in (timeline_rate, lane_rate) if c is not None)
+        self.T = self._ts[0] if len(self._ts) == 1 else None
         self.R = routine_rate
         self.loop_len = loop_len if loop_len and loop_len > 0 else None
         self._table: Optional[list[float]] = None
-        if self.T is not None and self.R is not None:
+        if len(self._ts) + (self.R is not None) > 1:
             self._build(min(max(horizon, 1.0), TABLE_MAX_BEATS))
 
+    def _t(self, beat: float) -> float:
+        out = 1.0
+        for c in self._ts:
+            out *= c.value(beat)
+        return out
+
     def _r(self, x: float) -> float:
+        if self.R is None:
+            return 1.0
         if self.loop_len is not None:
             x = x % self.loop_len
         return self.R.value(x)
@@ -127,10 +145,10 @@ class Warp:
     def _build(self, horizon: float) -> None:
         steps = int(math.ceil(horizon / TABLE_STEP)) + 1
         acc, out = 0.0, [0.0]
-        prev = self.T.value(self.at) * self._r(0.0)
+        prev = self._t(self.at) * self._r(0.0)
         for i in range(1, steps + 1):
             x = i * TABLE_STEP
-            now = self.T.value(self.at + x) * self._r(x)
+            now = self._t(self.at + x) * self._r(x)
             acc += (prev + now) * 0.5 * TABLE_STEP
             out.append(acc)
             prev = now
@@ -138,15 +156,15 @@ class Warp:
         self._last_rate = prev
 
     def __call__(self, local: float) -> float:
-        if self.T is None and self.R is None:
-            return local
-        if self.R is None:
-            return self.T.integral(self.at + local) - self.T.integral(self.at)
-        if self.T is None:
-            return self._r_integral(local)
         table = self._table
+        if table is None:
+            if self.T is not None:
+                return self.T.integral(self.at + local) - self.T.integral(self.at)
+            if self.R is not None:
+                return self._r_integral(local)
+            return local
         if local <= 0:
-            return local * self.T.value(self.at) * self._r(0.0)
+            return local * self._t(self.at) * self._r(0.0)
         pos = local / TABLE_STEP
         i = int(pos)
         if i + 1 >= len(table):
@@ -199,19 +217,10 @@ class RoutineSource:
     def _fields(self, ctx, slot: str, sched: float) -> dict:
         if slot != "movement":
             return {}
-        inst, out = self.inst, {}
-        size = inst.curve("size")
-        if size is not None:
-            out["move_size"] = ctx.move_size * size.value(sched)
-        spread = inst.curve("spread")
-        if spread is not None:
-            out["move_spread"] = ctx.move_spread + spread.value(sched)
-        bearing, elev = inst.curve("center.bearing"), inst.curve("center.elevation")
-        if bearing is not None or elev is not None:
-            cb, ce = ctx.move_center
-            out["move_center"] = (cb + (bearing.value(sched) if bearing else 0.0),
-                                  ce + (elev.value(sched) if elev else 0.0))
-        return out
+        def value(target: str) -> Optional[float]:
+            curve = self.inst.curve(target)
+            return curve.value(sched) if curve is not None else None
+        return _move_fields(ctx, value)
 
     def content(self, prog: "Program", ctx, slot, f, clip, incoming, fallback, cache):
         inst = self.inst
@@ -257,7 +266,8 @@ class Program:
     sources: dict[tuple[str, str], Any]
     palettes: dict[str, Palette]
     default_palette: Optional[Palette]
-    envs: list[blocksmod.Env]
+    # Each Env, with the lane its routine is on -- None for the timeline's own.
+    envs: list[tuple[blocksmod.Env, Optional[str]]]
     problems: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -283,6 +293,17 @@ class Program:
         self._has_external = bool(self.timeline.external_rows) or any(
             isinstance(src, RoutineSource) and src.inst.timeline.external_rows
             for src in self.sources.values())
+        # The lanes with automation of their own, and what each one's says
+        # this frame (`_lane_auto`): target -> value.
+        self._lanes = frozenset(lane for lane, _ in self.timeline.lane_curves)
+        self._lane_auto: dict[str, dict[str, Any]] = {}
+        # The master of the lane whose clip is being evaluated: what `_run`
+        # scales a level block's output by. 1 outside a lane with one.
+        self._level_scale = 1.0
+        self._automate = [
+            (env, self._param_automation if lane is None or lane not in self._lanes
+             else (lambda name, lane=lane: self._param_automation(name, lane)))
+            for env, lane in self.envs]
 
     # -- each frame --------------------------------------------------------
 
@@ -300,14 +321,23 @@ class Program:
         default = self.default_palette or base
         self._palette = self._resolve_palette(
             self.timeline.entries("palette", beat), 0, default)
-        for env in self.envs:
+        for env, automate in self._automate:
             env.palette = self._palette
-            env.automate = self._param_automation
+            env.automate = automate
+        self._lane_auto = {}
+        for (lane, target), (_, curve) in self.timeline.lane_curves.items():
+            if target in LANE_FIELDS:
+                self._lane_auto.setdefault(lane, {})[target] = curve.value(beat)
         self._collect(beat, prev, jumped)
         self._master = self.timeline.automation("master", beat)
 
-    def _param_automation(self, name: str) -> Any:
-        entry = self.timeline.curves.get(showfiles.PARAM_PREFIX + name)
+    def _param_automation(self, name: str, lane: Optional[str] = None) -> Any:
+        """The track's lane for `param.<name>` at this beat -- the one attached
+        to `lane` if it has one, else the track-wide one -- or None."""
+        target = showfiles.PARAM_PREFIX + name
+        entry = self.timeline.lane_curves.get((lane, target)) if lane else None
+        if entry is None:
+            entry = self.timeline.curves.get(target)
         return blocksmod.automation_value(entry[1], self._beat) if entry else None
 
     def _resolve_palette(self, entries, i: int, default: Palette) -> Palette:
@@ -405,7 +435,12 @@ class Program:
                         src = self.sources.get((clip.row, clip.item.id))
                         if src is None:
                             return fb()
-                        return src.content(self, ctx, slot, f, clip, incoming, fb, cache)
+                        own = self._lane_auto.get(clip.row)
+                        if own is None:
+                            return src.content(self, ctx, slot, f, clip, incoming,
+                                               fb, cache)
+                        return self._lane_content(ctx, slot, f, clip, incoming, fb,
+                                                  cache, src, own)
 
                     result[f.fid] = self._resolve(ctx, slot, f, entries, 0, out,
                                                   below, content)
@@ -418,19 +453,45 @@ class Program:
         operator's."""
         if slot != "movement":
             return {}
-        beat, out = self._beat, {}
-        size = self.timeline.automation("size", beat)
-        if size is not None:
-            out["move_size"] = ctx.move_size * size
-        spread = self.timeline.automation("spread", beat)
-        if spread is not None:
-            out["move_spread"] = ctx.move_spread + spread
-        bearing = self.timeline.automation("center.bearing", beat)
-        elev = self.timeline.automation("center.elevation", beat)
-        if bearing is not None or elev is not None:
-            cb, ce = ctx.move_center
-            out["move_center"] = (cb + (bearing or 0.0), ce + (elev or 0.0))
-        return out
+        return _move_fields(ctx, lambda t: self.timeline.automation(t, self._beat))
+
+    def _lane_content(self, ctx, slot, f, clip, incoming, fb, cache, src, own):
+        """A clip on a lane with automation of its own (`own`, this frame's
+        values): its movement under the lane's size, spread and centre, on top
+        of the track's; its level under the lane's master, applied to what its
+        blocks give (`_run`) -- so where one of a routine's own clips fades in
+        over the lanes below, only the clip's share is dimmed. What shows
+        through it is the lanes below, which are not this lane's, so `fb` runs
+        under the context the lane found."""
+        if slot == "movement":
+            fields = _move_fields(ctx, own.get)
+            if fields:
+                saved = {k: getattr(ctx, k) for k in fields}
+
+                def below():
+                    with ctx.scoped(**saved):
+                        return fb()
+
+                with ctx.scoped(**fields):
+                    return src.content(self, ctx, slot, f, clip, incoming, below,
+                                       cache)
+        master = own.get("master")
+        if slot != "level" or master is None:
+            return src.content(self, ctx, slot, f, clip, incoming, fb, cache)
+        found = self._level_scale
+
+        def below_level():
+            self._level_scale = found
+            try:
+                return fb()
+            finally:
+                self._level_scale = master
+
+        self._level_scale = master
+        try:
+            return src.content(self, ctx, slot, f, clip, incoming, below_level, cache)
+        finally:
+            self._level_scale = found
 
     def _resolve(self, ctx, slot, f, entries, i, incoming, below, content):
         """One fixture's state for one slot, walking `entries` from `i`."""
@@ -460,6 +521,9 @@ class Program:
         with ctx.scoped(**{PHASE_FIELD[slot]: phase}, **fields):
             for layer in block.layers:
                 layer(ctx, scratch)
+        if slot == "level" and self._level_scale != 1.0:
+            for st in scratch.values():
+                st.intensity *= self._level_scale
         return scratch
 
     def _rest(self, ctx, slot, f, incoming, cache) -> statemod.FixtureState:
@@ -550,6 +614,29 @@ class Program:
                             for r, v in self._palette.items()}}
 
 
+# What a lane's own automation sets per frame; its `rate.<slot>` is in its
+# clips' warps and its `param.<name>` in its routines' Envs.
+LANE_FIELDS = ("master", "size", "spread", "center.bearing", "center.elevation")
+
+
+def _move_fields(ctx, value: Callable[[str], Optional[float]]) -> dict:
+    """Size, spread and centre automation, on top of what `ctx` has: size
+    multiplies, spread and centre add. `value(target)` is the automation's
+    value now, or None where nothing automates it."""
+    out: dict = {}
+    size = value("size")
+    if size is not None:
+        out["move_size"] = ctx.move_size * size
+    spread = value("spread")
+    if spread is not None:
+        out["move_spread"] = ctx.move_spread + spread
+    bearing, elev = value("center.bearing"), value("center.elevation")
+    if bearing is not None or elev is not None:
+        cb, ce = ctx.move_center
+        out["move_center"] = (cb + (bearing or 0.0), ce + (elev or 0.0))
+    return out
+
+
 def _blend1(a: statemod.FixtureState, b: statemod.FixtureState,
             t: float) -> statemod.FixtureState:
     return statemod.blend({0: a}, {0: b}, t)[0]
@@ -557,15 +644,17 @@ def _blend1(a: statemod.FixtureState, b: statemod.FixtureState,
 
 # -- compiling ----------------------------------------------------------------
 
-def _warps(timeline: timelinemod.Timeline, item: timelinemod.Item,
+def _warps(timeline: timelinemod.Timeline, lane: str, item: timelinemod.Item,
            inst: Optional[routinesmod.Instance]) -> dict[str, Warp]:
     out = {}
     for slot in SLOTS:
         t_entry = timeline.curves.get(f"rate.{slot}")
+        l_entry = timeline.lane_curves.get((lane, f"rate.{slot}"))
         r_curve = inst.curve(f"rate.{slot}") if inst is not None else None
         out[slot] = Warp(item.at, t_entry[1] if t_entry else None, r_curve,
                          inst.length if inst is not None and inst.loop else None,
-                         horizon=item.len + 64.0)
+                         horizon=item.len + 64.0,
+                         lane_rate=l_entry[1] if l_entry else None)
     return out
 
 
@@ -578,7 +667,7 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
     instantiates every routine): run it on the worker."""
     problems: list[str] = []
     env = blocksmod.Env(look_colors=rigging.look_colors())
-    envs = [env]
+    envs: list[tuple[blocksmod.Env, Optional[str]]] = [(env, None)]
     sources: dict[tuple[str, str], Any] = {}
     for row in timeline.clip_rows:
         slots = [ch for ch in row.channels if ch in SLOTS]
@@ -593,9 +682,9 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
                     continue
                 inst = routinesmod.instantiate(doc, item.data, rigging, at)
                 problems += inst.problems
-                envs.append(inst.env)
+                envs.append((inst.env, row.id))
                 sources[(row.id, item.id)] = RoutineSource(
-                    inst, _warps(timeline, item, inst))
+                    inst, _warps(timeline, row.id, item, inst))
             elif kind == "look":
                 entry = rigging.entries.get(item.data.get("look"))
                 if entry is None:
@@ -610,15 +699,15 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
                 if not any(b.claims for b in built.values()):
                     problems.append(f"{at}: look {entry.name!r} has nothing for "
                                     f"the {row.channels[0]} lane")
-                sources[(row.id, item.id)] = LeafSource(built,
-                                                        _warps(timeline, item, None))
+                sources[(row.id, item.id)] = LeafSource(
+                    built, _warps(timeline, row.id, item, None))
             elif kind == "snapshot":
                 built = {s: blocksmod.snapshot_block(item.data, s, None, rigging, at)
                          for s in slots}
                 for b in built.values():
                     problems += b.problems
-                sources[(row.id, item.id)] = LeafSource(built,
-                                                        _warps(timeline, item, None))
+                sources[(row.id, item.id)] = LeafSource(
+                    built, _warps(timeline, row.id, item, None))
             # palette clips are read straight off the palette lane
     # A `hold` wave's integral is a running sum of its levels, memoised as it
     # is first asked for (`waves.area`). A rate lane is integrated every
@@ -626,7 +715,9 @@ def compile(timeline: timelinemod.Timeline, routines: Mapping[str, Mapping],
     # last clip -- not on the output thread on the first frame after a seek.
     end = max((i.at + i.len for row in timeline.clip_rows for i in row.items),
               default=0.0)
-    for target, (_, curve) in timeline.curves.items():
+    rates = [*timeline.curves.items(),
+             *((target, entry) for (_, target), entry in timeline.lane_curves.items())]
+    for target, (_, curve) in rates:
         if target.startswith("rate.") and curve.wave is not None and curve.numeric:
             curve.integral(end)
     palettes: dict[str, Palette] = {}

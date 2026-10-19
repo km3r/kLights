@@ -54,6 +54,12 @@ lane can breathe without a point per bar. Its integral is exact too, which is
 why the shapes live in `waves.py` with their areas, and why that module is as
 standard-library-only as this one.
 
+A row may be ATTACHED to one clips lane (`lane`: that row's id). It then
+automates its target for that lane's clips alone, and says nothing about the
+rest of the track: `lane_curves`, keyed by (lane, target), apart from the
+track-wide `curves`. How the two combine is the caller's business (for the
+lights, `program.py`).
+
 A track's timeline row may carry `audio` too (`bands.Follow`): `depth` times
 the level of one frequency band of the track itself -- rekordbox's analysis of
 it, so still a pure function of the beat -- added the same way. It is the
@@ -531,6 +537,8 @@ class Frame:
     automation: Mapping[str, Any]    # a number, or (from, to, t) for non-numbers,
                                      # with (toward, pull) after it when a wave swings it
     hits: tuple[Hit, ...]
+    lanes: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
+                                     # lane -> its own automation, as `automation`
 
 
 class Timeline:
@@ -539,10 +547,14 @@ class Timeline:
     def __init__(self, clip_rows: Sequence[ClipRow], hit_rows: Sequence[HitRow],
                  curves: Mapping[str, tuple[str, Curve]],
                  external: Sequence[Mapping] = (),
-                 meta: Optional[Mapping] = None):
+                 meta: Optional[Mapping] = None,
+                 lane_curves: Optional[Mapping[tuple[str, str],
+                                               tuple[str, Curve]]] = None):
         self.clip_rows = tuple(clip_rows)
         self.hit_rows = tuple(hit_rows)
         self.curves = MappingProxyType(dict(curves))
+        # (lane, target) -> (row, curve): the rows attached to one clips lane.
+        self.lane_curves = MappingProxyType(dict(lane_curves or {}))
         self.external = tuple(MappingProxyType(dict(r)) for r in external)
         self.external_rows = tuple(_external_row(r) for r in self.external)
         self.meta = MappingProxyType(dict(meta or {}))
@@ -571,6 +583,7 @@ class Timeline:
         clip_rows: list[ClipRow] = []
         hit_rows: list[HitRow] = []
         curves: dict[str, tuple[str, Curve]] = {}
+        lane_curves: dict[tuple[str, str], tuple[str, Curve]] = {}
         external: list[Mapping] = []
         for n, row in enumerate(rows):
             if not isinstance(row, Mapping):
@@ -607,13 +620,24 @@ class Timeline:
                         raise TimelineError(str(exc)) from None
                 curve = Curve.from_points(row.get("points") or (), where, wave,
                                           follow)
-                curves.setdefault(target, (rid, curve))  # the higher row wins
+                lane = row.get("lane")
+                if lane is None:
+                    curves.setdefault(target, (rid, curve))  # the higher row wins
+                elif isinstance(lane, str) and lane:
+                    lane_curves.setdefault((lane, target), (rid, curve))
+                else:
+                    raise TimelineError(f"{where} lane must name a clips row")
             elif kind == "external":
                 _external_row(row)              # refuse what cannot be built
                 external.append(row)            # and keep it whole
             else:
                 raise TimelineError(f"{where} has unknown type {kind!r}")
-        return cls(clip_rows, hit_rows, curves, external, meta)
+        known = {r.id for r in clip_rows}
+        for (lane, _), (rid, _) in lane_curves.items():
+            if lane not in known:
+                raise TimelineError(f"row {rid!r} is attached to lane {lane!r}, "
+                                    f"which is not a clips row here")
+        return cls(clip_rows, hit_rows, curves, external, meta, lane_curves)
 
     @classmethod
     def from_doc(cls, doc: Mapping,
@@ -669,11 +693,14 @@ class Timeline:
                 return Channel(tuple(layers), rest=False)
         return Channel(tuple(layers), rest=True)
 
-    def automation(self, target: str, beat: float) -> Any:
+    def automation(self, target: str, beat: float,
+                   lane: Optional[str] = None) -> Any:
         """The value of an automated target, None if nothing automates it: a
         number, or for a color (from, to, t) -- and, when a wave swings it,
-        (toward, pull) after those, so an explanation shows the whole value."""
-        entry = self.curves.get(target)
+        (toward, pull) after those, so an explanation shows the whole value.
+        With `lane`, the row attached to that lane, and only it."""
+        entry = (self.curves.get(target) if lane is None
+                 else self.lane_curves.get((lane, target)))
         if entry is None:
             return None
         curve = entry[1]
@@ -709,11 +736,15 @@ class Timeline:
 
     def at(self, beat: float, prev: Optional[float] = None,
            jumped: bool = False) -> Frame:
+        lanes: dict[str, dict[str, Any]] = {}
+        for lane, target in self.lane_curves:
+            lanes.setdefault(lane, {})[target] = self.automation(target, beat, lane)
         return Frame(
             beat=beat,
             channels={ch: self.channel(ch, beat) for ch in self.channels},
             automation={t: self.automation(t, beat) for t in self.curves},
-            hits=self.hits(beat, prev, jumped))
+            hits=self.hits(beat, prev, jumped),
+            lanes=MappingProxyType(lanes))
 
     @property
     def span(self) -> Optional[tuple[float, float]]:
@@ -725,7 +756,7 @@ class Timeline:
         for row in self.hit_rows:
             lo.extend(i.at for i in row.items)
             hi.extend(i.end for i in row.items)
-        for _, curve in self.curves.values():
+        for _, curve in (*self.curves.values(), *self.lane_curves.values()):
             lo.append(curve.beats[0])
             hi.append(curve.beats[-1])
         for row in self.external_rows:
@@ -740,22 +771,29 @@ class Timeline:
         """The frame at `beat` as plain JSON-able data -- for the designer, MCP
         and a person checking a timeline from the command line."""
         frame = self.at(beat)
-        auto = {}
-        for target, value in frame.automation.items():
-            if isinstance(value, tuple):
-                a, b, t = value[:3]
-                auto[target] = {"from": a, "to": b, "t": round(t, 3)}
-                if len(value) > 3:               # a wave swings it
-                    toward, pull = value[3:]
-                    auto[target].update(toward=toward, pull=round(pull, 3))
-            else:
-                auto[target] = round(value, 4)
         out = {"beat": beat,
                "channels": {ch: c.public() for ch, c in frame.channels.items()},
-               "automation": auto,
+               "automation": _plain(frame.automation),
                "hits": [h.public() for h in frame.hits]}
+        if frame.lanes:
+            out["lanes"] = {lane: _plain(auto) for lane, auto in frame.lanes.items()}
         external = [e.public() for e in self.external_at(beat)
                     if e.items or e.value is not None]
         if external:
             out["external"] = external
         return out
+
+
+def _plain(automation: Mapping[str, Any]) -> dict:
+    """Automation values as JSON: a number, or a color's segment."""
+    out: dict = {}
+    for target, value in automation.items():
+        if isinstance(value, tuple):
+            a, b, t = value[:3]
+            out[target] = {"from": a, "to": b, "t": round(t, 3)}
+            if len(value) > 3:                   # a wave swings it
+                toward, pull = value[3:]
+                out[target].update(toward=toward, pull=round(pull, 3))
+        else:
+            out[target] = round(value, 4)
+    return out

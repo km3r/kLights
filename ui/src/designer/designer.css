@@ -164,6 +164,33 @@
 .d-heard-line { fill: none; stroke: var(--good); stroke-width: 1; opacity: 0.7; }
 .d-lane-menu { margin-left: auto; display: flex; gap: 2px; }
 .d-lane-menu button { min-height: 20px; padding: 0 4px; }
+/* A lane's head: its name with ↑ ↓ ×, and under them what the lane sets --
+   two lines inside the lane's own 40px, so a row is never taller than the
+   lane it names. */
+.designer .d-lane-head {
+  flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center;
+  gap: 2px; height: 40px; overflow: hidden;
+}
+.d-lh-top, .d-lh-tools { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.d-lh-top { height: 16px; }
+.d-lh-tools { height: 18px; }
+.d-lh-tools:empty { display: none; }
+.d-lh-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.designer .d-lane-head .d-lane-menu button {
+  min-height: 0; height: 16px; padding: 0 5px; line-height: 1; font-size: 11px;
+}
+.designer .d-lh-tools button, .designer .d-lh-tools select, .designer .d-lh-tools input {
+  min-height: 0; height: 18px; padding: 0 6px; font-size: 11px; line-height: 1;
+}
+.designer .d-lh-tools select { padding: 0 2px; }
+.designer .d-lh-tools .d-osc-address { flex: 1; width: auto; }
+.designer .d-lh-tools .d-num { width: 3rem; padding: 0 2px; }
+.d-lh-tools > span { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.designer .d-lh-tools .d-attach { flex: 1; }
+.designer .d-lh-tools .d-lane-auto { width: 64px; flex: none; }
+/* An automation lane attached to the clips lane above it: tucked in under it. */
+.designer .d-attached-head { padding-left: 12px; box-shadow: inset 2px 0 0 var(--accent); }
+.d-attached-mark { color: var(--accent); }
 
 .d-who { width: 100%; border-collapse: collapse; }
 .d-who th { text-align: left; color: var(--dim); font-weight: 500; padding: 2px 6px 2px 0; }
